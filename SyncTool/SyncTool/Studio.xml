@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.Studio">
+<Super>%Studio.SourceControl.Base</Super>
+<TimeCreated>60813,71520.588824</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<XData name="Menu">
+<Description>
+This XData describes the menu placed in Studio</Description>
+<Data><![CDATA[
+<MenuBase>
+<Menu Name="SourceControl" Type="0">
+<MenuItem Name="Start SyncTool GUI"/>
+<!--
+<MenuItem Name="%UndoCheckout"/>
+<MenuItem Name="%CheckIn" Save="100"/>
+<MenuItem Name="%GetLatest"/>
+<MenuItem Name="%AddToSourceControl" Save="100"/>
+<MenuItem Separator="1"/>
+<MenuItem Name="Disconnect"/>
+<MenuItem Name="Reconnect"/>
+-->
+</Menu>
+</MenuBase>
+]]></Data>
+</XData>
+
+<Method name="OnBeforeSave">
+<Description>
+Called before the item is saved to the Cache database it is passed
+a reference to the current temporary storage of this item so that it
+can be modified before the save completes. If you quit with an error
+value then it will abort the save.</Description>
+<FormalSpec>InternalName:%String,Location:%String="",Object:%RegisteredObject=$$$NULLOREF</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	New %objlasterror
+
+	#IF $D(^SyncTool.Debug)
+	Write !,"-------------------",!,"Source object: ",InternalName," OnBeforeSave begin"
+	Write !,"Object: ",Object
+	#ENDIF
+
+	Set Status=$$$OK
+	If ##class(%Dictionary.CompiledClass).%ExistsId(..%PackageName()_".WorkingDirectory")
+	{
+		Set ImpNeeded=##class(WorkingDirectory).ImportNeededByName(InternalName)
+		If ImpNeeded Set Status=$system.Status.Error(5001,"External file is modified.")
+	}
+
+	#IF $D(^SyncTool.Debug)
+	Write !,"Source object: ",InternalName," OnBeforeSave end, Status: ",Status
+	Write !,"-------------------"
+	#ENDIF
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="OnAfterSave">
+<Description>
+This is called after the item has been saved to the database.
+It may be passed a reference to the object representing the item
+just saved. It can be use to export this documement to an external form for example.</Description>
+<FormalSpec>InternalName:%String,Object:%RegisteredObject=$$$NULLOREF</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#IF $D(^SyncTool.Debug)
+	Write !,"-------------------",!,"Source object: ",InternalName," OnAfterSave begin"
+	Write !,"Object: ",Object
+	#ENDIF
+
+	Set Status=$$$OK
+	If ##class(%Dictionary.CompiledClass).%ExistsId(..%PackageName()_".WorkingDirectory")
+	{
+		Set ObjectName=##class(SrcObject).ObjectNameNormalize(InternalName)
+		Set Type=$Piece(ObjectName,".",$Length(ObjectName,"."))
+
+		Set IsInSC=##class(WorkingDirectory).IsSynchronized(InternalName,.Status)
+		If Status,'IsInSC
+		{
+			Set NeedsSC=##class(WorkingDirectory).HasToBeSynchronized(InternalName,.Status)
+			If Status,NeedsSC
+			{
+				Set RS=##class(%ResultSet).%New(..%PackageName()_".WorkingDirectory:Extent")
+				Set Status=RS.Execute()
+				Quit:'Status Status
+				While RS.Next()
+				{
+					Set WD=##class(WorkingDirectory).%OpenId(RS.Get("ID"),,.Status)
+					Quit:'Status
+					Set Key=""
+					For  
+					{
+						#dim Module as Module
+						Set Module=WD.Modules.GetNext(.Key)
+						Quit:Key=""
+						Set SupportedTypes=Module.ExportImportClass.%GetParameter("SUPPORTEDTYPES")
+						Continue:SupportedTypes=""
+						If Type'="",(","_SupportedTypes_",")'[(","_Type_",") Continue
+						Set Status=Module.RefreshSelectedObjects()
+						Quit:'Status
+					}
+
+					#IF $D(^SyncTool.Debug)
+					Write !,"SourceObject: ",InternalName
+					Write !,"Refreshed selected objects for WD ",WD.%Id()," with status ",Status
+					#ENDIF
+
+					Quit:'Status
+				}
+				Quit:'Status Status
+			}
+		}
+		Set Status=##class(WorkingDirectory).ExportSrcObjectByName(InternalName)
+		If 'Status,$system.Status.Equals(Status,5001)
+			,$system.Status.GetOneStatusText(Status)="No export needed"
+		{
+			Set Status=$$$OK
+			Set %objlasterror=$$$OK ;Studio class loader needs that. Otherwise errors are reported albeit there are none.
+		}
+	}
+
+	#IF $D(^SyncTool.Debug)
+	Write !,"Source object: ",InternalName," OnAfterSave end, Status: ",Status
+	Write !,"-------------------"
+	#ENDIF
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="OnBeforeLoad">
+<Description>
+Import the file from the external format into Cache.
+This is called before the actual load of data to give the chance
+to load the item from an external format.</Description>
+<FormalSpec>InternalName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#IF $D(^SyncTool.Debug)
+	Write !,"-------------------"
+	Write !,"Item: ",InternalName," OnBeforeLoad begin"
+	#ENDIF
+
+	Set Status=$$$OK
+	If ##class(%Dictionary.CompiledClass).%ExistsId(..%PackageName()_".WorkingDirectory")
+	{
+		Set Status=##class(WorkingDirectory).ImportSrcObjectByName(InternalName)
+	}
+	If 'Status,$system.Status.Equals(Status,5001)
+		,$system.Status.GetOneStatusText(Status)="No import needed"
+	{
+		Set Status=$$$OK
+	}
+
+	#IF $D(^SyncTool.Debug)
+	Write !,"Item: ",InternalName," OnBeforeLoad end, Status: ",Status
+	Write !,"-------------------"
+	#ENDIF
+
+	If 'Status W ! D $system.Status.DisplayError(Status)
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="OnBeforeDelete">
+<Description>
+Called before an item is deleted. Returning an error code prevents the delete from occuring.</Description>
+<FormalSpec>InternalName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#IF $D(^SyncTool.Debug)
+	Write !,"-------------------",!,"Source object: ",InternalName," OnBeforeDelete begin"
+	#ENDIF
+
+	Set Status=$$$OK
+	If ##class(%Dictionary.CompiledClass).%ExistsId(..%PackageName()_".WorkingDirectory")
+	{
+		Set Status=##class(WorkingDirectory).BackupByName(InternalName)
+	}
+
+	#IF $D(^SyncTool.Debug)
+	Write !,"Source object: ",InternalName," OnBeforeDelete end, Status: ",Status
+	Write !,"-------------------"
+	#ENDIF
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="OnAfterDelete">
+<Description>
+Called after an item is deleted.</Description>
+<FormalSpec>InternalName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#IF $D(^SyncTool.Debug)
+	Write !,"-------------------",!,"Source object: ",InternalName," OnAfterDelete begin"
+	#ENDIF
+
+	Set Status=$$$OK
+	If ##class(%Dictionary.CompiledClass).%ExistsId(..%PackageName()_".WorkingDirectory")
+	{
+		Set Status=##class(WorkingDirectory).ExportDeletedByName(InternalName)
+	}
+
+	#IF $D(^SyncTool.Debug)
+	Write !,"Source object: ",InternalName," OnAfterDelete end, Status: ",Status
+	Write !,"-------------------"
+	#ENDIF
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Method UserAction(
+	Type As %Integer,
+	Name As %String,
+	InternalName As %String,
+	SelectedText As %String,
+	ByRef Action As %String,
+	ByRef Target As %String,
+	ByRef Msg As %String,
+	ByRef Reload As %Boolean) As %Status
+{
+	Set Action=0,Target="",Msg="",Reload=0
+	Quit $$$OK
+}
+*/
+]]></Content>
+</UDLText>
+
+<Method name="UserAction">
+<FormalSpec><![CDATA[Type:%Integer,Name:%String,InternalName:%String,SelectedText:%String,&Action:%String,&Target:%String,&Msg:%String,&Reload:%Boolean]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#;Write %ClassName(1)_":UserAction() Type: ",Type," Name: ",Name,!
+	Set Action=0,Target="",Msg="",Reload=0
+	Set Status=$$$OK
+
+	/*
+	If Type=1,Name=1 ;User saved a new SourceObject. This is invoked after OnAfterSave()
+	{
+		If ##class(%Dictionary.CompiledClass).%ExistsId(..%PackageName()_".WorkingDirectory")
+		{
+			Set RS=##class(%ResultSet).%New(..%PackageName()_".WorkingDirectory:Extent")
+			Set Status=RS.Execute()
+			Quit:'Status Status
+			While RS.Next()
+			{
+				Set WD=##class(WorkingDirectory).%OpenId(RS.Get("ID"),,.Status)
+				Quit:'Status
+				Set Status=WD.RefreshSelectedObjects()
+				#IF $D(^SyncTool.Debug)
+				Write !,"SourceObject: ",InternalName
+				Write !,"Refreshed selected objects for WD ",WD.%Id()," with Status ",Status
+				#ENDIF
+				Quit:'Status
+			}
+		}
+		Quit:'Status Status
+		#IF $D(^SyncTool.Debug)
+		Write !,"SourceObject ",InternalName," exists: ",##class(ExportImport).ObjectExists(InternalName)
+		#ENDIF
+		Set Status=..OnAfterSave(InternalName)
+		Quit:'Status Status
+	}
+	*/
+	Set Menu=$Piece(Name,","),SubMenu=$Piece(Name,",",2)
+	If Menu="SourceControl",SubMenu="Start SyncTool GUI"
+	{
+		Set RS=##class(%ResultSet).%New("%CSP.Apps:CSPAppList")
+		Set Status=RS.Execute()
+		Quit:'Status Status
+		If RS.Next()
+		{
+			Set Target=RS.Data("AppUrl")_"/"_..%PackageName()_".GUI.Main.cls"
+		}
+		Else
+		{
+			Set Target="/csp/"_$ZNSpace_"/"_..%PackageName()_".GUI.Main.cls"
+		}
+		Set Action=2
+	}
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="OnMenuItem">
+<FormalSpec><![CDATA[MenuName:%String,InternalName:%String,SelectedText:%String,&Enabled:%Boolean,&DisplayName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Enabled=1
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="OnAfterCompile">
+<Description>
+Called after the compile of the item is done.</Description>
+<FormalSpec>InternalName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#;May 2010 begin
+	#;Trying to mitigate a bug reported to ISC in WRC #724146
+	Quit:$ZConvert($Piece(InternalName,".",$Length(InternalName,".")),"l")'="cls" $$$OK
+	#;May 2010 end
+	Quit ..OnAfterSave(.InternalName)
+]]></Implementation>
+</Method>
+</Class>
+</Export>

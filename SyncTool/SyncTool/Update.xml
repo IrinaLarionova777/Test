@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.Update">
+<Description>
+This class is used to update the source control classes.</Description>
+<Super>%RegisteredObject</Super>
+<TimeCreated>61635,26524.008751</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<Method name="UpdateFromDirectory">
+<Description>
+Makes an update of SyncTool. Sources are expected to be in directory iDir.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iDir:%String,iDisplay:%Boolean=0</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim Module as Module
+	Set iDir=##class(%File).NormalizeDirectory(iDir)
+	#dim Status as %Status
+	#dim ModuleID as %String = ..GetModuleID(iDir)
+
+	Set Status=$system.OBJ.ImportDir(iDir,"*.xml","cko3fv"_$S(iDisplay:"d",1:"-d"))
+	Quit:'Status Status
+
+	If ModuleID'=""
+	{
+
+		Set Module=$system.OBJ.OpenId(..%PackageName()_".Module",ModuleID) ;avoid compiling errors, if class is compiled alone
+		Set Status=Module.RefreshSelectedObjects()
+		Quit:'Status Status
+
+		#;Update files and source objects
+		#dim Key as %Status = ""
+		For  
+		{
+			#dim File as File = Module.Files.GetNext(.Key)
+			Quit:Key=""
+			Set Status=File.SetToSynchedState()
+			Quit:'Status
+		}
+	}
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="UpdateNeededFromDir">
+<Description>
+Checks - as far as possible - if SyncTool needs to be updated.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[iDir:%String,&oStatus:%Status]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set oStatus=$$$OK
+	Set iDir=##class(%File).NormalizeDirectory(iDir)
+
+	#dim Module as Module
+	#dim ImportNeeded as %Boolean = 0
+	#dim ModuleID as %String = ..GetModuleID(iDir)
+
+	If ModuleID="" ;Always update if no module is found.
+	{
+		Set ImportNeeded=1
+	}
+	Else
+	{
+		Kill ^||SyncTool.Module("ImportDir")
+
+		Set Module=$system.OBJ.OpenId(..%PackageName()_".Module",ModuleID) ;avoid compiling errors, if class is compiled alone
+
+		Set oStatus=Module.RefreshSelectedObjects()
+		Quit:'oStatus 0
+
+		Set oStatus=Module.BuildFileList()
+		Quit:'oStatus 0
+
+		#dim FileImportNeeded as %Boolean
+		#dim Key as %String = ""
+		For  
+		{
+			#dim File as File = Module.Files.GetNext(.Key)
+			Quit:Key=""
+
+			If File.NewFile,File.FileDateModified'="" {Set FileImportNeeded=1}
+			Else {Set FileImportNeeded=Module.ExportImportClass.ImportNeeded(File)}
+
+			If FileImportNeeded Set oStatus=File.BackupSrcObjects(Module.GetBackup())
+
+			Set ImportNeeded=(ImportNeeded!FileImportNeeded)
+			Quit:'oStatus
+
+			#IF $ZV["Windows"
+			Kill ^||SyncTool.Module("ImportDir",$ZConvert(File.File,"l"))
+			#ELSE
+			Kill ^||SyncTool.Module("ImportDir",File.File)
+			#ENDIF
+		}
+		Kill File,Module
+		Quit:'oStatus 0
+
+		If $Data(^||SyncTool.Module("ImportDir")) Set ImportNeeded=1
+	}
+	Kill ^||SyncTool.Module("ImportDir")
+	Quit ImportNeeded
+]]></Implementation>
+</Method>
+
+<Method name="UpdateFromDirIfNeeded">
+<Description>
+Updates SyncTool out of directory iDir if needed.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iDir:%Status</FormalSpec>
+<Implementation><![CDATA[
+	#dim Status as %Status
+	#dim Needed as %Boolean = ..UpdateNeededFromDir(iDir,.Status)
+	Quit:'Status Status
+	Quit:'Needed $$$OK
+	Quit ..UpdateFromDirectory(iDir)
+]]></Implementation>
+</Method>
+
+<Method name="GetModuleID">
+<Description>
+Finds a module that manages SyncTool itself and returns its ID.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[iDir:%String,&oStatus:%Status]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	#dim ModuleID as %String = ""
+	If ##class(%Dictionary.CompiledClass).%ExistsId(..%PackageName()_".Module")
+	{
+		#dim SQL as %String = "select %ID from "_..%PackageName()_"._Module"
+		#IF $ZV["Windows"
+		Set SQL=SQL_" where %upper(Directory)=%upper('"_iDir_"')"
+		#ELSE
+		Set SQL=SQL_" where %exact(Directory)=%exact('"_iDir_"')"
+		#ENDIF
+		Set SQL=SQL_" and ExportImportClassName like '%.SCExportImport'"
+		Set RS=##class(%ResultSet).%New("%DynamicQuery:SQL")
+		Set oStatus=RS.Prepare(SQL)
+		Quit:'oStatus ""
+		Set oStatus=RS.Execute()
+		Quit:'oStatus ""
+		If RS.Next() Set ModuleID=RS.Data("ID")
+		Set RS=""
+	}
+	Quit ModuleID
+]]></Implementation>
+</Method>
+</Class>
+</Export>

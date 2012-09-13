@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.GUI.Collisions">
+<Super>%ZEN.Dialog.standardDialog</Super>
+<TimeCreated>61587,27762.439783</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<Property name="ManagerID">
+<Type>%String</Type>
+<Parameter name="ZENURL" value="ManagerID"/>
+</Property>
+
+<XData name="dialogBody">
+<Description>
+Dieser XML-Block definiert den Inhalt dieser Seite.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<pane xmlns="http://www.intersystems.com/zen" width="100%">
+<hgroup>
+<button caption="keep all files" onclick="zenPage.KeepAllJS('File');"/>
+<button caption="keep all source objects" onclick="zenPage.KeepAllJS('SourceObject');"/>
+</hgroup>
+<tablePane id="Collisions" maxRows="10000" pageSize="10" useSnapshot="true" valueColumn="ID">
+<column colName="ID" hidden="true"/>
+<column header="Keep" colName="Keep" OnDrawCell="DrawKeepCheckboxes"/>
+<column header="File" colName="SubDirFile"/>
+<column header="File changed on" colName="FileDateModified"/>
+<column header="Source changed on" colName="SrcModified"/>
+</tablePane>
+<tableNavigatorBar tablePaneId="Collisions" />
+</pane>
+]]></Data>
+</XData>
+
+<Method name="KeepAllJS">
+<FormalSpec>iWhat:%String</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[	zenPage.KeepAll(zenPage.ManagerID,iWhat);
+]]></Implementation>
+</Method>
+
+<Method name="KeepAll">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iManagerID:%String,iWhat:%String</FormalSpec>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	&sql(update SyncTool.Collision
+		    set Keep=:iWhat
+		  where SyncManager=:iManagerID)
+	&js<zenPage.getComponentById("Collisions").executeQuery();>
+]]></Implementation>
+</Method>
+
+<Method name="DrawKeepCheckboxes">
+<FormalSpec>table:%ZEN.Component.tablePane,name:%ZEN.Datatype.string,seed:%ZEN.Datatype.string</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	&html<<input type="radio" name="Keep-#(%query("ID"))#" value="File"
+title="Keep file" onclick="zenPage.KeepClickJS(this);"#($S(%query("Keep")="File":" checked=""checked""",1:""))#>
+	<input type="radio" name="Keep-#(%query("ID"))#" value="SourceObject"
+title="Keep source in database" onclick="zenPage.KeepClickJS(this);"#($S(%query("Keep")="SourceObject":" checked=""checked""",1:""))#>>
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="KeepClickJS">
+<FormalSpec>iNput</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var ID=iNput.name.split("-")[1]
+	zenPage.KeepClick(ID,iNput.value);
+]]></Implementation>
+</Method>
+
+<Method name="KeepClick">
+<FormalSpec>iD:%String,iValue:%String</FormalSpec>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	&sql(update SyncTool.Collision
+		    set Keep=:iValue
+		  where %ID=:iD)
+]]></Implementation>
+</Method>
+
+<Method name="%OnAfterCreatePage">
+<Description><![CDATA[
+This callback is called after the server-side page 
+object and all of its children are created.<br>
+Subclasses can override this to add, remove, or modify 
+items within the page object model, or to provide values
+for controls.]]></Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Colls=..%GetComponentById("Collisions")
+	Set Colls.sql="select A.%ID as ID, A.Keep, "
+		_" (case when B._Module->SubDirectory is null then '' else B._Module->SubDirectory||'/' end)||B.Filename as SubDirFile,"
+		_" SyncTool.File_FileDateModified(B._File) as FileDateModified,"
+		_" (select max(SyncTool.SrcObject_GetDateModified(%ID)) from SyncTool.SrcObject where _File=B.%ID) as SrcModified"
+		_" from SyncTool.Collision A join SyncTool._File B"
+		_" on (A._File = B.%ID)"
+		_" where SyncManager='"_%page.ManagerID_"'"
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="getDialogValue">
+<Description>
+Get the value that will be applied when the user presses the OK button.
+This is implemented by subclasses.</Description>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[	return {"ManagerID": zenPage.ManagerID};
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetTitle">
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "Collisions"
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetSubtitle">
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "Please resolve collisions"
+]]></Implementation>
+</Method>
+</Class>
+</Export>

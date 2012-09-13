@@ -1,0 +1,736 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.File">
+<Description>
+This class represents a file that contains source objects.</Description>
+<SqlTableName>_File</SqlTableName>
+<Super>%Persistent</Super>
+<TimeCreated>61387,62265.70024</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<Property name="Filename">
+<Description>
+The filename itself</Description>
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="100"/>
+</Property>
+
+<Property name="File">
+<Description>
+Calculated property with full path to the file</Description>
+<Type>%String</Type>
+<Calculated>1</Calculated>
+<SqlComputeCode> Set {*}=##class(SyncTool.File).%OpenId({ID}).File</SqlComputeCode>
+<SqlComputed>1</SqlComputed>
+<SqlFieldName>_File</SqlFieldName>
+<Parameter name="MAXLEN" value="500"/>
+</Property>
+
+<Property name="Directory">
+<Description>
+The directory to the file</Description>
+<Type>%String</Type>
+<Calculated>1</Calculated>
+<SqlComputeCode> Set {*}=##class(SyncTool.Module).%OpenId($Piece({ID},"||",1,2)).Directory</SqlComputeCode>
+<SqlComputed>1</SqlComputed>
+<Parameter name="MAXLEN" value="500"/>
+</Property>
+
+<Property name="Hash">
+<Description>
+Hash of current file if there is no other way to determine if source objects
+are changed</Description>
+<Type>%Binary</Type>
+</Property>
+
+<Property name="Module">
+<Description>
+The module the file is belonging to</Description>
+<Type>SyncTool.Module</Type>
+<Cardinality>parent</Cardinality>
+<Inverse>Files</Inverse>
+<Relationship>1</Relationship>
+<SqlFieldName>_Module</SqlFieldName>
+</Property>
+
+<Property name="SrcObjects">
+<Description>
+The source objects synchronized within this file</Description>
+<Type>SyncTool.SrcObject</Type>
+<Cardinality>children</Cardinality>
+<Inverse>File</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Property name="FileDateModified">
+<Description>
+A timestamp the file was modified on the last synchronization.</Description>
+<Type>%TimeStamp</Type>
+</Property>
+
+<Property name="NewFile">
+<Description>
+If NewFile = 1 then the file is the first time synchronized by SyncTool</Description>
+<Type>%Boolean</Type>
+<InitialExpression>1</InitialExpression>
+</Property>
+
+<Property name="CachedFile">
+<Description>
+If hashing is used then this property holds the full path to the temporary file
+that has been used for hashing. SyncTool makes further use of this file and deletes
+it if necessary.</Description>
+<Type>%String</Type>
+<Transient>1</Transient>
+<Parameter name="MAXLEN" value="500"/>
+</Property>
+
+<Property name="CachedHash">
+<Description>
+The hash of the cached file. If the ..Hash and ..CachedHash are different the one
+of the source objects belonging to the file was changed.</Description>
+<Type>%Binary</Type>
+<Transient>1</Transient>
+</Property>
+
+<Index name="FilenameIdx">
+<Description>
+The IdKey of this class</Description>
+<IdKey>1</IdKey>
+<Properties>Filename</Properties>
+</Index>
+
+<Method name="FileGet">
+<Description>
+Getter method for File property</Description>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit $Select(..Filename="":"",1:..Module.Directory_..Filename)
+]]></Implementation>
+</Method>
+
+<Method name="DirectoryGet">
+<Description>
+Getter method for the Directory property</Description>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit ..Module.Directory
+]]></Implementation>
+</Method>
+
+<Method name="Synchronize">
+<Description><![CDATA[
+<p>Synchronizes source objects with their export file. Exports
+source objects if needed or imports the file if it's changed.</p>]]></Description>
+<FormalSpec><![CDATA[&oImportedObjects]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#IF $D(^SyncTool.Debug)
+	Write !,"File: ",..File," File.Syncronize begin"
+	#ENDIF
+
+	#;I ..Filename="WWW0031.0.WWWINFORM.glb" F  Q:'$D(^DEBUG)  H 1
+
+	#dim Status as %Status
+	#dim ExportNeeded,ImportNeeded as %Boolean
+
+	Set ExportNeeded=..ExportNeeded(.Status)
+	Quit:'Status Status
+
+	If ..NewFile,..FileDateModified'="" {Set ImportNeeded=1}
+	Else {Set ImportNeeded=..Module.ExportImportClass.ImportNeeded(%this)}
+
+	#IF $D(^SyncTool.Debug)
+	Write !,..File," ExportNeeded: ",ExportNeeded," ImportNeeded: ",ImportNeeded
+	#ENDIF
+
+	If 'ExportNeeded,..CachedFile'=""
+	{
+		/*
+		Set Status=##class(%File).Delete(..CachedFile)
+		If 'Status,'##class(%File).Exists(..CachedFile) Set Status=$$$OK
+		Quit:'Status $system.Status.Error(5001,"File "_..CachedFile_" could not be deleted.")
+		*/
+		Set Status=..DeleteFile(..CachedFile)
+		Quit:'Status Status
+	}
+
+	Quit:'ExportNeeded&&('ImportNeeded) $$$OK
+
+	#;Check if it's really a conflict by diffing the files.
+	If ExportNeeded && ImportNeeded
+	{
+		If ..CachedFile'="",##class(%File).Exists(..CachedFile)
+		{
+			If ##class(%File).Compare(..File,..CachedFile)
+			{
+				Set ExportNeeded=0
+			}
+		}
+		Else
+		{
+			/* ;130210
+			#dim CachedFile as %String = ##class(Compile).GetTempDir()_"/Cache_"_$Job_"/"
+			Set CachedFile=##class(%File).NormalizeDirectory(CachedFile)
+			If '##class(%File).DirectoryExists(CachedFile)
+			{
+				Set Status=##class(%File).CreateDirectoryChain(CachedFile)
+				Quit:'Status Status
+			}
+			Set Status=..Module.ExportImportClass.Export(.CachedFile,..SrcObjects)
+			*/
+			#dim CachedFile as %String = ..ExportToTemporaryFile(.Status)
+			Quit:'Status Status
+
+			If ##class(%File).Compare(..File,CachedFile)
+			{
+				Set ExportNeeded=0
+			}
+
+			/* ;130210
+			Set Status=##class(%File).Delete(..CachedFile)
+			If 'Status,'##class(%File).Exists(..CachedFile) Set Status=$$$OK
+			Quit:'Status $system.Status.Error(5001,"File "_..CachedFile_" could not be deleted.")
+			*/
+			Set Status=..DeleteFile(..CachedFile)
+			Quit:'Status Status
+		}
+	}
+
+	Quit:ExportNeeded&&ImportNeeded $system.Status.Error(5001,"Collision")
+
+	If ImportNeeded
+	{
+		Set Status=..Import(0,.oImportedObjects)
+		If Status Set Status="1;imported"
+	}
+	If ExportNeeded
+	{
+		Set Status=..Export("f")
+		If Status Set Status="1;exported"
+	}
+
+	#IF $D(^SyncTool.Debug)
+	Write !,"File: ",..File," File.Synchronize end"
+	#ENDIF
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="Export">
+<Description><![CDATA[
+<p>Exports source objects to its corresponding file.</p>
+
+<p>iFlags can contain only one flag at the moment. 
+f = Forces an export of the source object even if not modified.</p>]]></Description>
+<FormalSpec>iFlags:%String=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#IF $D(^SyncTool.Debug)
+	Write !,"File: ",..File," File.Export begin"
+	#ENDIF
+
+	Set Status=$$$OK
+	Set ExportNeeded=1
+	If iFlags'["f" Set ExportNeeded=..ExportNeeded(.Status)
+	Quit:'Status Status
+
+	#IF $D(^SyncTool.Debug)
+	Write !,..File," ExportNeeded:",ExportNeeded
+	#ENDIF
+
+	If 'ExportNeeded
+	{
+		If ..CachedFile'=""
+		{
+			/* ;130210
+			Set Status=##class(%File).Delete(..CachedFile)
+			Quit:'Status $system.Status.Error(5001,"File "_..CachedFile_" could not be deleted.")
+			*/
+			Set Status=..DeleteFile(..CachedFile)
+			Quit:'Status Status
+		}
+		Quit $system.Status.Error(5001,"No export needed")
+	}
+
+	If ..SrcObjects.Count()=0
+	{
+		Set Status=..Module.ExportImportClass.ExportDeleted(..File)
+	}
+	Else
+	{
+		If ..CachedFile=""
+		{
+			Set Filename=..Directory
+			Set Status=..Module.ExportImportClass.Export(.Filename,..SrcObjects)
+		}
+		Else
+		{
+			Set Filename=..Directory_##class(%File).GetFilename(..CachedFile)
+			Set Status=##class(%File).CopyFile(..CachedFile,Filename)
+			#;130210 If Status {Set Status=##class(%File).Delete(..CachedFile)}
+			If Status {Set Status=..DeleteFile(..CachedFile)}
+			Else {Set Status=$system.Status.Error(5001,"Copy of file "_..CachedFile_" to "_Filename_" not successful")}
+		}
+
+		If Status
+		{
+			If ..Filename="",##class(%File).GetFilename(Filename)=""
+			{
+				Set Status=$system.Status.Error(5001,..Module.ExportImportClassName_":Export does not return a filename.")
+			}
+			ElseIf ##class(%File).GetFilename(Filename)'=""
+			{
+				//dz
+				//Set ..Filename=##class(%File).GetFilename(Filename)
+			}
+		}
+	}
+	
+	Quit:'Status Status
+
+	If ..NewFile Do ..ExportNeeded(.Status) ;force creating hash if necessary
+
+	#;260510 If ..CachedHash'="",..Hash'=..CachedHash Set ..Hash=..CachedHash
+	#;Set Start=$zh
+	Set Status=..SetToSynchedState()
+	#;Set ^UARI($ZU(188),"Update duration")=$lb(..%Id(),$zh-Start)
+
+	#IF $D(^SyncTool.Debug)
+	Write !,"File: ",..File," File.Export end ", Status
+	#ENDIF
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="ExportNeeded">
+<Description>
+Check if an export of this file is needed. The ExportNeeded() method of the file
+type manager class is called here.</Description>
+<FormalSpec><![CDATA[&oStatus:%Status]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set ExportClassInstance=..Module.ExportImportClass
+	Set oStatus=$$$OK
+	Set ExportNeeded=0
+	Set Count=0
+	Set ObjKey=""
+	For  
+	{
+		Set SrcObject=..SrcObjects.GetNext(.ObjKey)
+		Quit:ObjKey=""
+		Set Count=Count+1
+		Set ManagerExportNeeded=ExportClassInstance.ExportNeeded(SrcObject,.oStatus)
+		If ManagerExportNeeded="" Set ExportNeeded="" Quit
+		Set ExportNeeded=(ExportNeeded!ManagerExportNeeded)
+		Quit:'oStatus
+		Quit:ExportNeeded
+	}
+	If 'Count
+	{
+		Set DeleteFlagInFileSet=ExportClassInstance.CheckDeleted(..File,.oStatus)
+		Quit:'oStatus $$$NO
+		If 'DeleteFlagInFileSet Set ExportNeeded=1
+	}
+
+	If ExportNeeded=""
+	{
+		Set ..CachedHash=..Module.ExportImportClass.Hash(%this,.CachedFile,.Status)
+		Quit:'Status Status
+		Set ..CachedFile=$Get(CachedFile)
+		If ..CachedHash="" Set ExportNeeded=1
+		Else  Set ExportNeeded=(..CachedHash'=..Hash)
+	}
+	Quit ExportNeeded
+]]></Implementation>
+</Method>
+
+<Method name="Import">
+<Description>
+Import this file and return the imported source objects in the one dimensional
+array oImportedObjects. If iModified is false then the import is forced. Otherwise
+SyncTool checks if an import is necessary.</Description>
+<FormalSpec><![CDATA[iModified:%Boolean=1,&oImportedObjects]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim Status as %Status
+
+	Set ImportNeeded=1
+	If iModified Set ImportNeeded=..Module.ExportImportClass.ImportNeeded(%this)
+	If 'ImportNeeded Quit $system.Status.Error(5001,"No import needed")
+
+	If ..Filename'="" Set File=..File
+	If $Get(File)="" Quit $$$OK
+
+	If ..Module.GetBackup()
+	{
+		Set Status=..BackupSrcObjects()
+		Quit:'Status Status
+	}
+
+	Set Deleted=..Module.ExportImportClass.CheckDeleted(File,.Status)
+	Quit:'Status Status
+	If Deleted
+	{
+		Try
+		{
+			TStart
+			Set Status=..Module.ExportImportClass.ImportDeleted(..SrcObjects)
+			If Status
+			{
+				TCommit
+				Set ObjKey=""
+				For  Set SrcObj=..SrcObjects.GetNext(.ObjKey) Quit:ObjKey=""  Do ..SrcObjects.RemoveAt(ObjKey)
+			}
+			Else {TRollback}
+		}
+		Catch Error
+		{
+			TRollback
+			Throw Error
+		}
+	}
+	Else
+	{
+		Try
+		{
+			TStart
+			Set Status=..Module.ExportImportClass.DeleteSources(..SrcObjects)
+			If Status Set Status=..Module.ExportImportClass.Import(File,.ImportedObjectsTmp,..Module.Namespace)
+			If Status {TCommit}
+			Else {TRollback}
+		}
+		Catch Error
+		{
+			TRollback
+			Throw Error
+		}
+		If Status
+		{
+			Set ObjName=""
+			For  ;Normalize object names
+			{
+				Set ObjName=$Order(ImportedObjectsTmp(ObjName))
+				Quit:ObjName=""
+				Set ObjNameN=##class(SrcObject).ObjectNameNormalize(ObjName)
+				If ObjNameN'=""
+				{
+					Set ImportedObjects(ObjNameN)=ImportedObjectsTmp(ObjName)
+				}
+				Kill ImportedObjectsTmp(ObjName)
+			}
+			#; Compare managed source objects with the imported objects.
+			#; If it's not done, on hashed files the same hash is created as previously.
+			#; On the next synchronization SyncTool determines the changed 
+			#; source objects and therefore creates an other hash. This leads
+			#; to a new unnecessary export.
+			Set Status=..RefreshSrcObjects(.ImportedObjects)
+
+			Merge oImportedObjects=ImportedObjects
+		}
+		ElseIf $system.Status.Equals(Status,5012) {Set Status=$$$OK}
+	}
+	Quit:'Status Status
+
+	If ..NewFile||(..Hash'="")
+	{
+		Do ..ExportNeeded(.Status) ;Create hash if necessary
+		Quit:'Status Status
+		#;260510 If ..CachedHash'="",..Hash'=..CachedHash Set ..Hash=..CachedHash
+	}
+
+	Set Status=..SetToSynchedState()
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="RefreshSrcObjects">
+<Description>
+Save the names of imported source objects</Description>
+<FormalSpec><![CDATA[&Objects]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim Status as %Status = $$$OK
+	#dim ObjectsHere
+	Merge ObjectsHere=Objects
+	#;If ..Filename="UnitTests.TestRoutine2.mac.xml" m ^UARI($ZU(188))=Objects
+	#;S ts=$ZU(188)
+	#;S ^UARI(ts,"%Id()")=..%Id()
+	#;m ^UARI(ts)=Objects
+
+	#dim Key as %String = ""
+	For  
+	{
+		#dim SrcObject as SrcObject = ..SrcObjects.GetNext(.Key)
+		Quit:Key=""
+		If $Data(ObjectsHere(SrcObject.GetObjectName()))
+		{
+			Kill ObjectsHere(SrcObject.GetObjectName())
+		}
+		Else
+		{
+			Do SrcObject.%Delete(SrcObject.%Oid())
+			Do ..SrcObjects.RemoveAt(Key)
+		}
+	}
+
+	/* 221209
+	If $Order(ObjectsHere(""))'=""
+	{
+		Set Status=..Module.ExpandSelection(.ExpandedSelection)
+		Quit:'Status Status
+	}
+	*/
+
+	#dim ObjName as %String = ""
+	For  
+	{
+		Set ObjName=$Order(ObjectsHere(ObjName))
+		Quit:ObjName=""
+		Set NewSrcObj=##class(SrcObject).%New()
+		Set NewSrcObj.File=%this
+		Do NewSrcObj.SetObjectName(ObjName)
+		Set NewSrcObj.SourceSelection=..Module.ExportImportClass.FindSourceSelection(NewSrcObj,.Status)
+		Quit:'Status
+		If '$IsObject(NewSrcObj.SourceSelection)
+		{
+			If $Get(ExpandedSelection(ObjName))="" Set Status=..Module.ExpandSelection(.ExpandedSelection)
+			Quit:'Status
+			If $Get(ExpandedSelection(ObjName))'=""
+			{
+				Do NewSrcObj.SourceSelectionSetObjectId(ExpandedSelection(ObjName))
+			}
+			Else ;Object is not selected. Make sure it is not related to file
+			{
+				Kill ObjectsHere(ObjName)
+				Set NewSrcObj.File=""
+				Continue
+			}
+		}
+		Set Status=NewSrcObj.%Save()
+		Quit:'Status
+	}
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="BackupSrcObjects">
+<Description>
+Backup the source objects managed by this file. This is usually used before
+an import of a file.</Description>
+<FormalSpec>iSwitch:%Boolean=1</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Status=$$$OK
+	If iSwitch,..SrcObjects.Count()>0
+	{
+		Set Status=..BackupSrcObjectsStatic(..Module.GetBackupDir()
+			,..Filename,..SrcObjects,..Module.ExportImportClass)
+	}
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="BackupSrcObjectsStatic">
+<Description>
+Static method of BackupSrcObjects. It is used for source objects without a
+SyncTool.File instance.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iBackupDir:%String,iOriginalFilename:%String,iSrcObjects:%ArrayOfDataTypes,iExportImportModule:ExportImportAbstract</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set File=..GetBackupFile(iBackupDir_iOriginalFilename)
+	If '##class(%File).DirectoryExists(iBackupDir)
+	{
+		Set Status=##class(%File).CreateDirectoryChain(iBackupDir)
+		Quit:'Status Status
+		#If $ZVersion["Windows"
+		If $ZF(-1,"attrib +h """_$Extract(iBackupDir,1,$Length(iBackupDir)-1)_"""")
+		#EndIf
+	}
+	Set Status=iExportImportModule.Export(File,iSrcObjects)
+	
+	Quit:'Status Status
+	#;hide file:
+	#If $ZVersion["Windows"
+	#;250809 The directory is already hidden.
+	#;If $ZF(-1,"attrib +h """_File_"""")
+	#EndIf
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/* This method is unused.
+Method SrcObjects2Array(ByRef oObjArray)
+{
+	Kill oObjArray
+	Set Key=""
+	For  
+	{
+		Set SrcObject=..SrcObjects.GetNext(.Key)
+		Quit:Key=""
+		If SrcObject.ObjectName'="" Set oObjArray(SrcObject.GetObjectName())=""
+	}
+	Quit
+}
+*/
+]]></Content>
+</UDLText>
+
+<Method name="GetBackupFile">
+<Description>
+Returns the full path of the file for backup.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iFile</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set Filename=##class(%File).GetFilename(iFile)
+	Set Extension=$Piece(Filename,".",$Length(Filename,"."))
+	Set Filename=$Piece(Filename,".",1,$Length(Filename,".")-1)
+	Quit ##class(%File).GetDirectory(iFile)_".#"_Filename_"."_$Translate($ZDateTime($Horolog,8)," :","_")_"."_Extension
+]]></Implementation>
+</Method>
+
+<Method name="FileExists">
+<Description>
+Checks if the file exists in the file system.</Description>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[	Quit ##class(%File).Exists(..File)
+]]></Implementation>
+</Method>
+
+<Method name="FileExistsById">
+<Description>
+Checks if the file exists in the file system by the given SyncTool.File ID.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iD</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set Obj=..%OpenId(iD)
+	Quit:'$IsObject(Obj) $$$NO
+	Quit Obj.FileExists()
+]]></Implementation>
+</Method>
+
+<Method name="GetFileDateModified">
+<Description>
+Returns the timestamp the file was modified on.</Description>
+<ReturnType>%TimeStamp</ReturnType>
+<Implementation><![CDATA[	Quit ..FileDateModified(..File)
+]]></Implementation>
+</Method>
+
+<Method name="FileDateModified">
+<Description>
+Static method of GetFileDateModified()</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iFile:%String</FormalSpec>
+<ReturnType>%TimeStamp</ReturnType>
+<SqlProc>1</SqlProc>
+<Implementation><![CDATA[
+	Set TS=##class(%File).GetFileDateModified(iFile,1)
+	Quit:TS<0 ""
+	Quit $ZDateTime(TS,3)
+]]></Implementation>
+</Method>
+
+<Method name="SetToSynchedState">
+<Description>
+Update all information whithin this file to get in a synchronized state.</Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Status=$$$OK
+	Set Key=""
+	For  
+	{
+		#dim SrcObject as SrcObject=..SrcObjects.GetNext(.Key)
+		Quit:Key=""
+		Set Status=SrcObject.SetToSynchedState()
+		Quit:'Status
+	}
+	Quit:'Status Status
+
+	Set ..FileDateModified=..GetFileDateModified()
+	Set ..NewFile=0
+	If ..CachedHash'="",..Hash'=..CachedHash Set ..Hash=..CachedHash
+	Set Status=..%Save()
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="ExportToTemporaryFile">
+<Description>
+Exports the current file object to a temporary file and returns the file name.</Description>
+<FormalSpec><![CDATA[&oStatus]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	#dim TmpFile as %String = ##class(Compile).GetTempDir()_"/Cache_"_$Job_"/"
+	Set TmpFile=##class(%File).NormalizeDirectory(TmpFile)
+	If '##class(%File).DirectoryExists(TmpFile)
+	{
+		Set oStatus=##class(%File).CreateDirectoryChain(TmpFile)
+		Quit:'oStatus ""
+	}
+	I '..SrcObjects.Count() s ^UARI($ZU(188))=..%Id()
+	Set oStatus=..Module.ExportImportClass.Export(.TmpFile,..SrcObjects)
+	Quit TmpFile
+]]></Implementation>
+</Method>
+
+<Method name="DeleteFile">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iFile</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set OK=##class(%File).Delete(iFile)
+	If 'OK,'##class(%File).Exists(iFile) Set OK=$$$OK
+	Quit:'OK $system.Status.Error(5001,"File "_iFile_" could not be deleted.")
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>{%%PARENT}("Files")</DataLocation>
+<DefaultData>FileDefaultData</DefaultData>
+<IdLocation>^SyncTool.ModuleC("Files")</IdLocation>
+<IndexLocation>^SyncTool.FileI</IndexLocation>
+<StreamLocation>^SyncTool.FileS</StreamLocation>
+<Data name="FileDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>FileDateModified</Value>
+</Value>
+<Value name="3">
+<Value>Hash</Value>
+</Value>
+<Value name="4">
+<Value>NewFile</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>

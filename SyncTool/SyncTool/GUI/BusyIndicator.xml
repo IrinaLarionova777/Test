@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.GUI.BusyIndicator">
+<Description>
+Created using the page template: Default</Description>
+<Super>%ZEN.Dialog.standardDialog</Super>
+<TimeCreated>60926,61739.532637</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<Parameter name="APPLICATION">
+<Description>
+Class name of application this page belongs to.</Description>
+<Default>SyncTool.GUI.Application</Default>
+</Parameter>
+
+<Parameter name="PAGENAME">
+<Description>
+Displayed name of this page.</Description>
+<Default>BusyIndicator</Default>
+</Parameter>
+
+<XData name="dialogBody">
+<Description>
+This XML block defines the contents of this pane.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<pane xmlns="http://www.intersystems.com/zen" width="100%">
+<vgroup width="100%">
+<textarea id="CompileOutput" readOnly="true" hidden="true"/> 
+<image id="indicatorimage" src="SyncTool.GUI.Images.cls?x=indicator"
+       align="center"/>
+<label id="text1" align="center"/>
+<label id="text2" align="center"/>
+</vgroup>
+</pane>
+]]></Data>
+</XData>
+
+<Method name="%OnGetTitle">
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "Busy"
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetSubtitle">
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "Please wait, background task is running..."
+]]></Implementation>
+</Method>
+
+<Method name="onloadHandler">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	zenPage.getComponentById('btnOK').findElement('control').disabled=true;
+	zenPage.getComponentById('btnCancel').findElement('control').style.visibility='hidden';
+	if (typeof(dialogArguments) != "undefined")
+	{
+		parentZenPage = dialogArguments;
+		parentZenPage.zenPopupWindow=self;
+		//alert(parentZenPage.getComponentById("WorkingDir").value);
+	}
+	SyncTool_GUI_BusyIndicator_onresizeHandler();
+	zenPage.RunTask();
+]]></Implementation>
+</Method>
+
+<Method name="onresizeHandler">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var CompileOutput=zenPage.getComponentById('CompileOutput').findElement('control');
+	CompileOutput.style.width=(document.body.clientWidth-CompileOutput.offsetLeft-15)+"px";
+	CompileOutput.style.height=(document.body.clientHeight-CompileOutput.offsetTop-240)+"px";
+]]></Implementation>
+</Method>
+
+<Method name="RunTask">
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	Set Action=$Get(%session.Data("Dialog","Action"))
+	Set WDID=$Get(%session.Data("Dialog","ID"))
+	Set Modified=$Get(%session.Data("Dialog","Modified"))
+	Set Status=$$$OK
+	If Action="ExportWD" Set Status=..%RunBackgroundMethod("ExportWDBack",WDID)
+	If Action="ImportWD" Set Status=..%RunBackgroundMethod("ImportWDBack",WDID,Modified)
+	If 'Status
+	{
+		&js<zenPage.getComponentById("text1").setProperty("value","Error on starting the task.");
+			zenPage.getComponentById("text2").setProperty("value",#(##class(%CSP.Page).QuoteJS($system.Status.GetErrorText(Status)))#);>
+	}
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="ExportWDBack">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iWDID:%Integer=""</FormalSpec>
+<Implementation><![CDATA[
+	;Set $ET="Do ^%ETN"
+	Kill ^CacheTemp.SyncTool.GUI($Job,"CompileLogFile")
+	Kill ^CacheTemp.SyncTool.GUI($Job,"Error")
+	If iWDID'="",##class(SyncTool.WorkingDirectory).%ExistsId(iWDID)
+	{
+		Try
+		{
+			#dim WD as SyncTool.WorkingDirectory
+			Set WD=##class(SyncTool.WorkingDirectory).%OpenId(iWDID)
+			Set WD.Callback=##class(SyncTool.GUI.Callback).%New()
+			Set Status=WD.RefreshSelectedObjects()
+			If Status Set Status=WD.Export()
+			If 'Status Set ^CacheTemp.SyncTool.GUI($Job,"Error")=Status
+		}
+		Catch Error
+		{
+			Do BACK^%ETN
+			Set ^CacheTemp.SyncTool.GUI($Job,"Error")=Error.AsStatus()
+		}
+	}
+	Do ..%EndBackgroundMethod()
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="ImportWDBack">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iWDID:%Integer="",iModified:%Boolean=1</FormalSpec>
+<Implementation><![CDATA[
+	;Set $ET="Do ^%ETN"
+	Kill ^CacheTemp.SyncTool.GUI($Job,"CompileLogFile")
+	Kill ^CacheTemp.SyncTool.GUI($Job,"Error")
+	If iWDID'="",##class(SyncTool.WorkingDirectory).%ExistsId(iWDID)
+	{
+		Try
+		{
+			#dim WD as SyncTool.WorkingDirectory
+			Set WD=##class(SyncTool.WorkingDirectory).%OpenId(iWDID)
+			Set WD.Callback=##class(SyncTool.GUI.Callback).%New()
+			Set Status=WD.RefreshSelectedObjects()
+			If Status Set Status=WD.ImportDirAndCompile(iModified,"k")
+			If 'Status Set ^CacheTemp.SyncTool.GUI($Job,"Error")=Status
+		}
+		Catch Error
+		{
+			Do BACK^%ETN
+			Set ^CacheTemp.SyncTool.GUI($Job,"Error")=Error.AsStatus()
+		}
+	}
+	Do ..%EndBackgroundMethod()
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="%OnMonitorBackgroundTask">
+<Description>
+This server-side callback method is called whenever the client
+calls to monitor the current background task.
+Typically a subclass uses this to send back JavaScript to update
+a progress bar.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTaskID:%String,pStatus:%String,pPercentComplete:%Float</FormalSpec>
+<Implementation><![CDATA[
+	&js<zenPage.getComponentById("text1").setProperty("value",#(..QuoteJS($Piece(pStatus,"||")))#);
+		zenPage.getComponentById("text2").setProperty("value",#(..QuoteJS($Piece(pStatus,"||",2)))#);>
+
+	If $Get(^CacheTemp.SyncTool.GUI(pTaskID,"CompileLogFile"))'=""
+	{
+		Do ..ShowCompileLog(pTaskID)
+	}
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="ShowCompileLog">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iTaskID</FormalSpec>
+<Implementation><![CDATA[
+	&js<var logger=zenPage.getComponentById("CompileOutput");
+		if (logger.getProperty("hidden"))
+		{
+			//logger.setProperty("hidden",false);
+			logger.hidden=false;
+			logger.getEnclosingDiv().style.display='';
+			SyncTool_GUI_BusyIndicator_onresizeHandler();
+		}
+	>
+
+	Set CompileLogFile=^CacheTemp.SyncTool.GUI(iTaskID,"CompileLogFile")
+	Set FileExists=##class(%File).Exists(CompileLogFile)
+	;Write "zenPage.getComponentById('CompileOutput').setValue(zenPage.getComponentById('CompileOutput').getValue() + '\n",FileExists,"');"
+	Quit:'FileExists
+	Set File=##class(%FileCharacterStream).%New()
+	Set File.Filename=CompileLogFile
+	Write "logger.setValue("
+	While 'File.AtEnd
+	{
+		Write ..QuoteJS(File.ReadLine()_$C(13,10)),"+"
+	}
+	Write "'');"
+]]></Implementation>
+</Method>
+
+<Method name="%OnFinishBackgroundTask">
+<Description>
+This server-side callback method is called whenever the client
+calls to monitor the current background task and the task is complete.
+Typically a subclass uses this to send back JavaScript to update
+the page.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTaskID:%String</FormalSpec>
+<Implementation><![CDATA[
+	If $Get(^CacheTemp.SyncTool.GUI(pTaskID,"CompileLogFile"))'=""
+	{
+		Do ..ShowCompileLog(pTaskID)
+		Do ##class(%File).Delete(^CacheTemp.SyncTool.GUI(pTaskID,"CompileLogFile"))
+		Kill ^CacheTemp.SyncTool.GUI(pTaskID,"CompileLogFile")
+	}
+	;&js<alert("#(pTaskID)# Task finished. " + zenPage.zenPopupWindow);>
+	Set Error=""
+	If $Get(^CacheTemp.SyncTool.GUI(pTaskID,"Error"))'=""
+	{
+		Set Error=..EscapeHTML($system.Status.GetErrorText(^CacheTemp.SyncTool.GUI(pTaskID,"Error")))
+	}
+	&js<
+		zenPage.getComponentById("text1").setProperty("value","Task finished.");
+		zenPage.getComponentById("text2").setProperty("value",#(##class(%CSP.Page).QuoteJS(Error))#);
+		zenPage.getComponentById('indicatorimage').findElement('image').parentNode.style.visibility='hidden';
+		zenPage.getComponentById('btnOK').findElement('control').disabled=false;
+		>
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="%OnAfterCreatePage">
+<Description><![CDATA[
+This callback is called after the server-side page 
+object and all of its children are created.<br>
+Subclasses can override this to add, remove, or modify 
+items within the page object model, or to provide values
+for controls.]]></Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set %session.Data("Dialog","Action")=$Get(%request.Data("Action",1))
+	Set %session.Data("Dialog","ID")=$Get(%request.Data("ID",1))
+	Set %session.Data("Dialog","Modified")=$Get(%request.Data("Modified",1))
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="getDialogValue">
+<Description>
+Get the value that will be applied when the user presses the OK button.
+This is implemented by subclasses.</Description>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[	return true;
+]]></Implementation>
+</Method>
+</Class>
+</Export>

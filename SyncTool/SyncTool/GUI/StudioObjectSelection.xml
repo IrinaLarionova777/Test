@@ -1,0 +1,480 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.GUI.StudioObjectSelection">
+<Description>
+</Description>
+<Super>SourceSelection</Super>
+<TimeCreated>61405,27644.615812</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<XData name="dialogBody">
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<pane xmlns="http://www.intersystems.com/zen" 
+width="100%" layout="horizontal">
+<dynaGrid id="SelectionGrid" OnCreateDataSet="CreateDS" showRowLabels="false"
+ onchangecell="zenPage.OnChangeCell(zenThis);" width="350"
+ oneditcell="return zenPage.OnEditCell(zenThis);">
+<gridColumn label="Selection" width="60%" style="text-align:left;"/>
+<gridColumn label="Selection type" style="text-align:left;" width="40%"/>
+<gridColumn hidden="true"/><!-- saves the ID -->
+</dynaGrid>
+<!--<textarea id="Preview" label="Preview of selected source objects" readOnly="true"
+ rows="13" cols="25"/>-->
+<vgroup>
+<!--<html id="Preview" label="Preview of selected objects"/>-->
+<iframe id="Preview" label="Preview of selected objects" src="SyncTool.GUI.Preview.cls"/>
+<hgroup>
+<checkbox id="PreviewEnabled" onclick="return zenPage.PVEClick(zenThis)" value="1"/>
+<label value="Preview enabled"/>
+</hgroup>
+</vgroup>
+</pane>
+]]></Data>
+</XData>
+
+<Method name="CreateDS">
+<FormalSpec>pGrid:%ZEN.Component.dynaGrid,pDataSet:%ZEN.Auxiliary.dataSet</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	If ..ModuleID="" Quit $system.Status.Error(5001,"No ModuleID given.")
+	Set Module=##class(SyncTool.Module).%OpenId(..ModuleID)
+	If '$IsObject(Module) Quit $system.Status.Error(5001,"Module with ID "_..ModuleID_" could not be opened.")
+
+	// make sure dataSet is cleared out
+	;Do pDataSet.%Clear() ;Do not clear. It wipes out the labels
+
+	Set Key=""
+	For Row=1:1
+	{
+		Set Selection=Module.SourceSelection.GetNext(.Key)
+		Quit:Key=""
+		Do pDataSet.%SetValue(Selection.Selection,Row,1)
+		Do pDataSet.%SetValue(Selection.Type,Row,2)
+		Do pDataSet.%SetValue(Selection.%Id(),Row,3)
+	}
+	Do pDataSet.%SetValue("",Row,1)
+	Do pDataSet.%SetValue("",Row,2)
+	Do pDataSet.%SetValue("",Row,3)
+
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="getDialogValue">
+<Description>
+Get the value that will be applied when the user presses the OK button.
+This is implemented by subclasses.</Description>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var Status=zenPage.SaveSelection();
+	if (Status!=1) {alert(Status); return false;}
+	return true;
+]]></Implementation>
+</Method>
+
+<Method name="SaveSelection">
+<ReturnType>%Status</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	#dim DataSet As %ZEN.Auxiliary.dataSet
+	Set DataSet=..%GetComponentById("SelectionGrid").dataSet
+	Do DataSet.%GetArray(.SelectionArr)
+
+	Set Module=##class(SyncTool.Module).%OpenId(..ModuleID)
+	#;Do Module.SourceSelection.Clear()
+	Set Status=$$$OK
+	Set Row=""
+	For  
+	{
+		Set Row=$Order(SelectionArr(Row))
+		Quit:Row=""
+		Set ID=SelectionArr(Row,3)
+		If ID'="",SelectionArr(Row,1)=""||(SelectionArr(Row,2)="")
+		{
+			Set Status=##class(SyncTool.StudioObjectSelection).%DeleteId(ID)
+		}
+		If SelectionArr(Row,1)'="",SelectionArr(Row,2)'=""
+		{
+			If ID'="" {Set Selection=##class(SyncTool.StudioObjectSelection).%OpenId(ID)}
+			Else
+			{
+			Set Selection=##class(SyncTool.StudioObjectSelection).%New()
+				Set Selection.Module=Module
+			}
+			Set Selection.Selection=SelectionArr(Row,1)
+			Set Selection.Type=SelectionArr(Row,2)
+			Set Status=Selection.%Save()
+		}
+		Quit:'Status
+	}
+	If 'Status Quit $system.Status.GetErrorText(Status)
+	#;Set Status=Module.%Save()
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="OnChangeCell">
+<FormalSpec>iGrid</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var CurrRow=iGrid.getCurrRow();
+	var RowCount=iGrid.getRowCount();
+
+/*
+	if (iGrid.getCellValue(CurrRow,1)!="" && !zenPage.IsRoutineTypeSupported(iGrid.getCellValue(CurrRow,1)))
+	{
+		alert("This routine type is not supported!");
+		iGrid.setCellValue("",CurrRow,1);
+	}
+*/
+
+	if (iGrid.getCellValue(CurrRow,1)!="" && iGrid.getCellValue(CurrRow,2)=="")
+	{
+		iGrid.setCellValue("add",CurrRow,2);
+	}
+
+	if (RowCount==CurrRow && (iGrid.getCellValue(CurrRow,1)!=""
+		|| iGrid.getCellValue(CurrRow,2)!=""))
+	{
+		var dataSet = iGrid.getDataSet();
+		// resize our dataSet to add an additional row.
+		dataSet.redim(dataSet.getDimensions(),dataSet.getDimSize(1)+1,dataSet.getDimSize(2),dataSet.getDimSize(3));
+		iGrid.render();
+	}
+	zenPage.UpdatePreviewJS();
+]]></Implementation>
+</Method>
+
+<Method name="OnEditCell">
+<FormalSpec>iGrid</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var currRow=iGrid.getProperty("currRow");
+	var currCol=iGrid.getProperty("currColumn");
+	var value=iGrid.getCellValue(currRow,currCol);
+	if (currCol==2)
+	{
+		var html=new Array();
+		html[html.length]='<select id="cellEditor" onblur="zenPage.getComponent('+iGrid.index+').stopEditCell();">';
+		html[html.length]='<option value="add"'+(value=="add" ? " selected" :"")+'>add</option>';
+		html[html.length]='<option value="remove"'+(value=="remove" ? " selected" :"")+'>remove</option>';
+		html[html.length]='</select>';
+		return html.join("");
+	}
+]]></Implementation>
+</Method>
+
+<Method name="UpdatePreviewJS">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	PVEnabled=zenPage.getComponentById("PreviewEnabled");
+	if (PVEnabled.getValue())
+	{
+		//zenPage.UpdatePreview();
+		var Preview=zenPage.getComponentById("Preview");
+		Preview.setProperty("src","SyncTool.GUI.Preview.cls?ModuleID="+zenPage.ModuleID);
+	}
+]]></Implementation>
+</Method>
+
+<Method name="UpdatePreview">
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	Set Status=$$$OK
+	Set Module=##class(SyncTool.Module).%OpenId(..ModuleID)
+	Set Namespace=$ZNSpace
+	If Module.Namespace'="" Set Namespace=Module.Namespace
+	Set Module="" ;Close module object. It can't be closed later in an other namespace.
+	Set DataSet=..%GetComponentById("SelectionGrid").dataSet
+	Do DataSet.%GetArray(.SelectionArr)
+	Set Row=""
+	For  
+	{
+		Set Row=$Order(SelectionArr(Row))
+		Quit:Row=""
+		If SelectionArr(Row,1)'="",SelectionArr(Row,2)'=""
+		{
+			Set Status=..ExpandSelection(Namespace,SelectionArr(Row,1),SelectionArr(Row,2),.Lines)
+			Quit:'Status
+		}
+	}
+	/*
+	&js<var Content=new Array();>
+	If '$Data(Lines) &js<Content[0]="nothing selected so far";>
+	Set Line=""
+	For  
+	{
+		Set Line=$Order(Lines(Line))
+		Quit:Line=""
+		&js<Content[Content.length]=#(..QuoteJS(Line))#;>
+	}
+	&js<var Preview=zenPage.getComponentById("Preview");
+	//Preview.setValue(Content.join("\r"));
+	Preview.setProperty("content",Content.join("<br>"));>
+	*/
+	Do ..Selection2Display(.Lines)
+]]></Implementation>
+</Method>
+
+<Method name="ExpandSelection">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[iNamespace:%String="",iSelection:%String,iType:%String,&oSelectedObjects]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Status=$$$OK
+	/*
+	Set ThisNS=$ZNSpace
+	Set Group=##class(SyncTool.StudioObjectSelection).GetObjectGroup(iSelection)
+	If Group="routine"
+	{
+		Set RS=##class(%ResultSet).%New("%Routine:RoutineList")
+		Set Status=RS.Execute(iSelection,1,0,iNamespace)
+		Quit:'Status Status
+		While RS.Next()
+		{
+			Set SelectedObjects(##class(SyncTool.SrcObject).ObjectNameNormalize(RS.Data("Name")))=""
+		}
+	}
+	If Group="class"
+	{
+		;260209
+		;For I=1:1:$L(iSelection,",")
+		;{
+			Set Selection=$Translate(iSelection,"*","%")
+			If $ZConvert($Piece(Selection,".",$Length(Selection,".")),"l")="cls"
+			{
+				Set Selection=$Piece(Selection,".",1,$L(Selection,".")-1)
+			}
+			If iNamespace'="" ZN iNamespace
+			Set RS=##class(%ResultSet).%New()
+			Set SQL="select Name from %Dictionary.ClassDefinition"
+				_" where name like '"_Selection_"'"
+			Set Status=RS.Prepare(SQL)
+			If Status
+			{
+				Set Status=RS.Execute()
+				If Status
+				{
+					While RS.Next()
+					{
+						Set SelectedObjectsTmp(RS.Data("Name")_".cls")=""
+					}
+				}
+			}
+			If iNamespace'="" ZN ThisNS
+
+			#;Normalize in a separate loop. Normalization method can't be called
+			#;in a foreign namespace.
+			Set ObjectName=""
+			For  
+			{
+				Set ObjectName=$Order(SelectedObjectsTmp(ObjectName))
+				Quit:ObjectName=""
+				Set SelectedObjects(##class(SyncTool.SrcObject).ObjectNameNormalize(ObjectName))=""
+				Kill SelectedObjectsTmp(ObjectName)
+			}
+		;}
+	}
+	*/
+
+	Set Extension=$ZConvert($Piece(iSelection,".",$Length(iSelection,".")),"l")
+
+	If iNamespace'="" Set ThisNS=$ZNSpace ZN iNamespace
+	If Extension="gbl"
+	{
+		#dim GlobalSelection as %String=$Piece(iSelection,".",1,$Length(iSelection,".")-1)
+		#; #dim GlobalSelection as %String=iSelection
+		If $Extract(GlobalSelection)="^" Set GlobalSelection=$Extract(GlobalSelection,2,*)
+		If GlobalSelection'=""
+		{
+			If GlobalSelection["*"
+			{
+				If GlobalSelection="*" {Set (GlobEnd,Glob)=""}
+				Else {Set (GlobEnd,Glob)="^"_$Extract(GlobalSelection,1,*-1)}
+				If $Extract(Glob,*)="." Set Glob=$Extract(Glob,1,*-1) ;otherwise Cache' throws <NAME> errors
+				For  
+				{
+					#;s ^UARI($ZU(188))=Glob
+					Set Glob=$Order(^$Global(Glob))
+					Quit:Glob=""
+					Quit:$E(Glob,1,$L(GlobEnd))'=GlobEnd
+					Set SelectedObjectsTmp($Extract(Glob,2,*)_".gbl")=""
+				}
+			}
+			Else
+			{
+				Set SelectedObjectsTmp(GlobalSelection_".gbl")=""
+			}
+		}
+	}
+	Else
+	{
+		Set RS=##class(%ResultSet).%New("%RoutineMgr:StudioOpenDialog")
+		Set Status=RS.Execute(iSelection,,,,1,,0)
+		Quit:'Status Status
+		While RS.Next()
+		{
+			Set ObjName=RS.Data("Name")
+			If $ZConvert($Piece(ObjName,".",$Length(ObjName,".")),"l")="cls"
+				,$system.Dictionary.comClassKeyGet($Piece(ObjName,".",1,$Length(ObjName,".")-1),87)'="" {Continue} ;generated class
+			Set SelectedObjectsTmp(ObjName)=""
+		}
+		Set RS=""
+	}
+	If iNamespace'="" ZN ThisNS
+
+	#;Normalize in a separate loop. Normalization method can't be called
+	#;in a foreign namespace.
+	Set ObjectName=""
+	For  
+	{
+		Set ObjectName=$Order(SelectedObjectsTmp(ObjectName))
+		Quit:ObjectName=""
+		Set ObjNameNorm=##class(SyncTool.SrcObject).ObjectNameNormalize(ObjectName)
+		Set SelectedObjects(ObjNameNorm)=""
+		Kill SelectedObjectsTmp(ObjectName)
+	}
+
+	If iType="add" Merge oSelectedObjects=SelectedObjects
+	If iType="remove"
+	{
+		Set ObjectName=""
+		For  
+		{
+			Set ObjectName=$Order(SelectedObjects(ObjectName))
+			Quit:ObjectName=""
+			Kill oSelectedObjects(ObjectName)
+		}
+	}
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="onloadHandler">
+<Description>
+This client event, if present, is fired when the page is loaded.</Description>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var SyncModeSave=zenSynchronousMode;
+	zenSynchronousMode=true; //force UpdatePreview() to be called synchronously
+	zenPage.UpdatePreviewJS();
+	zenSynchronousMode=SyncModeSave;
+
+	zenPage.JustifyComponentSize();
+]]></Implementation>
+</Method>
+
+<Method name="Summary">
+<Description>
+Exports a Summary of source selection as HTML code.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iModule:SyncTool.Module</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set Return=""
+	Set Key=""
+	For I=1:1
+	{
+		Set Selection=iModule.SourceSelection.GetNext(.Key)
+		Quit:Key=""
+		i '$IsObject(Selection) s ^UARI($zu(188))=$lb(iModule.%Id(),Key)
+		If I>5 Set Return=Return_", ..." Quit
+		Set Return=Return_$Select(Return'="":", ",1:"")
+			_$Select(Selection.Type="add":"+",1:"-")_Selection.Selection
+	}
+	If Return="" Set Return="nothing selected"
+	Quit Return
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetTitle">
+<Description>
+Get the (localized) title string for the dialog.
+This should be implemented in a subclass.</Description>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "Studio object selection"
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetSubtitle">
+<Description>
+Get the (localized) subtitle string for the dialog.
+This should be implemented in a subclass.</Description>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "Select source objects editable within Studio"
+]]></Implementation>
+</Method>
+
+<Method name="onresizeHandler">
+<Description>
+This client event, if present, is fired when the page is resized.</Description>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[	zenPage.JustifyComponentSize();
+]]></Implementation>
+</Method>
+
+<Method name="JustifyComponentSize">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var Grid=zenPage.getComponentById("SelectionGrid");
+	var Preview=zenPage.getComponentById("Preview");
+	Grid.setProperty("width",ZLM.getViewportWidth()-200);
+	Preview.setProperty("height",ZLM.getViewportHeight()-200);
+]]></Implementation>
+</Method>
+
+<Method name="PVEClick">
+<FormalSpec>iPVE</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var Preview=zenPage.getComponentById("Preview");
+	if (iPVE.getValue()) zenPage.UpdatePreviewJS()
+	else Preview.setProperty("src","SyncTool.GUI.Preview.cls");
+	zenPage.SavePreviewValue(zenPage.ModuleID,iPVE.getValue());
+]]></Implementation>
+</Method>
+
+<Method name="%OnAfterCreatePage">
+<Description><![CDATA[
+This callback is called after the server-side page 
+object and all of its children are created.<br>
+Subclasses can override this to add, remove, or modify 
+items within the page object model, or to provide values
+for controls.]]></Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set PVE=..%GetComponentById("PreviewEnabled")
+	Set PVE.value=##class(SyncTool.Module).PreviewGetStored(..ModuleID)
+	Quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+</Export>

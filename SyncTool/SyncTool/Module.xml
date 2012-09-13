@@ -1,0 +1,1139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.Module">
+<Description>
+Describes modules in a working directory</Description>
+<SqlTableName>_Module</SqlTableName>
+<Super>%Persistent</Super>
+<TimeCreated>60811,42937.483376</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<Property name="Backup">
+<Description>
+Create backups of SourceObjects resided in DB on import.</Description>
+<Type>%Integer</Type>
+<InitialExpression>-1</InitialExpression>
+<Parameter name="DISPLAYLIST" value=",Use setting of working directory,No,Yes"/>
+<Parameter name="VALUELIST" value=",-1,0,1"/>
+</Property>
+
+<Property name="BackupSubDir">
+<Type>%String</Type>
+<InitialExpression>".backup"</InitialExpression>
+<Parameter name="MAXLEN" value="300"/>
+</Property>
+
+<Property name="WorkingDirectory">
+<Type>WorkingDirectory</Type>
+<Cardinality>parent</Cardinality>
+<Inverse>Modules</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Property name="SubDirectory">
+<Type>%String</Type>
+<Parameter name="MAXLEN" value="300"/>
+</Property>
+
+<Property name="Directory">
+<Type>%String</Type>
+<Calculated>1</Calculated>
+<SqlComputeCode> Set {*}=##class(SyncTool.Module).%OpenId({ID}).Directory</SqlComputeCode>
+<SqlComputed>1</SqlComputed>
+<Parameter name="MAXLEN" value="500"/>
+</Property>
+
+<Property name="ExportImportClassName">
+<Type>%Dictionary.CacheClassname</Type>
+<InitialExpression>"SyncTool.ExportImport"</InitialExpression>
+</Property>
+
+<Property name="ExportImportClass">
+<Type>ExportImportAbstract</Type>
+<Transient>1</Transient>
+</Property>
+
+<Property name="Namespace">
+<Type>%String</Type>
+</Property>
+
+<Property name="Preview">
+<Type>%Boolean</Type>
+</Property>
+
+<Property name="SourceSelection">
+<Description>
+Selection of source objects.</Description>
+<Type>SourceSelection</Type>
+<Cardinality>children</Cardinality>
+<Inverse>Module</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Property name="Files">
+<Description>
+Files belonging to this module.</Description>
+<Type>File</Type>
+<Cardinality>children</Cardinality>
+<Inverse>Module</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Property name="Type">
+<Type>%String</Type>
+<Parameter name="VALUELIST" value=",SyncToolData"/>
+</Property>
+
+<Property name="LinkedTo">
+<Type>Module</Type>
+</Property>
+
+<UDLText name="T">
+<Content><![CDATA[
+/* ;010709
+/// Unique Index on SubDirectory
+Index SubDirIdx On SubDirectory [ Unique ];
+*/
+]]></Content>
+</UDLText>
+
+<Method name="GetBackup">
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If ..Backup=""!(..Backup=-1) Quit +..WorkingDirectory.Backup
+	Quit ..Backup
+]]></Implementation>
+</Method>
+
+<Method name="GetBackupDir">
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set BackupSubDir=..BackupSubDir
+	If BackupSubDir'="","/\"'[$Extract(BackupSubDir,$Length(BackupSubDir))
+	{
+		Set BackupSubDir=BackupSubDir_"/"
+	}
+	Quit ..Directory_BackupSubDir
+]]></Implementation>
+</Method>
+
+<Method name="DirectoryGet">
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set WorkingDir=..WorkingDirectory.WorkingDirectory
+	If "/\"'[$Extract(WorkingDir,$Length(WorkingDir)) Set WorkingDir=WorkingDir_"/"
+	Set SubDir=..SubDirectory
+	If "/\"'[$Extract(SubDir,$Length(SubDir)) Set SubDir=SubDir_"/"
+	Quit ##class(%File).NormalizeDirectory(WorkingDir_SubDir)
+]]></Implementation>
+</Method>
+
+<Method name="ExportImportClassNameSet">
+<FormalSpec>iVal</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set i%ExportImportClassName=iVal
+	If iVal'="" Set ..ExportImportClass=$system.OBJ.New(iVal)
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ExportImportClassGet">
+<ReturnType>ExportImportAbstract</ReturnType>
+<Implementation><![CDATA[
+	If ..ExportImportClassName'="",i%ExportImportClass=$$$NULLOREF
+	{
+		Set i%ExportImportClass=$system.OBJ.New(..ExportImportClassName)
+	}
+	Quit i%ExportImportClass
+]]></Implementation>
+</Method>
+
+<Method name="RefreshSelectedObjects">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim MDModule as Module = ..FindMetaDataModule()
+	If $IsObject(MDModule)
+	{
+		Set Status = MDModule.RefreshSelectedObjects()
+		#;Set ^UARI($ZU(188))=$lb("MDModule.RefreshSelectedObjects()",Status)
+		Quit:'Status Status
+	}
+
+	Set Nsp=$ZNSpace
+	Set ThisID=..%Id()
+	Set Status=$$$OK
+	Set Callback=..WorkingDirectory.Callback
+	#dim Callback as SyncTool.Callback
+
+	Set State="SelectingObjects"
+	Set ObjectsCount=0
+
+	If $IsObject(Callback) Do Callback.RefreshSelectedItems("Module "_..SubDirectory_"||Expanding selection.")
+	Set Status=..ExpandSelection(.SourceObjects)
+	#;*** If 'Status S ^UARI("Status")=Status Quit
+	#;I ..SubDirectory["SyncTool" M ^UARI($ZU(188))=SourceObjects
+	Quit:'Status Status
+
+	Set ObjectName=""
+	For  
+	{
+		Set ObjectName=$Order(SourceObjects(ObjectName))
+		Quit:ObjectName=""
+		Set ObjEntryExists=0
+		#;s ^UARI($zu(188))=$LB("Refresh",SourceObjects(ObjectName),ObjectName)
+		Set Filename=..ExportImportClass.Objectname2Filename(ObjectName
+			,##class(SourceSelection).%OpenId(SourceObjects(ObjectName)),..Namespace)
+		I $IsValidNum(Filename) s ^UARI($zu(188))=$lb("RefreshSelectedObjects()",ObjectName,Filename)
+		If Filename=""
+		{
+			Set Status=$system.Status.Error(5001,..ExportImportClassName_".Objectname2Filename() didn't return a filename for "_ObjectName)
+			Quit
+		}
+		#;I ObjectName=$LB("WWWINFORM||1||EN","BEWIDATA.WWW0031") F  Q:'$D(^DEBUG)  H 1
+		Set SrcObjID=ThisID_"||"_Filename_"||"_##class(SrcObject).SetObjectNameStatic(ObjectName)
+		#;I ..SubDirectory["SyncTool" S ^UARI($zu(188))=$lb("Refresh2",SrcObjID)
+		If ##class(SrcObject).%ExistsId(SrcObjID)
+		{
+			Set ObjEntryExists=1
+			#;s ^UARI($zu(188))=$lb("Refresh3",SrcObjID,##class(SrcObject).SourceSelectionGetStored(SrcObjID),SourceObjects(ObjectName))
+			If ##class(SrcObject).SourceSelectionGetStored(SrcObjID)'=SourceObjects(ObjectName)
+			{
+				&sql(update SrcObject set SourceSelection=:SourceObjects(ObjectName)
+				      where %id=:SrcObjID)
+				#;s ^UARI($zu(188))=$lb("Refresh SS",SQLCODE)
+			}
+		}
+		#;I ..%Id()="1||3" s ^UARI($zts,ObjectName)=ObjEntryExists_","_SrcObjID
+		#;170908 If ObjEntryExists,##class(File).FileExistsById(ThisID_"||"_Filename)
+		#;{}
+		#;Else
+		#;{
+			If 'ObjEntryExists
+			{
+				If '##class(File).%ExistsId(ThisID_"||"_Filename)
+				{
+					#;pruefen ob Datei schon existiert. Falls ja, Timestamp ermitteln und mitspeichern.
+					Set Timestamp=##class(File).FileDateModified(..Directory_Filename)
+					#;F  Q:'$D(^DEBUG)  H 1
+					&sql(insert into _File
+					     (_Module, Filename, FileDateModified)
+					     values (:ThisID, :Filename, :Timestamp))
+					#;S ^UARI($ZTS,"_File")=SQLCODE
+				}
+				#; hier ObjectDateModified ermitteln und mitspeichern?
+				&sql(insert into SrcObject 
+				     (_File, ObjectName, SourceSelection)
+				     values (:ThisID||'||'||:Filename, SrcObject_SetObjectNameStatic(:ObjectName),
+				             :SourceObjects(ObjectName)))
+				#;S ^UARI($ZTS,"SrcObject")=SQLCODE
+			}
+		#;}
+		Set ObjectsCount=ObjectsCount+1
+		If $IsObject(Callback) Do Callback.RefreshSelectedItems("Module "_..SubDirectory_"||Refreshing source objects. "_ObjectsCount_" done.")
+		#;I $S<50000 D ^UARIDUMP ZT "A"
+		#;I $G(LastDump)+10<$ZH D ^UARIDUMP("c:\Dump_"_$ZH_".txt") S LastDump=$ZH
+		#;I ..%Id()="21||8" s ^UARI($ZU(188))=ObjectName
+	}
+
+	;Delete non existent and not selected source objects
+	Set FileKey=""
+	For  
+	{
+		#dim File as File = ..Files.GetNext(.FileKey)
+		Quit:FileKey=""
+		Set ObjKey=""
+		For  
+		{
+			#;I '$IsObject(File.SrcObjects) S ^UARI($ZU(188))=File.%Id()
+			#dim SrcObj as SrcObject = File.SrcObjects.GetNext(.ObjKey)
+			Quit:ObjKey=""
+			#;s ^UARI($zts,File.%Id())=SrcObj
+			#;I SrcObj.GetObjectName()=$LB("WWWINFORM||1||EN","BEWIDATA.WWW0031") F  Q:'$D(^DEBUG)  H 1
+			If 'SrcObj.Exists()!('$Data(SourceObjects(SrcObj.GetObjectName())))
+			{
+				Do SrcObj.%Delete(SrcObj.%Oid())
+				Do File.SrcObjects.RemoveAt(ObjKey)
+				#;I ..%Id()="21||8" s ^UARI($ZU(188))="killing: "_SrcObj.GetObjectName()
+			}
+			Kill SourceObjects(SrcObj.GetObjectName()) ;Prevent <STORE> errors
+		}
+		If File.SrcObjects.Count()=0
+		{
+			#;Check, if file moved to another module
+			Set Moved=0
+			Set ModuleKey=""
+			For  
+			{
+				Set Module=..WorkingDirectory.Modules.GetNext(.ModuleKey)
+				Quit:ModuleKey=""
+				Continue:Module.%Id()=..%Id()
+				If ##class(File).%ExistsId(Module.%Id()_"||"_File.Filename) Set Moved=1 Quit
+			}
+			If Moved||('File.FileExists())
+			{
+				Do File.%Delete(File.%Oid())
+				Do ..Files.RemoveAt(FileKey)
+			}
+		}
+		Do ..Files.%UnSwizzleAt(FileKey)
+		#;I $S<50000 D ^UARIDUMP ZT "B"
+		#;I $G(LastDump)+10<$ZH D ^UARIDUMP("c:\Dump_"_$ZH_".txt") S LastDump=$ZH
+	}
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="ExpandSelection">
+<FormalSpec><![CDATA[&oSelectedObjects]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Kill oSelectedObjects
+	Set Status=..ExportImportClass.GetManageableSources(%this,.oSelectedObjects)
+	If 'Status,$system.Status.Equals(Status,5003) ;not implemented
+	{
+		Set Status=$$$OK
+	}
+	Else {Quit Status}
+
+	Set SSKey=""
+	For  
+	{
+		Set SourceSelection=..SourceSelection.GetNext(.SSKey)
+		Quit:SSKey=""
+		Set Status=SourceSelection.ExpandSelection(.oSelectedObjects)
+		Quit:'Status
+		Set ObjectName=""
+		For  
+		{
+			Set ObjectName=$Order(oSelectedObjects(ObjectName))
+			Quit:ObjectName=""
+			If oSelectedObjects(ObjectName)="" Set oSelectedObjects(ObjectName)=SourceSelection.%Id()
+		}
+	}
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="GetObjectGroup">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>ModuleID:%String,iObjectName:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<SqlProc>1</SqlProc>
+<Implementation><![CDATA[
+	Set Module=##class(Module).%OpenId(ModuleID)
+	Quit Module.ExportImportClass.GetObjectGroup(iObjectName)
+]]></Implementation>
+</Method>
+
+<Method name="GetExtension">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iObject:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<SqlProc>1</SqlProc>
+<Implementation><![CDATA[	Quit $ZConvert($Piece(iObject,".",$Length(iObject,".")),"l")
+]]></Implementation>
+</Method>
+
+<Method name="SyncByManager">
+<FormalSpec>iManagerID:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Status=..Synchronize(.ImportedObjects,.Collisions,.Count)
+	#;S ^UARI($ZU(188),$J)=..%Id()
+	#;m ^UARI($ZU(188),$J)=Collisions
+	Quit:'Status Status
+
+	Lock +^SyncTool.SyncManager(iManagerID):10
+	If '$Test Quit $system.Status.Error(5001,"Could not lock SyncManager with ID "_iManagerID)
+	Set Manager=##class(SyncManager).%OpenId(iManagerID)
+	Set Manager.CountExported=Manager.CountExported+$Get(Count("exported"))
+	Set Manager.CountImported=Manager.CountImported+$Get(Count("imported"))
+	Set Manager.CountImportedUnmanaged=Manager.CountImportedUnmanaged+$Get(Count("importedunmanaged"))
+
+	Set Namespace=""
+	For  
+	{
+		Set Namespace=$Order(ImportedObjects(Namespace))
+		Quit:Namespace=""
+		Set ObjectName=""
+		For  
+		{
+			Set ObjectName=$Order(ImportedObjects(Namespace,ObjectName))
+			Quit:ObjectName=""
+			Set ImportedObject=##class(ImportedObject).%New()
+			Set ImportedObject.Namespace=Namespace
+			Set ImportedObject.ObjectName=ObjectName
+			Set ImportedObject.Compilable=ImportedObjects(Namespace,ObjectName)
+			Do Manager.ImportedObjects.SetAt(ImportedObject,Manager.ImportedObjects.Previous("")+1)
+		}
+	}
+	Set FileID=""
+	For  
+	{
+		Set FileID=$Order(Collisions(FileID))
+		Quit:FileID=""
+		Set Collision=##class(Collision).%New()
+		Do Collision.FileSetObjectId(FileID)
+		Set Collision.SyncManager=Manager
+		Set Status=Collision.%Save()
+		Quit:'Status
+	}
+	Set Status=Manager.%Save()
+	Lock -^SyncTool.SyncManager(iManagerID)
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="Synchronize">
+<FormalSpec><![CDATA[&oImportedObjects,&oCollisions,&oCount]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim MDModule as Module = ..FindMetaDataModule()
+	If $IsObject(MDModule)
+	{
+		Set Status = MDModule.Synchronize(.oImportedObjects,.oCollisions)
+		Quit:'Status Status
+	}
+
+	#dim Callback as SyncTool.Callback
+	Set Callback=..WorkingDirectory.Callback
+	Kill oCount
+
+	If $IsObject(..Files.GetNext("")),..Directory'="",'##class(%File).DirectoryExists(..Directory)
+	{
+		If '##class(%File).CreateDirectoryChain(..Directory)
+		{
+			Quit $system.Status.Error(1145,..Directory,"")
+		}
+	}
+
+	Kill ^||SyncTool.Module("ImportDir")
+	Set Status=..BuildFileList()
+	#;I $D(^||SyncTool.Module("ImportDir","/tmp/UnitTests/StudioXML/UnitTests.TestRoutine2.mac.xml")) F  Q:'$d(^DEBUG)  H 1
+	#;m ^UARI($Zu(188))=^||SyncTool.Module("ImportDir")
+	#;s ^UARI($ZU(188))=$LB("BuildFileList",..%Id(),Status)
+	Quit:'Status Status
+
+	#;Synchronize managed files
+	Set oCount=0
+	Set FileKey=""
+	For  
+	{
+		#dim File as File = ..Files.GetNext(.FileKey)
+		Quit:FileKey=""
+		If File.Filename=""
+		{
+			#dim FirstSrcObject as SrcObject = File.SrcObjects.GetAt(1)
+			Set File.Filename=..ExportImportClass.ObjectName2Filename(FirstSrcObject.GetObjectName()
+				,FirstSrcObject.SourceSelection,..Namespace)
+			Set Status=File.%Save()
+			Quit:'Status
+		}
+		#;I File.%Id()["UnitTests.Global2.gbl.xml" F  Q:'$d(^DEBUG)  H 1
+		Set Status=File.Synchronize(.ImportedObjects)
+		If Status
+		{
+			#IF $ZV["Windows"
+			Kill ^||SyncTool.Module("ImportDir",$ZConvert(File.File,"l"))
+			#ELSE
+			Kill ^||SyncTool.Module("ImportDir",File.File)
+			#ENDIF
+			If $Piece(Status,";",2)'="" Set oCount($Piece(Status,";",2))=1+$Get(oCount($Piece(Status,";",2)))
+		}
+		ElseIf $system.Status.Equals(Status,5001)&($system.Status.GetOneStatusText(Status)="Collision")
+		{
+			Set oCollisions(File.%Id())=""
+			#IF $ZV["Windows"
+			Kill ^||SyncTool.Module("ImportDir",$ZConvert(File.File,"l"))
+			#ELSE
+			Kill ^||SyncTool.Module("ImportDir",File.File)
+			#ENDIF
+			Set Status=$$$OK
+		}
+		Else
+		{
+			#;S ^UARI($zu(188))=$lb("Nach Synchronize",File.%Id(),Status)
+			Quit
+		}
+		Set oCount=oCount+1
+		If Callback'="" Do Callback.Import("Module "_..SubDirectory_"||Synchronizing managed files. "_oCount_" done.")
+		Do ..Files.%UnSwizzleAt(FileKey)
+	}
+	Quit:'Status Status
+
+	Set Status=..ImportUnmanagedFiles(.ImportedObjects,.CountUnmanaged)
+	If $Data(CountUnmanaged("importedunmanaged"))
+	{
+		Set oCount("importedunmanaged")=CountUnmanaged("importedunmanaged")
+	}
+	#;s ^UARI($ZU(188))=$LB("ImportUnmanagedFiles",..%Id(),Status)
+	Quit:'Status Status
+
+	Kill ^||SyncTool.Module("ImportDir")
+
+	Do ..SetCompileableFlag(.ImportedObjects)
+	If ..Namespace="" {Merge oImportedObjects($ZNSpace)=ImportedObjects}
+	Else {Merge oImportedObjects(..Namespace)=ImportedObjects}
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="Export">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim MDModule as Module = ..FindMetaDataModule()
+	If $IsObject(MDModule)
+	{
+		Set Status = MDModule.Export()
+		Quit:'Status Status
+	}
+
+	Set Callback=..WorkingDirectory.Callback
+	#dim Callback as SyncTool.Callback
+
+	Set Status=$$$OK
+
+	If $IsObject(..Files.GetNext("")),..Directory'="",'##class(%File).DirectoryExists(..Directory)
+	{
+		If '##class(%File).CreateDirectoryChain(..Directory)
+		{
+			Quit $system.Status.Error(1145,..Directory,"")
+		}
+	}
+
+	Set Count=0
+	Set Key=""
+	For  
+	{
+		Set File=..Files.GetNext(.Key)
+		Quit:Key=""
+		Set Status=File.Export()
+		#;i 'Status s ^UARI($zts)=$LB(File.%Id(),Status)
+		If 'Status,
+			'($system.Status.Equals(Status,5001)
+				&&($system.Status.GetOneStatusText(Status)="No export needed"))
+		{Quit}
+		Else {Set Status=$$$OK}
+		Set Count=Count+1
+		If Callback'="" Do Callback.Export("Module "_..SubDirectory_"||Exporting... "_Count_" files done.")
+		Do ..Files.%UnSwizzleAt(Key)
+	}
+	Quit Status
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+/// This callback method is invoked by the <METHOD>%Open</METHOD> method to 
+/// provide notification that the object specified by <VAR>oid</VAR> is being opened.
+/// 
+/// <P>If this method returns an error then the object will not be opened.
+Method %OnOpen() As %Status [ Private, ServerOnly = 1 ]
+{
+	If ..ExportImportClassName'="" Set ..ExportImportClass=$system.OBJ.New(..ExportImportClassName)
+	Quit $$$OK
+}
+*/
+]]></Content>
+</UDLText>
+
+<Method name="ExportSrcObjectByName">
+<FormalSpec>iObjectName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#; Wird seit 230409 vermutlich nicht mehr genutzt.
+	#IF $D(^SyncTool.Debug)
+	Write !,"Object name: ",iObjectName," Module.ExportSrcObjectByName begin"
+	#ENDIF
+	Set iObjectName=##class(SrcObject).ObjectNameNormalize(iObjectName)
+	Set File=..GetFileByObjectName(iObjectName)
+	If $IsObject(File)
+	{
+		Set Status=File.Export()
+	}
+	Else
+	{
+		Set Status=$$$OK
+		#IF $D(^SyncTool.Debug)
+		Write !,"Object name: ",iObjectName," Module.ExportSrcObjectByName no file object opened"
+		#ENDIF
+	}
+	#IF $D(^SyncTool.Debug)
+	Write !,"Object name: ",iObjectName," Module.ExportSrcObjectByName end"
+	#ENDIF
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="ImportSrcObjectByName">
+<FormalSpec>iObjectName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#; Wird seit 220409 vermutlich nicht mehr genutzt.
+	#IF $D(^SyncTool.Debug)
+	Write !,"Object name: ",iObjectName," Module.ImportSrcObjectByName begin"
+	#ENDIF
+	Set iObjectName=##class(SrcObject).ObjectNameNormalize(iObjectName)
+	Set File=..GetFileByObjectName(iObjectName)
+	If $IsObject(File)
+	{
+		Set Status=File.Import()
+	}
+	Else
+	{
+		Set Status=$$$OK
+		#IF $D(^SyncTool.Debug)
+		Write !,"Source object: ",iObjectName," Module.ImportSrcObjectByName no item file opened"
+		#ENDIF
+	}
+	#IF $D(^SyncTool.Debug)
+	Write !,"Source object: ",iObjectName," Module.ImportSrcObjectByName end"
+	#ENDIF
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="ImportNeededByName">
+<FormalSpec>iObjectName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#; Wird seit 240409 vermutlich nicht mehr genutzt.
+	#IF $D(^SyncTool.Debug)
+	Write !,"Object name: ",iObjectName," Module.ImportNeededByName begin"
+	#ENDIF
+	Set iObjectName=##class(SrcObject).ObjectNameNormalize(iObjectName)
+	Set File=..GetFileByObjectName(iObjectName)
+	If $IsObject(File)
+	{
+		;Set Status=File.Import()
+		Set Status=..ExportImportClass.ImportNeeded(File)
+	}
+	Else
+	{
+		Set Status=$$$NO
+		#IF $D(^SyncTool.Debug)
+		Write !,"Source object: ",iObjectName," Module.ImportNeededByName no item file opened"
+		#ENDIF
+	}
+	#IF $D(^SyncTool.Debug)
+	Write !,"Source object: ",iObjectName," Module.ImportNeededByName end"
+	#ENDIF
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="GetFileByObjectName">
+<FormalSpec>iObjectName</FormalSpec>
+<ReturnType>File</ReturnType>
+<Implementation><![CDATA[
+	Set File=$$$NULLOREF
+	Set Filename=..ExportImportClass.Objectname2Filename(iObjectName)
+	Set ModuleId=..%Id()
+	If Filename'="",##class(File).%ExistsId(ModuleId_"||"_Filename)
+	{
+		Set File=##class(File).%OpenId(ModuleId_"||"_Filename)
+	}
+	/*
+	Set FileKey=""
+	For  
+	{
+		Set TmpFile=..Files.GetNext(.FileKey)
+		Quit:FileKey=""
+		;...
+	}
+	*/
+	Quit File
+]]></Implementation>
+</Method>
+
+<Method name="ImportDir">
+<FormalSpec><![CDATA[iModified:%Boolean=1,&oImportedObjects]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim MDModule as Module = ..FindMetaDataModule()
+	If $IsObject(MDModule)
+	{
+		Set Status = MDModule.ImportDir(iModified)
+		Quit:'Status Status
+	}
+
+	Set Callback=..WorkingDirectory.Callback
+	#dim Callback as SyncTool.Callback
+
+	#;first, refresh source objects, because some of them might be deleted
+	#;070709 moved to UI
+	#;Set Status=..RefreshSelectedObjects()
+	#;Quit:'Status Status
+
+	#;160709 If Callback'="" Do Callback.Import("Module "_..SubDirectory_"||Collecting files.")
+
+	Kill ^||SyncTool.Module("ImportDir")
+	#;Set RS=##class(%ResultSet).%New("%File:FileSet")
+	#;Set Status=RS.Execute(..Directory,..ExportImportClass.GetImportableFileMask())
+	/* ;160709
+	Set RS=..ExportImportClass.GetFilesResultSet(%this,.Status)
+	Quit:'Status Status
+	While RS.Next()
+	{
+		Continue:RS.Data("Type")="D"
+		Continue:$Extract(RS.Data("ItemName"),1,2)=".#"  ;ignore backup files
+		#IF $ZV["Windows"
+		Set ^||SyncTool.Module("ImportDir",$ZConvert(RS.Data("Name"),"l"))=RS.Data("Name")
+		#ELSE
+		Set ^||SyncTool.Module("ImportDir",RS.Data("Name"))=RS.Data("Name")
+		#ENDIF
+	}
+	*/
+	Set Status=..BuildFileList()
+	Quit:'Status Status
+
+	#;Import managed files
+	Set Count=0
+	Set FileKey=""
+	For  
+	{
+		#dim File as File = ..Files.GetNext(.FileKey)
+		Quit:FileKey=""
+		If File.Filename=""
+		{
+			#dim FirstSrcObject as SrcObject = File.SrcObjects.GetAt(1)
+			Set File.Filename=..ExportImportClass.ObjectName2Filename(FirstSrcObject.GetObjectName()
+				,FirstSrcObject.SourceSelection,..Namespace)
+			Set Status=File.%Save()
+			Quit:'Status
+		}
+		Set Status=File.Import(iModified,.ImportedObjects)
+		#;s ^UARI("managed",File.File)=Status
+		If Status
+		{
+			#IF $ZV["Windows"
+			Kill ^||SyncTool.Module("ImportDir",$ZConvert(File.File,"l"))
+			#ELSE
+			Kill ^||SyncTool.Module("ImportDir",File.File)
+			#ENDIF
+		}
+		ElseIf $system.Status.Equals(Status,5001)&($system.Status.GetOneStatusText(Status)="No import needed")
+		{
+			#IF $ZV["Windows"
+			Kill ^||SyncTool.Module("ImportDir",$ZConvert(File.File,"l"))
+			#ELSE
+			Kill ^||SyncTool.Module("ImportDir",File.File)
+			#ENDIF
+			Set Status=$$$OK
+		}
+		Else
+		{
+			Quit
+		}
+		Set Count=Count+1
+		If Callback'="" Do Callback.Import("Module "_..SubDirectory_"||Importing managed files. "_Count_" done.")
+		Do ..Files.%UnSwizzleAt(FileKey)
+	}
+	Quit:'Status Status
+
+	Set Status=..ImportUnmanagedFiles(.ImportedObjects)
+	Quit:'Status Status
+
+	#;030709 Set Status=..RefreshSelectedObjects()
+
+	#;zw ^||SyncTool.Module("ImportDir")
+	Kill ^||SyncTool.Module("ImportDir")
+
+	/* ;160709
+	Set SourceObjectsCompileable=..ExportImportClass.%GetParameter("SOURCEOBJECTSCOMPILEABLE")
+	Set ObjectName=""
+	For  
+	{
+		Set ObjectName=$Order(ImportedObjects(ObjectName))
+		Quit:ObjectName=""
+		Set ImportedObjects(ObjectName)=SourceObjectsCompileable
+	}
+	*/
+	Do ..SetCompileableFlag(.ImportedObjects)
+	If ..Namespace="" {Merge oImportedObjects($ZNSpace)=ImportedObjects}
+	Else {Merge oImportedObjects(..Namespace)=ImportedObjects}
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="BuildFileList">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Callback=..WorkingDirectory.Callback
+	#dim Callback as SyncTool.Callback
+
+	If Callback'="" Do Callback.Import("Module "_..SubDirectory_"||Collecting files.")
+
+	#dim RS as %ResultSet = ..ExportImportClass.GetFilesResultSet(%this,.Status)
+	Quit:'Status Status
+	Quit:'$IsObject(RS) $$$OK ;Nothing to import
+	While RS.Next()
+	{
+		Continue:RS.Data("Type")="D"
+		Continue:$Extract(RS.Data("ItemName"),1,2)=".#"  ;ignore backup files
+		#IF $ZV["Windows"
+		Set ^||SyncTool.Module("ImportDir",$ZConvert(RS.Data("Name"),"l"))=RS.Data("Name")
+		#ELSE
+		Set ^||SyncTool.Module("ImportDir",RS.Data("Name"))=RS.Data("Name")
+		#ENDIF
+	}
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ImportUnmanagedFiles">
+<FormalSpec><![CDATA[&oImportedObjects,&oCount]]></FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim Callback as SyncTool.Callback
+	Set Callback=..WorkingDirectory.Callback
+
+	Set Status=$$$OK
+	Kill oCount
+	Set oCount=0
+	Set File=""
+	For  
+	{
+		Set File=$Order(^||SyncTool.Module("ImportDir",File))
+		Quit:File=""
+		Set FileOriginal=^||SyncTool.Module("ImportDir",File)
+		#;I FileOriginal["UnitTests.TestRoutine2.mac.xml" F  Q:'$d(^DEBUG)  H 1
+		Set Deleted=..ExportImportClass.CheckDeleted(FileOriginal,.Status)
+		Quit:'Status
+
+		If ..GetBackup()
+		{
+			#dim SrcObjecs as %ArrayOfObjects
+			Kill SrcObjects
+			Set Status=..Filename2SrcObjects(FileOriginal,.SrcObjects)
+			Quit:'Status
+			If $Data(SrcObjects)
+			{
+				Set Status=##class(File).BackupSrcObjectsStatic(..GetBackupDir()
+					,##class(%File).GetFilename(FileOriginal),SrcObjects
+					,..ExportImportClass)
+				Quit:'Status
+			}
+		}
+
+		If Deleted
+		{
+			Set DeletedFile=##class(File).%New()
+			Set DeletedFile.Module=%this
+			Set DeletedFile.Filename=##class(%File).GetFilename(FileOriginal)
+			Set DeletedFile.FileDateModified=DeletedFile.GetFileDateModified()
+
+			#;160410 Set SrcObjectsTmp=##class(%ArrayOfObjects).%New()
+			#;040610 Set SrcObjTmp=##class(SrcObject).%New()
+			#;Do SrcObjectsTmp.SetAt(SrcObjTmp,"tmp")
+			#;Set SrcObjTmp.File=DeletedFile
+			#;Set SrcObjTmp.ObjectName=""
+			Set Status=..Filename2SrcObjects(FileOriginal,DeletedFile.SrcObjects)
+			Quit:'Status
+
+			Set Status=..ExportImportClass.ImportDeleted(DeletedFile.SrcObjects)
+			#;Set Status=..ExportImportClass.ImportDeleted(FileOriginal,##class(%ArrayOfObjects).%New(),..Namespace)
+			#;040610 Set SrcObjTmp.File=$$$NULLOREF
+			#;Kill SrcObjTmp
+			If Status
+			{
+				Do DeletedFile.SrcObjects.Clear() ;Don't save the source objects they are not there anyway
+				Set Status=DeletedFile.%Save()
+			}
+		}
+		Else
+		{
+			Kill ImportedObjects
+			Set Status=..ExportImportClass.Import(FileOriginal,.ImportedObjects,..Namespace)
+			If $Data(ImportedObjects) Set oCount("importedunmanaged")=1+$Get(oCount("importedunmanaged"))
+			If Status Merge oImportedObjects=ImportedObjects
+		}
+		Quit:'Status
+		Set oCount=oCount+1
+		If Callback'="" Do Callback.Import("Module "_..SubDirectory_"||Importing unmanaged items. "_oCount_" done.")
+	}
+
+	If oCount>0
+	{
+		Set Status=..RefreshSelectedObjects()
+		Quit:'Status Status
+
+		Set File=""
+		For  
+		{
+			Set File=$Order(^||SyncTool.Module("ImportDir",File))
+			Quit:File=""
+			Set FileOriginal=^||SyncTool.Module("ImportDir",File)
+
+			#;Check if imported file is managed in the future and create hash
+			Set FileObj=##class(File).%OpenId(..%Id()_"||"_##class(%File).GetFilename(FileOriginal))
+			If $IsObject(FileObj),FileObj.NewFile
+			{
+				Do FileObj.ExportNeeded(.Status) ;Create hash if necessary
+				Quit:'Status
+				#;260510
+				#;If FileObj.CachedHash'="",FileObj.Hash'=FileObj.CachedHash
+				#;{
+					#;Set FileObj.Hash=FileObj.CachedHash
+					#;Set FileObj.NewFile=0
+					#;Set Status=FileObj.%Save()
+				#;}
+				Set Status=FileObj.SetToSynchedState()
+				Quit:'Status
+			}
+		}
+	}
+
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="SetCompileableFlag">
+<FormalSpec><![CDATA[&ioImportedObjects]]></FormalSpec>
+<Implementation><![CDATA[
+	Set SourceObjectsCompileable=..ExportImportClass.%GetParameter("SOURCEOBJECTSCOMPILEABLE")
+	Set ObjectName=""
+	For  
+	{
+		Set ObjectName=$Order(ioImportedObjects(ObjectName))
+		Quit:ObjectName=""
+		Set ioImportedObjects(ObjectName)=SourceObjectsCompileable
+	}
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="ImportDirAndCompile">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Status=..ImportDir(.Objects)
+	Quit:'Status Status
+	Set Status=..WorkingDirectory.CompileClass.Compile(.Objects)
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Query name="Modules">
+<Description>
+Returns all modules belonging to a working directory.</Description>
+<Type>%SQLQuery</Type>
+<FormalSpec>iWorkingDir:%Integer</FormalSpec>
+<SqlQuery>SELECT %ID,SubDirectory FROM _Module
+WHERE WorkingDirectory=:iWorkingDir
+  and Type is null</SqlQuery>
+<Parameter name="CONTAINID" value="1"/>
+</Query>
+
+<Method name="OpenBySubDir">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iWorkingDir:WorkingDirectory,iSubDir:%String</FormalSpec>
+<ReturnType>Module</ReturnType>
+<Implementation><![CDATA[
+	Set Module="",ModuleID=""
+	Set WDID=iWorkingDir.%Id()
+	If iSubDir="" Set iSubDir="NULLVALUE"
+	&sql(select %ID into :ModuleID from _Module 
+	      where WorkingDirectory=:WDID 
+	        and ifnull(SubDirectory,'NULLVALUE',%UPPER(SubDirectory))=%UPPER(:iSubDir))
+	If %ROWCOUNT,ModuleID'="" Set Module=..%OpenId(ModuleID)
+	Quit Module
+]]></Implementation>
+</Method>
+
+<Method name="FindMetaDataModule">
+<ReturnType>Module</ReturnType>
+<Implementation><![CDATA[
+	Quit:'$IsObject(..WorkingDirectory) ""
+
+	#dim MDModule as Module = $$$NULLOREF
+
+	#dim Key as %String = ""
+	For  
+	{
+		#dim Module as Module = ..WorkingDirectory.Modules.GetNext(.Key)
+		Quit:Key=""
+		If Module.LinkedTo = %this Set MDModule=Module Quit
+	}
+	Quit MDModule
+]]></Implementation>
+</Method>
+
+<Method name="FindLinkedModule">
+<ReturnType>Module</ReturnType>
+<Implementation><![CDATA[
+	#dim LinkedModule as Module = $$$NULLOREF
+
+	#dim Key as %String = ""
+	For  
+	{
+		#dim Module as Module = ..WorkingDirectory.Modules.GetNext(.Key)
+		Quit:Key=""
+		If Module = ..LinkedTo Set LinkedModule=Module Quit
+	}
+	Quit LinkedModule
+]]></Implementation>
+</Method>
+
+<Method name="CreateMetaDataModule">
+<ReturnType>Module</ReturnType>
+<Implementation><![CDATA[
+	#dim MDModule as Module = ..%New()
+	Set MDModule.WorkingDirectory=..WorkingDirectory
+	Set MDModule.LinkedTo=%this
+	Set MDModule.Type="SyncToolData"
+	Set MDModule.SubDirectory=..SubDirectory_"/SyncToolData"
+	Set MDModule.ExportImportClassName=..%PackageName()_".MetaDataExportImport"
+	Set MDModule.Backup=..Backup
+	Set MDModule.BackupSubDir=..BackupSubDir
+	#;Don't switch into namespace given by original module.
+	#;Meta data is always in current namespace.
+	#;Set MDModule.Namespace=..Namespace
+	Quit MDModule
+]]></Implementation>
+</Method>
+
+<Method name="%OnBeforeSave">
+<Description><![CDATA[
+This callback method is invoked by the <METHOD>%Save</METHOD> method to 
+provide notification that the object is being saved. It is called before 
+any data is written to disk.
+
+<P><VAR>insert</VAR> will be set to 1 if this object is being saved for the first time.
+
+<P>If this method returns an error then the call to <METHOD>%Save</METHOD> will fail.]]></Description>
+<FormalSpec>insert:%Boolean</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[
+	If ..Type=""
+	{
+		#dim MDModule as Module = ..FindMetaDataModule()
+		If '$IsObject(MDModule),..WorkingDirectory.SyncMetaData
+		{
+			Set MDModule=..CreateMetaDataModule()
+			Set Status=MDModule.%Save() ;needs to be saved here %Save() of working directory doesn't save new modules
+		}
+	}
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="%OnDelete">
+<Description><![CDATA[
+This callback method is invoked by the <METHOD>%Delete</METHOD> method to 
+provide notification that the object specified by <VAR>oid</VAR> is being deleted.
+
+<P>If this method returns an error then the object will not be deleted.
+[Previously private]]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>oid:%ObjectIdentity</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[
+	#dim Me as Module = ..%Open(oid)
+	If $IsObject(Me)
+	{
+		#dim MDModule as Module = Me.FindMetaDataModule()
+		If $IsObject(MDModule)
+		{
+			Set Status = ..%Delete(MDModule.%Oid())
+			Quit:'Status Status
+		}
+	}
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="Filename2SrcObjects">
+<FormalSpec><![CDATA[iFilename:%String,&SrcObjects:%ArrayOfObjects]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set Status=$$$OK
+	Kill ObjectNames
+	Do ..ExportImportClass.Filename2Objectname(##class(%File).GetFilename(iFilename)
+		,.ObjectNames)
+	If $Data(ObjectNames)
+	{
+		Kill SrcObj
+		Set Name=""
+		For  
+		{
+			Set Name=$Order(ObjectNames(Name))
+			Quit:Name=""
+			If ..ExportImportClass.ObjectExists(Name,..Namespace)
+			{
+				Set SrcObj=##class(SrcObject).%New()
+				Set SrcObj.ObjectName=Name
+				If '$Data(SrcObjects) Set SrcObjects=##class(%ArrayOfObjects).%New()
+				Do SrcObjects.SetAt(SrcObj,SrcObjects.Previous()+1)
+			}
+		}
+	}
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>{%%PARENT}("Modules")</DataLocation>
+<DefaultData>ModuleDefaultData</DefaultData>
+<IdLocation>^SyncTool.WorkingDirC("Modules")</IdLocation>
+<IndexLocation>^SyncTool.ModuleI</IndexLocation>
+<StreamLocation>^SyncTool.ModuleS</StreamLocation>
+<Data name="ModuleDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Backup</Value>
+</Value>
+<Value name="3">
+<Value>BackupSubDir</Value>
+</Value>
+<Value name="4">
+<Value>SubDirectory</Value>
+</Value>
+<Value name="5">
+<Value>ExportImportClassName</Value>
+</Value>
+<Value name="6">
+<Value>Namespace</Value>
+</Value>
+<Value name="7">
+<Value>Preview</Value>
+</Value>
+<Value name="8">
+<Value>Type</Value>
+</Value>
+<Value name="9">
+<Value>LinkedTo</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>

@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.MetaDataExportImport">
+<Super>SyncTool.ObjectExportImport</Super>
+<TimeCreated>61663,78459.228324</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<Parameter name="SOURCESELECTIONCLASS">
+<Default>none</Default>
+</Parameter>
+
+<Parameter name="DISPLAYNAME">
+<Default>SyncTool meta data</Default>
+</Parameter>
+
+<Method name="GetManageableSources">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[iModule:Module,&oSelectedObjects]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim LinkedModule as Module = iModule.FindLinkedModule()
+	Set SQL="select %id from "_..%PackageName()_".SourceSelection"
+		_" where _Module='"_LinkedModule.%Id()_"'"
+	Set Status=##class(SyncTool.GUI.ObjectSelection).ExpandSelection(
+		,SQL,..%PackageName()_".SourceSelection",.oSelectedObjects)
+	Quit:'Status Status
+
+	#;Open all selected objects to identify their type
+	Set OID=""
+	For  
+	{
+		Set OID=$Order(oSelectedObjects(OID))
+		Quit:OID=""
+		Set SS=$system.OBJ.OpenId($List(OID,2),$List(OID,1))
+		If SS.%Oid()'=OID
+		{
+			Kill oSelectedObjects(OID)
+			Set oSelectedObjects(SS.%Oid())=""
+		}
+	}
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="Import">
+<Description><![CDATA[
+Imports an object from a XML file that was previously exported with ##class(SyncTool.ObjectExportImport).Export()<br>
+<br>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[iFilename:%String,&ioId="",iNamespace:%String=""]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Q:$G(iFilename)="" $system.Status.Error(5008)
+	#;070509 Q:'##class(%File).Exists(iFilename) $system.Status.Error(5012,iFilename)
+	#dim Status as %Status = $$$OK
+	#;f  q:'$d(^debug)  h 1
+	#dim ClassName as %Dictionary.CacheClassname = ..ClassnameFromFilename(iFilename)
+	#dim GUIDPropName as %Dictionary.CacheIdentifier = ""
+	#dim Objects as %ArrayOfObjects
+
+	#dim MDModuleID as %String = ..FindModuleID(iFilename,.Status)
+	Quit:'Status Status
+	Quit:MDModuleID="" $system.Status.Error(5001,"Module for file '"_iFilename_"' not found.")
+	Set MDModule = ##class(Module).%OpenId(MDModuleID)
+	#dim Module as Module = MDModule.FindLinkedModule()
+	#dim ModuleOID as %ObjectIdentity = Module.%Oid()
+
+	#;Close Module objects to ensure that source selections are deleted properly
+	Set (MDModule,Module)=""
+
+	S Status=..BuildObjectsFromFile(.iFilename,.Objects,.iNamespace)
+	#;s ^UARI($ZU(188))=Status
+	Q:'Status Status
+
+	I iNamespace'="" S ThisNS=$ZNSpace ZN iNamespace
+	#dim IDPropID as %String = ..FindIDProperty(ClassName,iNamespace)
+	I IDPropID'=""
+	{
+		S IDProp=##class(%Dictionary.CompiledProperty).%OpenId(IDPropID)
+		I IDProp.Type="%XML.GUID"
+		{
+			Set GUIDPropName=IDProp.Name
+		}
+	}
+	S Key=""
+	F  
+	{
+		#dim Object as %Persistent = Objects.GetNext(.Key)
+		Q:Key=""
+		#;I iNamespace'="" ZN ThisNS
+		S OID=$ListBuild(..BuildID(ClassName,Object,.iNamespace),ClassName)
+		#;I iNamespace'="" ZN iNamespace
+		I ##class(%Persistent).%Exists(OID) S Status=##class(%Persistent).%Delete(OID)
+		#;s ^UARI($ZU(188))=Status
+		Q:'Status
+		#;S GUID=$G(^||SyncTool.ObjectExportImport("GUID",OID))
+		I GUIDPropName'="" S %objGUID(+Object)=$ZObjProperty(Object,GUIDPropName)
+		#;s ^UARI($ZU(188))=$g(%objGUID(+Object))
+		#;041109 If '$IsObject(Object.Module) Set Object.Module=Module
+		If '$IsObject(Object.Module) Do Object.ModuleSetObject(ModuleOID)
+		S Status=Object.%Save()
+		I $D(%objGUID(+Object)) K %objGUID(+Object)
+		Q:'Status
+		S ioId(Object.%Oid())=""
+	}
+	S (Object,Objects)=""
+	I iNamespace'="" ZN ThisNS
+	Q Status
+]]></Implementation>
+</Method>
+
+<Method name="FindModuleID">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[iFile:%String,&oStatus:%Status]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	#dim ModuleID as %String = ""
+	If ##class(%Dictionary.CompiledClass).%ExistsId(..%PackageName()_".Module")
+	{
+		#dim SQL as %String = "select _Module from "_..%PackageName()_"._File"
+		#IF $ZV["Windows"
+		Set SQL=SQL_" where %upper(_File)=%upper('"_iFile_"')"
+		#ELSE
+		Set SQL=SQL_" where %exact(_File)=%exact('"_iFile_"')"
+		#ENDIF
+		Set SQL=SQL_" and _Module->Type = 'SyncToolData'"
+		Set RS=##class(%ResultSet).%New("%DynamicQuery:SQL")
+		Set oStatus=RS.Prepare(SQL)
+		Quit:'oStatus ""
+		Set oStatus=RS.Execute()
+		Quit:'oStatus ""
+		If RS.Next() Set ModuleID=RS.Data("_Module")
+		Set RS=""
+	}
+	Quit ModuleID
+]]></Implementation>
+</Method>
+
+<Method name="DeleteSources">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iSrcObjects:%ArrayOfObjects</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim Module as Module
+	#dim Status as %Status = $$$OK
+	#dim Namespace as %String
+	#dim Key as %String = ""
+	F  
+	{
+		#dim SrcObject as SrcObject = iSrcObjects.GetNext(.Key)
+		Q:Key=""
+
+		#dim OID as %ObjectIdentity = SrcObject.GetObjectName()
+		#dim SourceSelection as SourceSelection = ##class(SourceSelection).%Open(OID)
+		I '$D(Module) S Module=SourceSelection.Module
+		#dim Position as %String = Module.SourceSelection.FindOref(SourceSelection)
+		I Position'="" D Module.SourceSelection.RemoveAt(Position)
+		S Status=SourceSelection.%Delete(OID)
+		Q:'Status
+	}
+	Q Status
+]]></Implementation>
+</Method>
+
+<Method name="GetImportableFileMask">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iModule:Module</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	#dim Status as %Status = ..GetManageableSources(iModule,.SourceObjects)
+	#dim OID as %ObjectIdentity = $Order(SourceObjects(""))
+	If OID'="" Quit ..Objectname2Filename(OID,$$$NULLOREF)
+	Quit ""
+]]></Implementation>
+</Method>
+</Class>
+</Export>

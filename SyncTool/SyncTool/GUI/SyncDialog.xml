@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.GUI.SyncDialog">
+<Super>%ZEN.Dialog.standardDialog</Super>
+<TimeCreated>61564,27479.633841</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<Parameter name="APPLICATION">
+<Description>
+Class name of application this page belongs to.</Description>
+<Default>SyncTool.GUI.Application</Default>
+</Parameter>
+
+<Parameter name="PAGENAME">
+<Description>
+Displayed name of this page.</Description>
+<Default>SyncDialog</Default>
+</Parameter>
+
+<Property name="CollisionsFound">
+<Type>%Boolean</Type>
+</Property>
+
+<Property name="WDID">
+<Type>%String</Type>
+<Parameter name="ZENURL" value="ID"/>
+</Property>
+
+<Property name="Action">
+<Type>%String</Type>
+<Parameter name="ZENURL" value="Action"/>
+</Property>
+
+<Property name="ManagerID">
+<Type>%String</Type>
+<Parameter name="ZENURL" value="ManagerID"/>
+</Property>
+
+<XData name="dialogBody">
+<Description>
+This XML block defines the contents of this pane.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<pane xmlns="http://www.intersystems.com/zen" width="100%">
+<image id="indicatorimage" src="SyncTool.GUI.Images.cls?x=indicator"
+       align="center"/>
+<html id="LogOutput" enclosingStyle="border-style:solid; border-width:1px;">
+<span id="chunk1"></span>
+</html>
+</pane>
+]]></Data>
+</XData>
+
+<Method name="%OnGetTitle">
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "Busy"
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetSubtitle">
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "Please wait, background task is running..."
+]]></Implementation>
+</Method>
+
+<Method name="onloadHandler">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	zenPage.getComponentById('btnOK').findElement('control').disabled=true;
+	//zenPage.getComponentById('btnCancel').findElement('control').style.visibility='hidden';
+	zenPage.getComponentById('btnCancel').findElement('control').disabled=true;
+	if (typeof(dialogArguments) != "undefined")
+	{
+		parentZenPage = dialogArguments;
+		parentZenPage.zenPopupWindow=self;
+		//alert(parentZenPage.getComponentById("WorkingDir").value);
+	}
+
+	//Unwire the log output so it wouldn't be synchronized with server
+	var Log=zenPage.getComponentById("LogOutput");
+	if ('' != Log.index) {_zenIndex[Log.index] = null;}
+	if ('' != Log.id) {delete _zenIds[Log.id];}
+
+	zenPage.onresizeHandler();
+	zenPage.RunTask();
+]]></Implementation>
+</Method>
+
+<Method name="onresizeHandler">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	/*
+	var LogOutput=zenPage.getComponentById('LogOutput');
+	LogOutput.setProperty("width",document.body.clientWidth-LogOutput.getEnclosingDiv().offsetLeft-17);
+	LogOutput.setProperty("height",document.body.clientHeight-LogOutput.getEnclosingDiv().offsetTop-240);
+	*/
+	var LogOutput=document.getElementById('LogOutput');
+	LogOutput.style.width=(document.body.clientWidth-LogOutput.offsetLeft-30)+"px";
+	LogOutput.style.height=(document.body.clientHeight-LogOutput.offsetTop-240)+"px";
+]]></Implementation>
+</Method>
+
+<Method name="RunTask">
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	If ..Action="SyncWD" Set Status=..%RunBackgroundMethod("SyncWDBack",..WDID)
+	If ..Action="ResolveConflicts" Set Status=..%RunBackgroundMethod("ResolveConflicts",..WDID,..ManagerID)
+	If 'Status
+	{
+		&js<alert("Error on starting the task.\n#(..QuoteJS($system.Status.GetErrorText(Status)))#");>
+	}
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="SyncWDBack">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iWDID:%Integer=""</FormalSpec>
+<Implementation><![CDATA[
+	Do ..%SetBackgroundMethodStatus("Synchronization started")
+	Kill ^CacheTemp.SyncTool.GUI($Job)
+
+	If iWDID'="",##class(SyncTool.WorkingDirectory).%ExistsId(iWDID)
+	{
+		Try
+		{
+			#dim WD as SyncTool.WorkingDirectory
+			Set WD=##class(SyncTool.WorkingDirectory).%OpenId(iWDID)
+			Set WD.Callback=##class(SyncTool.GUI.Callback).%New()
+			Set Status=WD.SyncParallelized(.Manager)
+			If Status
+			{
+				If $Data(Manager),$IsObject(Manager),Manager.Collisions.Count()>0
+				{
+					Set ^CacheTemp.SyncTool.GUI($Job,"Collisions")=1
+					Set ^CacheTemp.SyncTool.GUI($Job,"SyncManagerID")=Manager.%Id()
+					Do WD.Callback.CreateLogEntry("Collisions found. Press OK to edit them.")
+				}
+			}
+			Else {Set ^CacheTemp.SyncTool.GUI($Job,"Error")=Status}
+		}
+		Catch Error
+		{
+			Do BACK^%ETN
+			Set ^CacheTemp.SyncTool.GUI($Job,"Error")=Error.AsStatus()
+		}
+	}
+
+	Do ..%EndBackgroundMethod()
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="ResolveConflicts">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iWDID:%Integer="",iManagerID:%String=""</FormalSpec>
+<Implementation><![CDATA[
+	Do ..%SetBackgroundMethodStatus("Resolving conflicts")
+	Kill ^CacheTemp.SyncTool.GUI($Job)
+
+	If iWDID'="",##class(SyncTool.WorkingDirectory).%ExistsId(iWDID)
+		,iManagerID'="",##class(SyncTool.SyncManager).%ExistsId(iManagerID)
+	{
+		Try
+		{
+			Set Manager=##class(SyncTool.SyncManager).%OpenId(iManagerID)
+			#dim WD as SyncTool.WorkingDirectory
+			Set WD=##class(SyncTool.WorkingDirectory).%OpenId(iWDID)
+			Set WD.Callback=##class(SyncTool.GUI.Callback).%New()
+			Set Status=WD.ResolveConflicts(Manager)
+			If Status
+			{
+			}
+			Else {Set ^CacheTemp.SyncTool.GUI($Job,"Error")=Status}
+		}
+		Catch Error
+		{
+			Do BACK^%ETN
+			Set ^CacheTemp.SyncTool.GUI($Job,"Error")=Error.AsStatus()
+		}
+	}
+
+	Do ..%EndBackgroundMethod()
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="%OnMonitorBackgroundTask">
+<Description>
+This server-side callback method is called whenever the client
+calls to monitor the current background task.
+Typically a subclass uses this to send back JavaScript to update
+a progress bar.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTaskID:%String,pStatus:%String,pPercentComplete:%Float</FormalSpec>
+<Implementation><![CDATA[
+	Do ..ShowOutput(pTaskID)
+
+	If $Get(^CacheTemp.SyncTool.GUI(pTaskID,"CompileLogFile"))'=""
+	{
+		Do ..ShowCompileLog(pTaskID)
+	}
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="ShowOutput">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iTaskID</FormalSpec>
+<Implementation><![CDATA[
+	Set SomethingWritten=0
+	Set LastLine=$Get(^CacheTemp.SyncTool.GUI(iTaskID,"LastLine"))
+	Set Chunk=$Get(^CacheTemp.SyncTool.GUI(iTaskID,"Chunk"),1)
+	&js<var output=document.getElementById("chunk#(Chunk)#");>
+	Write "output.innerHTML="
+	Set Line=LastLine
+	For  
+	{
+		Set Line=$Order(^CacheTemp.SyncTool.GUI(iTaskID,"Log",Line))
+		Quit:Line=""
+		Set LastLine=Line
+		Write ..QuoteJS(^CacheTemp.SyncTool.GUI(iTaskID,"Log",Line)_"<br>"),"+"
+		Set SomethingWritten=1
+	}
+	Write "'';"
+	If SomethingWritten
+	{
+		Set Chunk=Chunk+1
+		&js<var newspan=document.createElement("span");
+		newspan.id="chunk#(Chunk)#";
+		output.parentNode.appendChild(newspan);
+		newspan.innerHTML="&nbsp;"
+		newspan.scrollIntoView(false);
+		>
+		Set ^CacheTemp.SyncTool.GUI(iTaskID,"LastLine")=LastLine
+		Set ^CacheTemp.SyncTool.GUI(iTaskID,"Chunk")=Chunk
+	}
+]]></Implementation>
+</Method>
+
+<Method name="ShowCompileLog">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iTaskID</FormalSpec>
+<Implementation><![CDATA[
+	Set SomethingWritten=0
+	Set LastLine=$Get(^CacheTemp.SyncTool.GUI(iTaskID,"CompileLog.LastLine"))
+	Set Chunk=$Get(^CacheTemp.SyncTool.GUI(iTaskID,"Chunk"),1)
+	&js<var output=document.getElementById("chunk#(Chunk)#");>
+
+	Set CompileLogFile=^CacheTemp.SyncTool.GUI(iTaskID,"CompileLogFile")
+	Set FileExists=##class(%File).Exists(CompileLogFile)
+	Quit:'FileExists
+	Set File=##class(%FileCharacterStream).%New()
+	Set File.Filename=CompileLogFile
+
+	Set LineNumber=0
+	Write "output.innerHTML="
+	While 'File.AtEnd
+	{
+		Set Line=File.ReadLine()
+		Set LineNumber=LineNumber+1
+		If LineNumber>LastLine
+		{
+			Write ..QuoteJS(Line_"<br>"),"+"
+			Set SomethingWritten=1
+		}
+	}
+	Set LastLine=LineNumber
+	Write "'';"
+	If SomethingWritten
+	{
+		Set Chunk=Chunk+1
+		&js<var newspan=document.createElement("span");
+		newspan.id="chunk#(Chunk)#";
+		output.parentNode.appendChild(newspan);
+		newspan.innerHTML="&nbsp;"
+		newspan.scrollIntoView(false);
+		>
+		Set ^CacheTemp.SyncTool.GUI(iTaskID,"CompileLog.LastLine")=LastLine
+		Set ^CacheTemp.SyncTool.GUI(iTaskID,"Chunk")=Chunk
+	}
+	Quit
+	/*
+	&js<var logger=zenPage.getComponentById("CompileOutput");
+		if (logger.getProperty("hidden"))
+		{
+			//logger.setProperty("hidden",false);
+			logger.hidden=false;
+			logger.getEnclosingDiv().style.display='';
+			SyncTool_GUI_BusyIndicator_onresizeHandler();
+		}
+	>
+
+	Set CompileLogFile=^CacheTemp.SyncTool.GUI(iTaskID,"CompileLogFile")
+	Set FileExists=##class(%File).Exists(CompileLogFile)
+	;Write "zenPage.getComponentById('CompileOutput').setValue(zenPage.getComponentById('CompileOutput').getValue() + '\n",FileExists,"');"
+	Quit:'FileExists
+	Set File=##class(%FileCharacterStream).%New()
+	Set File.Filename=CompileLogFile
+	Write "logger.setValue("
+	While 'File.AtEnd
+	{
+		Write ..QuoteJS(File.ReadLine()_$C(13,10)),"+"
+	}
+	Write "'');"
+	*/
+]]></Implementation>
+</Method>
+
+<Method name="%OnFinishBackgroundTask">
+<Description>
+This server-side callback method is called whenever the client
+calls to monitor the current background task and the task is complete.
+Typically a subclass uses this to send back JavaScript to update
+the page.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTaskID:%String</FormalSpec>
+<Implementation><![CDATA[
+	Do ..ShowOutput(pTaskID)
+
+	If $Get(^CacheTemp.SyncTool.GUI(pTaskID,"CompileLogFile"))'=""
+	{
+		Do ..ShowCompileLog(pTaskID)
+		Do ##class(%File).Delete(^CacheTemp.SyncTool.GUI(pTaskID,"CompileLogFile"))
+	}
+	;&js<alert("#(pTaskID)# Task finished. " + zenPage.zenPopupWindow);>
+	Set Error=""
+	If $Get(^CacheTemp.SyncTool.GUI(pTaskID,"Error"))'=""
+	{
+		Set Error=..EscapeHTML($system.Status.GetErrorText(^CacheTemp.SyncTool.GUI(pTaskID,"Error")))
+		Set Chunk=$Get(^CacheTemp.SyncTool.GUI(pTaskID,"Chunk"),1)
+		&js<var output=document.getElementById("chunk#(Chunk)#");
+		output.innerHTML=#(..QuoteJS(Error))#;>
+	}
+	&js<
+		zenPage.getComponentById('indicatorimage').findElement('image').parentNode.style.visibility='hidden';
+		zenPage.getComponentById('btnOK').findElement('control').disabled=false;
+		zenPage.getComponentById('btnCancel').findElement('control').disabled=false;
+		zenPage.CollisionsFound=#($S($G(^CacheTemp.SyncTool.GUI(pTaskID,"Collisions")):"true",1:"false"))#;
+		zenPage.ManagerID="#($G(^CacheTemp.SyncTool.GUI(pTaskID,"SyncManagerID")))#";
+		>
+	#;*** Kill ^CacheTemp.SyncTool.GUI(pTaskID)
+	Quit
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+/// This callback is called after the server-side page 
+/// object and all of its children are created.<br>
+/// Subclasses can override this to add, remove, or modify 
+/// items within the page object model, or to provide values
+/// for controls.
+Method %OnAfterCreatePage() As %Status
+{
+	Set %session.Data("Dialog","Action")=$Get(%request.Data("Action",1))
+	Set %session.Data("Dialog","ID")=$Get(%request.Data("ID",1))
+	Set %session.Data("Dialog","Modified")=$Get(%request.Data("Modified",1))
+	Quit $$$OK
+}
+*/
+]]></Content>
+</UDLText>
+
+<Method name="getDialogValue">
+<Description>
+Get the value that will be applied when the user presses the OK button.
+This is implemented by subclasses.</Description>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	return {"CollisionsFound":zenPage.CollisionsFound,
+	        "ManagerID": zenPage.ManagerID};
+]]></Implementation>
+</Method>
+</Class>
+</Export>

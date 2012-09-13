@@ -1,0 +1,296 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="SyncTool.ExportImport">
+<Description>
+File type manager for all source objects that can be edited with Studio.
+The source objects are synchronized to XML files.</Description>
+<Super>ExportImportAbstract</Super>
+<TimeCreated>60762,66878.637523</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Copyright 2009 Alexander Riemer (alex.riemer@gmx.net)
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+]]></Content>
+</UDLText>
+
+<Parameter name="SOURCESELECTIONCLASS">
+<Description>
+A persistent class of type ObjectSelection which saves the selection of source objects.</Description>
+<Default>SyncTool.StudioObjectSelection</Default>
+</Parameter>
+
+<Parameter name="DISPLAYNAME">
+<Description>
+The display name of the file manager used by the GUI.</Description>
+<Default>XML files for classes, routines and globals (Default)</Default>
+</Parameter>
+
+<Parameter name="SUPPORTEDTYPES">
+<Description>
+Comma separated List of supported types of sourceobjects.</Description>
+<Default>cls,int,mac,inc,bas,mvb,mvi,gbl</Default>
+</Parameter>
+
+<Method name="Export">
+<Description><![CDATA[
+Wrapper for $system.OBJ.Export(). This method exports source code to a XML file
+and removes some noisy information to make the code more compareable for source
+control software.<br>
+<br>
+Examples:
+<example>
+	;Exports the class MyPackage.MyClass to c:\dir\MyPackage.MyClass.cls.xml
+	Write ##class(SyncTool.ExportImport).Export("c:\dir\MyPackage.MyClass.cls")
+	;
+	;Exports the class MyPackage.MyClass to c:\dir\MyPackage.MyClass.cls.xml
+	Write ##class(SyncTool.ExportImport).Export("c:\dir\","MyPackage.MyClass.cls")
+	;
+	;Exports the class MyPackage.MyClass and routine MyRoutine.mac to c:\dir\MySources.xml
+	Set SrcObjects("MyPackage.MyClass.cls")=""
+	Set SrcObjects("MyRoutine.mac")=""
+	Write ##class(SyncTool.ExportImport).Items("c:\dir\MySources.xml",.SrcObjects)
+</example>]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&iFilename:%String,iSrcObjects:%ArrayOfObjects,Flags:%String="-d"]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Q:$G(iFilename)="" $system.Status.Error(5008)
+
+	I $D(iSrcObjects),$IsObject(iSrcObjects)
+	{
+		S Key=""
+		F  
+		{
+			#dim SrcObject as SrcObject
+			S SrcObject=iSrcObjects.GetNext(.Key)
+			Q:Key=""
+			I SrcObject.ObjectName'="" S SrcObjects(SrcObject.GetObjectName())=""
+			I '$D(Namespace) S Namespace=SrcObject.File.Module.Namespace
+		}
+	}
+	Else {M SrcObjects=iSrcObjects S Namespace=""}
+
+	I $G(SrcObjects)="",'($D(SrcObjects)\10)
+	{
+		S SrcObjects=##class(%File).GetFilename(iFilename)
+		I $ZCVT($P(SrcObjects,".",$L(SrcObjects,".")),"l")="xml" S SrcObjects=$P(SrcObjects,".",1,$L(SrcObjects,".")-1)
+		I SrcObjects=""
+		{
+			#;s ^UARI($zu(188))=$lb($ST($ST-1),$ST($ST-1,"PLACE"),$ST($ST-1,"MCODE"))
+			#;s ^UARI($zu(188))=$lb($ST($ST-2),$ST($ST-2,"PLACE"),$ST($ST-2,"MCODE"))
+			Q $system.Status.Error(5001,"Can't export to """_iFilename_""", source object(s) missing")
+		}
+	}
+	I $TR($E(iFilename,*),"\","/")="/" ;Directory given
+	{
+		I $G(SrcObjects)'="" S iFilename=iFilename_..Objectname2Filename(SrcObjects)
+		I $O(SrcObjects(""))'="" S iFilename=iFilename_..Objectname2Filename($O(SrcObjects("")))
+	}
+	I $ZCVT($P(iFilename,".",$L(iFilename,".")),"l")'="xml" S iFilename=iFilename_".xml"
+
+	#;Parameters are complete, export now
+	S Flags=Flags_"/diffexport"
+	I Namespace'="" S ThisNS=$ZNSpace ZN Namespace
+	S Status=$system.OBJ.Export(.SrcObjects,iFilename,Flags)
+	I Namespace'="" ZN ThisNS
+	
+	Q Status
+]]></Implementation>
+</Method>
+
+<Method name="Objectname2Filename">
+<Description>
+Convert a given source object name to a filename.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iObjectName:%Binary,iSourceSelection:SourceSelection,iNamespace:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set type=$ZConvert($Piece(iObjectName,".",$Length(iObjectName,".")),"l")
+	set pp=$i(^test("sync"))
+	set ^test("sync",pp,0)=iObjectName
+	If type="cls"
+	{
+		//Set iObjectName=$Piece(iObjectName,".",1,$Length(iObjectName,".")-1)
+		//dz
+		Set iObjectName=$Translate($Piece(iObjectName,".",1,$Length(iObjectName,".")-1), ".", "/")
+	}
+	// liv
+	elseIf type="int"||(type="mac")||(type="inc")
+	{
+		Set iObjectName=$Translate($Piece(iObjectName,".",1,$Length(iObjectName,".")-1), ".", "/")_"."_type
+	}
+	set ^test("sync",pp,1)=iObjectName
+	Quit iObjectName_".xml"
+]]></Implementation>
+</Method>
+
+<Method name="ObjectExists">
+<Description>
+Check if the given source object given by iObjectName exists in the database.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iObjectName:%Binary,iNamespace:%String=""</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set Extension=$ZConvert($Piece(iObjectName,".",$Length(iObjectName,".")),"l")
+	If Extension="gbl"
+	{
+		Set ThisNS=$ZNSpace
+		Set Global="^"_$Piece(iObjectName,".",1,$Length(iObjectName,".")-1)
+		If iNamespace'="" Set $Extract(Global)="^|"""_iNamespace_"""|"
+		Set Exists=''$Data(@Global)
+	}
+	Else
+	{
+		If iNamespace'="" Set ThisNS=$ZNSpace ZN iNamespace
+		Set Exists=##class(%RoutineMgr).Exists(iObjectName)
+		If iNamespace'="" ZN ThisNS
+	}
+	Quit Exists
+]]></Implementation>
+</Method>
+
+<Method name="GetObjectDateModified">
+<Description>
+Returns the date/timestamp the source object was modified on. This is needed
+to track if the source object was changed since the last synchronization.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[iSrcObject:SrcObject,&Status:%Status]]></FormalSpec>
+<ReturnType>%TimeStamp</ReturnType>
+<Implementation><![CDATA[
+	Set SSClassName=..GetSSClassName(.Status)
+	If 'Status ZT  ;???
+	Set TimeStamp=""
+	If SSClassName="" Set SSClassName=##class(ExportImport).%GetParameter("SOURCESELECTIONCLASS")
+	Set ObjectName=iSrcObject.GetObjectName()
+	Set ObjectGroup=$ZObjClassMethod(SSClassName,"GetObjectGroup",ObjectName)
+	Set Namespace=iSrcObject.File.Module.Namespace
+	If Namespace'="" Set ThisNS=$ZNSpace ZN Namespace
+	If ObjectGroup="routine"
+	{
+		Set Extension=$Piece(ObjectName,".",$Length(ObjectName,"."))
+		If (Extension="mvb") || (Extension="mvi")
+		{
+			#; mvb and mvi don't have a timestamp, so compare them
+			Set TimeStamp=##class(ObjectExportImport).GetObjectDateModified(iSrcObject,.Status)
+		}
+		Else
+		{
+			#;Do not use ##class(%RoutineMgr).TS() here. The following is faster.
+			Set Routine=##class(%Routine).%New(ObjectName)
+			Do Routine.%Open()
+			Set TimeStamp=Routine.TimeStamp
+			Set Routine=""
+		}
+	}
+	If ObjectGroup="class"
+	{
+		#;Do not use ##class(%RoutineMgr).TS() here. The following is more precise.
+		Set Class=##class(%Dictionary.ClassDefinition).%OpenId($Piece(ObjectName,".",1,$Length(ObjectName,".")-1))
+		If $IsObject(Class) Set TimeStamp=$ZDateTime(Class.TimeChanged,3,,9) Set Class=""
+	}
+	If Namespace'="" ZN ThisNS
+	Set TimeStamp=##class(%TimeStamp).Normalize(TimeStamp)
+	Quit TimeStamp
+]]></Implementation>
+</Method>
+
+<Method name="Import">
+<Description>
+Import the given file and return the name of the imported class or routine.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[iFilename:%String,&oImportedObjects,iNamespace:%String=""]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Quit:'##class(%File).GetFileSize(iFilename) $$$OK
+	If iNamespace'="" Set ThisNS=$ZNSpace ZN iNamespace
+	Set Status=$system.OBJ.Load(iFilename,"-df",,.ImportedObjects)
+	If iNamespace'="" ZN ThisNS
+	ZKill ImportedObjects
+	Merge oImportedObjects=ImportedObjects
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="ImportDeleted">
+<Description>
+Delete the source objects.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iSrcObjects:%ArrayOfObjects</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim SrcObject as SrcObject = iSrcObjects.GetNext("")
+	If $IsObject(SrcObject)
+	{
+		#dim Namespace as %String = SrcObject.File.Module.Namespace
+		#dim ObjectName as %String=SrcObject.GetObjectName()
+		Set Extension=$Piece(ObjectName,".",$Length(ObjectName,"."))
+		If Extension="gbl"
+		{
+			#dim Global as %String=$Piece(ObjectName,".",1,$Length(ObjectName,".")-1)
+			If Namespace'="" Set $Extract(Global)="|"""_Namespace_"""|"
+			Kill @("^"_Global)
+			Set Status=$$$OK
+		}
+		Else
+		{
+			If Namespace'="" Set ThisNS=$ZNSpace ZN Namespace
+			Set Status=##class(%RoutineMgr).Delete(ObjectName)
+			If Namespace'="" ZN ThisNS
+		}
+	}
+	Else
+	{
+		Set Status=$$$OK
+	}
+	Quit Status
+]]></Implementation>
+</Method>
+
+<Method name="Filename2Objectname">
+<Description>
+Create class name or routine name by the given file name.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[iFilename:%String,&oObjectNames]]></FormalSpec>
+<Implementation><![CDATA[
+	Set Name=##class(%File).GetFilename(iFilename)
+	Set Name=$Piece(Name,".",1,$Length(Name,".")-1)
+	If $Piece(iFilename,".",$Length(iFilename,"."))="xml"
+		,'$Case($Piece(Name,".",$Length(Name,".")),"mac":1,"int":1,"bas":1,"inc":1,"mvb":1,"gbl":1,:0)
+	{
+		Set Name=Name_".cls"
+	}
+	Set oObjectNames(Name)=""
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="GetImportableFileMask">
+<Description>
+Get the mask of importable files in a directory.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>iModule:Module</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "*.xml"
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheSerialState</Type>
+<StreamLocation>^SyncTool.ExportImportS</StreamLocation>
+</Storage>
+</Class>
+</Export>
