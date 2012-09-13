@@ -1,0 +1,806 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="JasperWrap.reportJasperAbstract">
+<Description>
+Класс для системы связки cache с jasperreports
+обработка нажатия кнопки "Печать" (ClientMethod startRptClient()) - формирование файла с отчетом, прогрессбар, возможность прервать формирование отчета</Description>
+<Super>%ZEN.Component.page</Super>
+<TimeCreated>62712,63270.746124</TimeCreated>
+
+<Parameter name="APPLICATION">
+<Description>
+Имя приложения, которому принадлежит эта страница.</Description>
+<Default>JasperWrap.Application</Default>
+</Parameter>
+
+<Parameter name="PAGENAME">
+<Description>
+Отображаемое имя для нового приложения.</Description>
+</Parameter>
+
+<Parameter name="DOMAIN">
+<Description>
+Домен, используемый для локализации.</Description>
+</Parameter>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Start creating of report on client - call startRptServer()
+
+]]></Content>
+</UDLText>
+
+<Method name="startRptClient">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	//проверка параметров
+	var proxy = zenPage.getParamsServer();
+	var err = proxy.flagError
+	var message=proxy.message
+	if ((message != '') && (message != null)) alert(message.replace("^","\n"));
+	if (err==0) {
+		var proxy2 = zenPage.startRptServer();
+		var err2 = proxy2.flagError
+	    var message2=proxy2.message
+	    if ((message2 != '') && (message2 != null)) alert(message2.replace("^","\n"));
+	    if (err2==0) {
+		    zenPage.startProgressBar();  
+	    }
+	}
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// здесь нужен dom html
+
+]]></Content>
+</UDLText>
+
+<Method name="getParamsServer">
+<ReturnType>%ZEN.proxyObject</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	set proxy = ##class(%ZEN.proxyObject).%New()
+	set proxy.flagError=0
+    set proxy.message=""
+    try {
+	  kill params
+	  $$$ThrowOnError(..getParams(.params))
+       // if there is class Report.Jasper.(name of report) and in it there is method Validate, call it and test answer
+      set ok=..isMetodValidate(.params)
+      if +ok=0 $$$ThrowOnError($$$ERROR($$$GeneralError,$piece(ok,$char(0),2)))
+    } catch(exception) {
+	     set proxy.flagError=1
+	     set proxy.message = $System.Status.GetErrorText(exception.AsStatus())
+    }
+    quit proxy
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Start creating of report on server
+
+]]></Content>
+</UDLText>
+
+<Method name="startRptServer">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%ZEN.proxyObject</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	set proxy = ##class(%ZEN.proxyObject).%New()
+	set proxy.flagError=0
+    set proxy.message=""
+    try {
+	    set idReport=""
+	    if ($get(%session)'="") {
+		    set idReport=$translate($zts,",","") //%session.SessionId
+		    set %session.Data("idReport")=idReport
+	    }
+	    if idReport="" {
+		    set proxy.flagError=1
+            set proxy.message="Потерян контекст. Отчет не создан."
+		    quit 
+	    }
+	    /*
+	    if $piece($get(^TMPinnerUseVariableJasperReport(idReport)),$char(1),1)=2 {  // cancel report
+	         set proxy.flagError=1
+	         quit 
+	    }*/
+	    kill ^TMPinnerUseVariableJasperReport(idReport)
+	
+    	//формат отчета
+	    set repFormat=$listget(%session.Data("params","par"),3)
+	    if $get(repFormat)="" set repFormat="pdf"
+	    // файл отчета
+	    $$$ThrowOnError(..getFileReport(repFormat,.fileReport))
+	    set %session.Data("fileReport")=fileReport
+        // файл с jasper шаблоном 
+ 	    $$$ThrowOnError(..getFileJasper(.fileJasper))
+    	//params
+        set params=""
+        set par=""
+        for {
+	       set par=$order(%session.Data("paramsItog","par",par)) if par="" quit
+	       set value=$get(%session.Data("paramsItog","par",par))
+	       if value'="" {
+		       set params=params_$select(params'="":$char(3),1:"")_par_$char(4)_value
+	       }
+        }
+        if fileReport'=""&&(repFormat'="")&&(fileJasper'="") { 
+	       job ##class(JasperWrap.reportJasperAbstract).createReport(idReport,fileReport,repFormat,fileJasper,params)
+        }
+	} catch(exception) {
+		 set textError=$System.Status.GetErrorText(exception.AsStatus())
+	     set proxy.flagError=1
+	     set proxy.message = textError
+	     if $get(idReport)'="" set $piece(^TMPinnerUseVariableJasperReport(idReport),r,1)="3"_$char(1)_textError
+    }
+    quit proxy
+]]></Implementation>
+</Method>
+
+<Method name="createReport">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>idReport:%String,fileReport:%String,repFormat:%String,fileJasper:%String,stringParams:%String</FormalSpec>
+<Implementation><![CDATA[
+	try {
+		kill ^TMPinnerUseVariableJasperReport(idReport)
+	    set r=$char(1)
+	    //формат отчета
+	    if $get(repFormat)="" set repFormat="pdf"
+        //params
+        kill params
+        for i=1:1:$length(stringParams,$char(3)) {
+	        set pp=$piece(stringParams,$char(3),i)
+	        set par=$piece(pp,$char(4),1)
+	        set value=$piece(pp,$char(4),2)
+	        if par'="",value'="" {
+		       set params(par)=value
+	        }
+        }
+        if $piece($get(^TMPinnerUseVariableJasperReport(idReport)),$char(1),1)=2 quit // cancel report
+        // form report
+        set ^TMPinnerUseVariableJasperReport(idReport)=0
+        //h 15
+        set ok = ..startRptFacade(fileReport, .params, fileJasper, repFormat)
+        if ('$data(^TMPinnerUseVariableJasperReport(idReport)))||($piece($get(^TMPinnerUseVariableJasperReport(idReport)),$char(1),1)=2) { // cancel report или уже убита сессия
+            if ##class(%File).Exists(fileReport) do ##class(%File).Delete(fileReport)
+            kill ^TMPinnerUseVariableJasperReport(idReport)
+	        quit  
+        }
+	    set ^TMPinnerUseVariableJasperReport(idReport)=$select('ok:3,1:1)_r_$select('ok:$System.Status.GetErrorText(ok),1:"")
+
+	} catch(exception) {
+		if $get(idReport) {
+			set ^TMPinnerUseVariableJasperReport(idReport)=3_$char(1)_$System.Status.GetErrorText(exception.AsStatus())
+		}
+	}
+	quit
+]]></Implementation>
+</Method>
+
+<Method name="getUrlProgressBar">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[	quit ##class(JasperWrap.settings).getNodeSettings("server","urlWeb")_"JasperWrap.progressReport.cls"
+]]></Implementation>
+</Method>
+
+<Method name="getUrlClosePage">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	quit ##class(JasperWrap.settings).getNodeSettings("server","urlWeb")_"JasperWrap.closepage.cls"
+	//set fileReport="" if $IsObject(%session) if $data(%session.Data("fileReport")) set fileReport=%session.Data("fileReport")
+	//set curUser="" if $IsObject(%session) if $data(%session.Data("curUser")) set curUser=%session.Data("curUser")
+    //set reportKey="" if $IsObject(%session) if $data(%session.Data("reportKey")) set reportKey=%session.Data("reportKey") 
+	//quit ##class(JasperWrap.closepage).getURL(fileReport,reportKey,curUser)
+]]></Implementation>
+</Method>
+
+<Method name="getFileReport">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[repFormat:%String,&fileReport:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set fileReport="",ret=$$$OK
+	try {
+         set fileName=..getFileName()
+         set curUser="" if ($get(%session)'="")&&($IsObject(%session)) if $data(%session.Data("curUser")) set curUser=%session.Data("curUser")
+         $$$ThrowOnError(##class(JasperWrap.settings).getPathFileReportGroup(.pathFileReport,curUser))
+         if $get(repFormat)="" set repFormat=##class(JasperWrap.JasperReportTune).getTypeFileReport() 
+         set fileReport=pathFileReport_"\"_fileName_"."_repFormat
+         set n=1
+         for {
+             if '##class(%File).Exists(fileReport) quit
+             set fileReport=pathFileReport_"\"_fileName_n_"."_repFormat
+             set n=n+1
+         }
+	} catch(exception) 
+	{
+	   set ret=exception.AsStatus()	
+	} 
+	quit ret
+]]></Implementation>
+</Method>
+
+<Method name="getFileName">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set name=""
+	if 
+	 if $data(%session.Data("fileJRXML")) set name=%session.Data("fileJRXML") set name=$piece(name,".",1,$length(name,".")-1)
+	quit name
+]]></Implementation>
+</Method>
+
+<Method name="getFileJasper">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&fileJasper:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set fileJasper="",ret=$$$OK
+	try {
+		 set fileName=..getFileName()
+         set filePath=##class(JasperWrap.JasperReportTune).getPathFileJasper()
+         if fileName'="",filePath'="" set fileJasper=filePath_"\"_fileName_".jasper"
+	} catch(exception) 
+	{
+	   set ret=exception.AsStatus()	
+	} 
+	quit ret
+]]></Implementation>
+</Method>
+
+<Method name="getParams">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&params:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	kill params 
+	kill %session.Data("paramsItog")
+	set ret=$$$OK
+	try {
+         if ($get(%session)="")||('$IsObject(%session)) $$$ThrowOnError($$$ERROR($$$GeneralError,"Нет указана глобаль с параметрами для стартовой формы"))
+         set par=""
+         for {
+	       set par=$order(%session.Data("params","par",par)) if par="" quit
+	       set rec=$get(%session.Data("params","par",par))
+	       set controlType=$listget(rec,1) 
+		   if (controlType="")!(controlType="Label")!(controlType="form") continue
+		   set ctrl=%page.%GetComponentByName(par) 
+		   if '$IsObject(ctrl) continue
+		   
+		   set value="",text=""
+		  		   		   
+		   if (controlType="text") {
+			   set value=ctrl.value  
+			   //set params(par)=value  
+		   }
+		   elseif (controlType="datetext") {
+			    set value=ctrl.value 
+			    if value="" set value=$zdate($h)
+			    set value=##class(JasperWrap.Function.general).getDateTimeLong($zdh($tr(value,"-",""),8))_$char(1)_"Date" 
+			    //set params(par)=##class(JasperWrap.Function.general).getDateTimeLong($zdh($tr(value,"-",""),8))_$char(1)_"Date" //set ^test(1,$i(^test(1)))=params(par)_"?"_value
+		        ;set params(par_"Display")=$zd(value,4)
+		   }
+		   elseif (controlType="checkbox") {
+			    set value=ctrl.value 
+			    //set params(par)=value
+		   }
+		   elseif (controlType="radiobutton") {
+			    set value=ctrl.value 
+			    //set params(par)=value
+		   }
+		   elseif (controlType="combobox") {
+			    set text="",value=""
+			    set class=ctrl.%ClassName()
+			    if class="combobox" {
+					set index=ctrl.selectedIndex
+			        if index'="",index'=-1 {
+				        set opt=ctrl.options.GetAt(index)
+				        if $IsObject(opt) {
+				           set value=opt.value
+				           set text=opt.text
+				        }
+			        }
+			    }
+			    if class="dataCombo" {
+     			      set value=ctrl.value
+     			      if text=""!(text=value) set text=ctrl.%GetDisplayValue(value)
+     			      ;if ctrl.sqlLookup'=""&&(value'="") set text=ctrl.%GetDisplayValue(value)
+				      ;else  set text=ctrl.text
+			    }        
+			    //set params(par)=value
+		        //set params(par_"Display")=text
+		   }
+		   elseif (controlType="listbox") {
+			 set text="",value=""
+			    set class=ctrl.%ClassName()
+			    if class="listbox" {
+					set index=ctrl.selectedIndex
+			        if index'="",index'=-1 {
+				        set opt=ctrl.options.GetAt(index)
+				        if $IsObject(opt) {
+				           set value=opt.value
+				           set text=opt.text
+				        }
+			        }
+			    }
+			    if class="dataListBox" {
+     			      set value=ctrl.value
+     			      set text=ctrl.text
+     			      if text=""!(text=value) set text=ctrl.%GetDisplayValue(value)
+     			      ;if ctrl.sqlLookup'=""&&(value'="") set text=ctrl.%GetDisplayValue(value)
+				      ;else  set text=ctrl.text
+			    }        
+			   // set params(par)=value
+		       // set params(par_"Display")=text
+		   }
+		   elseif (controlType="table") {
+			        set index=ctrl.selectedIndex
+			        if ctrl.sql'="" {
+				        set flagMultiSelect=ctrl.multiSelect
+				        if flagMultiSelect=1 {
+					       set value=ctrl.selectedRows
+					       set text="",key1=%session.SessionId,key2=ctrl.snapshotId,key3=ctrl.index 
+					       set c0=$char(0),c1=$char(1) ;set c0=",",c1="^" 
+					       for i=1:1:$length(value,",") {
+						       set val=$piece(value,",",i) if val="" continue
+						       set rec=$get(^CacheTemp.zenData(key1,key2,key3,"data",i)) set len=$listlength(rec)
+						       ;s ^tesst(111,"ii",i)=rec
+						       set txt="" for j=2:1:len set txt=txt_$select(txt'="":c1,1:"")_$listget(rec,j)
+						       set text=text_$select(text'="":c0,1:"")_txt
+					       } 
+					       set value=$zstrip(value,"<>=",",") 
+				        }
+				        else {
+				           set rec=$lb("")
+				           if index'=""&(index>0) set rec=$get(^CacheTemp.zenData(%session.SessionId,ctrl.snapshotId,ctrl.index,"data",index))
+				           set value=$listget(rec,1)
+				           set len=$listlength(rec)
+				           set text="" if len>1 set text=$listget(rec,2,len)
+				           ;if value'="" set text=$get(@globParamsForm@("par",par,value))
+				           ;^CacheTemp.zenData(%session.SessionId,..snapshotId
+				           ;set ^test(111,"%session.SessionId")=%session.SessionId
+				           ;set ^test(111,par,"ctrl.snapshotId")=ctrl.snapshotId
+				           ;m ^test(111,par,"data")=^CacheTemp.zenData(%session.SessionId,ctrl.snapshotId)
+				        }
+			        }
+			        else {
+				        set value=ctrl.value
+				        set text="" if value'="" set text=$get(%session.Data("params","par",par,"data",value))
+			        }
+			    //set params(par)=value
+		        //set params(par_"Display")=text
+		   }
+		   if value'="" {
+			   set params(par)=value
+			   set %session.Data("paramsItog","par",par)=value
+		   }
+		   if text'="" {
+			   set params(par_"Display")=text
+			   set %session.Data("paramsItog","par",par_"Display")=text
+		   }
+	    }
+	 //m ^test(111,"params")=params
+     
+	} catch(exception) 
+	{
+	   set ret=exception.AsStatus()	
+	} 
+	quit ret
+]]></Implementation>
+</Method>
+
+<Method name="isMetodValidate">
+<Description>
+if there is class Report.Jasper.(name of report) and in it there is method Validate, call it and test answer
+method Validate() must return string: 1/0(ok/error)_$char(0)_message about error
+output: 1/0(ok/error)_$char(0)_message about error</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&params:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+   set ok=1
+   // if there is class Report.Jasper.(name of report) and in it there is method Validate, call it and test answer
+    set fileName=..getFileName()
+    if fileName'="" {
+	    set classname="Report.Jasper."_fileName
+	    Set classobj = ##class(%Dictionary.CompiledClass).%OpenId(classname)
+	    if $IsObject(classobj) {
+		    Set classobj = ##class(%Dictionary.ClassDefinition).%OpenId(classname)
+		    if $IsObject(classobj) { 
+		        set methodname="Validate"
+		        Set key=""
+	            For  {
+		            set methodobj=classobj.Methods.GetNext(.key) if key="" Quit
+			        if methodobj.Name'=methodname continue
+			        set ret=$classmethod(classname,methodname,.params)
+			        if +ret=1 {
+				        set ok=1
+				        //для того чтобы можно было в методе Validate подменить значения параметров 
+				        set params=""
+                        set par=""
+                        for {
+	                        set par=$order(%session.Data("paramsItog","par",par)) if par="" quit
+	                        if $data(params(par)) {
+		                       set %session.Data("paramsItog","par",par)=$get(params(par)) 
+	                        }
+                        }
+			        }
+			        else {
+				        set message=$piece(ret,$char(0),2)
+				        if message="" set message=ret
+				        set ok="0"_$char(0)_message
+			        }
+	            }
+		    }
+	    }
+    }
+    quit ok
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// modalGroup для создания progressbar во время формирования отчета
+
+]]></Content>
+</UDLText>
+
+<Method name="startProgressBar">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	modalgroup=zen('%jasperInnerProgressModalGroup'); //document.getElementById('progressModalGroup');
+	if (modalgroup==null) {
+	  var modalgroup=this.createComponent('modalGroup');
+	  modalgroup.setProperty('id','%jasperInnerProgressModalGroup'); 
+	
+	  /*
+	  // для хранения текущего подсвеченного элемента
+	  var texthidden=this.createComponent('hidden');
+      texthidden.setProperty('id','%jasperInnerCurrColumn');
+      texthidden.setProperty('value','%jasperInnerColumn1');
+      modalgroup.addChild(texthidden);
+    
+      // для хранения текущего направления движения подсвеченного элемента ("r"-вправо, "l"-влево)
+      var texthidden=this.createComponent('hidden');
+      texthidden.setProperty('id','%jasperInnerCurrDirection');
+      texthidden.setProperty('value','r');
+      modalgroup.addChild(texthidden);
+      */
+	
+	  // для хранения текущего статуса modalGroup ("n" - невидима, "y"- Видима)
+      var texthidden=this.createComponent('hidden');
+      texthidden.setProperty('id','%jasperInnerFlagModalGroup');
+      texthidden.setProperty('value','n');
+      modalgroup.addChild(texthidden);
+	
+	  //для хранения кол-ва вызовов по таймеру (каждые 10 вызовов проверка состояния отчета)
+      var texthidden=this.createComponent('hidden');
+      texthidden.setProperty('id','%jasperInnerCalls');
+      texthidden.setProperty('value','0');
+      modalgroup.addChild(texthidden);
+
+	  var vgroup=this.createComponent('vgroup');
+	  modalgroup.addChild(vgroup);
+	
+      var text=this.createComponent('label');
+      text.setProperty('value','Подождите, пожалуйста. Отчет формируется.');
+      vgroup.addChild(text);
+
+      /*
+	  var hgroup=this.createComponent('hgroup');
+	  for (i=1; i<11; i++)  {
+         var text = this.createComponent('spacer');
+         text.setProperty('id','%jasperInnerColumn'+i);
+         text.setProperty('width','30');
+         text.setProperty('height','10');
+         if (i==1) { text.setProperty('enclosingClass','selected'); } // не работает почему-то 
+         else  {text.setProperty('enclosingClass','general'); }      // не работает почему-то 
+         hgroup.addChild(text);
+      }
+      vgroup.addChild(hgroup);
+      */
+    
+      var buttonCancel=this.createComponent('button');
+      buttonCancel.setProperty('id','%jasperInnerButtonCancel');
+      buttonCancel.setProperty('caption','Отмена');
+      buttonCancel.setProperty('align','center');
+      buttonCancel.setProperty('onclick','zenPage.cancelReport();');
+      vgroup.addChild(buttonCancel);
+	}
+    flagModalGroup=zen('%jasperInnerFlagModalGroup');
+    if ((flagModalGroup!=undefined)&&(flagModalGroup!=null)) {
+           zenSetProp('%jasperInnerFlagModalGroup','value','y'); 
+    } 
+    modalgroup.show();
+    
+    var timerProgressBar=window.setTimeout("zenPage.changeProgressBar()",500);
+    //var t2=window.setTimeout("zenPage.testReportState()",1000);
+]]></Implementation>
+</Method>
+
+<Method name="changeProgressBar">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+  if (document.getElementById("%jasperInnerButtonCancel")) {  // все уже загрузилось
+  
+     var qcalls=parseInt(document.getElementById("%jasperInnerCalls").childNodes[0].value);
+     qcalls=qcalls+1;
+     if (qcalls>5) {
+	     qcalls=1;
+	     document.getElementById("%jasperInnerCalls").childNodes[0].value=qcalls.toString(); 
+     	 if (zenPage.testReportOver()==1) {
+            zenPage.stopProgressBar(); 
+            return; 
+     	 }
+     }
+     document.getElementById("%jasperInnerCalls").childNodes[0].value=qcalls.toString(); 
+  
+     var currobj=document.getElementById("%jasperInnerCurrColumn")
+     if (currobj != null) {
+        var curr=document.getElementById("%jasperInnerCurrColumn").childNodes[0].value;
+        var currDirection=document.getElementById("%jasperInnerCurrDirection").childNodes[0].value;
+        if (currDirection=="") { currDirection='r'; }
+        //alert("curr="+curr+" currDirection="+currDirection);
+
+        var next=1;
+        var length=10;
+        for (i=1; i<length+1; i++) {
+           if (curr=="%jasperInnerColumn"+i) {
+             if ((i>1)&&(currDirection=='l')) {
+                 next=i-1;
+                 if (next==1) { document.getElementById("%jasperInnerCurrDirection").childNodes[0].value='r'; }
+             }
+             else {
+                 next=i+1;
+                 if (next==length) { document.getElementById("%jasperInnerCurrDirection").childNodes[0].value='l'; }
+             }
+          
+             document.getElementById("%jasperInnerColumn"+i).setAttribute("style","background-color:#6633FF;"); //'#6633FF';");
+             document.getElementById("%jasperInnerColumn"+next).setAttribute("style","background-color:#9966FF;"); //'#9966FF';");
+             //document.getElementById("%jasperInnerColumn"+i).childNodes[0].setAttribute("class","general");
+             //document.getElementById("%jasperInnerColumn"+next).childNodes[0].setAttribute("class","selected");
+          
+             //document.getElementById("%jasperInnerColumn"+i).parentNode.bgColor="#6633FF";
+             //document.getElementById("%jasperInnerColumn"+next).parentNode.bgColor="#9966FF";
+          
+             //alert(document.getElementById("%jasperInnerColumn"+i).getAttribute("id")); //.nodeName
+             //document.getElementById("%jasperInnerColumn"+i).setAttribute("class","general");
+             //document.getElementById("%jasperInnerColumn"+next).setAttribute("class","selected");
+    
+             document.getElementById("%jasperInnerCurrColumn").childNodes[0].value="%jasperInnerColumn"+next;
+             break;
+           }
+        }
+     }
+  }
+  timerProgressBar=window.setTimeout("zenPage.changeProgressBar()",100);
+]]></Implementation>
+</Method>
+
+<Method name="testReportState">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+  if (zenPage.testReportOver()==1) {
+        zenPage.stopProgressBar(); 
+        return; 
+  }
+  t2=window.setTimeout("zenPage.testReportState()",1000);
+]]></Implementation>
+</Method>
+
+<Method name="testReportOver">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+ set idReport=""
+ if ($get(%session)'="")&&($IsObject(%session)) set idReport=$get(%session.Data("idReport"))
+ if idReport="" {
+	 &js<alert("Потерян контекст. Отчет не сформирован.");>
+	 quit 1
+ } 
+ else {
+	 //&js<alert("sss");>
+	 quit $select(+$get(^TMPinnerUseVariableJasperReport(idReport))'=0:1,1:0)
+ }
+]]></Implementation>
+</Method>
+
+<Method name="stopProgressBar">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+        zenPage.endModal();
+        flagModalGroup=zen('%jasperInnerFlagModalGroup');
+        if ((flagModalGroup!=undefined)&&(flagModalGroup!=null)) {
+           flagModalGroup.value="n"; 
+        } 
+	    var urlClosePage = zenPage.getUrlClosePage();
+		if (urlClosePage != "") {
+				zenPage.gotoPage(urlClosePage);
+		}
+]]></Implementation>
+</Method>
+
+<Method name="cancelReport">
+<ClassMethod>1</ClassMethod>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+ set idReport=""
+ if ($get(%session)'="")&&($IsObject(%session)) set idReport=$get(%session.Data("idReport"))
+ if idReport'="" {
+	 set ^TMPinnerUseVariableJasperReport(idReport)="2"_$char(1)_"Формирование отчета прервано"
+	 &js< zenPage.stopProgressBar(); >
+ }
+]]></Implementation>
+</Method>
+
+<Method name="OnEndSession">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ //	s ^test(22222,$i(^test(22222)))="endsession "_$h
+ if ($get(%session)'="")&&($IsObject(%session)) {
+	    set idReport=$get(%session.Data("idReport"))
+        if idReport'="" {
+	        kill ^TMPinnerUseVariableJasperReport(idReport)
+        }
+        set fileReport=$get(%session.Data("fileReport"))
+        if fileReport'="" {
+              if ##class(%File).Exists(fileReport) do ##class(%File).Delete(fileReport)
+        }
+  }
+]]></Implementation>
+</Method>
+
+<Method name="test">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	set fileName="report19"
+	// fileReport
+	do ##class(JasperWrap.settings).getPathFileReportGroup(.pathFileReport)
+    set repFormat="pdf"
+    set fileReport=pathFileReport_"\"_fileName_"."_repFormat
+    w !,"fileReport="_fileReport
+    //params
+    kill params 
+    set params("DateFrom")=##class(JasperWrap.Function.general).getDateTimeLong($zdh(20110120,8))_$char(1)_"Date" 
+    set params("DateTo")=##class(JasperWrap.Function.general).getDateTimeLong($zdh(20120120,8))_$char(1)_"Date"
+    set params("ExternalLab2")=1
+    set params("ExternalLab3")=1
+    set params("ExternalLab5")=1
+    w !,"params="
+    zw params
+    //fileJasper
+    set filePath=##class(JasperWrap.JasperReportTune).getPathFileJasper()
+    if fileName'="",filePath'="" set fileJasper=filePath_"\"_fileName_".jasper" 
+    w !,"fileJasper="_fileJasper
+    set debug=1
+    //set ok = ..startRptFacade(fileReport, .params, fileJasper, repFormat, debug)
+    set ok=..startRptNew("isc.jasper.JasperFacade", "executeAndSave", fileReport, .params, repFormat, fileJasper, 1, debug )
+    w !!,ok
+]]></Implementation>
+</Method>
+
+<Method name="startRptFacade">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[fileReport:%String,&params:%String,fileJasper:%String,repFormat:%String="pdf"]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[  quit ..startRptNew("isc.jasper.JasperFacade", "executeAndSave", fileReport, .params, repFormat, fileJasper, 1)
+]]></Implementation>
+</Method>
+
+<Method name="startRptNew">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[nameClass:%String,nameMethod:%String,fileReport:%String,&params:%String,repFormat:%String="pdf",fileJasper:%String,flagCallFacade:%String,debug:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+   //удаление файла отчета, если существует
+  if ##class(%File).Exists(fileReport)&&('##class(%File).Delete(fileReport)) {
+	   Quit $$$ERROR($$$GeneralError,"Файл "_fileReport_" занят другим приложением")
+  }
+
+ // открываем gateway
+  set gateway=##class(JasperWrap.JasperReportTune).getNameGateway() 
+  if gateway="" Quit $$$ERROR($$$GeneralError,"Не указан gateway")
+  
+  set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
+  if '$IsObject(jvm) Quit $$$ERROR($$$GeneralError,"Incorrect Java GateWay configuration !")
+
+  Set result=$$$OK
+  Try
+	{
+		; запуск шлюза, если он не запущен
+		If $$$ISERR(##class(%Net.Remote.Service).PingGateway(jvm.Port,jvm.Server,jvm.InitializationTimeout)) {
+			$$$ThrowOnError(##class(%Net.Remote.Service).StartGateway(gateway))
+		}	
+	
+		Set jgw=##class(%Net.Remote.Gateway).%New()
+		; подключение к шлюзу
+		$$$ThrowOnError(jgw.%Connect(jvm.Server,jvm.Port))
+		Try
+		{
+			set paramsHashMap = ##class(java.util.HashMap).%New(jgw)
+			s node="" 
+			;m ^test(111,"ppp ppp")=params
+	        for {
+	            s node=$order(params(node)) if node="" quit
+	            s value=$piece(params(node),$char(1),1)
+	            set typeParam=$piece(params(node),$char(1),2)
+	            if typeParam="Date" {
+		            //set ^test(3,$i(^test(3)))=node_"="_value
+		            set valueDate=##class(java.util.Date).%New(jgw) do valueDate.setTime(value)  
+		            //set ^test(2,$i(^test(2)))=node_"="_$select(typeParam="Date":valueDate,1:value)
+	            }
+	            do paramsHashMap.put(node,$select(typeParam="Date":valueDate,1:value))
+	        }
+			//формирование отчета
+            set connectURL = ##class(JasperWrap.JasperReportTune).getConnectURL()
+            
+           if $get(flagCallFacade)=1 
+           {
+	           //set debugBool=##class(java.lang.Boolean).%New(jgw)
+	           //set debugBool=$select($get(debug)=1: "true",1:"false") 
+	           set debug=$select($get(debug)=1:"1",1:"0")
+	           do $classmethod(nameClass,nameMethod,jgw,connectURL,fileJasper,repFormat,paramsHashMap,fileReport,debug)
+           }
+           else  
+           {
+	           if $get(fileJasper)'="" do paramsHashMap.put("fileJasper",fileJasper)
+	           do $classmethod(nameClass,nameMethod,jgw,connectURL,fileReport,paramsHashMap,repFormat)
+           }
+           ;executeAndSave(String connString, String fileName, String repFormat, Map params, String targetFileName, "0")
+           // do ##class(isc.jasper.rptEpisodePCL).startReport(jgw,connectURL, fileReport, paramsHashMap, $na(@refTmp@("result")),repFormat) 
+            //do ##class(isc.jasper.rptEpisodePCL2).startReport(jgw, connectURL, fileReport, paramsHashMap, $na(@refTmp@("result")),repFormat) 
+  
+		}
+		Catch exception
+		{
+            If $ZERROR["<ZJGTW>" {
+		       set %objlasterror=$get(%objlasterror)
+		       if ##class(%SYSTEM.Status).IsError(%objlasterror) {
+			       set result=%objlasterror
+		       }  else {
+			       Set result=$$Error^%apiOBJ(5001,$ZERROR)  //$$Error^%apiOBJ(5001,$get(%objlasterror))
+		       }
+            } 
+		    else {
+		        Set result=exception.AsStatus()
+		     }
+		}
+		; отключение от шлюза
+		Do jgw.%Disconnect()
+	}
+	Catch exception
+	{
+            If $ZERROR["<ZJGTW>" {
+		       set %objlasterror=$get(%objlasterror)
+		       if ##class(%SYSTEM.Status).IsError(%objlasterror) {
+			       set result=%objlasterror
+		       }  else {
+			       Set result=$$Error^%apiOBJ(5001,$ZERROR)  //$$Error^%apiOBJ(5001,$get(%objlasterror))
+		       }
+            } 
+		    else {
+		        Set result=exception.AsStatus()
+		    }
+
+	}
+  quit result
+]]></Implementation>
+</Method>
+</Class>
+</Export>

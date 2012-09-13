@@ -1,0 +1,614 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="JasperWrap.ReportStartJasper">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62712,66142.499654</TimeCreated>
+
+<Method name="getNamespace">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&namespace:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+   set ok=$$$OK
+   set namespace=""
+   try {
+       zn "%SYS"
+	   w !,"Введите рабочий namespace и нажмите ENTER: " set namespace="" read namespace
+	   if namespace="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не указан рабочий namespace"))
+	   set rs=##class(%ResultSet).%New("%SYS.Namespace:List")
+       d rs.Execute()
+       if 'rs.Get(namespace) $$$ThrowOnError($$$ERROR($$$GeneralError,"Namespace "_namespace_" не существует"))
+       do rs.Close()
+  	   ;if '$data(^CONFIG("Namespaces",namespace)) $$$ThrowOnError($$$ERROR($$$GeneralError,"Namespace "_namespace_" не существует"))
+} catch(exception) {
+	   Set ok=exception.AsStatus()
+	   do $system.OBJ.DisplayError(ok)
+   }
+   quit ok
+]]></Implementation>
+</Method>
+
+<Method name="install">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>workFolderJasper:%String,namespace:%String,flagLogFile:%Boolean=0</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+   kill ^||log
+   
+   if $get(workFolderJasper)="" {
+	   set stringError="Не указан путь к рабочей папке Jasper. Программы не установлены." 
+	   do ..writeLog(stringError) 
+	   quit $$$ERROR($$$GeneralError,stringError)
+   }
+	   
+   if $get(namespace)="" {
+	   set stringError="Не указан "_namespace_". Программы не установлены."
+	   do ..writeLog(stringError) 
+	   quit $$$ERROR($$$GeneralError,stringError)
+   }
+   // проверить бы сущестрвование namespace
+   set ok=$$$OK
+   zn namespace
+	   set workFolderJasper=$tr(workFolderJasper,"/","\")
+	   if $e(workFolderJasper,$length(workFolderJasper))'="\" set workFolderJasper=workFolderJasper_"\"
+	   
+	   // load routines
+	   // package java
+	   set ok=$system.OBJ.Load(workFolderJasper_"java.xml","c")
+	   if ok { do ..writeLog("Загружены программы из файла "_workFolderJasper_"java.xml") }
+	   else  { do ..writeLog($System.Status.GetErrorText(ok))  }
+	   // package isc
+	   set ok=$system.OBJ.Load(workFolderJasper_"isc.jasper.xml","c")
+	   if ok { do ..writeLog("Загружены программы из файла "_workFolderJasper_"isc.jasper.xml") }
+	   else  { do ..writeLog($System.Status.GetErrorText(ok))  }
+	   // изменения в ZEN report 
+	   set ok=$system.OBJ.Load(workFolderJasper_"zendop.xml","c")
+	   if ok { do ..writeLog("Загружены программы из файла "_workFolderJasper_"zendop.xml") }
+	   else  { do ..writeLog($System.Status.GetErrorText(ok))  }
+	   // routines
+	   set ok=$system.OBJ.Load(workFolderJasper_"genJasperReport.xml","c")
+	   if ok { do ..writeLog("Загружены программы из файла "_workFolderJasper_"genJasperReport.xml") }
+	   else  { do ..writeLog($System.Status.GetErrorText(ok))  }
+	   ;set ok=$system.OBJ.Load(workFolderJasper_"reports.xml","c")
+	   ;if ok { do ..writeLog("Загружены программы из файла "_workFolderJasper_"reports.xml") }
+	   ;else  { do ..writeLog($System.Status.GetErrorText(ok))  }
+
+	   
+	   // create user report
+	   do ..writeLog("")
+	   do ..writeLog("Создание пользователя report")
+	   set ok=..createUser(.errors)
+	   if ok { do ..writeLog("Создан пользователь report") }
+	   else  { do ..writeLog($System.Status.GetErrorText(ok))  }
+	   if $data(errors) {
+		  do ..writeLog("Не удалось дать доступ на SELECT к следующим таблицам:")
+		  set i=""
+		  for {
+			  set i=$order(erros(i)) if i="" quit
+		      do ..writeLog(errors(i))
+		  } 
+   	   }
+	   
+	   //настройки
+	   ;"pathWorkJasper","pathFileJasperTemplate","pathTempFile","urlWeb","formatJasperReport"
+	   //рабочая папка для jasper
+	   set ^Settings("server","pathWorkJasper")=workFolderJasper 
+	   do ..writeLog("Определена рабочая папка для JasperReports")
+	   // путь , где лежат шаблоны jasper-отчетов
+	   set ^Settings("server","pathFileJasperTemplate")=workFolderJasper
+	   do ..writeLog("Определена рабочая папка для шаблонов")
+	   // путь к временным файлам отчетов
+	   if '##class(%File).Exists(workFolderJasper_"temp") {
+		   do ##class(%File).CreateDirectory(workFolderJasper_"temp")
+		   do ..writeLog("Создана папка "_workFolderJasper_"temp")
+	   }
+	   set ^Settings("server","pathTempFile")=workFolderJasper_"temp"
+	   do ..writeLog("Определена папка для временных файлов "_workFolderJasper_"temp")
+	   
+	   // web url
+	   set ^Settings("server","urlWeb")=##class(JasperWrap.settings).getUrlWebDefault()
+	   do ..writeLog("Определен URL для web "_^Settings("server","urlWeb"))
+	   // формат файла отчетов - для финансовых отчетов
+	   set ^Settings("server","formatJasperReport")="pdf"
+	   do ..writeLog("Установлен формат для финансовых отчетов - pdf")
+	   // список возможных форматов отчетов для JasperWrap.settings
+	   if '$data(^Settings("server","formatJasperReport")) do ##class(JasperWrap.JasperReportTune).fillFormats()
+	   
+	   //установки для fop (для zen reports)
+	   Set ^%SYS("zenreport","transformerconfig")="C:\fop-1.0\fop.xconf"
+	   do ..writeLog("Сделана установка для работы fop: ^%SYS(""zenreport"",""transformerconfig"")=""C:\fop-1.0\fop.xconf""")
+	   Set ^%SYS("zenreport","transformerpath")="C:\fop-1.0\fop.bat"
+	   do ..writeLog("Сделана установка для работы fop: ^%SYS(""zenreport"",""transformerpath"")=""C:\fop-1.0\fop.bat""")
+	   
+	   //create gateway
+	   set ok=##class(JasperWrap.ReportStartJasper).CreateGateway(workFolderJasper_"jar")
+	   if ok { do ..writeLog("Создан gateway JasperGate порт 7777") }
+	   else  { do ..writeLog($System.Status.GetErrorText(ok))  }
+	   
+	   if $data(^||log) {
+		   if $get(flagLogFile)=0 {
+			   /*
+			   set i=""
+			   for {
+				   set i=$order(^||log(i)) if i="" quit
+				   write !,^||log(i)
+			   }*/
+		   } else  {
+			   try {
+				   set filelog=workFolderJasper_"install.log"
+			       if ##class(%File).Exists(filelog) {
+				      do ##class(%File).Delete(filelog)
+			       }
+			       Set file=##class(%File).%New(filelog)
+			       Do file.Open("WSN")
+			       set i=""
+			       for {
+				      set i=$order(^||log(i)) if i="" quit
+				      Do file.WriteLine(^||log(i))
+			       }
+			       do file.Close()
+			   } catch(exception) {
+	                 Set ok=exception.AsStatus()
+               }
+		   }
+		   
+	   } 
+	   quit ok
+]]></Implementation>
+</Method>
+
+<Method name="writeLog">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>stringLog:%String</FormalSpec>
+<Implementation><![CDATA[  set ^||log($i(^||log))=$get(stringLog)
+]]></Implementation>
+</Method>
+
+<Method name="installold1">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>workFolderJasper:%String,namespace:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+   if $get(workFolderJasper)="" quit $$$ERROR($$$GeneralError,"Не указан путь к рабочей папке Jasper")
+   if $get(namespace)="" quit $$$ERROR($$$GeneralError,"Не указан "_namespace)
+   // проверить бы сущестрвование namespace
+   set ok=$$$OK
+   zn namespace
+   try {
+	   set workFolderJasper=$tr(workFolderJasper,"/","\")
+	   if $e(workFolderJasper,$length(workFolderJasper))'="\" set workFolderJasper=workFolderJasper_"\"
+	   
+	   // load routines
+	   // package java
+	   $$$ThrowOnError($system.OBJ.Load(workFolderJasper_"java.xml","c"))
+	   // package isc
+	   $$$ThrowOnError($system.OBJ.Load(workFolderJasper_"isc.jasper.xml","c"))
+	   // изменения в ZEN report 
+	   $$$ThrowOnError($system.OBJ.Load(workFolderJasper_"zendop.xml","c"))
+	   // routines
+	   $$$ThrowOnError($system.OBJ.Load(workFolderJasper_"genJasperReport.xml","c"))
+	   $$$ThrowOnError($system.OBJ.Load(workFolderJasper_"reports.xml","c"))
+	   
+	   // create user report
+	   $$$ThrowOnError(..createUser(.errors))
+	   w !,"Создан пользователь report"	
+	   if $data(errors) {
+		  write !,"Не удалось дать доступ на SELECT к следующим таблицам:"
+		  set i=""
+		  for {
+			  set i=$order(erros(i)) if i="" quit
+		      write !,errors(i)
+		  } 
+   	   }
+	   
+	   //настройки
+	   ;"pathWorkJasper","pathFileJasperTemplate","pathTempFile","urlWeb","formatJasperReport"
+	   //рабочая папка для jasper
+	   set ^Settings("server","pathWorkJasper")=workFolderJasper 
+	   w !,"Определена рабочая папка для JasperReports"
+	   // путь , где лежат шаблоны jasper-отчетов
+	   set ^Settings("server","pathFileJasperTemplate")=workFolderJasper
+	   w !,"Определена рабочая папка для шаблонов"
+	   // путь к временным файлам отчетов
+	   if '##class(%File).Exists(workFolderJasper_"temp") {
+		   do ##class(%File).CreateDirectory(workFolderJasper_"temp")
+		   w !,"Создана папка "_workFolderJasper_"temp"
+	   }
+	   set ^Settings("server","pathTempFile")=workFolderJasper_"temp"
+	   w !,"Определена папка для временных файлов "_workFolderJasper_"temp"
+	   
+	   // web url
+	   set ^Settings("server","urlWeb")=##class(JasperWrap.settings).getUrlWebDefault()
+	   w !,"Определен URL для web "_^Settings("server","urlWeb")
+	   // формат файла отчетов - для финансовых отчетов
+	   set ^Settings("server","formatJasperReport")="pdf"
+	   w !,"Установлен формат для финансовых отчетов - pdf"
+	   // список возможных форматов отчетов для JasperWrap.settings
+	   if '$data(^Settings("server","formatJasperReport")) do ##class(JasperWrap.JasperReportTune).fillFormats()
+	   
+	   //установки для fop (для zen reports)
+	   Set ^%SYS("zenreport","transformerconfig")="C:\fop-1.0\fop.xconf"
+	   Set ^%SYS("zenreport","transformerpath")="C:\fop-1.0\fop.bat"
+	   
+	   //create gateway
+	   $$$ThrowOnError(##class(JasperWrap.ReportStartJasper).CreateGateway(workFolderJasper_"jar"))
+	   w !,"Создан gateway JasperGate порт 7777"
+	   
+   } catch(exception) {
+	   Set ok=exception.AsStatus()
+	   do $system.OBJ.DisplayError(ok)
+   }
+   quit ok
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+//
+
+]]></Content>
+</UDLText>
+
+<Method name="createUser">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&errors:%String]]></FormalSpec>
+<PublicList>stringTables,userName</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	kill errors
+	set status=$$$OK
+    try {
+	    set namespace=$zu(5)
+        zn "%SYS"
+	    set userName="report"
+	    if ##class(Security.Users).Exists(userName) $$$ThrowOnError(##class(Security.Users).Delete(userName))
+	    $$$ThrowOnError(##class(Security.Users).Create(userName,,userName))
+	    zn namespace 
+	    // for all tables from schema User grant SELECT
+	    kill errors,add
+	    set schema=""
+	    For  {
+	        set schema=$order(^oddSQL(schema)) q:schema=""
+	        continue:$E(schema,1,7)'="SQLUser"
+	        set table=""
+	        For  {
+	            set table=$o(^oddSQL(schema,table)) q:table=""
+	            set data = $G(^oddSQL(schema,table))
+	            continue:data=""
+	            set tab = $P($li(data,6),",",2)
+	            set add(tab)=""
+	        }
+	    }
+	    /*
+	    set table = ""
+	    for {
+		    set table = $Order(add(table))
+		    quit:table=""
+		    set ok=##class(%SQL.Manager.API).SaveObjPriv("s",1,table,userName,"0",0,.ERRCODE,.msg,"_SYSTEM") 
+		    if ERRCODE'=0 set errors($I(errors))=msg
+        }*/
+        set stringTables=""
+        set table = ""
+	    for {
+		    set table = $Order(add(table))
+		    quit:table=""
+		    set stringTables=stringTables_$select(stringTables'="":",",1:"")_table
+	    }
+	    DO $SYSTEM.Security.Login("_SYSTEM","SYS")
+	    
+	    //&sql(GRANT SELECT,EXECUTE ON :stringTables TO :userName)
+	    &sql(GRANT SELECT ON * TO report)
+	    set sqlcode1=SQLCODE
+	    &sql(GRANT EXECUTE ON * TO report)
+        if $get(SQLCODE)||(sqlcode1) $$$ThrowOnError($$$ERROR($$$GeneralError,$select(sqlcode1'=0:sqlcode1,1:"")_" "_$select(SQLCODE'=0:SQLCODE,1:"")))
+  
+	} catch exception { 
+        Set status=exception.AsStatus()
+    }
+    
+  quit status
+]]></Implementation>
+</Method>
+
+<Method name="CreateGateway">
+<Description>
+Создать JDBC gateway</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pathJar:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set status=$$$OK
+  try {
+	set gateway=##class(JasperWrap.JasperReportTune).getNameGateway() ;set gateway="test"
+	set port=##class(JasperWrap.JasperReportTune).getPortJasperGateway() ;set port=111
+	//проверка , нет ли уже такого gateway (с именем JasperGate)
+	// Если есть 
+	/*
+	if ##class(%Net.Remote.ObjectGateway).GatewayExists(gateway) {
+		if ##class(%Net.Remote.ObjectGateway).GatewayState(port)=1 {
+			$$$ThrowOnError(##class(%Net.Remote.Service).StopGateway(gateway))
+		}
+		$$$ThrowOnError(##class(%Net.Remote.ObjectGateway).%DeleteId(gateway))
+		//$$$ThrowOnError($$$ERROR($$$GeneralError,"Gateway "_gateway_" уже существует"))
+	}*/
+	set objgateway=##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
+	if $IsObject(objgateway) {
+		if objgateway.GatewayState(port)=1 {
+			$$$ThrowOnError(##class(%Net.Remote.Service).StopGateway(gateway))
+		}
+		$$$ThrowOnError(##class(%Net.Remote.ObjectGateway).%DeleteId(gateway))
+		//$$$ThrowOnError($$$ERROR($$$GeneralError,"Gateway "_gateway_" уже существует"))
+	}
+	//проверка, нет ли уже gateway с портом 7777
+	s rs=##class(%ResultSet).%New("%Net.Remote.ObjectGateway:ByGateway")
+	$$$ThrowOnError(rs.Execute()) 
+	set existPort=0,name="" 
+	for { 
+	   if 'rs.Next() quit
+	   if rs.Get("Port")=port set existPort=1 set name=rs.Get("Name") quit
+	}
+	if existPort=1 {
+		$$$ThrowOnError($$$ERROR($$$GeneralError,"Gateway "_name_" уже слушает порт "_port))
+	}	
+	set objgate = ##class(%Net.Remote.ObjectGateway).%New()
+	set objgate.Name=gateway
+	set objgate.Type=1  ;Java
+	set objgate.Port=port
+	set objgate.Server="127.0.0.1"
+	set objgate.JavaHome=..JavaHome()
+	set objgate.HeartbeatInterval=0 //Number of seconds between each communication with the Java Gateway to check whether it is active. When enabled, the minimum value is 5 seconds and the maximum value is 3600 seconds (1 hour). The default is 10 seconds. A value of 0 disables this feature.
+	set objgate.HeartbeatFailureAction="" //Action to take if the Java Gateway goes into a failure state. Setting it to Restart (default) causes the Java Gateway to restart. Setting it to Alert generates an alert entry in the Event Log. This is independent of the Alert on Error setting. 
+	$$$ThrowOnError(..getClassPath($get(pathJar),.classpath))
+    if classpath'="" { 
+	   set objgate.ClassPath=classpath
+	   $$$ThrowOnError(objgate.%ValidateObject()) 
+	   $$$ThrowOnError(objgate.%Save())
+    }   
+   } catch exception { 
+      ;set status=$$Error^%apiOBJ(5001,exception.Name_" "_exception.Location)
+      ;write "Exception "_exception.Name_" "_exception.Location
+      Set status=exception.AsStatus()
+  }
+    
+  quit status
+]]></Implementation>
+</Method>
+
+<Method name="CreateJasperGateway">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+</Method>
+
+<Method name="CreateProxyJavaClasses">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  // открываем gateway	
+  set status=$$$OK
+  try {
+	kill import
+	set pathJasper=##class(JasperWrap.JasperReportTune).getDirJasper()
+	SET file=$ZSEARCH(pathJasper_"\isc\jasper\*.class"),import=0
+   WHILE file'="" {
+      set import($increment(import))="isc.jasper."_$piece($piece(file,"\",$l(file,"\")),".",1,$l(file,".")-1)
+       SET file=$ZSEARCH("")
+   }
+	b    
+	  
+	set gateway=##class(JasperWrap.JasperReportTune).getNameGateway()
+	set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
+	set port=jvm.Port
+	set i=0
+	;set import($increment(i))="isc.jasper.JasperFacade"
+	;set import($increment(i))="java.util.HashMap"
+	;set import($increment(i))="java.util.Date"
+	;set import($increment(i))="java.lang.Long"
+	;set import($increment(i))="java.lang.Float"
+	;set import($increment(i))="java.lang.Integer"
+	;set import($increment(i))="java.lang.String"
+		
+	set i="" for {
+		set i=$o(import(i)) if i="" quit  
+		write !,"Genetate proxy classes for "_import(i),!
+	    do ##class(%Net.Remote.Java.JavaGateway).%ExpressImport(import(i), port) 
+	}
+  } catch(exception) {
+	    If $ZERROR["<ZJGTW>" {
+            Set result=$get(%objlasterror)
+            write $System.Status.GetErrorText(%objlasterror),!
+            } 
+		else {
+		    Set result=exception.AsStatus()
+		    write $System.Status.GetErrorText(result),!
+		}
+	}
+    
+  quit status
+]]></Implementation>
+</Method>
+
+<Method name="getClassPath">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pathJar:%String,&classpath:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK set classpath=""
+	try {
+ 	if $get(pathJar)="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не указан путь к jar библиотекам"))
+ 	if '##class(%File).Exists(pathJar) $$$ThrowOnError($$$ERROR($$$GeneralError,"Путь "_pathJar_" не существует"))
+	set pathWorkJasper=##class(JasperWrap.JasperReportTune).getDirJasper()
+	if pathWorkJasper="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не определен classpath для JasperGateway"))
+	if '##class(%File).Exists(pathWorkJasper) $$$ThrowOnError($$$ERROR($$$GeneralError,"Путь "_pathWorkJasper_" не существует"))
+    set classpath=pathWorkJasper
+	SET file=$ZSEARCH(pathJar_"\*.jar")
+    WHILE file'="" {
+	   set classpath=classpath_";"_file   
+       SET file=$ZSEARCH("")
+    }
+	}
+    Catch exception
+	{
+	    Set ok=exception.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="JavaHome">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set javahome=""
+	try {
+	   set cmd="cmd.exe /k echo %JAVA_HOME%"	
+	   open cmd:("QR")
+	   use cmd read javahome
+	   use 0
+	   close cmd
+	} catch {
+		use 0
+		close cmd
+	}
+	if javahome="%JAVA_HOME%" s javahome=""
+	quit javahome
+]]></Implementation>
+</Method>
+
+<Method name="EditMethodDocument">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+  set status=$$$OK
+  try {
+	  Set classobj = ##class(%Dictionary.ClassDefinition).%OpenId("%ZEN.Report.Display.document")
+      if '$IsObject(classobj) $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найден класс %ZEN.Report.Display.document"))
+      Set methodkey="" 
+	  For  {
+	    	Set methodobj=classobj.Methods.GetNext(.methodkey) if methodkey="" Quit
+		   	If '$IsObject(methodobj) Continue
+		   	write !,methodobj.Name
+		   	if methodobj.Name="%DrawPageToXSLFO" {
+			   	write !,methodobj.Name_" !!!!!!"
+			   	b  
+		   	}
+		   	continue
+	  }
+  }
+  Catch exception
+	  {
+	    Set status=exception.AsStatus()
+      }
+  quit status
+]]></Implementation>
+</Method>
+
+<Method name="ExportJasperRoutines">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>dir:%String</FormalSpec>
+<Implementation><![CDATA[
+  if $get(dir)="" set dir="c:\work\jasperdistr"
+  try {
+	  if $get(dir)="" write !,"Введите директорию, где создавать файлы" quit
+	  set dir=$tr(dir,"/","\")
+      set dir=dir_$select($extract(dir,$length(dir))'="\":"\",1:"")
+      
+	  // выгрузка файлов для установки системы
+      kill items
+      set items("JasperWrap.install.INT")=""
+      set items("JasperWrap.JasperReportTune.CLS")=""
+      set items("JasperWrap.ReportStartJasper.CLS")=""
+      set items("JasperWrap.settings.CLS")=""
+      set fileName=dir_"prginstall.xml"  
+      do ..CreateFileWithRoutines(fileName,.items)
+      
+      // выгрузка файлов для работы системы
+      kill items
+      set items("JasperWrap.JasperReportTune.CLS")=""
+      //set items("Report.rpt.CLS")=""
+      set items("JasperWrap.Application.CLS")=""
+      set items("JasperWrap.downloadFile.CLS")=""
+      set items("JasperWrap.closepage.CLS")=""
+      set items("JasperWrap.progressReport.CLS")=""
+      set items("JasperWrap.genReportJasper.CLS")=""
+      set items("JasperWrap.genReportJasper0.CLS")=""
+      set items("JasperWrap.reportJasperAbstract.CLS")=""
+      //set items("JasperWrap.reportJasperAbstract0.CLS")=""
+      set items("JasperWrap.settings.CLS")=""
+      set items("TCLEx.VBReport.INT")=""
+      set fileName=dir_"genJasperReport.xml"  
+      do ..CreateFileWithRoutines(fileName,.items)
+       
+      // выгрузка proxy-файлов for isc.jasper 
+      kill items
+      set items("isc.jasper.Func.CLS")=""
+      set items("isc.jasper.JasperFacade.CLS")=""
+      set items("isc.jasper.JasperFacadeDop.CLS")=""
+      set items("isc.pdfbox.PdfboxFacade.CLS")=""
+      set items("isc.jodconverter.jodconverterFacade.CLS")=""
+      set items("isc.WordToPDF.CreatePDFfromWordEMC.CLS")=""
+      set items("isc.utils.processUtils.CLS")=""
+      set fileName=dir_"isc.jasper.xml"  
+      do ..CreateFileWithRoutines(fileName,.items) 
+      
+      /*
+      // программы для печати рабочих листов
+      kill items
+      // программы для печати рабочих листов
+      //set items("JasperWrap.Function.general.CLS")=""
+      //set items("Report.Function.TestSet.CLS")=""
+      //set items("Report.FinancialEntity.CLS")=""
+      //set items("ReportZEN.WSrpt.CLS")=""
+      //set items("ReportZEN.WSsimple.CLS")=""
+      //set items("PRTWKSPRU01.INT")=""
+      //set items("PRTWKSPSPB06.INT")=""
+      //set items("PRTWKSPSPB06a.INT")=""
+      //set items("KSPCLUtils.INT")=""
+      //set items("UDFSPARM001.INT")=""
+      // эта программа Сергея , я добавляла туда функцию 
+      //set items("KSReportSQL.MAC")=""
+      set fileName=dir_"reports.xml"  
+      do CreateFileWithRoutines(fileName,.items)
+      */
+      
+      // вспомогательные классы для ZEN report
+      set nsold=$zu(5)
+      zn "%SYS"
+      kill items
+      set items("%ZEN.Report.Display.focall.CLS")=""
+      set items("%ZEN.Report.Display.document.CLS")=""
+      set fileName=dir_"zendop.xml" 
+      do ..CreateFileWithRoutines(fileName,.items)
+      zn nsold
+      
+  } catch(exception) {
+	  do $system.OBJ.DisplayError(exception.AsStatus())
+  }
+ quit
+]]></Implementation>
+</Method>
+
+<Method name="CreateFileWithRoutines">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>fileName:%String,items:%String</FormalSpec>
+<Implementation><![CDATA[
+ try {
+	  if ##class(%File).Exists(fileName) do ##class(%File).Delete(fileName)
+	  kill errorlog
+	  write !,"Export if file "_fileName
+      do $System.OBJ.Export(.items,fileName,"",.errorlog)
+      if $data(errorlog) zw errorlog
+ } catch(exception) {
+	  do $system.OBJ.DisplayError(exception.AsStatus())
+ }
+  quit
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+//end class
+
+]]></Content>
+</UDLText>
+</Class>
+</Export>
