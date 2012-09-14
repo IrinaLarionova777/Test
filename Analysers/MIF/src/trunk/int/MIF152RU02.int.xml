@@ -1,0 +1,486 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF152RU02" type="INT" languagemode="0"><![CDATA[
+MIF152RU02(mi) ; SK 23/08/2010 ; iMark - Russion BION (версия с бОльшим, чем 1, количеством плашек по одному исследованию)
+	New (mi)
+	Set mi=$Get(mi) 
+	If '$Length(mi) Quit
+	Kill ^TMIF(mi,10) 
+	Set $ZTrap="err^MIF000"
+	If $$select^LVBMIMP(mi) q
+	For j=1:1:PLIST Set @("par"_j)=PLIST(j)
+	;
+	Set basedir=PLIST(20)
+	Set protocoldir=basedir_"\LIS"
+	Set indir=basedir_"\LISInput"
+	Set outdir=basedir_"\LISOutput"
+	Set archivdir=basedir_"\LISArchive"
+	Set errdir=basedir_"\LISError"
+	Set pdfdir="D:\BION\lab\Scan\PRINTFORMS\IFA"
+ 	;
+	If '##class(%File).DirectoryExists(basedir) {
+		Do message^MIF000(mi,"Instrument's directory is unavailable") 
+		Quit
+	}	
+	Kill ^||IMark														;  ^||IMark	- данные о протокалах, поддерживаемых прибором
+	Do LoadProtocols($Name(^||IMark),protocoldir)
+	If '$Data(^||IMark) {
+		Do message^MIF000(mi,"Can't read instrument's protocols") 
+		Quit
+	}	
+ 
+	If $$start^MIF000() Quit
+ 	Do Trace^KSMIF000(mi,"Started job="_$Job,"DEBUG")
+ 	;
+	For  {  
+		Do Main(mi,$Name(^||IMark),indir,outdir,archivdir,errdir,pdfdir) 
+		If $$stop^MIF000() Quit
+	}
+ 	Do Trace^KSMIF000(mi,"Stopped job="_$Job,"DEBUG")
+	Quit
+ 
+Main(mi,pIMarkGlb,pInDir,pOutDir,pArchivDir,pErrDir,pPDFDir) [par10] public {
+ 	Set oldtime=$ZHorolog
+ 	Do LoadList2Machine(mi,pIMarkGlb,pInDir,pPDFDir)
+ 	Do LoadResultsFromMachine(mi,pOutDir,pArchivDir,pErrDir)
+	
+	Set delta=($ZHorolog-oldtime)\1
+	If delta<15 Hang 15-delta 
+} 
+
+  // Загрузить в глобаль pIMarkGlb протоколы для прибора IMax по всем тестам из директории pProtocolDir
+LoadProtocols(pIMarkGlb,pProtocolDir) public {
+	If '##class(%File).DirectoryExists(pProtocolDir) Quit
+	Set rs=##class(%ResultSet).%New("%File:FileSet")
+	Set ok=rs.Execute(pProtocolDir,"*.lis")  
+	If 'ok Quit
+	While rs.%Next() { 
+ 		Do LoadProtocol(pIMarkGlb,$Get(rs.Data("Name"))) 
+	}
+}
+LoadProtocol(pIMarkGlb,pFileName) public {
+	Set dir=##class(%File).GetDirectory(pFileName)
+	Set pFileName=$ZConvert(pFileName,"U")
+	Set dir=$ZConvert(dir,"U")
+ 	Set fname=$Piece(pFileName,dir,2)
+ 	Set testcode=$Piece(fname,".",1)
+ 	If testcode="" Quit
+ 	Do GenerateGrid($Name(@pIMarkGlb@(testcode)))
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=pFileName
+	Set stream.TranslateTable="CP1251"
+	Set number=0,testnumber=0
+ 	While 'stream.AtEnd {
+		Set line=stream.ReadLine()
+		Set str=$Translate(line," "_$Char(9))
+		If str="" Quit
+		Set pos=$Piece(str,"=",1)
+		Set value=$Piece(str,"=",2)
+		;If pos["Protocol_Name" Set @pIMarkGlb@(testcode)=$$DeleteLeftAndRightSpaces^KSUTIL1($Piece(line,"=",2))  
+		If pos["Protocol_Name" Set @pIMarkGlb@(testcode)=$Piece(line,"=",2)
+		If '$$IsCupPosition(pos) Continue
+		If $Length(str,"=")'=2 Continue
+		;If value["T." Continue
+		Set row=$Extract(pos,1,1)
+		Set col=$Extract(pos,2,$Length(pos))
+		If (col="")||(row="")||('$Data(@pIMarkGlb@(testcode,col,row))) Continue
+		Set @pIMarkGlb@(testcode,col,row)=value
+	} 
+}
+	// Шаблон матрицы пот тест (строки от A до H, столбыны)
+GenerateGrid(pGlb) public {
+	For row="A","B","C","D","E","F","G","H" {
+		For col=1:1:12 {
+			Set @pGlb@(col,row)=""	
+		}
+	}		
+}	
+IsCupPosition(pValue) public {
+	Set letter=$Extract(pValue,1)
+	If ($Ascii(letter)<$Ascii("A"))||($Ascii(letter)>$Ascii("H")) Quit 0
+	Set number=$Extract(pValue,2,$Length(pValue))
+	If (number<1)||(number>12) Quit 0
+	Quit 1
+}
+ //Создаются файлы с заданиями прибору в директории pInDir, создается соответсвующие pdf-файлы по каждому эпизоду в директории pPDFDir 	 
+LoadList2Machine(mi,pIMarkGlb,pInDir,pPDFDir) [mi,PLIST,SQLCODE] public { 
+	Kill ^||LoadList												; Даные по тестам и эпизодам  для листов загрузки прибора
+	Do LoadList(mi,$Name(^||LoadList))
+	If $Data(^||LoadList) {
+		Set ll=""
+		For  {
+			Set ll=$Order(^||LoadList(ll),1,llid)
+			If ll="" Quit
+			Kill ^||Matrix											; Данные в виде матрицы ячеек прибора для конкретного листа загрузки
+			Do MakeLoadListMatrixData(ll,pIMarkGlb,$Name(^||LoadList),$Name(^||Matrix))
+			Set tc="",ok=1,err=""
+			For  {
+				set tc=$Order(^||LoadList(ll,tc))
+				If tc="" Quit
+				If '$Data(@pIMarkGlb@(tc)) {
+					//set ok=0 // если нет описания, то просто пропускаем формирование файла - это не ошибка
+					Do Trace^KSMIF000(mi,"No protocol for TestCode="_tc_" !!!","DEBUG")
+					Continue
+				}
+				set matrix=""
+				for {
+				    set matrix=$order(^||Matrix(tc,matrix)) if matrix="" quit	
+				    Set okfile=$$CreateTestCodeFile(mi,pIMarkGlb,$Name(^||Matrix),pInDir,ll,tc,matrix,.err) 
+				    If 'okfile {
+					    set ok=0
+				    	Do Trace^KSMIF000(mi,"Can't create order file for LoadList="_ll_" TesCode="_tc_" matrix="_matrix_" !!!","DEBUG")
+				    	Quit
+			    	} Else {
+				    	Do Trace^KSMIF000(mi,"Created order file for LoadList="_ll_" TesCode="_tc_" matrix="_matrix,"DEBUG")
+				    }
+				}	 	
+			}
+			if ok {
+				Set ok=$$CreateLoadListPDFFile(mi,$Name(^||Matrix),pPDFDir,llid,.err)
+				If ok {
+					Do Trace^KSMIF000(mi,"Created PDF order file for LoadList="_ll,"DEBUG")
+					Set sqlcode=$$UpdateStatus2Sent^KSLoadListSQL(llid)
+					Set ok=(sqlcode=0)
+					If ok {	
+						Do Trace^KSMIF000(mi,"Status of loadlist "_ll_" changed to 'Sent'","DEBUG")
+					} Else {	
+						Set err="Can't change status of loadlist "_ll_" !!!"
+					}
+				}
+			}
+			If err'="" {	
+				Do Trace^KSMIF000(mi,err,"DEBUG")
+			}	 		
+		}	
+	}	
+}
+
+ // Листы загрузки со статусом R загружаются в глобаль @pLoadListGlb@(номер листа загрузки,код теста,номер эпизода)
+LoadList(mi,pLoadListGlb) [mi,PLIST] public {
+	Set mi=$g(mi),Tray=$g(Tray)
+	If $$open^LVBMILL(mi,"R")
+	For  {
+		If $$fetch^LVBMILL(mi,"R") Quit
+		Set tray=PLIST(12),ll=PLIST(3),LLSpecimen=PLIST(11)
+		If $$open^LVBMILLP(mi_"||"_ll)
+		For  {
+			
+			If $$fetch^LVBMILLP(mi_"||"_ll) Quit
+			Set epis=$Piece(PLIST(3),$Char(1),1),sample=PLIST(4),order=PLIST(2),specimen=PLIST(5),dilution=PLIST(6) k test
+			; get list of tests
+			If $$open^LVBMILLT(mi_"||"_ll_"||"_order)
+			For  {
+				If $$fetch^LVBMILLT(mi_"||"_ll_"||"_order) Quit
+				
+				Set ts=PLIST(3) 
+				If $$getall1^LVBCTTC(ts)
+				Set z="" 
+				For  {
+					Set z=$Order(PLIST(z)) 
+					If z="" Quit
+					Set tc=$Piece(PLIST(z),$Char(2),1) 
+					If $Length(tc) {
+						Set active=$Piece($Get(^TMIF(mi,2,tc)),"\",3) 
+						If active="Y" {
+							Set ch=$Piece($Get(^TMIF(mi,2,tc)),"\",1) 
+							If $Length(ch) {
+								Set suffix=$p($g(^TMIF(mi,2,tc)),"\",4) 
+								If '$Length(suffix) Set suffix=" "
+								Set test(suffix,ch)=""
+								If '$Data(@pLoadListGlb@(ll)) {
+									Set @pLoadListGlb@(ll)=mi_"||"_ll
+								}	
+								Set @pLoadListGlb@(ll,tc,epis)=""
+								Do Trace^KSMIF000(mi,"Order (LoadList="_ll_", TestCode="_tc_", Episode="_epis_")","DEBUG")
+							}
+						}
+					}
+				}
+			}					
+			If $$close^LVBMILLT()
+		}
+		If $$close^LVBMILLP()
+	}
+	If $$close^LVBMILL()
+	
+}
+ // Листы загрузки раскладываются по матрицам на свободные места (T.)	
+MakeLoadListMatrixData(pLoadList,pIMarkGlb,pLoadListGlb,pMatrixGlb) public {
+	Set testcode=""
+	For  {
+		Set testcode=$Order(@pIMarkGlb@(testcode))
+		If testcode="" Quit
+		If '$Data(@pLoadListGlb@(pLoadList,testcode)) Continue
+		Set (epis,col,row)="" set matrix=1
+		For  {
+			Set epis=$Order(@pLoadListGlb@(pLoadList,testcode,epis))
+			If epis="" Quit
+			Do NextPos(testcode,pIMarkGlb,.col,.row)
+			If (col="")||(row="") set matrix=matrix+1 Set (col,row)="" Do NextPos(testcode,pIMarkGlb,.col,.row) If (col="")||(row="") quit
+			Set val=$Get(@pIMarkGlb@(testcode,col,row))
+			Set @pMatrixGlb@(testcode,matrix,col,row)=$ListBuild(val,epis) 
+		}
+		set matrix=""
+		for {
+			set matrix=$order(@pMatrixGlb@(testcode,matrix)) if matrix="" quit
+			Set col=""
+		    For  {
+			    Set col=$Order(@pIMarkGlb@(testcode,col)) If col="" Quit
+			    Set row=""
+			    For  {
+				   Set row=$Order(@pIMarkGlb@(testcode,col,row),1,val) If row="" Quit
+				   if '$data(@pMatrixGlb@(testcode,matrix,col,row)) Set @pMatrixGlb@(testcode,matrix,col,row)=$ListBuild(val)
+			    }	
+		    }	
+		}
+	}
+}
+ // Создание файлов-заданий для прибора 	 
+CreateTestCodeFile(mi,pIMarkGlb,pMaxtrixGlb,pInDir,pLoadList,pTestCode,pMatrix,pErr) [mi] public {
+	Set pErr=""
+	;
+	Kill ^||file
+	Set ^||file($Increment(^||file))="Test_ID = "_pTestCode
+	Set ^||file($Increment(^||file))="Protocol_Name ="_$Get(@pIMarkGlb@(pTestCode))
+	Set ^||file($Increment(^||file))="Reagent_Pack = "_pLoadList
+	Set epis="",col="",row=""
+	;
+	For  {
+		Set col=$Order(@pMaxtrixGlb@(pTestCode,pMatrix,col))
+		If col="" Quit
+		Set row=""
+		For  {
+			Set row=$Order(@pMaxtrixGlb@(pTestCode,pMatrix,col,row),1,val)
+			If row="" Quit
+			Set celltest=$ListGet(val,1)
+			Set epis=$ListGet(val,2)
+			Set line=row_col_" = "_celltest
+			If epis'="" {
+				Set line=line_"|"_epis_"|"_epis
+			}	
+			Set ^||file($Increment(^||file))=line	
+		}	
+	}	
+
+	Set ^||file($Increment(^||file))=$$ChSum()
+	;
+	Set filename=pInDir_"\"_pLoadList_"_"_pTestCode_"_"_pMatrix_".lin"
+	If ##class(%File).Exists(filename) {
+		Set ok=##class(%File).Delete(filename)
+		If 'ok {
+			Set pErr="Can't delete file "_filename
+			Quit 0
+		}
+	}	
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=filename
+	Set stream.TranslateTable="CP1251"
+	Set i="",ok=1
+	For  {
+		Set i=$Order(^||file(i),1,str)
+		If i="" Quit
+		Set ok=stream.WriteLine(str)
+		If 'ok Quit
+	}
+	If ok {
+		Set ok=stream.SaveStream()
+		If ok {
+		 	Do Trace^KSMIF000(mi,"Created file = "_filename,"DEBUG")
+			Quit 1
+		}
+	}
+	Set pErr="Can't write to file "_filename
+	Quit 0	
+}
+
+ //перейти на следующую свободную (T.) ячейку в матрице 	
+NextPos(pTestCode,pIMarkGlb,pCol,pRow) public {
+	If pCol'="" { 
+		Set col=$Order(@pIMarkGlb@(pTestCode,pCol),-1)
+	} Else {
+		Set col=pCol
+	}		
+	Set row=""
+	Set ok=0
+	For  {
+		Set col=$Order(@pIMarkGlb@(pTestCode,col))
+		If col="" Quit
+		If col=pCol {
+			Set row=pRow
+		} Else { 
+			Set row=""
+		}
+		For  {
+			Set row=$Order(@pIMarkGlb@(pTestCode,col,row),1,val)
+			If row="" Quit
+			If $Extract(val,1,2)="T." {
+				Set ok=1
+				Quit
+			}
+		}
+		If ok Quit			
+	}
+	If ok {
+		Set pCol=col
+		Set pRow=row
+	} Else {
+		Set (pCol,pRow)=""
+	}			
+}
+
+ // Контрольная сумма для файла-задания для прибора	
+ChSum() public {
+	Set sum=0,i=""
+	For  {
+		Set i=$Order(^||file(i),1,line)
+		If i="" Quit
+		Set line=line_$Char(13,10)
+		Set line=$ZCVT(line,"O","CP1251")
+		Set len=$Length(line)
+		For j=1:1:len {
+			Set sum=sum+$Ascii(line,j)
+		}	
+	}	
+	Quit $ZHex(sum#256\16)_$ZHex(sum#256#16)
+}
+
+ // Создание pdf-файла по отдельному эпизоду (сответсвует файлам-заданиям для прибора)
+CreateLoadListPDFFile(mi,pMaxtrixGlb,pPDFDir,pLoadListId,pError) public {
+	Set pError=""
+	Set loadlistobj=##class(User.MIFMachineLoadList).%OpenId(pLoadListId)
+	If '$IsObject(loadlistobj) {
+		Set pError="Can't open User.MIFMachineLoadList object ID="_pLoadListId_"!"
+		Quit 0
+	}
+	Set loadlist=loadlistobj.MILLOrder
+	Set loadlisthdate=loadlistobj.MILLDateCreated 
+	Set testcode=$Order(@pMaxtrixGlb@(""))
+	If testcode="" {
+		Set pError="Missing testcode for PDF file !"
+		Quit 0
+	}	
+	Set groupname=$$GetGroupName^KSLoadListSQL(mi,testcode)
+	If groupname="" {
+		Set pError="Missing test group for intrument = "_mi_" test code = "_tesccode_" !"
+		Quit 0
+	}
+	If '$$TestDirectory^KSUTIL1(pPDFDir) {
+		Set pError="Invalid directory "_pPDFDir_" !"
+		Quit 0
+	}
+	Set tmppdffilename=$ZUTil(12)_"Temp\"_groupname_"("_loadlist_").pdf"
+	Set pdffilename=pPDFDir_"\"_$ZDate(loadlisthdate,8)_"\"_groupname_"("_loadlist_").pdf"
+	
+	set ok=##class(TCLEx.Report.ZenListLoadIM).GetPDF(loadlist,$name(@pMaxtrixGlb),$$Horolog2Date^KSUTIL1(loadlisthdate),tmppdffilename)	
+	If 'ok {
+		Set pError="Can't create "_tmppdffilename_"!"
+  		Quit 0
+	}	
+	Set ok=$$RealRename^KSUTIL1(tmppdffilename,pdffilename)
+	If 'ok {
+		Set pError="Can't rename "_tmppdffilename_" to "_pdffilename_" !"
+		Quit 0
+	}	
+	Quit 1
+}
+
+
+	// Переворачиваем матрицу для построчного вывода (в файл вывод идет по колонкам)
+TurnMatrix(pMatrixGlb,pPCLMatrixGlb,pTestCode,pMatrix) public {
+	Set col=""
+	For  {
+		Set col=$Order(@pMatrixGlb@(pTestCode,pMatrix,col))
+		If col="" Quit
+		Set row=""
+		For  {
+			Set row=$Order(@pMatrixGlb@(pTestCode,pMatrix,col,row),1,vals)
+			If row="" Quit
+			Set name=$ListGet(vals,1)
+			Set epis=$ListGet(vals,2)
+			If $Extract(name,1,2)="T." {
+				Set val=epis
+			} Else {
+				Set val=name
+			}
+			Set @pPCLMatrixGlb@(row,col)=val
+		}	
+	}	
+}	
+ // Чтение файлов с результатами из прибора и запись результатов в базу
+LoadResultsFromMachine(mi,pOutDir,pArchivDir,pErrDir) [mi,par10] public {
+	Set rs=##class(%ResultSet).%New("%File:FileSet")
+	Set ok=rs.Execute(pOutDir,"*.lou")  
+	If 'ok Quit
+	While rs.%Next() { 
+ 		Do LoadResultsFromFile(mi,$Get(rs.Data("Name")),pArchivDir,pErrDir) 
+	}
+}
+ // Чтение одного файла с результатами из прибора и запись результатов в базу
+LoadResultsFromFile(mi,pFileName,pArchivDir,pErrDir) [mi,par10] public {
+	Set testid=""
+	Kill ^||results
+	Set ok=1
+
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=pFileName
+	Set stream.TranslateTable="CP1251"
+ 	While 'stream.AtEnd {
+		Set line=stream.ReadLine()
+		Set str=$Translate(line," "_$Char(9))
+		If str["Test_ID" Set testid=$Piece(str,"=",2)
+		If $Length(str,"|")=4 {
+			Set epis=$Piece(str,"|",1)
+			Set val=$Piece(str,":",2)
+			If epis'="" Set ^||results(epis)=val
+		}	
+ 	}
+ 	
+ 	If testid'="" {
+ 		Set epis=""
+ 		For  {
+ 			Set epis=$Order(^||results(epis),1,val)
+ 			If epis="" Quit
+ 			Set result=testid_$Char(par10)_val
+ 			Do file^MIF000(mi,"",epis,"",result)
+ 			Do Trace^KSMIF000(mi,"Saved result (Epis="_epis_",TestCode="_testid_",Value="_val_")","H<--M")
+ 		}	
+ 	} Else { 
+ 		Set ok=0
+ 	}	
+
+ 	Set stream=""
+ 	Set dir=##class(%File).GetDirectory(pFileName)
+ 	Set name=$Piece(pFileName,dir,2)
+ 	Set ok2=1
+ 	If (ok) {
+		Do Trace^KSMIF000(mi,"Done file "_pFileName,"H<--M")
+ 		Set newname=pArchivDir_"\"_name
+ 		Set newname=$$ArchiveFileName^KSUTIL1(newname)
+	 	Set ok2=##class(%File).Rename(pFileName,newname)
+ 	} Else {
+		Do Trace^KSMIF000(mi,"Error during processing file "_pFileName,"H<--M")
+ 		Set newname=pArchivDir_"\"_name
+		Set newname=$$ArchiveFileName^KSUTIL1(newname)
+	 	Set ok2=##class(%File).Rename(pFileName,newname)
+  	}		
+ 	If ok2 {
+		Do Trace^KSMIF000(mi,"Renamed file "_pFileName_" to "_$Get(newname),"H<--M")
+ 	
+ 	} Else {
+		Do Trace^KSMIF000(mi,"Error during renaming file "_pFileName_" to "_$Get(newname),"H<--M")
+  	}		
+ 	
+}	
+ /*
+Test() public {
+	Set (col,row)=""
+	For i=1:1:72 {
+		Write !,i,")",col,row
+		Do NextPos^MIF152RU01("E2251",.col,.row)
+		Write "-",col,row
+	}	
+
+}*/
+
+]]></Routine>
+</Export>

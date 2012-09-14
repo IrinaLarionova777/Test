@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF109RU02" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF109RU02(mi) ; ML 16/11/2010 ; BIOMERIEUX Vitek - Russia BION
+	Set mi=$Get(mi) 
+	If mi="" Quit
+	Kill ^TMIF(mi,10) 
+	Set $ZTrap="err^MIF000"
+	If $$select^LVBMIMP(mi) Quit
+	For j=1:1:PLIST s @("par"_j)=PLIST(j)
+	Set stx=$Char(2),etx=$Char(3),ack=$Char(6),eot=$Char(4),enq=$Char(5),gs=$Char(29),rs=$Char(30)
+	;s ti="E9999",tb(1)="E9901",tb(2)="E9902",tb(3)="E9903"
+	If $$start^MIF000() Quit
+	Do Trace(mi,"Started $J="_$Job,"DEBUG")
+	For  {
+		Do Main 
+		If $$stop^MIF000() Quit
+	}	
+	Close par4
+	Do Trace(mi,"Finished","DEBUG")
+	Quit
+	;
+Main()[mi,stx,etx,ack,eot,enq,gs,rs,par10,par11,par27,par28]  public {
+	Read *R:5
+	If $c(R)=enq {
+		Set record=$$ReadResults(mi)
+		If record'="" Do FileResults(mi,record)
+	}	
+	If R=-1 {
+		Do ScanEpisodes(mi)
+		Quit
+	}
+}
+	;		
+ReadResults(mi) [mi,stx,etx,ack,eot,enq,gs,rs] public {
+ 	Do Trace(mi,enq,"H<--M")
+ 	Do Send(mi,ack)
+ 	Kill results
+ 	Set waseot=0,str=""
+ 	For  {
+ 		Read *R:5
+		If (R=-1) Quit
+		Set str=str_$Char(R)
+		If $Char(R)=gs {
+			Read *chsum1:5
+			Read *chsum2:5
+			Set str=str_chsum1_chsum2
+			Do Trace(mi,str,"H<--M")
+			If (chsum1="")||(chsum2="") Quit
+			Do Send(mi,ack)
+		}	 
+		If $Char(R)=etx { 
+			Do Trace(mi,$Char(R),"H<--M")
+			Set results($Increment(results))=str
+			Set str=""
+		}
+		If $Char(R)=eot { 
+			Do Trace(mi,$Char(R),"H<--M")
+			Set waseot=1
+			Quit
+		}
+ 	}
+ 	If waseot Quit $$Convert2String(.results)
+ 	Quit ""
+ }	 
+Convert2String(pResults)  [mi,stx,etx,ack,eot,enq,gs,rs] public {
+	Set result=""
+ 	Set i=""
+ 	For  {
+ 		Set i=$Order(pResults(i),1,str)
+ 		If i="" Quit
+ 		Set str=$Piece(str,stx,2)
+ 		Set str=$Piece(str,gs,1)
+ 		Set str=$Translate(str,rs)
+ 		Set results(i)=str
+ 		If ($Length(result)+$Length(str))<32767 {
+ 			Set result=result_str
+ 		} 
+ 	}
+ 	Quit result	
+}
+FileResults(mi,pRecord)[mi,stx,etx,ack,eot,enq,gs,rs,par10,par11,par27,par28] public {
+	;***
+	;Set ^LogVIK($I(^LogVIK))=$LB(mi,pRecord)
+	;Set par10=92,par27=1,par28=2
+	If $Piece(pRecord,"|")'="mtrsl" Quit
+	Set cnt=$Length(pRecord,"|")
+	;
+	Set epis=""
+	For i=1:1:cnt {
+		Set substr=$Piece(pRecord,"|",i)
+		If $Extract(substr,1,2)="ci" Set epis=$Translate($Extract(substr,3,$Length(substr))," ")
+		If epis'="" Quit
+	}
+	If epis="" Quit
+	;
+	Set orgCh=""
+	For i=1:1:cnt {
+		Set substr=$Piece(pRecord,"|",i)
+		If $Extract(substr,1,2)="t1" Set orgCh="ORG"_$Translate($Extract(substr,3,$Length(substr))," ")
+		If orgCh'="" Quit
+	}
+	;
+	Set result=""
+	For i=1:1:cnt {
+		Set substr=$Piece(pRecord,"|",i)
+		If $Extract(substr,1,2)="o1" {
+			Set val=$Translate($Extract(substr,3,$Length(substr))," ")
+			If val'="" Set result=result_val_$Char(par10)
+		}	
+	}
+	If result="" Quit
+	;
+	For i=1:1:cnt {
+		Set substr=$Piece(pRecord,"|",i)
+		Set tag=$Extract(substr,1,2)
+		If tag="a1" {
+			Set val=$Translate($Extract(substr,3,$Length(substr))," ")
+			Set result=result_val_$Char(par28)
+			Set stop=0,xx=""
+			For j=i+1:1:cnt {
+				Set substr=$Piece(pRecord,"|",j)
+				Set tag=$Extract(substr,1,2)
+				Set value=$Translate($Extract(substr,3,$Length(substr))," ")
+				If tag="a3" {
+					Set xx=$Translate(value,",",".")
+				}
+				If tag="a4" {
+					Set result=result_value_$c(par28)_xx_$c(par27)
+					Set stop=1
+				}
+				If (tag="a1")||(tag="ra") {
+					Set stop=1
+				}
+				If stop Quit	
+			}	
+		}	
+	}
+	If orgCh'="" Set $Piece(result,$Char(par10),3)=orgCh
+	Do file^MIF000(mi,"",epis,"","ABC"_$c(par10)_"Y","","","")
+	;Set ^LogVIK($I(^LogVIK))=$LB(mi,"",epis,result,"Y")
+	Do fileant^MIF000(mi,"",epis,result,"Y")
+}	
+	;
+ScanEpisodes(mi) [mi,stx,etx,ack,eot,enq,gs,rs] public {
+	Do LoadList(mi)
+	If '$Data(^||LoadList) Quit
+	Set ll=""
+	For  {
+		Set ll=$Order(^||LoadList(ll))
+		If ll="" Quit
+		Set ok=1
+		Set testcode=""
+		For  {
+			Set testcode=$Order(^||LoadList(ll,testcode))
+			If testcode="" Quit
+			Set epis=""
+			For  {
+				Set epis=$Order(^||LoadList(ll,testcode,epis))
+				If epis="" Quit
+				;Set ok=$$SendEpis(mi,epis)
+				If 'ok Quit
+			}	
+		}
+		Set ok=1
+		If ok {	
+			Do Trace(mi,"Done loadlist "_ll,"DEBUG")
+		} Else {	
+			Do Trace(mi,"Can't sent all episode of loadlist "_ll_" !","DEBUG")
+			Continue
+		}
+
+		Set sqlcode=$$UpdateStatus2Sent^KSLoadListSQL(mi_"||"_ll)
+		Set ok=(sqlcode=0)
+		If ok {	
+			Do Trace(mi,"Status of loadlist "_ll_" changed to 'Sent'","DEBUG")
+		} Else {	
+			Do Trace(mi,"Can't change status of loadlist "_ll_" !","DEBUG")
+		}
+		
+	}	
+}
+	;
+SendEpis(mi,pEpis)[mi,stx,etx,ack,eot,enq,gs,rs] public {
+	Set ok=1
+	Do Send(mi,enq)
+	If '$$RecieveAck(mi) Quit 0
+	;
+	Set patname=$$GetPatientName(pEpis)
+	Set data="mtrsl|pi"_$Translate($$mrn^LVBEPVIS(pEpis),"-")_"|pn"_$ZConvert(patname,"O","UTF8")_"|si|ssblood|ci"_pEpis_"|"
+	Set tracedata="mtrsl|pi"_$Translate($$mrn^LVBEPVIS(pEpis),"-")_"|pn"_patname_"|si|ssblood|ci"_pEpis_"|"
+	;
+	Set record=rs_data_gs
+	Set tracerecord=rs_tracedata_gs	
+	;
+	Write stx_record_$$ChSum(record)_etx,*-3
+	Do Trace(mi,stx_tracerecord_$$ChSum(record)_etx,"H-->M")
+	Set ok=$$RecieveAck(mi)
+	Do Send(mi,eot)
+	Quit ok
+}
+	;		
+Send(mi,pMessage) [mi,stx,etx,ack,eot,enq,gs,rs] public 
+{
+	Set pMessage=$Get(pMessage)
+	Write pMessage,*-3 
+	Do Trace(mi,pMessage,"H-->M")
+} 
+	;
+RecieveAck(mi) [mi,ack] public 
+{	Set pNeededResponse=$Get(pNeededResponse)
+	Set ok=0,x=-1 
+	For j=1:1:2 {
+		Read *x:5 
+		Do Trace(mi,$Char(x),"H<--M")
+		If $Char(x)=ack {
+			Set ok=1
+			Quit
+		}	
+	}	 
+	Quit ok
+} 
+	;
+Trace(mi,pMessage,pDirection) [mi,stx,etx,ack,eot,enq,gs,rs] public {
+	;Do trace^MIF000(mi,$ZDateTime($Horolog,3)_" : "_$$TraceStr^KSUTIL1($Get(pMessage)),pDirection)
+	Do trace^MIF000(mi,$ZDateTime($Horolog,3)_" : "_$Get(pMessage),pDirection)
+} 
+
+GetPatientName(pEpis) [PLIST] public {
+	If $$select^LVBEPVIS(pEpis,"Y") Quit
+	Set surname=PLIST(3)
+	Set name=PLIST(4)
+	Quit $$SurnameName^KSUTIL1(surname,name,",")
+}
+	;
+ChSum(pValue) public {
+	Set pValue=$Get(pValue),sum=0,len=$Length(pValue)
+	For i=1:1:len Set sum=sum+$Ascii(pValue,i)
+	Quit $ZHex(sum#256\16)_$ZHex(sum#256#16)
+}
+	;
+LoadList(mi,Tray) [mi,Tray,PLIST] public {
+	Kill ^||LoadList
+	Set mi=$g(mi),Tray=$g(Tray)
+	If $$open^LVBMILL(mi,"R")
+	For  {
+		If $$fetch^LVBMILL(mi,"R") Quit
+	
+		If ($Length(Tray))&&(Tray'=PLIST(12)) Continue
+		Set tray=PLIST(12),ll=PLIST(3),LLSpecimen=PLIST(11)
+		If $$open^LVBMILLP(mi_"||"_ll)
+		For  {
+			
+			If $$fetch^LVBMILLP(mi_"||"_ll) Quit
+			Set epis=$Piece(PLIST(3),$Char(1),1),sample=PLIST(4),order=PLIST(2),specimen=PLIST(5),dilution=PLIST(6) k test
+			; get list of tests
+			If $$open^LVBMILLT(mi_"||"_ll_"||"_order)
+			For  {
+				If $$fetch^LVBMILLT(mi_"||"_ll_"||"_order) Quit
+				
+				Set ts=PLIST(3) 
+				If $$getall1^LVBCTTC(ts)
+				Set z="" 
+				For  {
+					Set z=$Order(PLIST(z)) 
+					If z="" Quit
+					Set tc=$Piece(PLIST(z),$Char(2),1) 
+					If $Length(tc) {
+						Set active=$Piece($Get(^TMIF(mi,2,tc)),"\",3) 
+						If active="Y" {
+								Set ^||LoadList(ll,tc,epis)=""
+								Do Trace(mi,"Created order (LoadList="_ll_", TestCode="_tc_", Episode="_epis_")","DEBUG")
+						}
+					}
+				}
+			}					
+			If $$close^LVBMILLT()
+		}
+		If $$close^LVBMILLP()
+	}
+	If $$close^LVBMILL()
+}
+
+]]></Routine>
+</Export>
