@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="testInstruments" type="INT" languagemode="0"><![CDATA[
+testInstruments
+ q
+TestServer(port)
+ kill ^test("tcp")
+ do init()
+ set dev="|TCP|"_port
+ open dev:(:port):10  if '$t quit "failure server"
+ use dev
+ set result=""
+ for  read *ans  d  if $c(ans)=eot do log("Server "_ans) quit
+ .do log("Server "_ans) if $c(ans)'=enq quit
+ .for  read *ans  quit:$c(ans)=eot   do
+ ..if $c(ans)=stx do  ;
+ ...set result=""
+ ...for  read *r  quit:$c(r)=etx  set result=result_$c(r)
+ ...do log("Server "_result)
+ use 0
+ close dev
+ q "succsess server"
+TestClient(ip,port)
+ do init()
+ set dev="|TCP|"_port
+ if $get(ip)="" set ip="127.0.0.1"
+ open dev:(ip:port):10  if '$t quit "failure client"
+ use dev
+ write enq ;,*-3
+ for i=1:1:10 write stx_"string "_i_etx ;,*-3
+ w "quit",eot ;,*-3
+ use 0
+ close dev
+ q "succsess client"
+log(str)
+ set ^testTCP("tcp",$i(^testTCP("tcp")))=str
+ q
+Instrument(mi)
+ if $get(mi)="" set mi="DXI"
+ 
+ if '$$Open(mi) quit
+ ;f  d LissenInstrument i $$stop^MIF000() q
+ use 0 close par4
+ q
+
+LIS(mi)
+ if $get(mi)="" set mi="DXI"
+ if '$$Open(mi) quit
+ ;f  d LissenLIS i $$stop^MIF000() q
+ use 0 close par4
+ q 
+
+Open(mi)
+ i $$select^LVBMIMP(mi) q 0
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ do init()
+ i $$start^MIF000() q 0
+ d trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ q 1
+init() 
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(21),lf=$c(10),cr=$c(13)
+ q
+ 
+TestResultABX(glob)
+ if $get(glob)="" set glob=$na(^TMPmif("PEN60abx","99"))
+ kill ^resultABX
+ kill control
+ set control(5)="ENQ"
+ set control(6)="ACK"
+ set control(15)="NAK"
+ set control(2)="STX"
+ set control(3)="ETX"
+ set control(13)="CR"
+ set control(10)="LF"
+ set control(4)="EOT"
+ set control(1)="SOH"
+ set break=13,string="",stringHex=""
+ set n=1,num=""
+ for {
+	 set n=$order(@glob@(n)) if n="" set:num="" num=$select(n'="":n,1:1) set ^resultABX($i(^resultABX))=num_"|"_string_$char(13)_"|"_($length(string)+1) quit
+	 if num="" set num=n
+	 set code=+$tr($piece(^(n),"eceived <",2)," ","") ;w !,code," "_string r aa   
+	 if code=break {
+		 set ^resultABX($i(^resultABX))=num_"|"_string_$char(13)_"|"_($length(string)+1) 
+		 set num=""
+		 set string="",stringHex="" 
+		 continue
+	 }
+	 do wr(code)
+ }
+ quit
+wr(code)
+ set string=string_$select(code=-1:code,$d(control(code)):control(code),1:$char(code))
+ set stringHex=stringHex_" "_$select(code=-1:code,1:$zh(code))
+ quit
+ 
+wr2()
+ set glob=$name(^vrPEN60(99))
+ set n=""
+ for {
+    set n=$order(@glob@(n)) if n="" quit
+    set line=$order(^TMPmif("PEN60abx","99",""))+1
+    set ^TMPmif("PEN60abx","99",line)=@glob@(n)
+ }
+ quit 
+ 
+EmulateDeviceClient(ip,port)
+ do init()
+ set dev="|TCP|"_port
+ if $get(ip)="" set ip="127.0.0.1"
+ open dev:(ip:port):10  if '$t quit "failure client"
+ use dev
+ ;use dev if '$t use 0 quit "failure client use"
+ set key=""
+ for {
+	 set key=$order(^testDeviceClient("tcp",key)) if key="" quit
+	 set sym=$piece(^(key)," ",2)
+	 if sym'="" w sym,*-3 hang 0.1
+ }
+ use 0
+ close dev
+ q "succsess client"
+ //
+ ;иммулайт прибор - клиент - конкретная глобаль для Sysmex для тестирования программ MIFstartServer MIFxt4000iB
+EmulateSysmex(ip,port)
+ do init()
+ set dev="|TCP|"_port
+ if $get(ip)="" set ip="127.0.0.1"
+ open dev:(ip:port):10  if '$t quit "failure client"
+ use dev
+ ;use dev if '$t use 0 quit "failure client use"
+ set key=""
+ for {
+	 set key=$order(^testSysmex(key)) if key="" quit
+	 if key<48 continue
+	 ;if key>100 close dev hang 600
+	 set record=^(key)   
+	 if $piece(record,":",1)="H-->M " continue
+	 if $piece(record,":",3)=" Waiting <STX> but received <-1>" continue
+	 set record=$piece(record,":",3)  
+	 set record=$zstrip(record,"<>W")   
+	 if record="" continue 
+	 if $e(record,1,11)="typeRecord=" continue
+	 if record="ACK" continue
+	 if record="STX" w $char(2),*-3 s ^test3($i(^tes3))=$c(2) continue
+	 if record="ETX" w $char(3),*-3 s ^test3($i(^tes3))=$c(3) continue
+	 if record="ENQ" w $char(5),*-3 s ^test3($i(^tes3))=$c(5) set ans=$$waitACK() continue
+	 set pp=$piece(record,"Waiting <STX> but received ",2) if pp'="" set sym=$tr(pp,"<>","")  w $char(sym),*-3 s ^test3($i(^tes3))=$char(sym) continue
+	 ;set pp=$e($piece(record,"|",1),2) if pp="H"!(pp="R")!(pp="Q")!(pp="O") 
+	 if '$find(record,$char(23)) set record=record_$char(3)
+	 if $length(record) {
+		 s ^test3($i(^tes3))=record
+		 for ii=1:1:$length(record) {
+			 set pp=$extract(record,ii)
+			 w pp,*-3 ;h 0.2
+		 }
+		 set ans=$$waitACK()
+	 }
+ }
+ use 0
+ close dev
+ q "succsess client" 
+ //
+ ;иммулайт прибор - сервер (обычная ситуация)
+EmulateDeviceServer(port)
+ do init()
+ do ImulateDeviceServerDop($na(^DeviceDataOut)) 
+ kill ^End
+ set dev="|TCP|"_port
+ S mode="MA" // тогда не теряется первый байт от клиента
+ Open dev:(:port:mode):10 set ok=$test 
+ if ('$test) { 
+		write !,"Cannot open server port" 
+		quit 
+	} 
+ else { write !,"Server port opened" }  
+ set jobflag=4
+ For  {
+		If $Data(^End) Quit
+		USE dev READ x:5 ; Read for accept 
+		If $Test {
+			USE 0 WRITE !,"Accepted connection" 
+			JOB Child:(:jobflag:dev:dev) ;Concurrent server bit is on
+		} 
+	}
+	Close dev
+	Quit
+
+ // ^DeviceDataOut - данные от прибора 	   
+ // ^DeviceDataIn - данные, пришедшие в прибор 
+Child
+    use $I:(::"+D")
+	;WRITE $JOB,! ; Send job id on TCP device to be read by client 
+	Set vals=""
+	For  {
+		If $Data(^End) Quit
+		If $Data(^DeviceDataOut) {
+			set key=""
+			for {
+			   set key=$order(^DeviceDataOut(key)) if key="" quit
+			   set record=^(key) s ^test3($i(^test3))=record
+			   if record="<WAIT_ACK>" set ans=$$waitACK() kill ^DeviceDataOut(key) continue
+			   if $extract(record,1,5)="<HANG" x $translate(record,"<>","") kill ^DeviceDataOut(key) continue
+			   for ii=1:1:$length(record) {
+			      set pp=$extract(record,ii)
+			      write pp,*-3 //hang 1
+		       }
+		       kill ^DeviceDataOut(key)	
+			}
+		}			
+	}	
+	QUIT
+
+ ;
+ImulateDeviceServerDop(ref) 
+ if $get(ref)="" quit
+ kill @ref
+ ;set @ref@($i(@ref))=$$getCharFromDescribe("<ENQ>")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ //set @ref@($i(@ref))="<HANG 35>" // для проверки зависания прибора
+ //set @ref@($i(@ref))=$$getCharFromDescribe("<ENQ>") // для проверки, что после зависания и прибор может начать работу с ENQ 
+ ;set @ref@($i(@ref))=$$getCharFromDescribe("<STX>")_"1H|\^&||parol|LIS|||||IMMULITE||P|1"_$c(13,3)_"26"_$$getCharFromDescribe("<CR>")_$$getCharFromDescribe("<LF>")
+ ;set @ref@($i(@ref))=$$wrapString("1H|\^&||parol|IMMULITE|111 Canfield Ave^Randolph^NJ^07869||(201)927-2828|N81|LIS||P|1|20120615143636")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ ;set @ref@($i(@ref))=$$wrapString("2Q|1|^11000000002||ALL||||||||O")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ // set @ref@($i(@ref))=$$getCharFromDescribe("<ENQ>")
+ ;set @ref@($i(@ref))=$$wrapString("4L|1|F")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ ;set @ref@($i(@ref))=$$getCharFromDescribe("<EOT>")
+ 
+ ;set @ref@($i(@ref))=$$getCharFromDescribe("<ENQ>")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ ;set @ref@($i(@ref))=$$wrapString("1H|\^&||parol|IMMULITE|111 Canfield Ave^Randolph^NJ^07869||(201)927-2828|N81|LIS||P|1|20120317145155")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ ;set @ref@($i(@ref))=$$wrapString("2P|1|120317003301|||^|||U|||||")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ ;set @ref@($i(@ref))=$$wrapString("3O|1|11000000002||^^^RUM||||||||||||||||||||O5528")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ ;set @ref@($i(@ref))=$$wrapString("4R|1|^^^RTH|>100|mg/L|0.200\0.200^100\100|>|N|F|||20120615140003|20120615143636|L4646")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ ;set @ref@($i(@ref))=$$wrapString("4L|1|F")
+ ;set @ref@($i(@ref))="<WAIT_ACK>"
+ ;set @ref@($i(@ref))=$$getCharFromDescribe("<EOT>")
+ 
+ set @ref@($i(@ref))=$$getCharFromDescribe("<ENQ>")
+ set @ref@($i(@ref))="<WAIT_ACK>"
+ set @ref@($i(@ref))=$$wrapString("1H|\^&||parol|IMMULITE|111 Canfield Ave^Randolph^NJ^07869||(201)927-2828|N81|LIS||P|1|20120317145155")
+ set @ref@($i(@ref))="<WAIT_ACK>"
+ set @ref@($i(@ref))=$$wrapString("2P|1|120317003301|||^|||U|||||")
+ set @ref@($i(@ref))="<WAIT_ACK>"
+ set @ref@($i(@ref))=$$wrapString("3O|1|11000000002||^^^RUM||||||||||||||||||||O5528")
+ set @ref@($i(@ref))="<WAIT_ACK>"
+ set @ref@($i(@ref))=$$wrapString("4R|1|^^^RTH|55|mg/L|0.200\0.200^100\100||N|F|||20120615140003|20120615143636|L4646")
+ set @ref@($i(@ref))="<WAIT_ACK>"
+ set @ref@($i(@ref))=$$wrapString("4L|1|F")
+ set @ref@($i(@ref))="<WAIT_ACK>"
+ set @ref@($i(@ref))=$$getCharFromDescribe("<EOT>")
+ 
+ quit
+
+wrapString(string)
+ if string="<WAIT_ACK>" quit string
+ set res=string_$$getCharFromDescribe("<CR>")_$$getCharFromDescribe("<ETX>")
+ quit $$getCharFromDescribe("<STX>")_res_$$getCheckSum(res)_$$getCharFromDescribe("<CR>")_$$getCharFromDescribe("<LF>")
+ 
+getCheckSum(string)
+ quit $$CHSUM^MIFimmulite2000(string) 
+ 
+getCharFromDescribe(charDescribe)
+ if charDescribe="<EOT>" quit $char(4) 
+ if charDescribe="<STX>" quit $char(2)
+ if charDescribe="<ETX>" quit $char(3)
+ if charDescribe="<ACK>" quit $char(6)
+ if charDescribe="<ENQ>" quit $char(5) 
+ if charDescribe="<NAC>" quit $char(21)
+ if charDescribe="<LF>" quit $char(10)
+ if charDescribe="<CR>" quit $char(13)
+ if charDescribe="<ETB>" quit $char(23)
+ quit charDescribe
+    
+getDescribeFromChar(char)
+ if char=$char(4) quit "<EOT>" 
+ if char=$char(2) quit "<STX>"
+ if char=$char(3) quit "<ETX>"
+ if char=$char(6) quit "<ACK>"
+ if char=$char(5) quit "<ENQ>"  
+ if char=$char(21) quit "<NAC>"
+ if char=$char(10) quit "<LF>"
+ if char=$char(13) quit "<CR>"
+ if char=$char(23) quit "<ETB>"
+ quit char    
+ 
+waitACK()
+ read *ans:10
+ //if ans=6 d trace^MIF000(mi,"ACK"_$j,"M-->H") quit 1
+ if $$getDescribeFromChar(ans)="ACK" quit 1
+ quit 0
+ 
+]]></Routine>
+</Export>
