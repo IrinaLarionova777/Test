@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF201RU01" type="MAC" languagemode="0"><![CDATA[
+MIF201RU01(mi)	; Test1 BCL
+	; 18JAN2011 by Mc_Fly - InterSystems BCN
+ 
+	s $zt="err"
+	s mi=$g(mi) i '$l(mi) q
+	s stx=$c(2),etx=$c(3),eot=$c(4),ack=$c(6),nak=$c(21)
+	k ^TMP(mi,$j)
+	d trace("*** Starting ***","DEBUG")
+	i $$select^LVBMIMP(mi) d trace("Error select^LVBMIMP(mi)","DEBUG") q
+	f j=1:1:PLIST s @("par"_j)=PLIST(j)
+	i $$start^MIF000() d trace("Cannot open device "_par4,"DEBUG") q
+	d trace("Started $j="_$j,"DEBUG")
+ 
+	s compiled=$lg(^rINDEX($zn,"OBJ"),1)
+	; Neutral State
+	f  d  i $$stop^MIF000() q
+	. d receive
+	. i $lg(^rINDEX($zn,"OBJ"))'=compiled ztrap "EDIT"
+ 
+	c par4
+	d trace("Finished","DEBUG")
+	k ^TMP(mi,$j)
+	q
+receive	; Ready to receive
+	f  q:'$$read(stx,etx_eot,,30)  d receiving
+	q
+receiving
+	s record=$e(record,2,$l(record)-1) ; remove <STX>....<ETX>
+	d trace("record="_record,"DEBUG")
+ 
+	i $e(record)="R" d result q
+	i $e(record)="Q" d query q
+	d trace("Unknow message","DEBUG")
+	q
+result
+	;s label=$tr($e(record,4,18)," ")
+	s rack=+$e(record,19,20)
+	s pos=+$e(record,21,22)
+	s unk=$e(record,23,24)
+	s res=$e(record,25,28)
+	i $e(res)="-" s res=""
+	i $l(res) s res=+res
+	
+	d trace("rack="_rack_" pos="_pos_" unk="_unk_" res="_res,"DEBUG")
+ 
+	i '$l(rack) d trace("rack empty","DEBUG") q
+	i '$l(pos) d trace("position empty","DEBUG") q
+	i '$l(res) q
+	
+	s label=$p($g(^TMIF(mi,"LL",rack,"PAT",pos)),"\",1)
+	s epis=$e(label,1,9)
+	i '$l(epis) q
+	
+	s (sample,surname,date,time,QC)=""
+	s result="VSG"_$c(par10)_res_$c(par10)_$c(par10)_$c(par10)_$c(par11)
+	d trace("File epis="_epis_" sample="_sample_" result="_result_" QC="_QC,"DEBUG")
+	d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+	q
+query
+	d trace("Query "_record,"DEBUG")
+	q
+read(start,stop,term,timeout)	n (mi,record,start,stop,term,timeout)
+	; start: string of start characters i.e. stx
+	; stop : string of stop characters i.e. etb_etx
+	; term : string of terminator characters i.e. eot
+	; Returns: 0 - Failed
+	;          1 - Done
+	;          record = string received
+	s start=$g(start),stop=$g(stop),term=$g(term),timeout=$g(timeout),ok=0
+	i '$l(start) s ok=1
+	i '$l(timeout) s timeout=30
+	s record="",swterm=0,zh=$zh
+	f  r *x:timeout q:x=-1  d  q:swterm  q:$f(stop,$c(x))  i ($zh-zh)>timeout s x=-2 q
+	. i $f(term,$c(x)) s swterm=1 q
+	. i 'ok,$f(start,$c(x)) s ok=1
+	. i 'ok d trace("Wait for "_start_" but received "_$c(x)) q
+	. s record=record_$c(x)
+	i swterm d  d trace(mess) q 0
+	. s mess="Received terminate char "_$c(x) i $l(record) s mess=mess_". Record="_record
+	i x=-1 d  d trace(mess,,join) q 0
+	. s mess="Timeout ocurred",join=1 i $l(record) s mess=mess_". Record="_record,join=0
+	i x=-2 d  d trace(mess) q 0
+	. s mess="General timeout ocurred" i $l(record) s mess=mess_". Record="_record
+	d trace(record)
+	q 1
+err
+	s $zt=""
+	d trace($ze,"ERROR")
+	d trace("Finished","DEBUG")
+	k ^TMP(mi,$j)
+ 
+	i $f($ze,"<ZEDIT>") d trace("Autostarting...","DEBUG") x "j ^"_$zn_"(mi)"
+	i $f($ze,"<READ>") d trace("Autostarting...","DEBUG") x "j ^"_$zn_"(mi)"
+	q
+trace(mes,dir,join) n dt,date,last,r,times,n,max,z
+	s mes=$g(mes),dir=$g(dir,"M-->H"),join=+$g(join)
+	i '$l($g(mi)) q
+	s dir=$e(dir_$j("",5),1,5),dt=$zu(188)
+	;s date=$p(dt,".",1)_"."_$e($p(dt,".",2)_"000",1,3)
+	s date=$p(dt,".",1)
+	i join d
+	. s last=$o(^TMPmif(mi,99,""),-1) i '$l(last) q
+	. s r=$g(^TMPmif(mi,99,last))
+	. i $p(r," : ",1)'=dir q
+	. s wmes=$p(r," : ",3)
+	. i $e(wmes,1,$l(mes))'=mes q
+	. s times=$e(wmes,$l(mes)+1,$l(wmes)) i $l(times),times'?1" x"1.n q
+	. s times=$p(times," x",2) i '$l(times) s times=1
+	. s mes=mes_" x"_(times+1) k ^TMPmif(mi,99,last)
+	s n=$o(^TMPmif(mi,99,""),-1)+1
+	s ^TMPmif(mi,99,n)=dir_" : "_date_" : "_$$trans(mes)
+ 
+	s max=+$p($g(^TMIF(mi)),"\",20) i 'max s max=200
+	f z=n-max:-1 q:'$d(^TMPmif(mi,99,z))  k ^TMPmif(mi,99,z)
+	q
+trans(txt) n new,n,a
+	s new="" f n=1:1:$l(txt) s a=$a(txt,n) d
+	. i a>127 s new=new_"<"_a_">" q
+	. i a>31 s new=new_$c(a) q
+	. i a=21 s new=new_"<NAK>" q
+	. i a=6 s new=new_"<ACK>" q
+	. i a=4 s new=new_"<EOT>" q
+	. i a=3 s new=new_"<ETX>" q
+	. i a=2 s new=new_"<STX>" q
+	. s new=new_"<"_a_">"
+	q new
+SAVE(mi) ; Create loadlist record
+	d trace("Create loadlist record","DEBUG")
+	q
+NEXTTRAY(tray)
+	q tray+2
+]]></Routine>
+</Export>

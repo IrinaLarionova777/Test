@@ -1,0 +1,557 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF481RU01" type="MAC" languagemode="0" generated="1"><![CDATA[
+MIF481ESP01(mi)	; ASTM protocol - CCM OLA 2500 ; QC = No
+	; ---------------------
+	;  29JUN2007 by Mc_Fly
+	;  TrakHealth BCN
+	; ---------------------
+	; Custom globals:
+	;  ^TMIF(mi,11,epis,ts,cnt)=mode - Pruebas a mandar a CCM
+	;  ^TMIF(mi,12,*) - Tabla tipo de paciente
+	;  ^TMIF(mi,13,*) - Tabla tipo de tubo
+	;  ^TMIF(mi,14,*) - Tabla tipo de rack
+	;  ^TMIF(mi,15,*) - Pruebas a no mandar que han sido validadas
+	;  ^TMIF(mi,16,*) - Buffer de envio - No utilizamos el 10 porque la MIF000 lo borra
+	;  ^TMIF(mi,17,*) - Pruebas a mandar cuando el estado cambia a E
+	; ----------------------
+	s $zt="err"
+	s mi=$g(mi) i '$l(mi) q
+	s stx=$c(2),etx=$c(3),enq=$c(5),ack=$c(6),lf=$c(10),cr=$c(13),nak=$c(21)
+	d trace("*** Starting ***","DEBUG")
+	i $$select^LVBMIMP(mi) d trace("Error select^LVBMIMP(mi)","DEBUG") q
+	f j=1:1:PLIST s @("par"_j)=PLIST(j)
+	i $$start^MIF000() d trace("Cannot open device "_par4,"DEBUG") q
+	d trace("Started $j="_$j,"DEBUG")
+ 
+	; Neutral State
+	f  d  i $$stop^MIF000() q
+	. i $$waitenq() d receive
+	. d query,send
+	. d ask
+	c par4
+	d trace("Finished","DEBUG")
+	q
+waitenq()	; Wait the ENQ char
+	r *c:30 e  q 0
+	i $c(c)'=enq d trace("Waiting <ENQ> but received "_$c(c)) q 0
+	d trace($c(c))
+	d sendchar(ack)
+	q 1
+receive	; Ready to receive
+	s swend=0
+	f  q:'$$read(stx,lf)  d receiving q:swend
+	q
+receiving
+	s record=$e(record,2,$l(record)-2) ; Remove <STX>...<CR><LF>
+	s chk=$p(record,etx,2)
+	s crecord=$p(record,etx,1)_etx,cchk=$$chksum(crecord)
+	i chk'=cchk d trace("Invalid checksum received "_chk_" Calculated "_cchk) d sendchar(nak) q
+	d sendchar(ack)
+	
+	s type=$p(record,"|",1)
+	i type="E" s swend=1 q
+	i type="C" d cmess q
+	d trace("Unknow message type="_type)
+	q
+query	; Create list of orders
+	i '$d(^TMIF(mi,11)) q
+	
+	s (epis,ts,cnt)=""
+	f  s epis=$o(^TMIF(mi,11,epis)) q:epis=""  d
+	. 
+	. d set2buf($$pmess(epis))
+	. d set2buf($$dmess(epis))
+	.
+	. s swsent=0
+	. i $l($p($g(^TMIF(mi,20,epis)),"\",2)) s swsent=1
+	. s $p(^TMIF(mi,20,epis),"\",2)=$$zts^MIF000()
+	. 
+	. s tot=0,mess="T|"_epis_"|",(list,sep,listd,sepd)=""
+	. 
+	. f  s ts=$o(^TMIF(mi,11,epis,ts)) q:ts=""  d
+	.. f  s cnt=$o(^TMIF(mi,11,epis,ts,cnt)) q:cnt=""  d
+	... 
+	... l +^TMIF(mi,11,epis,ts,cnt)
+	... s mode=^(cnt)
+	... s sit=$s(mode="I"&(swsent):"R",mode="I":"N",1:"A")
+	... 
+	... s syn=$p($g(^TTAB("TS",ts)),"\",2)
+	... i mode="I" s list=list_sep_syn,sep=" "
+	... i mode="D" s listd=listd_sepd_syn,sepd=" "
+	... 
+	... k ^TMIF(mi,11,epis,ts,cnt)
+	... l -^TMIF(mi,11,epis,ts,cnt)
+	... 
+	...
+	... i tot=20 s mess=mess_"|1" d set2buf(mess) s tot=0,mess="T|"_epis_"|"
+	... s mess=mess_"|"_ts_"|"_sit_"|",tot=tot+1
+	. 
+	. f x=tot+1:1:20 s mess=mess_"|||"
+	. s mess=mess_"|0"
+	. d set2buf(mess)
+	. 
+	. s (txt,sep)=""
+	. i $l(list) s txt=txt_"Pruebas enviadas a CCM:"_list,sep=" "
+	. i $l(listd) s txt=txt_"Pruebas anuladas en CCM:"_listd,sep=" "
+	. d setevent(epis,"IS",txt)
+	q
+pmess(epis)
+	s (sex,surname,given,dob,age,mrn,loc,entdat,enttim,coldat,coltim)=""
+ 
+	i $d(^TEPI(epis)) d
+	. s r=$g(^TEPI(epis)),r0=$g(^TEPI(epis,0))
+	. s surname=$p(r,"\",1),surname2=$p(r0,"\",23),given=$p(r,"\",2)
+	. i $l(surname2) s surname=surname_" "_surname2
+	. s sex=$p(r,"\",3)
+	. s dob=$p(r,"\",4) i $l(dob) s dob=$zd(dob,8,,,,,,,"")
+	. s entdat=$p(r,"\",8) i $l(entdat) s entdat=$zd(entdat,8,,,,,,,"")
+	. s enttim=$p(r,"\",9) i $l(enttim) s enttim=$tr($zt(enttim*60,2,,""),":")
+	. s mrn=$p(r,"\",18)
+	. s coldat=$p(r,"\",10) i $l(coldat) s coldat=$zd(coldat,8,,,,,,,"")
+	. s coltim=$tr($p(r,"\",11)," ") i $l(coltim) s coltim=$tr($zt(coltim*60,2,,""),":")
+	. s age=$p(r,"\",25)
+	. s ageyea=+$p(age,".",1),ageday=+$p(age,".",2)
+	. i ageyea=0 s age=ageday_"^D"
+	. i ageyea'=0 s age=ageyea_"^A"
+ 
+	s r="P"                                       ;  1 - Identificador
+	s r=r_"|"_epis                                ;  2 - Numero de laboratorio
+	s r=r_"|"                                     ;  3 - No utilizado
+	s r=r_"|"_mrn                                 ;  4 - Numero historia
+	s r=r_"|"                                     ;  5 - Numero seguridad social
+	s r=r_"|"_$e(surname,1,30)_"^"_$e(given,1,15) ;  6 - Nombre del paciente
+	s r=r_"|"_dob                                 ;  7 - Fecha nacimiento AAAAMMDD
+	s r=r_"|"_age                                 ;  8 - Edad
+	s r=r_"|"_sex                                 ;  9 - Sexo
+	s r=r_"|"                                     ; 10 - No utilizado
+	s r=r_"|"                                     ; 11 - No utilizado
+	s r=r_"|"                                     ; 12 - No utilizado
+	s r=r_"|"                                     ; 13 - No utilizado
+	s r=r_"|"_entdat_"^"_enttim                   ; 14 - Fecha de entrada
+	s r=r_"|"_coldat_"^"_coltim                   ; 15 - Fecha de extraccion
+	s r=r_"|"                                     ; 16 - No utilizado
+	s r=r_"|"                                     ; 17 - No utilizado
+	s r=r_"|"                                     ; 18 - No utilizado
+	s r=r_"|"                                     ; 19 - No utilizado
+	s r=r_"|"                                     ; 20 - No utilizado
+	q r
+cmess
+	;  1 - Identificador de mensaje
+	;  2 - Numero de laboratorio
+	;  3 - Numero codigo de barras
+	s epis=$p(record,"|",3)
+	;  4 - Tipo tubo
+	s (txt,sep)=""
+	s x=$p(record,"|",4)
+	i $l(x) d
+	. i $d(^TMIF(mi,13,x)) s x=^TMIF(mi,13,x)
+	. s txt=txt_sep_x,sep=" "
+	;  5 - Rack (Area)
+	s x=$p(record,"|",5)
+	i $l(x) d
+	. i $d(^TMIF(mi,14,x)) s x=^TMIF(mi,14,x)
+	. s txt=txt_sep_"Area="_x,sep=" "
+	;  6 - Posicion
+	s pos=$p(record,"|",6)
+	i $l(pos) s txt=txt_sep_"Pos.="_pos,sep=" "
+	;  7 - Volumen
+	s vol=$p(record,"|",7)
+	i $l(vol) s txt=txt_sep_"Vol.="_vol,sep=" "
+	;  8 - Error ID
+	s error=$p(record,"|",8)
+	i error=0 s error=""
+	i $l(error) s txt=txt_sep_"Error="_error,sep=" "
+	;  9 - Texto error
+	s x=$p(record,"|",9)
+	i $l(x) s txt=txt_sep_"-"_x,sep=" "
+	; 10 - Identificador de tipo de tubo
+	s con=$$ALPHAUP^SSUTIL4($p(record,"|",10))
+	i $l(con) d
+	. s txt=txt_sep_"Tipo tubo="_con,sep=" "
+	. i '$d(^TTAB("CON",con)) d setcon(con)
+	; 11 - Fecha proceso
+	s x=$p(record,"|",11)
+	i $l(x) s x=$e(x,7,8)_"/"_$e(x,5,6)_"/"_$e(x,1,4),txt=txt_sep_"Fecha="_x,sep=" "
+	; 12 - Hora proceso
+	s x=$p(record,"|",12)
+	i $l(x) s x=$e(x,1,2)_":"_$e(x,3,4)_":"_$e(x,5,6),txt=txt_sep_"Hora="_x,sep=" "
+	; 13 - Gradilla archivo
+	s sero=$$ALPHAUP^SSUTIL4($p(record,"|",13))
+	i $l(sero) s txt=txt_sep_"Seroteca="_sero,sep=" "
+	; 14 - Recepcion
+	s x=$p(record,"|",14)
+	i $l(x) s txt=txt_sep_"Recepciуn="_x,sep=" "
+ 
+	d trace("epis="_epis_" txt="_txt_" con="_con)
+	d setevent(epis,"IR",txt)
+ 
+	;;;i $l(error) s con=error
+	
+	d sero
+ 
+	i '$l(con) q	
+	s spe=$p(^TTAB("CON",con),"\",4) ; Manufacturer
+	i '$l(spe) q
+ 
+	i $l(error),$d(^TMIF(mi,"FLAG",error)) q
+	
+ 	k plist s plist=0
+ 	s (wspe,ord)=""
+ 	f  s wspe=$o(^TEPI(epis,4,wspe)) q:wspe=""  d
+ 	. f  s ord=$o(^TEPI(epis,4,wspe,ord)) q:ord=""  d
+ 	.. k PLIST
+ 	.. i $$select^LVBVISSC(epis_"||"_wspe_"||"_ord,"Y") q
+ 	.. 
+ 	.. s (r,sep)=""
+ 	.. f i=1:1:$o(PLIST(""),-1) s r=r_sep_PLIST(i),sep=$c(28)
+	..
+ 	.. s plist=plist+1
+ 	.. s plist(plist)=r
+ 
+	k PLIST
+	m PLIST=plist k plist
+ 
+	s PLIST=PLIST+1,i=PLIST
+	s ord=$o(^TEPI(epis,4,spe,""),-1)+1
+	s r=epis_"||"_spe_"||"_ord_$c(28)_ord_$c(28)_con_$c(28,28)_vol_$c(28)_vol_$c(28)
+	s r=r_"HULP"_$c(28)_"N"_$c(28,28,28,28,28)
+ 	s PLIST(i)=r
+	
+	i $$save^LVBVISSC(epis)
+	q
+sero	n PLIST,old
+ 
+	i '$l(sero) q
+	i $l(pos)'=4 q
+	
+	i '$d(^TTAB("ST-CONT",sero)) d
+	. ; CT_StorageContainers
+	. ; --------------------
+	. k PLIST
+	. s PLIST(2)=sero ; CTSTC_Code - Code (Text)
+	. s PLIST(3)="OLA SEROTECA" ; CTSTC_Description - Description (Text)
+	. s PLIST(5)=10 ; CTSTC_Columns - Columns (Number)
+	. s PLIST(6)=5 ; CTSTC_Rows - Rows (Number) - Es al reves !!!
+	. s PLIST(4)=PLIST(5)*PLIST(6) ; CTSTC_NumberOfPositions - Number Of Positions (Number)
+	. s PLIST(7)="SUE" ; CTSTC_Specimen_DR - Specimen DR (DR)
+	. s PLIST(8)="" ; CTSTC_StorageTime - Storage Time (days) (Number)
+	. s PLIST(9)="Y" ; CTSTC_ActiveFlag - Active Flag (Y/N)
+	. 
+	. i $$insert^LVBCTSTC()
+ 
+	s pos=$$seropos(sero,pos)
+	
+	; Delete previous episode
+	s old=$p($g(^TTST(sero,"POS",pos)),"\",1)	
+	i $l(old) d
+	. i $$delete^LVBSTCP(sero_"||"_pos)
+	. i $$VBevent^LVBCOM01(old,"STM","Removed from container "_sero_", Position "_pos)       
+	. 
+	. i $$select^LVBSTC(sero,"Y") q
+	. s PLIST(7)=PLIST(7)-1
+	. i 'PLIST(7) s PLIST(3)="",PLIST(4)=""
+	. i $$update^LVBSTC(sero)
+ 
+	; ST_StorageContainerPosition
+	; ---------------------------
+	k PLIST
+	s PLIST(2)=pos ; STCP_Position - Position (Number)
+	s PLIST(3)=epis ; STCP_Episode_DR - Episode DR (DR)
+	s PLIST(4)="" ; STCP_SpecimenContainer_DR - Specimen Container DR (DR)
+	s PLIST=$o(PLIST(""),-1)
+	i $$insert^LVBSTCP(sero) q
+	i $$VBevent^LVBCOM01(epis,"STM","Added to container "_sero_", Position "_pos)
+ 
+	i $$select^LVBSTC(sero,"Y") q
+	s PLIST(7)=PLIST(7)+1
+	s PLIST(4)=$p($h,",",1)
+	i '$l(PLIST(3)) s PLIST(3)=$p($h,",",1)
+ 
+	i $$update^LVBSTC(sero)
+	q
+	; Convert CCM pos to Labtrak pos
+seropos(sero,pos) n r,nrows,ncols,col,row,lrow,lcol
+	s r=^TTAB("ST-CONT",sero)
+	s nrows=$p(r,"\",3),ncols=$p(r,"\",4)
+	; Calculate Labtrak position
+	s col=+$e(pos,1,2),row=+$e(pos,3,4)
+	;s lrow=nrows-row+1,lcol=col
+	s lrow=row,lcol=col
+	s lpos=ncols*(lrow-1)+lcol
+	q lpos
+	
+setcon(con) n PLIST,err
+	; CT_Container
+	; ------------
+	k PLIST
+	s PLIST(2)=con ; CTCON_Code - Code (Text)
+	s PLIST(3)="OTRAS MUESTRAS" ; CTCON_Description - Description (Text)
+	s PLIST(4)="" ; CTCON_Max_Volume - Max Volume (Number)
+	s PLIST(5)="" ; CTCON_Comment - Comment (Text)
+	s PLIST(6)="" ; CTCON_Label_DR - Label DR (DR)
+	s PLIST(7)="OTRMU" ; CTCON_Manufacturer_DR - Manufacturer (DR)
+	s PLIST=$o(PLIST(""),-1)
+		
+	s err=$$insert^LVBCTCON()
+	q
+dmess(epis)
+	s (hab,cam,diag,gfhdes,gfhser,tippac,doctor)=""
+	
+	i $d(^TEPI(epis)) d
+	. s r=^TEPI(epis)
+	. s r0=$g(^TEPI(epis,0))
+	. s i=0,sep=""
+	. f  s i=$o(^TEPI(epis,3,i)) q:i=""  s diag=diag_sep_^(i),sep=" "
+	. i '$l(diag) s diag="NO INFORMADO"
+	. s diag=$e(diag,1,20)
+	. 
+	. s gfhdes=$p(r,"\",54)
+	. i $l(gfhdes) s gfhdes=$g(gfhdes) ; gfhdes=$e($p($g(^TTAB("RH",gfhdes)),"\",1),1,30)
+	. 
+	. s gfhser=$p(r,"\",49)
+	. i $l(gfhser) s gfhser=$e($p($g(^TTAB("CTPA",gfhser)),"\",1),1,20)
+	. 
+	. s tippac=$p(r,"\",48)
+	. i $l(tippac),$d(^TMIF(mi,12,tippac)) s tippac=^TMIF(mi,12,tippac)
+	. 
+	. s hab=$e($p(r0,"\",28),1,4)
+	. s cam=$e($p(r0,"\",29),1,2)
+	. 
+	. s doctor=$p(r,"\",13)
+	. i $l(doctor) s rd=$g(^TTAB("DR",doctor)),doctor=$e($p(rd,"\",2),1,30)_"^"_$e($p(rd,"\",1),1,15)
+ 
+	s r="D"                   ;  1 - Identificador
+	s r=r_"|"_epis            ;  2 - Numero de laboratorio
+	s r=r_"|"_doctor          ;  3 - Nombre peticionario
+	s r=r_"|"_gfhdes          ;  4 - Cliente
+	s r=r_"|"_gfhser          ;  5 - Departamento
+	s r=r_"|"_$e(tippac,1,20) ;  6 - Condicion especial
+	s r=r_"|"_hab_"^"_cam     ;  7 - Habitacion y cama
+	s r=r_"|"                 ;  8 - No utilizado
+	s r=r_"|"                 ;  9 - No utilizado
+	s r=r_"|"_diag            ; 10 - Diagnostico
+	s r=r_"|DESCONOCIDO"      ; 11 - Medicacion
+	s r=r_"|"                 ; 12 - Dieta
+	s r=r_"|"                 ; 13 - Tipo extraccion
+	s r=r_"|"                 ; 14 - No utilizado
+	s r=r_"|"                 ; 15 - No utilizado
+	s r=r_"|"                 ; 16 - No utilizado
+	s r=r_"|"                 ; 17 - No utilizado
+	s r=r_"|"                 ; 18 - No utilizado
+	s r=r_"|"                 ; 19 - No utilizado
+	s r=r_"|"                 ; 20 - No utilizado
+	q r
+ask
+	i $$sendstr("Q||||") q
+	d receive
+	q
+send	; send list of orders if exists
+ 
+	i $d(^TMIF(mi,16))<11 q
+		
+	d sendchar(enq)
+	r *c:15
+	i c=-1 d trace("Timeout") q
+	d trace($c(c))
+	i $c(c)=enq d sendchar(ack),receive q  ; Instrument has priority
+	i $c(c)'=ack q
+	s n="" f  s n=$o(^TMIF(mi,16,n)) q:n=""  q:$$sendstr(^TMIF(mi,16,n))  k ^TMIF(mi,16,n)
+	q
+sendstr(str)	; send string to instrument
+	s chsum=$$chksum(str_etx)
+	d trace(stx_str_etx_chsum_cr_lf,"H-->M")
+	w stx_str_etx_chsum_cr_lf,*-3
+	r *c:5
+	i c=-1 d trace("Timeout") q 2
+	d trace($c(c))
+	i $c(c)=ack q 0
+	q 2
+set2buf(txt)	; Set string to send buffer
+	s ^TMIF(mi,16,$i(^TMIF(mi,16)))=txt
+	q
+chksum(x)	; calculate checksum
+	n z,y s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+	s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+	q z
+sendchar(char)
+	d trace(char,"H-->M") w char,*-3
+	q
+read(start,stop,term,timeout)	n (mi,record,start,stop,term,timeout)
+	; start: string of start characters i.e. stx
+	; stop : string of stop characters i.e. etb_etb
+	; term : string of terminator characters i.e. eot
+	; Returns: 0 - Failed
+	;          1 - Done
+	;          record = string received
+	s start=$g(start),stop=$g(stop),term=$g(term),timeout=$g(timeout),ok=0
+	i '$l(start) s ok=1
+	i '$l(timeout) s timeout=30
+	s record="",swterm=0
+	f  r *x:timeout q:x=-1  d  q:swterm  q:$f(stop,$c(x))
+	. i $f(term,$c(x)) s swterm=1 q
+	. i 'ok,$f(start,$c(x)) s ok=1
+	. i 'ok d trace("Wait for "_start_" but received "_$c(x)) q
+	. s record=record_$c(x)
+	i swterm d  d trace(mess) q 0
+	. s mess="Received terminate char "_$c(x) i $l(record) s mess=mess_". Record="_record
+	i x=-1 d  d trace(mess,,join) q 0
+	. s mess="Timeout ocurred",join=1 i $l(record) s mess=mess_". Record="_record,join=0
+	d trace(record)
+	q 1
+err
+	s $zt=""
+	d trace($ze,"ERROR")
+	d trace("Finished","DEBUG")
+	k ^TMP(mi,$j)
+ 
+	i $f($ze,"<EDITED>") d trace("Autostarting...","DEBUG") x "j ^"_$zn_"(mi)"
+	q
+trace(mes,dir,join) n dt,date,last,r,times,n,max,z
+	s mes=$g(mes),dir=$g(dir,"M-->H"),join=+$g(join)
+	i '$l($g(mi)) q
+	s dir=$e(dir_$j("",5),1,5),dt=$zu(188)
+	s date=$zd(dt,4)_" "_$zt($p(dt,",",2))_"."_$e($p(dt,".",2)_"000",1,3)
+	i join d
+	. s last=$o(^TMPmif(mi,99,""),-1) i '$l(last) q
+	. s r=$g(^TMPmif(mi,99,last))
+	. i $e(r,1,5)'=dir q
+	. i $e(r,31,30+$l(mes))'=mes q
+	. s times=$e(r,31+$l(mes),$l(r)) i $l(times),times'?1" x"1.n q
+	. s times=$p(times," x",2) i '$l(times) s times=1
+	. s mes=mes_" x"_(times+1) k ^TMPmif(mi,99,last)
+	s n=$o(^TMPmif(mi,99,""),-1)+1
+	s ^TMPmif(mi,99,n)=dir_" "_date_" "_$$trans(mes)
+ 
+	s max=+$p($g(^TMIF(mi)),"\",20) i 'max s max=200
+	f z=n-max:-1 q:'$d(^TMPmif(mi,99,z))  k ^TMPmif(mi,99,z)
+	q
+trans(txt) n new,n,a
+	s new="" f n=1:1:$l(txt) s a=$a(txt,n) d
+	. i a>127 s new=new_"<"_a_">" q
+	. i a>31 s new=new_$c(a) q
+	. i a=2 s new=new_"<STX>" q
+	. i a=3 s new=new_"<ETX>" q
+	. i a=5 s new=new_"<ENQ>" q
+	. i a=6 s new=new_"<ACK>" q
+	. i a=10 s new=new_"<LF>" q
+	. i a=13 s new=new_"<CR>" q
+	. i a=21 s new=new_"<NAK>" q
+	. s new=new_"<"_a_">"
+	q new
+setevent(epis,code,txt) n PLIST,err,h
+	i '$l(txt) q
+	
+	s h=$h
+	; EP_VisitEvents
+	; --------------
+	k PLIST
+	s PLIST(3)=code ; VISEV_Type - Event Type (Text)
+	s PLIST(4)=txt
+	s PLIST(5)=$p(h,",",1) ; VISEV_Date - Date (Date)
+	s PLIST(6)=$p(h,",",2) ; VISEV_Time - Time (Time)
+	s PLIST=$o(PLIST(""),-1)
+	 
+	s err=$$insert^LVBVISEV(epis)
+	q
+	; ***********************************************************************************
+	;                                 Call from custom exe
+	; *********************************************************************************** 
+resend(from,to) n (from,to)
+ 
+	s tot=0
+	s epis=$o(^TEPI(from),-1)
+	f  s epis=$o(^TEPI(epis)) q:epis=""  s tot=tot+1  q:epis=to  q:tot=100
+ 
+	i tot=100 q 0
+ 
+	s epis=$o(^TEPI(from),-1)
+	f  s epis=$o(^TEPI(epis)) q:epis=""  d  q:epis=to
+	. s (ts,cnt)=""
+	. f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+	.. f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+	... i $$select^LVBVISTS(epis_"||"_ts_"||"_cnt,"Y") q
+	... k %data m %data=PLIST
+	... i $g(%data(33))="A" k %edit m %edit=PLIST s %edit(33)="" d update q
+	... d insert
+	q 1
+	; ***********************************************************************************
+	;                                 Calls from at46ESP01
+	;                                   and from resend
+	; *********************************************************************************** 
+insert	; POFILINS^at46ESP01
+	n vists,epis,ts,cnt,usite
+	s vists=$g(%data(1))
+	s epis=$p(vists,"||",1),ts=$p(vists,"||",2),cnt=$p(vists,"||",3)
+	s usite=""
+	i $l(%data(29)) s usite=%data(29)
+	i '$l(usite) s usite=$p($g(^TEPI(epis)),"\",36)
+	i usite'="HULP" q
+	
+	i '$d(^TMIF("CCM","TG","T","TS",ts)) q
+	
+	d settmif("I")
+	q
+update	; POFILUPD^at46ESP01
+	n vists,epis,ts,cnt,usite
+	s vists=$g(%data(1))
+	s epis=$p(vists,"||",1),ts=$p(vists,"||",2),cnt=$p(vists,"||",3)
+	s usite=""
+	i $l($p(%data(29),$c(1),1)) s usite=$p(%data(29),$c(1),1)
+	i '$l(usite) s usite=$p($g(^TEPI(epis)),"\",36)
+ 
+ 	i usite'="HULP" q
+	i '$d(^TMIF("CCM","TG","T","TS",ts)) q
+ 	
+	d chkmove
+	d chkval
+	d chkent
+ 	q
+chkent	; TestSet has been entered	
+	i $p($g(%edit(33)),$c(1),1)="E" q
+	i $p($g(%data(33)),$c(1),1)'="E" q
+ 
+	i '$d(^TMIF("CCM",17,ts)) q
+	
+	d settmif("A")
+	q
+chkval	; TestSet has been authorised	
+	i $p($g(%edit(33)),$c(1),1)="A" q
+	i $p($g(%data(33)),$c(1),1)'="A" q
+ 
+	i $d(^TMIF("CCM",15,ts)) q
+	i $d(^TMIF("CCM",17,ts)) q
+	
+	d settmif("A")
+	q
+chkmove	; TestSet received at HULP
+	n ousite
+	
+	s ousite=""
+	i $l($p($g(%edit(29)),$c(1),1)) s ousite=$p(%edit(29),$c(1),1)
+	i '$l(ousite) s ousite=$p($g(^TEPI(epis)),"\",36)
+ 
+	i ousite="HULP" q
+	
+	d settmif("I")
+ 	q
+delete	; POFILDEL^at46ESP01
+	n vists,epis,ts,cnt,usite
+	s vists=$g(%edit(1))
+	s epis=$p(vists,"||",1),ts=$p(vists,"||",2),cnt=$p(vists,"||",3)
+	s usite=""
+	i $l($p($g(%edit(29)),$c(1),1)) s usite=$p(%edit(29),$c(1),1)
+	i '$l(usite) s usite=$p($g(^TEPI(epis)),"\",36)
+	i usite'="HULP" q
+	
+	i '$d(^TMIF("CCM","TG","T","TS",ts)) q
+	
+	d settmif("D")
+	q
+settmif(let)
+	l +^TMIF("CCM",11,epis,ts,cnt)
+	s ^TMIF("CCM",11,epis,ts,cnt)=let
+	l -^TMIF("CCM",11,epis,ts,cnt)
+	q
+]]></Routine>
+</Export>
