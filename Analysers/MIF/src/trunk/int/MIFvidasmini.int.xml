@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFvidasmini" type="INT" languagemode="0" generated="1"><![CDATA[
+MIFvidasmini(mi) ; BIOMERIEUX Mini Vidas 22/10/2003 ; 
+ set mi=$g(mi) if '$length(mi) quit
+ kill ^TMIF(mi,10) set $zt="err^MIF000"
+ if $$select^LVBMIMP(mi) quit
+ for j=1:1:PLIST s @("par"_j)=PLIST(j)
+ set stx=$c(2),etx=$c(3),eot=$c(4),enq=$c(5),ack=$c(6),crlf=$c(13,10),nak=$c(21),gs=$c(29),rs=$c(30)
+ if $$start^MIF000() q
+ for {
+	 d Main 
+	 if $$stop^MIF000() q
+ }
+ close par4
+ quit
+Main 
+ read *R:20
+ if $c(R)'=enq quit
+ do trace^MIF000(mi,"ENQ","H<--M")
+ do ACK
+ set record=$$read^MIF000(stx,etx) 
+ if '$length(record) quit
+ set record=$tr(record,crlf)
+ do trace^MIF000(mi,record,"H<--M")
+ ; check checksum
+ if $$CHSUM(record) do NAK quit
+ d ACK
+ s (sample,epis,surname,result,date,time,operator,found,QC)=""
+ s epis=$p($p(record,"ci",2),"|",1) s epis=+epis
+ quit:epis=""
+ s test=$p($p(record,"rt",2),"|",1) 
+ if test="" quit
+ ; extract qualitative & quantitative result
+ s qlres=$p($p(record,"ql",2),"|",1),qnres=$p($p(record,"qn",2),"|",1)
+ s qnres=$tr(qnres," ")
+ i "<>"[$e(qnres) s operator=$e(qnres),qnres=$e(qnres,2,10)
+ s qnres=+qnres s qnres=operator_$s($e(qnres)=".":"0"_qnres,1:qnres)
+ ; qualitative overides quantitative if valid
+ i $l(qlres) d
+ .s tc="" f  s tc=$o(^TMIF(mi,3,test,tc)) q:tc=""  i $d(^TMIF(mi,2,tc,1,qlres)) s found=1 q
+ s result=$s(found:qlres,1:qnres)
+ s result=test_$c(par10)_result_$c(par11)
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ quit
+ ; calculate check sum for records received and being sent
+CHSUM(x) s x=$g(x)
+ s chsum=$p(x,$c(29),2),x=$p(x,$c(29),1)_$c(29)
+ n num,i,trunc,chk
+ s num=0 f i=1:1:$l(x) s num=num+$a($e(x,i))
+ s trunc=num#256,chk=$tr($zh(trunc),"ABCDEFGHIJKLMNOPQRSTUVWXYZ","abcdefghijklmnopqrstuvwxyz")
+ i $l(chk)=1 s chk="0"_chk
+ i chk'=chsum q 1
+ q 0
+ACK write ack,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
+NAK write nak,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
+EOT write eot,*-3 do trace^MIF000(mi,"EOT","H-->M") quit
+ENQ write enq,*-3 do trace^MIF000(mi,"ENQ","H-->M") quit
+ 
+]]></Routine>
+</Export>

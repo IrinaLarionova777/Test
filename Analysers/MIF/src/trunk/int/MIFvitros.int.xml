@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFvitros" type="INT" languagemode="0" generated="1"><![CDATA[
+MIFvitros(mi) ; ML 12/1/99 ; ASTM protocol  -  Vitros ( J & J Fusion ? )
+ ;Прибор может делать тест с одним и тем же кодом (кодом анализатора) для разных биоматериалов
+ ;В настройках прибора надо ввести код теста*код биоматериала (все коды - коды анализатора) (через *)
+ ;Алгоритм работы программы
+ ; При заказе тестов:
+ ; в запись Order в поле коды тестов пишем коды тестов (которые до символа "*"), 
+ ; а в поле код биоматериала - код биоматериала (после символа "*", если пусто, то 1 (serum/plasma))
+ ; При записи результатов:
+ ; берем код теста и код биоматериала и если есть в настройках такой код "код теста*код биомериала", то объединяем обратно и записываем результат 
+ ;
+ ;K ^XXX
+ ;Set ^XXX($I(^XXX))="start"
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),etb=$c(23)
+ s lf=$c(10),cr=$c(13),nak=$c(21),(result,epis)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 e  d  q
+ .d:" L "[(" "_par9_" ") loadlist^MIF000(mi),Send
+ .d:" BU "[(" "_par9_" ") ORDER
+ i $c(R)=enq d
+ .d trace^MIF000(mi,"ENQ","H<--M")
+ .d ACK s enqcnt=""
+ .f  r *R:10 q:$c(R)=eot  q:R=-1  d
+ ..i $c(R)'=stx q
+ .. Set mainrecord=$$read("",lf) q:'$l(mainrecord)
+ .. ;Set ^XXX($I(^XXX))="mainrecord"
+ .. ;Set ^XXX($I(^XXX))=mainrecord
+ .. Set nrecord=$L(mainrecord,stx)
+ .. For nn=1:1:nrecord D
+ ...Set record=$P($P(mainrecord,stx,nn),cr,1)
+ ... ;Set ^XXX($I(^XXX))=record
+ ...;s record=$e(record,1,$l(record)-1)
+ ...d trace^MIF000(mi,$tr(record,$c(13,3)," "),"H<--M")
+ ... ; check record validity
+ ...s end=$s(record[etx:etx,1:etb)
+ ...s chsum=$p(record,end,2),chrecord=$p(record,end,1)_end
+ ...i (end=etx)&&($$CHSUM(chrecord)'=chsum) d  q
+ ....w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+ ...d ACK
+ ... ; query record
+ ...i $e(record,2)="Q" d  q
+ ....s epis=+$p($p(record,"|",3),"^",2) i $l(epis),$d(^TEPI(epis,1)) s ^TMP($zn,$j,"ENQ",epis)=""
+ ... ; header record
+ ...i $e(record,2)="H" d  q
+ ....d Last s (sample,epis,surname,result,date,time,QC,specimen)=""
+ ... ; patient record
+ ...i $e(record,2)="P" d  q
+ ....s surname=$tr($tr($p(record,"|",6)," "),"^"," ")
+ ... ; order record
+ ...i $e(record,2)="O" d  q
+ ....//s epis=+$tr($p($p(record,"|",3),"^",1)," ")
+ ....s epis=$$DeleteLeftAndRightSpaces^KSUTIL1($p($p(record,"|",3),"^",1))
+ ....if epis'=$p($p(record,"|",3),"^",1) set ^TMPmif(mi,98,$o(^TMPmif(mi,98,""),-1)+1)=$h_" "_"Пробелы в номере эпизода в начале или в конце:"_$p($p(record,"|",3),"^",1)_": ("_record_")"
+ ....set specimen=$piece(record,"|",16) 
+ .... ; check if received id is QC
+ ....s QC="" i $l(epis) s QC=$$findQC^MIF000(mi,epis)
+ ... ; result record
+ ...i $e(record,2)="R" d  q
+ ....s x1=$tr($p($p(record,"|",3),"+",2)," "),x2=$tr($p(record,"|",4)," "),x3=$piece($piece(record,"|",7),"^",2)
+ ....if x3="0" set x3=""
+ ....;проверить если в настройках прибора в ЛИС существует тест машинный x1*specimen - то записать его
+ ....set tcwrite=x1
+ ....if specimen'="" if $data(^TMIF(mi,3,x1_"*"_specimen)) set tcwrite=x1_"*"_specimen
+ ....if $length(x2),$isvalidnum(x2) set x2=+x2 // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
+ ....i $l(x1),$l(x2) s result=result_tcwrite_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ .... ; date and time
+ ....i $l($tr($p(record,"|",13)," ")) d
+ .....s date=$$intdate^SSUTIL4($e($p(record,"|",13),5,6)_"/"_$e($p(record,"|",13),7,8)_"/"_$e($p(record,"|",13),1,4))
+ .....s time=($e($p(record,"|",13),9,10)*3600)+($e($p(record,"|",13),11,12)*60)
+ ... ; last record
+ ...i $e(record,2)="L" d Last q
+ .d trace^MIF000(mi,$s($c(R)=eot:"EOT",1:R),"H<--M")
+ .d ORDER1
+ q
+Last ; file result if exist
+ //i epis?1.99AN,$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ if $translate(epis," ","")'="",$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ s (sample,epis,surname,result,date,time,QC,specimen)=""
+ ;Set ^XXX($I(^XXX))=$LB(mi,sample,epis,surname,result,date,time,QC)
+ q
+ORDER ; create list of orders if exists
+ d scanall^MIF000(mi)
+ s epis="" f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  d SET(epis,"SCAN")
+ q:'$d(^TMIF(mi,10))
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|N"
+ d Send k ^TMIF(mi,10)
+ k ^TMIF("MIF-SCAN",$j,mi)
+ q
+ORDER1 ; create list of orders if exists
+ s epis="" f  s epis=$o(^TMP($zn,$j,"ENQ",epis)) q:epis=""  d
+ .k ^TMP("MIF-SINGLE",$j,mi)
+ .d scanone^MIF000(mi,epis),SET(epis,"QUERY")
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|N"
+ .k ^TMP("MIF-SINGLE",$j,mi)
+ .k ^TMP($zn,$j,"ENQ",epis)
+ .d Send
+ k ^TMIF(mi,10)
+ k ^TMIF("MIF-SINGLE",$j,mi)
+ q
+SAVE(mi) ; create loadlist records
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+ d SET(epis,"LOAD")
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|F"
+ q 0
+PATDET(epis) ; set patient details record
+ i '$$select^LVBEPVIS(epis,"Y") d  q
+ .f j=1:1:PLIST i $d(PLIST) s PLIST(j)=$p(PLIST(j),$c(1))
+ .s sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+ .;s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1||||"_$g(PLIST(3))_"^"_$g(PLIST(4))_"|||"_sex_"|||||||||"
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1||||"_"Surname"_"^"_"Name"_"|||"_sex_"|||||||||"
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1||||^||||||||"
+ q
+SET(epis,mode) ; set record to be sent to instrument
+ ;mode="QUERY" - process a single episode scan
+ ;mode="SCAN" -  process an all episode scan
+ ;mode="LOAD" -  process a load list episode scan
+ set glob=$select(mode="QUERY":$name(^TMP("MIF-SINGLE",$j,mi,epis)),mode="SCAN":$name(^TMP("MIF-SCAN",$j,mi,epis)),mode="LOAD":glob=$name(^TMP("MIF000",$j,"LL","TEST")))
+ if glob="" quit
+ ;разделяем по биоматериалам, код которых записан в коде теста через "*" на втором месте, (если не записан, то 1)
+ kill specimens
+ set tc="" 
+ for {
+	 set tc=$order(@glob@(tc)) if tc="" quit
+	 set testcode=$tr(tc," ","") set testcodeclear=$piece(testcode,"*",1) if testcodeclear="" continue
+	 set specimen=$piece(testcode,"*",2) if specimen="" set specimen=1 ;if no fluid type default to '1' - serum/plasma
+	 set specimens(specimen)=$get(specimens(specimen))_testcodeclear_"+1\" 
+ }
+ set specimen="",nn=0
+ for {
+	 set specimen=$order(specimens(specimen)) if specimen="" quit
+	 set tcx=specimens(specimen),len=$length(tcx) if len=0 continue
+  	 set tcx="1.0+"_$extract(tcx,1,len-1)
+  	 set nn=nn+1
+  	 if nn=1 do PATDET(epis)
+     set line=$order(^TMIF(mi,10,""),-1)+1
+     set ^TMIF(mi,10,line)="O|"_nn_"|"_$$RightAlign^PRTEPLMY1(epis,7)_"||^^^"_tcx_"|R||||||N||||"_specimen_"|"
+ }
+ quit
+SpecimenTC(testcodeAn)
+ //TTAB("TC","B2201","SC"
+ set specimenCode=""
+ set testcode=""
+ for {
+	 set testcode=$order(^TMIF(mi,3,testcodeAn,testcode)) if testcode=""!(specimenCode'="") quit
+	 set cont="" 
+	 for {
+		 set cont=$order(^TTAB("TC",testcode,"SC",cont)) if cont="" quit
+		 set specimenCode=$order(^TTAB("TC",testcode,"SC",cont,""))
+		 if specimenCode="" quit
+	 }
+  }
+  if specimenCode="" set specimenCode=1
+  quit specimenCode
+ 
+Send ; send list of orders if exists
+ q:'$d(^TMIF(mi,10))
+ ; read in spare characters
+ f  r *x:1 q:x=-1
+ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M") f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ i $c(R)=enq d trace^MIF000(mi,"ENQ","H<--M") q
+ i $c(R)'=ack d  q
+ .d trace^MIF000(mi,R,"H<--M") w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ d trace^MIF000(mi,"ACK","H<--M")
+ q:$$SEND("1H|\^&|||LABTRAK|||||||P|1")
+ //Merge ^XXX=^TMIF(mi,10)
+ s x="" f FRAME=2:1 s x=$O(^TMIF(mi,10,x)) q:x=""  q:$$SEND(FRAME#8_^TMIF(mi,10,x))
+ h 1 w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ k ^TMIF(mi,10)
+ q
+SEND(str) ; send string to instrument
+ s str=str_cr_etx,chsum=$$CHSUM(str)
+ w stx,str,chsum,cr,lf,*-3 s str=$e(str,1,$l(str)-2) d trace^MIF000(mi,str_" "_chsum,"H-->M")
+ f j=1:1:6 r *R:10 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 0
+ d trace^MIF000(mi,R,"H<--M")
+ q 1
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+NEXTTRAY(tray) 
+ q tray
+ 
+read(start,stop,control,time) n (start,stop,control,time,mi)
+ s s1="",s2=""
+ s start=$g(start),stop=$g(stop),control=$g(control),time=$g(time),(line,ok)=0
+ s:'time time=10 s:'$l(start) ok=1
+ s result="" f  r *x:time s s1=s1_x_";" q:(","_stop_",")[(","_$c(x)_",")  q:x=-1  i x d
+ .i $l($g(mi)) d
+ ..i 'line s line=$o(^TMPmif(mi,99,""),-1)+1
+ ..s ^TMPmif(mi,99,line)=$g(^TMPmif(mi,99,line))_$c(x)
+ .i 'ok,(","_start_",")[(","_$c(x)_",") s ok=1 q
+ .i control="Y",x<32 q
+ .i ok s result=result_$c(x) ;,s2=s2_$c(x)
+ ;S ^YYY($I(^YYY))="now"
+ ;S ^YYY($I(^YYY))=s1
+ ;S ^YYY($I(^YYY))=s2
+ q result
+ 
+]]></Routine>
+</Export>
