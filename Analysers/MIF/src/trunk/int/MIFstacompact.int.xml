@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFstacompact" type="INT" languagemode="0"><![CDATA[
+MIFstacompact(mi) ; ASTM protocol  -  STA Compact (Russion EMC))
+ set mi=$get(mi) if '$length(mi) quit
+ kill ^TMIF(mi,10) 
+ set $zt="err^MIF000"
+ if $$select^LVBMIMP(mi) quit
+ for j=1:1:PLIST set @("par"_j)=PLIST(j)
+ set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21)
+ set lf=$char(10),cr=$char(13)
+ if $$start^MIF000() quit
+ do trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ set compiled=$lg(^rINDEX($zn,"OBJ"),1)
+ for {
+	 d Main 
+	 if $lg(^rINDEX($zn,"OBJ"))'=compiled ztrap "EDIT"  // эмуляция ошибки EDIT, если программа-драйвер изменилась
+	 if $$stop^MIF000() quit
+ }
+ close par4
+ quit
+Main 
+ read *R:10
+ ;if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ if $c(R)'=enq q
+ set nameMachine="",nameLIS=""
+ do receiveENQ
+ quit
+ ;обработка полученного от прибора ENQ
+receiveENQ
+ set (sample,epis,surname,result,date,time,QC)="" 
+ do trace^MIF000(mi,"ENQ","H<--M")
+ do ACK
+ set timeSilenceStart=$piece($h,",",2),timeSilenceLimit=60,ok=1
+ for {
+	 read *R:10 
+	 if $c(R)=eot quit
+	 if $char(R)=enq d trace^MIF000(mi,"ENQ is recieved at the wrong time","H-->M") do EOT set ok=0 quit
+	 set timeSilence=$piece($h,",",2)-timeSilenceStart
+	 if timeSilence>timeSilenceLimit d trace^MIF000(mi,"timeSilence>timeSilenceLimit ("_timeSilence_">"_timeSilenceLimit_")","H-->M") do EOT set ok=0 quit
+     if $char(R)'=stx continue
+     set timeSilenceStart=$piece($h,",",2)
+     set record=$$read^MIF000("",lf) if '$l(record)  continue
+     set record=$e(record,1,$l(record)-1)
+     do trace^MIF000(mi,record,"H<--M")
+     ; check record validity
+     set chsum=$p(record,etx,2),chrecord=$p(record,etx,1)_etx
+     if $$CHSUM(chrecord)'=chsum do NAK continue
+     do ACK
+     set typerecord=$e(record,2)
+     ; head record
+     if typerecord="H" {
+        set nameMachine=$piece(record,"|",5),nameLIS=$piece(record,"|",10)  
+        continue
+     }
+     ; query record
+     if typerecord="Q" {
+	     set epis=$p($p($p(record,$char(13),1),"|",3),"^",2)
+	     If epis="ALL" Do PrepareAllOrders(mi) continue
+	     if $length(epis) set ^TMP($zn,$j,"ENQ",epis)="" s ^test("STACOM","set")=epis_"*"_$j_"*"_$zn 
+         continue
+     }    
+     ; patient record
+     if typerecord="P" {
+        do Last s (sample,epis,surname,result,date,time,QC)=""
+        set surname=$tr($tr($p(record,"|",5),""),"^"," ") 
+        continue
+     }
+     ; order record
+     if typerecord="O" {
+	     set epis=$tr($p($p(record,"|",3),"^",1)," "),QC=$tr($p(record,"|",12)," ") s:'$l(epis) epis=$tr($p($p(record,"|",4),"^",1)," ")
+         if QC="Q" s QC="Y"
+         continue
+     }
+     ; result record
+     if typerecord="R" {
+         ; strip trailing spaces
+         set test=$p($p(record,"|",3),"^",4) set test=$$DeleteLeftAndRightSpaces^KSUTIL1(test)
+         set res=$tr($p(record,"|",4),", ","."),flag=$tr($p(record,"|",7)," ")
+         if flag="N" s flag="" ; normal flag
+         if $length(res),$isvalidnum(res) set res=+res // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
+         if $l(test),$l(res) s result=result_test_$c(par10)_res_$c(par10)_flag_$c(par11)
+         ; date and time
+         if $l($tr($p(record,"|",13)," ")) {
+	         set datetime=$p(record,"|",13)
+	         s date=$$intdate^SSUTIL4($e(datetime,5,6)_"/"_$e(datetime,7,8)_"/"_$e(datetime,1,4))
+             s time=($e(datetime,9,10)*3600)+($e(datetime,11,12)*60)
+         }
+         continue
+     }
+     ; last record
+     if typerecord="L" {
+	     d Last 
+	     continue
+     }
+     set timeSilenceStart=$piece($h,",",2)
+ }
+ if ok=1 {
+	 do trace^MIF000(mi,$s($c(R)=eot:"EOT",$c(R)=enq:"ENQ",1:R),"H<--M")
+	 do ORDER
+ }
+ quit
+Last ; file result if exists
+ do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"H<--H")
+ if epis?1.99AN,$l(result) {
+ 	 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ }
+ set (sample,epis,surname,result,date,time,QC)=""
+ quit
+ 
+  ;создание глобали ^TMIF(pInstrument,10) с заказами к прибору 
+PrepareAllOrders(pInstrument) public {
+	Do scanall^MIF000(pInstrument)
+	Set epis="" 
+	For  {
+		Set epis=$Order(^TMP("MIF-SCAN",$Job,pInstrument,epis))
+		If epis="" Quit
+		if $$select^LVBEPVIS(epis,"Y") continue
+		set ^TMP($zn,$j,"ENQ",epis)="" 
+	}
+}	 
+
+ 
+ORDER ; create list of orders if exists
+  s ^test("STACOM","tmp")="tmp"
+  m ^test("STACOM","tmp")=^TMP($zn,$j,"ENQ")
+ s epis="" 
+ for {
+	 set epis=$o(^TMP($zn,$j,"ENQ",epis)) quit:epis="" 
+     do scanone^MIF000(mi,epis)
+     if $$select^LVBEPVIS(epis,"Y") k ^TMP($zn,$j,"ENQ",epis) continue
+     set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+     ;s sex=$s($g(PLIST(5))="М":"M",$g(PLIST(5))="Ж":"F",1:"U")
+     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
+     // patient record
+     set line=$o(^TMIF(mi,10,""),-1)+1
+     set ^TMIF(mi,10,line)="P|1|"_epis_"||"_$$Translit^KSUTIL1($extract(surname,1,16)_"^"_$extract(name,1,12)) //_"||"_"|"_sex_"|||||" ;_$g(PLIST(15))
+     //For each sample, STA Compact ® can accept a maximum of twelve tests. !!!!!!!
+     set tc="",tests="" 
+     for N=1:1 {
+	     set tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) 
+	     if tc="" quit
+	     set tests=tests_$select(tests'="":"\",1:"")_"^^^"_tc
+     }
+     //orders одной строкой
+     set line=$order(^TMIF(mi,10,""),-1)+1
+     set ^TMIF(mi,10,line)="O|"_"1"_"|"_epis_"||"_tests_"|R"
+     // terminate
+     set line=$order(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|N" //_$s(N>1:"F",1:"I")
+     kill ^TMP($zn,$j,"ENQ",epis)
+     s ^test("STACOM","10")=10
+     m ^test("STACOM","10")=^TMIF(mi,10)
+     d Send
+ }
+ quit
+
+Send ; send list of orders if exists
+ do ENQ 
+ for j=1:1:10 {
+	 read *R:1 
+	 quit:$char(R)=ack!($char(R)=enq)  
+	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
+ }
+ if $c(R)=enq quit
+ if $c(R)'=ack do EOT quit
+ do trace^MIF000(mi,"ACK","H<--M")
+ set recordHead="1H|\^&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"DEVICE")_"||P|1.00|"_$Translate($ZDateTime($Horolog,8)," :")
+ quit:$$SEND(recordHead)
+ set x="" for FRAME=2:1 set x=$Order(^TMIF(mi,10,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,x))
+ if x="" kill ^TMIF(mi,10)
+ do EOT
+ quit
+SEND(str) ; send string to instrument
+ set str=str_cr_etx,chsum=$$CHSUM(str)
+ write stx,str,chsum,cr,lf,*-3 
+ do trace^MIF000(mi,str_chsum,"H-->M")
+ for j=1:1:6 {
+	 read *R:1 
+	 quit:($c(R)=ack)!($c(R)=eot)
+	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
+ }
+ if $c(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
+ if $c(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
+ do trace^MIF000(mi,R,"H<--M")
+ quit 2
+CHSUM(x) ; calculate check sum
+ new (x) 
+ set z=0 for y=1:1:$length(x) set z=z+$a(x,y)
+ quit $tr($j($zhex(z#256),2)," ","0")
+ 
+ACK write ack,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
+NAK write nak,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
+EOT write eot,*-3 do trace^MIF000(mi,"EOT","H-->M") quit
+ENQ write enq,*-3 do trace^MIF000(mi,"ENQ","H-->M") quit
+]]></Routine>
+</Export>

@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFdimensionEXL200" type="INT" languagemode="0"><![CDATA[
+MIFdimensionEXL200(mi) ; ASTM protocol  -  Dimension EXL 200 (Bi-Directional) (Russion Burdenko))
+ set mi=$get(mi) if '$length(mi) quit
+ kill ^TMIF(mi,10) 
+ set $zt="err^MIF000dop"
+ if $$select^LVBMIMP(mi) quit
+ for j=1:1:PLIST set @("par"_j)=PLIST(j)
+ set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21)
+ set lf=$char(10),cr=$char(13)
+ set fs=$char(28) //field delimeter $zh("1c")
+ if $$start^MIF000() quit
+ do trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ set flDelete=0 // это было сделано единоразово - для удаления 500 заданий по одному эпизоду, которые создались случайно при отладке программы
+ set compiled=$lg(^rINDEX($zn,"OBJ"),1)
+ for {
+	 d Main 
+	 if $$stop^MIF000() quit
+	 if $lg(^rINDEX($zn,"OBJ"))'=compiled ztrap "EDIT"  // эмуляция ошибки EDIT, если программа-драйвер изменилась
+ }
+ close par4
+ quit
+Main 
+ read *R:10
+ //if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ if $c(R)'=stx q
+ do receiveSTX
+ quit
+ ;обработка полученного от прибора ENQ
+receiveSTX
+ set record=$$read^MIF000("",etx) 
+ if '$l(record) quit
+ set typerecord=$e(record,1)
+ set oklog=$select(typerecord'="P":1,1:0)
+ if oklog=1 do trace^MIF000(mi,$tr(record,$char(28),"\"),"H<--M")
+ ; check record validity
+ set len=$length(record)
+ set chsum=$extract(record,len-1,len),chrecord=$extract(record,1,len-2)
+ if $$CHSUM(chrecord)'=chsum do:oklog=0 trace^MIF000(mi,$tr(record,$char(28),"\"),"H<--M") do NAK
+ else   do:oklog=1 ACK do:oklog=0 ACKnolog
+ set typerecord=$e(record,1)
+ ; poll record
+ if typerecord="P" {
+	 set request=$piece(record,fs,4)
+	 /* - это единоразово - случайно создали многозапросов для эпизода 2100257 - удаляли с помощью программы 
+	 if request=1,flDelete<480 {
+		  do SendDelete()
+		  set flDelete=flDelete+1
+		  quit
+	 }*/
+	 if request=1 {
+		 ; эти две строки для посылки всех имеющихся заданий (по одному (еще отдельно по каждому типу материала))
+		 ;do PrepareAllOrders(mi)
+		 ;do SendOrders()
+		  set sc=$$SendNoRequests(1)
+	 }
+ }
+ ; query record
+ if typerecord="I" {
+	set epis=$p(record,fs,2)
+    if $length(epis) {
+	    set sc=$$SendOrder(epis) 
+	    if sc=2 set sc=$$SendNoRequests(0)
+    }
+ }    
+ ; result record
+ if typerecord="R" {
+	 set (sample,epis,surname,result,date,time,QC)=""
+	 set surname=$piece(record,fs,3)
+	 set epis=$piece(record,fs,4)
+	 if $l(epis) set QC=$$findQC^MIF000(mi,epis) ; check if received id is QC
+     if QC="Q" s QC="Y"
+	 ; date and time
+     if $l($p(record,fs,8)) {
+	     set datetime=$p(record,fs,8)
+	     set date=$$intdate^SSUTIL4($tr($e(datetime,9,10)_"/"_$e(datetime,7,8)_"/20"_$e(datetime,11,12)," ","0"))
+         set time=($e(datetime,5,6)*3600)+($e(datetime,3,4)*60)+$e(datetime,1,2)
+     }
+     set countTests=$piece(record,fs,11)
+     for i=1:1:countTests {
+	     set pp=(i-1)*4+12
+	     set test=$piece(record,fs,pp) //set test=$$DeleteLeftAndRightSpaces^KSUTIL1(test)
+         set res=$piece(record,fs,pp+1)
+         set flag=$piece(record,fs,pp+3)
+         if $length(res),$isvalidnum(res) set res=+res // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
+         if $l(test),$l(res) s result=result_test_$c(par10)_res_$c(par10)_flag_$c(par11)
+     }
+     // запись данных
+     do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"H<--H")
+     if epis?1.99AN,$l(result) {
+ 	      do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+     }
+     //послать подтверждение (Result Acceptance Message) (Accept(A),reject(R))
+     set message="M"_fs_"A"_fs_fs
+     set sc=$$SendToInstrument(message,0)
+ }
+  ; calibration result record
+ if typerecord="C" {
+	  //послать подтверждение (Result Acceptance Message) (Accept(A),reject(R))
+     set message="M"_fs_"A"_fs_fs
+     set sc=$$SendToInstrument(message,0)
+ }
+ quit
+
+  ;создание глобали ^TMIF(pInstrument,10) с заказами к прибору 
+PrepareAllOrders(pInstrument) public 
+{
+	Do scanall^MIF000(pInstrument)
+	Set epis="" 
+	For  {
+		Set epis=$Order(^TMP("MIF-SCAN",$Job,pInstrument,epis))
+		If epis="" Quit
+		if $$select^LVBEPVIS(epis,"Y") continue
+		set ^TMIF(pInstrument,10,epis)=""  //TMP($zn,$j,"ENQ",epis)="" 
+	}
+}	
+
+ //посылаем за раз только один эпизод и в нем данные только по одному типу материала 
+SendOrders() 
+ s epis="",isdata=0 
+ for {
+	 set epis=$o(^TMIF(mi,10,epis)) quit:epis=""||(isdata=1)   // посылаем по одному 
+     do scanone^MIF000(mi,epis)
+     if $$select^LVBEPVIS(epis,"Y") k ^TMIF(mi,10,epis) continue
+     set specimen=""
+     set sc=$$SendOrder(epis,.specimen)
+     //set ^test("DIM",epis,"specimen")=$get(specimen)
+     //m ^test("DIM",epis,"MIF-SINGLE",$i(^test("DIM",epis,"MIF-SINGLE")))=^TMP("MIF-SINGLE",$j,mi,epis)
+     if sc'=0 {
+	     if specimen'="" {
+		     set tc="" 
+             for {
+	             set tc=$order(^TMP("MIF-SINGLE",$j,mi,epis,tc)) if tc="" quit
+	             if $piece(^TMP("MIF-SINGLE",$j,mi,epis,tc),$char(0),2)=specimen {
+		             kill ^TMP("MIF-SINGLE",$j,mi,epis,tc)
+	             }
+             }
+	     }
+	     if $data(^TMP("MIF-SINGLE",$j,mi,epis))<10 k ^TMIF(mi,10,epis)
+	     if sc=1 set isdata=1
+     }
+ }
+ if 'isdata {
+	 set sc=$$SendNoRequests(0)
+ }
+
+ quit
+
+
+ // Send orders to Instrument
+SendOrder(epis,specimen) ; create list of orders if exists
+     do scanone^MIF000(mi,epis)
+     if $$select^LVBEPVIS(epis,"Y") quit 2 // No Request Message
+     // set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+     set surname=$get(PLIST(3)) //,name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
+     set priority="0" //Routine
+     set specimen="" 
+     set message="D"_fs_"0"_fs_"0"_fs_"A"_fs_$$Translit^KSUTIL1(surname)_fs_epis_fs_specimen_fs_fs_priority_fs_"1"_fs_"**"_fs_"1"_fs
+     
+     kill specimens
+     set tc="" 
+     for {
+	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,epis,tc)) if tc="" quit
+	     set codeTypeSpecimen=0 
+	     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,epis,tc)
+	     if refEpisode="" continue
+	     set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
+	     set rec=$get(^TEPI(epis,1,testset,tscnt))
+         set codeTypeSpecimen=$piece(rec,"\",46)
+         if codeTypeSpecimen="" set codeTypeSpecimen=$$TestSpecimenType^KSReportSQL(testset)
+         if codeTypeSpecimen="" set codeTypeSpecimen=0
+         set specimens(codeTypeSpecimen,tc)=""
+         set $piece(^TMP("MIF-SINGLE",$j,mi,epis,tc),$char(0),2)=codeTypeSpecimen 
+     }
+     set specimen=$order(specimens(""))
+     if specimen="" set message="" quit 2 
+     set specimenAnalisator=$$getSpecimenAnalisator(specimen)
+     if specimenAnalisator="" set specimenAnalisator="W"
+     // write in message
+     set $piece(message,fs,7)=specimenAnalisator
+     set countTests=0 set tc="" for  set tc=$order(specimens(specimen,tc)) quit:tc=""  set countTests=countTests+1
+     set message=message_countTests_fs 
+     set tc="" 
+     for {
+	     set tc=$order(specimens(specimen,tc)) if tc="" quit
+	     set message=message_tc_fs 
+	     
+     }
+     quit $$SendToInstrument(message,0)
+
+ // Send string message to Instrument
+SendToInstrument(message,nolog) ; send string to instrument
+ if $get(nolog)="" set nolog=0 
+ set str=stx_message_$$CHSUM(message)_etx
+ for j=1:1:4 {
+	 write str,*-3 
+     if nolog=0 do trace^MIF000(mi,$tr(message,$char(28),"\"),"H-->M")
+	 read *R:1 
+	 quit:($char(R)=ack)
+	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
+ }
+ if $c(R)=ack do:nolog=0 trace^MIF000(mi,"ACK","H<--M") quit 1
+ if nolog=0 do trace^MIF000(mi,"wait ASK, recive "_R,"H<--M")
+ quit 0
+
+getSpecimenAnalisator(specimen)
+ if specimen="BL" quit "W"
+ if specimen="SE" quit "1"
+ if specimen="PL" quit "2"
+ if specimen="U" quit "3" 
+ if specimen="CSF" quit "4" 
+ quit "W"
+
+CHSUM(x) ; calculate check sum
+ new (x) 
+ set z=0 for y=1:1:$length(x) set z=z+$a(x,y)
+ quit $tr($j($zhex(z#256),2)," ","0")
+ 
+ACK write ack,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
+ACKnolog write ack,*-3 quit
+NAK write nak,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
+EOT write eot,*-3 do trace^MIF000(mi,"EOT","H-->M") quit
+ENQ write enq,*-3 do trace^MIF000(mi,"ENQ","H-->M") quit
+
+SendNoRequests(nolog)
+  if $get(nolog)="" set nolog=0
+  quit $$SendToInstrument("N"_fs,nolog)
+  
+SendDelete()
+ set message=$tr("D#0#0#D#TEST#2100257#1##0#1#**#1#3#ALB#CREA#GLUC#","#",$c(28))
+ set sc=$$SendToInstrument(message,0)
+ quit
+]]></Routine>
+</Export>

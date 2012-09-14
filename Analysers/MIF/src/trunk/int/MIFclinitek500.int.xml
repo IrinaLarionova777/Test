@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFclinitek500" type="INT" languagemode="0"><![CDATA[
+MIFclinitek500(mi) ; ASTM protocol  -  Clinitek500 (Bi-Directional) (Russion Burdenko))
+ // реально работает в одностороннем режиме - только присылает результаты
+ // пока не прицеплен штрихсканер, пытаемся определить номер эпизода по дате рабочего листа типа "ОАМ" и порядковому номеру в РЛ 
+ // ##class(TCLEx.Function.WorkList).getEpisodeForDateTypeNuminWL
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(21),etb=$c(23)
+ s lf=$c(10),cr=$c(13),(result,epis)=""
+ i $$start^MIF000() q
+ d trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ for {
+	 d Main 
+	 if $$stop^MIF000() quit
+ }
+ c par4
+ quit
+Main 
+ read *R:10
+ ;i $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ i $c(R)'=enq q
+ set nameMachine="",nameLIS=""
+ do receiveENQ
+ quit
+ ;обработка полученного от прибора ENQ
+receiveENQ 
+ do trace^MIF000(mi,"ENQ","H<--M")
+ do ACK
+ set timeSilenceStart=$piece($h,",",2),timeSilenceLimit=60
+ set buffer=""
+ for {
+	 read *R:10 
+	 if $c(R)=eot quit
+	 if $char(R)=enq d trace^MIF000(mi,"ENQ is recieved at the wrong time","H-->M") do EOT  quit
+	 set timeSilence=$piece($h,",",2)-timeSilenceStart
+	 if timeSilence>timeSilenceLimit d trace^MIF000(mi,"timeSilence>timeSilenceLimit ("_timeSilence_">"_timeSilenceLimit_")","H-->M") do EOT quit
+     if $c(R)'=stx continue
+     set timeSilenceStart=$piece($h,",",2)
+     do trace^MIF000(mi,"STX","H<--M")
+     set record=$$read^MIF000("",lf) if '$l(record)  continue
+     do trace^MIF000(mi,record,"H<--M")
+     set record=$e(record,1,$l(record)-1) // LF отбрасываем
+     ; check record validity
+     set endtext=$select('$find(record,etx):etb,1:etx)
+     set chsum=$p(record,endtext,2),chrecord=$piece(record,endtext,1)_endtext
+     if $$CHSUM(chrecord)'=chsum do NAK continue
+     do ACK
+     set record=$piece(record,endtext,1)
+     set record=$e(record,2,$l(record)) ;на 1-ом месте стоит номер записи - на записях-продолжениях он мешает
+     if endtext=etb {
+	     set buffer=buffer_record
+	     continue
+     }
+     set buffer=buffer_record
+     if buffer="" continue
+     do trace^MIF000(mi,"buffer="_buffer,"H<--M")
+     set (sample,epis,surname,result,date,time,QC)=""
+     for pp=1:1:$length(buffer,$c(13)) {
+	     set record=$piece(buffer,$c(13),pp)
+	     if record="" continue 
+	     set typerecord=$piece(record,"|",1)
+	     if typerecord="" continue
+	     set typerecord=$select($length(typerecord)=1:typerecord,1:$e(typerecord,2))
+	     do trace^MIF000(mi,typerecord_" "_record,"H<--M")
+	     ; head record
+         if typerecord="H" {
+            set nameMachine=$piece(record,"|",5),nameLIS=$piece(record,"|",10)  
+            continue
+         }
+            ; patient record
+         if typerecord="P" {
+            ;do Last s (sample,epis,surname,result,date,time,QC)=""
+            // !!! так как две зариси Р|1 P|2 в разной последовательности
+            if $piece(record,"|",2)=1 {
+	            ; date and time
+                set datetime=$p(record,"|",4)
+                if $l($tr(datetime," ")) {
+	                s date=$zdateh($extract(datetime,1,8),8)
+                    s time=$ztimeh($extract(datetime,9,10)_":"_$extract(datetime,11,12),1)
+                }
+	            set epis=$piece(record,"|",5) // реальный номер эпизода
+	            //если приехал только порядковый номер, то пытаемся по порядковому номеру опредедить номер эпизода из рабочего листа (тип РЛ "ОАМ") (не листа загрузки анализатора!!!)
+	            if epis="" { 
+		            set epis=+$piece(record,"|",3) 
+                    if (epis'="")&&(date'="") {
+	                   set episnew=##class(TCLEx.Function.WorkList).getEpisodeForDateTypeNuminWL("ОАМ",date,epis) 
+	                   if episnew'="" set epis=episnew
+                    }
+	            }
+             }
+            continue
+         }
+         ; result record
+         if typerecord="R" {
+            ; strip trailing spaces
+            set test=$piece(record,"|",4) // буквенный
+            set res=$piece($piece(record,"|",6),"^",1)
+            if '$isvalidnum(res) set res=""""_res_""""
+            set flag=$piece(record,"|",3)
+            if flag="N" s flag="" ; normal flag
+            //if $l(test),$l(res) if $data(^TMIF(mi,"3",test)) s result=result_test_$c(par10)_res_$c(par10)_flag_$c(par11)
+            if $l(test),$l(res) s result=result_test_$c(par10)_res_$c(par10)_flag_$c(par11)
+            continue
+         }
+         ; last record
+         if typerecord="L" {
+	        d Last 
+	        continue
+         }
+    }
+    d Last 
+    set buffer=""
+    set timeSilenceStart=$piece($h,",",2)
+ } 
+ do trace^MIF000(mi,$s($c(R)=eot:"EOT",1:R),"H<--M")
+ quit
+
+Last ; file result if exists
+ do trace^MIF000(mi,"epis="_epis_" result="_result_" date="_date_" time="_time,"H<--H")
+ if epis?1.99AN,$l(result) {
+ 	 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ }
+ set (sample,epis,surname,result,date,time,QC)=""
+ quit
+ 
+CHSUM(x) ; calculate check sum
+ new z,y
+ set z=0 for y=1:1:$length(x) set z=z+$a(x,y)
+ quit $tr($j($zhex(z#256),2)," ","0")
+
+ACK w ack,*-3 d trace^MIF000(mi,"ACK","H-->M") q
+NAK w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+EOT w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+ENQ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M") q
+]]></Routine>
+</Export>

@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFcobasS201" type="INT" languagemode="0"><![CDATA[
+MIFcobasS201(mi) ; cobas s 201 (Roche) - Russion Burdenko 
+    //(import in LIS file with results)
+    // read files from ftp
+	New (mi)
+	Set mi=$Get(mi) 
+	If '$Length(mi) Quit
+	Kill ^TMIF(mi,10) 
+	Set $ZTrap="err^MIF000"
+	If $$select^LVBMIMP(mi) q
+	For j=1:1:PLIST Set @("par"_j)=PLIST(j)
+	;
+	Set basedir=PLIST(12) if basedir="" set basedir=PLIST(20)
+	set len=$length(basedir)
+	if $tr($extract(basedir,len),"/","\")="\" set basedir=$extract(basedir,1,len-1)
+	Set indir=basedir_"\Input"
+	Set outdir=basedir_"\Output"
+	Set archivdir=basedir_"\Archive"
+	Set errdir=basedir_"\Error"
+ 	;
+	If '##class(%File).DirectoryExists(basedir) {
+		Do message^MIF000(mi,"Instrument's directory is unavailable") 
+		Quit
+	}	
+ 
+    for dir=indir,outdir,archivdir,errdir {
+	    If '##class(%File).DirectoryExists(dir) {
+		    if '##class(%File).CreateDirectory(dir) {
+			    Do message^MIF000(mi,"Can not create directory "_dir) quit
+		    }
+	    }
+    }
+ 
+	;If $$start^MIF000() Quit
+ 	Do trace^MIF000(mi,"Started job="_$Job,"DEBUG")
+ 	;
+	For  {  
+		Do Main(mi,indir,outdir,archivdir,errdir) 
+		If $$stop^MIF000() Quit
+	}
+ 	Do trace^MIF000(mi,"Stopped job="_$Job,"DEBUG")
+	Quit
+ 
+Main(mi,pInDir,pOutDir,pArchivDir,pErrDir) [par10] public {
+ 	Set oldtime=$ZHorolog
+ 	Do LoadResultsFromMachine(mi,pInDir,pArchivDir,pErrDir)
+	Set delta=($ZHorolog-oldtime)\1
+	If delta<15 Hang 15-delta 
+} 
+
+ // Чтение файлов с результатами из прибора и запись результатов в базу
+LoadResultsFromMachine(mi,pOutDir,pArchivDir,pErrDir) [mi,par10] public {
+	set r=$char(0)
+	// get ftp parameters
+	if '$$getFtpParameters(.server,.user,.password,.portFtp,.dirFtp,.modeFtp) do trace^MIF000(mi,"Не определены параметры ftp соединения","H<--H") quit
+	// open ftp
+	set ret=##class(TCLEx.Function.Ftp).OpenFtpDir(server,user,password,portFtp,modeFtp,dirFtp,,.ftp) 
+	if +ret=0 do trace^MIF000(mi,$piece(ret,r,2),"H<--H") quit
+    // read list of files from ftp   
+    kill fileArray 
+    set ret=##class(TCLEx.Function.Ftp).GetList(.ftp,.fileArray) 
+    if +ret=0 do trace^MIF000(mi,$piece(ret,r,2),"H<--H") quit 
+    if '$d(fileArray) quit  // протоколировать?
+	
+	// перенесем все имеющиеся файлы с ftp в pOutDir
+	kill moveFiles
+	s file="" 
+	for {
+		set file=fileArray.Next(file) if file="" quit
+		set namefile=fileArray.GetAt(file) 
+		s ^test("ftp","file1")=namefile
+		set flDelFile=1
+		set ret=##class(TCLEx.Function.Ftp).GetFileFromFtp0(ftp, namefile, pOutDir, flDelFile)
+		if +ret=0 do trace^MIF000(mi,$piece(ret,r,2),"H<--H") continue
+		set moveFiles(pOutDir_"\"_namefile)=""
+	}
+	// close ftp
+	d ##class(TCLEx.Function.Ftp).CloseFtp(.ftp)
+	m ^test("ftp","files")=moveFiles
+	
+	// чтение данных из файлов
+	set file=""
+	for {
+		set file=$order(moveFiles(file)) if file="" quit
+		if ##class(%File).Exists(file) {
+			Do LoadResultsFromFile(mi,file,pArchivDir,pErrDir) 
+		}
+	}
+}
+ // Чтение одного файла с результатами из прибора и запись результатов в базу
+LoadResultsFromFile(mi,pFileName,pArchivDir,pErrDir) [mi,par10,par11] public {
+	Set testid=""
+	Kill ^||results,^||datetime
+	Set ok=1,delimeter=";"
+
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=pFileName
+	Set stream.TranslateTable="CP1251"
+ 	While 'stream.AtEnd {
+		Set line=stream.ReadLine()
+		Set line=$Translate(line,""" "_$Char(9),"")
+		if line="" continue
+		
+		set epis=$piece(line,delimeter,1) 
+		if epis="DonorID" continue
+		set test=$piece(line,delimeter,2)
+		set val=$piece(line,delimeter,5)
+		If epis'="",test'="",val'="" {
+			Set ^||results(epis)=$get(^||results(epis))_test_$Char(par10)_val_$Char(par11)
+			if '$data(^||datetime(epis)) {
+				set datetime=$piece(line,delimeter,3)
+				set date=$translate($extract(datetime,1,10),"-","") if date'="" set date=$zdateh(date,7)
+				set time=$piece(datetime,"T",2) if time'="" set time=$ztimeh(time,1)
+				if datetime'="" set ^||datetime(epis)=date_"/"_time
+			}
+		}	
+ 	}
+ 	
+	Set epis=""
+ 	For  {
+ 			Set epis=$Order(^||results(epis),1,result)
+ 			If epis="" Quit
+ 			set datetime=$get(^||datetime(epis)),date=$piece(datetime,"/",1),time=$piece(datetime,"/",2)
+  			Do file^MIF000(mi,,epis,,result,date,time)
+  			do trace^MIF000(mi,"Saved result (Epis="_epis_",Result="_result_")","H<--M")
+ 	}	
+
+ 	Set stream=""
+ 	Set dir=$zconvert(##class(%File).GetDirectory(pFileName),"L")  
+ 	Set name=$Piece($zconvert(pFileName,"L"),dir,2)
+ 	Set ok2=1
+ 	If (ok) {
+		Do trace^MIF000(mi,"Done file "_pFileName,"H<--M")
+ 		Set newname=pArchivDir_"\"_name
+ 		s ^test("ftp","file2")=newname
+ 		Set newname=$$ArchiveFileName^KSUTIL1(newname)
+ 		s ^test("ftp","file3")=newname
+	 	Set ok2=##class(%File).Rename(pFileName,newname)
+ 	} Else {
+		Do trace^MIF000(mi,"Error during processing file "_pFileName,"H<--M")
+ 		Set newname=pArchivDir_"\"_name
+		Set newname=$$ArchiveFileName^KSUTIL1(newname)
+	 	Set ok2=##class(%File).Rename(pFileName,newname)
+  	}		
+ 	If ok2 {
+		Do trace^MIF000(mi,"Renamed file "_pFileName_" to "_$Get(newname),"H<--M")
+ 	
+ 	} Else {
+		Do trace^MIF000(mi,"Error during renaming file "_pFileName_" to "_$Get(newname),"H<--M")
+  	}
+}
+ 	
+getFtpParameters(server,user,password,portFtp,dirFtp,modeFtp) {
+	set server="nsi-lis.nsi.ru"
+	set user="cobas_ftp_user"
+	set password="Ftp$access"
+	set portFtp=21
+	set dirFtp="" 
+	set modeFtp=0
+	/*
+	set server="ftp.emcmos.ru"
+	set user="laborw"
+	set password="labo#$%"
+	set portFtp=21
+	set dirFtp="temp\test" 
+	set modeFtp=0
+	*/
+	quit 1
+ }		
+ 	
+	
+
+
+]]></Routine>
+</Export>

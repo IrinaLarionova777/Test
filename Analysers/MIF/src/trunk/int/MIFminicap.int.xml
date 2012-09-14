@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFminicap" type="INT" languagemode="0"><![CDATA[
+MIFminicap(mi)	;Minicap (EMC)
+    ; 
+	set $ztrap="err^MIF000"
+	set mi=$get(mi) if '$length(mi) quit
+	set stx=$char(2),etx=$char(3),eot=$char(4),ack=$char(6),nak=$char(21)
+	do trace^MIF000(mi,"*** Starting ***","DEBUG")
+	if $$select^LVBMIMP(mi) do trace^MIF000(mi,"Error select^LVBMIMP(mi)","DEBUG") quit
+	for j=1:1:PLIST set @("par"_j)=PLIST(j)
+	if $$start^MIF000() do trace^MIF000(mi,"Cannot open device "_par4,"DEBUG") quit
+	do trace^MIF000(mi,"Started $j="_$job,"DEBUG")
+ 
+	set compiled=$listget(^rINDEX($zname,"OBJ"),1)
+	; Neutral State
+	for  {
+		do Main
+		if $$stop^MIF000() quit
+	    //if $listget(^rINDEX($zname,"OBJ"))'=compiled ztrap "EDIT"
+	}
+	close par4
+	do trace^MIF000(mi,"Finished","DEBUG")
+	quit
+	
+Main 
+    read *R:10
+    //if $c(R)'=stx d trace^MIF000(mi,"Waiting <STX> but received <"_R_">","H<--M") q
+    if $c(R)'=stx q
+    do receiveSTX
+    quit	
+	
+receiveSTX
+    set record=$$read^MIF000("",etx_","_eot ) 
+	d trace^MIF000(mi,"record="_record,"M-->H")
+	set record=$extract(record,1,$length(record)-1) // откидываем последний символ etx or eot
+	set len=$length(record)
+	d trace^MIF000(mi,"len="_len,"M-->H")
+	if len=0 quit
+	do ACK
+	// result
+	if $length(record)>500 {
+		do result 
+		quit
+	}
+    // query
+	if $length(record)=15 {
+		do query 
+		quit
+	}
+	//if $length(record)=788 do result quit
+	quit 
+
+query()
+    set programcode=$extract(record,1,1)
+    set epis=$tr($extract(record,2,16)," ")
+    if '$length(epis) quit 
+    do SendOrder(epis,programcode)
+    quit 
+    	
+result
+	set epis=$tr($extract(record,6,20)," ")
+	set surname=$extract(record,21,50)
+	set date=$extract(record,257,264)
+	set QC=$extract(record,789,789) set QC=$select(QC=1:"Y",1:"")
+	set flag=$tr($extract(record,547,547)," ","") if flag="0" set flag="" 
+	set result=""
+	for i=1:1:10 {
+		set delta1=(i-1)*10 
+		set delta2=(i-1)*5
+	    set test=$translate($extract(record,267+delta1,276+delta1)," ","")
+	    set res=$translate($extract(record,367+delta2,371+delta2)	," ","")
+	    if $length(res),$isvalidnum(res) set res=+res
+	    if test'=""&&(res'="") {
+		   set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par10)_$char(par11) 
+	    }
+	}
+	
+	if '$length(result) quit
+    if '$length(epis) quit
+	
+	set (sample,time)=""
+	do trace^MIF000(mi,"File epis="_epis_" date="_date_" result="_result_" QC="_QC,"DEBUG")
+	do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+	quit	
+	
+ // Send order to Instrument
+SendOrder(epis,programcode) ; create list of orders if exists
+     do scanone^MIF000(mi,epis)
+     if $$select^LVBEPVIS(epis,"Y")||($data(^TMP("MIF-SINGLE",$j,mi,epis))<10) do SendEmptyRequest(epis,programcode) quit  //do trace^MIF000(mi,"Нет данных по эпизоду "_epis,"DEBUG") quit  // ??? что послать??? do SendEmptyRequest(epis,programcode) quit
+     set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"M")
+     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
+     //set AnalysisProgramCode=programcode 
+     set sampleNumber=$tr($j("",4)," ","0")
+     set patiendID=epis
+     if $length(patiendID)<15 for i=1:1:(15-$length(patiendID)) set patiendID=patiendID_" "
+     set fio=$$Translit^KSUTIL1(surname_" "_name)
+     if $length(fio)<30 for i=1:1:(30-$length(fio)) set fio=fio_" "
+     if $length(birthday)<8 set birthday=$tr($j("",8)," ","0")
+     set age=$tr($j("",3)," ","0") 
+     set department=$j("",20)
+     set dateSample=$tr($j("",8)," ","0")
+     set concentration=$tr($j("",5)," ","0")
+     set last=$order(^TMP("MIF-SINGLE",$j,mi,epis,""),-1)
+     set tc="" 
+     for {
+	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,epis,tc)) if tc="" quit
+	     set AnalysisProgramCode=$zcvt($extract(tc,1),"U")
+	     set endsymbol=$select(tc=last:eot,1:etx)
+         set message=stx_AnalysisProgramCode_sampleNumber_patiendID_fio_birthday_sex_age_department_dateSample_concentration_$j("",150)_endsymbol
+         if '$$SendToInstrument(message) do trace^MIF000(mi,"Не удалось послать query:"_message,"DEBUG")
+     }
+ quit
+
+ // Send string message to Instrument
+SendToInstrument(message) ; send string to instrument
+ // 3 попытки
+ set ok=0
+ for j=1:1:3 {
+	 write message,*-3 
+     do trace^MIF000(mi,message,"H-->M")
+	 read *R:1 
+	 set answer=R
+	 if $char(R)=stx {
+		 set answer=$$read^MIF000("",etx_","_eot)
+		 do trace^MIF000(mi,"answer="_answer,"DEBUG")
+		 if (answer=ack) do trace^MIF000(mi,"ACK","H<--M") set ok=1 quit
+	 }
+	 do trace^MIF000(mi,"Waiting <ACK>, but received <"_answer_">","DEBUG")
+ }
+ quit ok
+
+SendEmptyRequest(epis,programcode)
+     set sampleNumber=$tr($j("",4)," ","0")
+     //set patiendID=$j("",15)
+     set patiendID=epis
+     if $length(patiendID)<15 for i=1:1:(15-$length(patiendID)) set patiendID=patiendID_" "
+     set fio=$j("",30)
+     set birthday=$tr($j("",8)," ","0")
+     set sex="M"
+     set age=$tr($j("",3)," ","0") 
+     set department=$j("",20)
+     set dateSample=$tr($j("",8)," ","0")
+     set concentration=$tr($j("",5)," ","0")
+     set endsymbol=eot
+     set message=stx_"A"_sampleNumber_patiendID_fio_birthday_sex_age_department_dateSample_concentration_$j("",150)_endsymbol
+     if '$$SendToInstrument(message) do trace^MIF000(mi,"Не удалось послать query:"_message,"DEBUG")
+ quit
+
+ACK write stx_ack_etx,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
+ACKEOT write stx_ack_eot,*-3 do trace^MIF000(mi,"ACKEOT","H-->M") quit
+NAK write stx_nak_etx,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
+
+]]></Routine>
+</Export>

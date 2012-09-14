@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFxt4000i" type="INT" languagemode="0"><![CDATA[
+MIFxt4000i(mi) ; XT-4000i (Sysmex) (Russion Burdenko)
+ //Прибор работает через Ethernet (не через COM порт) (не надо MOX), в этом случае ЛИС является сервером в TCP соединении
+ //LIS - server (для этого надо в настройках прибора не вводить ip-адрес, только порт)
+ // собственный протокол (не ASTM)
+ 
+ s mi=$g(mi) i '$l(mi) quit
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ 
+ d trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ set exec="MainJob^"_$zn
+ set ans=$$start^MIFstartServer(mi,par4,par41,exec) 
+ if ans="client" d trace^MIF000(mi,"Started job="_$j,"DEBUG") do Main(mi) 
+ close par4 // в случае сервера не нужно, но не мешает, а в случае клиента нужно
+ quit
+
+MainJob(mi,dev)
+ if $get(dev)="" quit
+ s $zt="err^MIF000"
+ use $I:(::"+D")
+ d trace^MIF000(mi,"Job="_$j_" is started by tcp server","DEBUG")
+ do Main(mi)
+ quit
+ 
+Main(mi)
+ s $zt="err^MIF000"
+ if $$select^LVBMIMP(mi) quit
+ for j=1:1:PLIST set @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(21),etb=$c(23)
+ s lf=$c(10),cr=$c(13)
+ set df="," ;delimeter fields
+ set recTests1="WBC-BF,7/RBC-BF,6/MN#,7/MN%,5/PMN#,7/PMN%,5/TC-BF#,7" // список тестов,длин в байтах в строке order=1 
+ set recTests2="WBC,6/RBC,5/HGB,5/HCT,5/MCV,5/MCH,5/MCHC,5/PLT,5/LYMPH%,5/MONO%,5/NEUT%,5/EO%,5/BASO%,5/LIMPH#,6/MONO#,6/NEUT#,6/EO#,6/BASO#,6/RDW-CV,5/RDW-SD,5/PDW,5/MPV,5/P-LCR,5/RET%,5/RET#,5/IRF,5/LFR,5/MFR,5/HFR,5/PCT,5/,6/,6/IG#,6/IG%,5/,6/RET-He,5" // список тестов,длин в байтах в строке order=2
+ set recOrder1="WBC,1/RBC,1/HGB,1/HCT,1/MCV,1/MCH,1/MCHC,1/PLT,1/LYMPH%,1/MONO%,1/NEUT%,1/EO%,1/BASO%,1/LIMPH#,1/MONO#,1/NEUT#,1/EO#,1/BASO#,1/RDW-CV,1/RDW-SD,1/PDW,1/MPV,1/P-LCR,1/,2/RET%,1/RET#,1/IRF,1/LFR,1/MFR,1/HFR,1/,1/PCT,1/,1/,1/,15"
+ ; 
+ ;d trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ for {
+	  if $$stop^MIF000() quit
+	  read *R:10
+      ;if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") continue
+      i $char(R)=enq do trace^MIF000(mi,"ENQ","H<--M")  do ACK continue
+      if $c(R)'=stx continue
+      set nameMachine="",nameLIS=""
+      do receiveSTX
+      do Order
+ }
+ quit 
+ 
+ ;обработка полученного от прибора STX
+receiveSTX 
+ do trace^MIF000(mi,"STX","H<--M")
+ set record=$$read^MIF000("",etx) ;if '$length(record) quit
+ do trace^MIF000(mi,record,"H<--M")
+ set len=$length(record)
+ // byte 2
+ set typerecord=$extract(record,1)
+ do trace^MIF000(mi,"typeRecord="_typerecord,"H<--M")
+ if typerecord="R" {
+	 if len'=61 do trace^MIF000(mi,"Строка с typerecord=R имеет длину не 63 byte ("_(len+2)_")","H<--M") ;do NAK quit
+	 set modeInquiry=$extract(record,2)
+	 set epis=$extract(record,6,21)
+	 if $l(epis) set ^TMP($zn,$j,"ENQ",epis)=modeInquiry 
+     do ACK
+ }
+ if typerecord="D" {
+	 set order=$extract(record,2)
+	 if ((order=1)&&(len'=189)) do trace^MIF000(mi,"Строка с order=1 имеет длину не 191 byte ("_(len+2)_")","H<--M") ;do NAK quit
+     if ((order=2)&&(len'=253)) do trace^MIF000(mi,"Строка с order=2 имеет длину не 255 byte ("_(len+2)_")","H<--M") ;do NAK quit 
+     do ACK
+     set type=$extract(record,3)
+     if type'="U" do trace^MIF000(mi,"Byte 4 не равен U","H<--M") 
+     // episode data
+     set (epis,sample,surname,date,time,QC)="" 
+     set epis=$tr($extract(record,33,47)," ","")
+     if $tr(epis,1,3)="ERR" do trace^MIF000(mi,"Sample ID with ERR","H<--M") 
+     if order=1 {
+        ;set date=$zdateh($extract(record,48,55),8)
+        ;set time=$extract(record,56,59) if $tr(time," ","")'="" set time=$ztimeh($e(time,1,2)_":"_$e(time,3,4),1)
+        set info=$extract(record,89) ; if info=1 do trace^MIF000(mi,"Analysis Information = 1 (Analysis with error)","H<--M") quit
+     }
+     //results
+     set result=""
+     set recTests=$select(order=1:recTests1,order=2:recTests2,1:"") //@("recTests"_order)
+     set length=0 for i=1:1:$length(recTests,"/") { set length=length+$piece($piece(recTests,"/",i),",",2) }
+     set recresult=$select(order=1:$extract(record,110,length-1),order=2:$extract(record,48,length-1),1:"")
+     do trace^MIF000(mi,"recresult="_recresult,"H<--M")
+     if recresult="" do trace^MIF000(mi,"Неверно работает драйвер в обработке результатов тестов","H<--M") quit
+     for i=1:1:$length(recTests,"/") {
+    	 set rectest=$piece(recTests,"/",i)
+    	 set test=$piece(rectest,",",1) if test="" continue
+         set length=+$piece(rectest,",",2) if length=0 continue 
+         set res=$extract(recresult,1,length-1)  ;последний символ - флаг
+         set recresult=$extract(recresult,length+1,$length(recresult)) 
+         ;if $data(^TMIF(mi,"3",test)) set result=result_test_$c(par10)_res_$c(par10)_""_$c(par11)   
+         set result=result_test_$c(par10)_res_$c(par10)_""_$c(par11)     
+     } 
+     // запись результатов
+     do trace^MIF000(mi,"epis="_epis_" result="_result,"H<--M")
+     ;if $l(epis),$l(result) do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ }    
+ ;do trace^MIF000(mi,"ETX","H<--M")
+ do ACK
+ quit
+
+Order ; create list of orders if exists
+ ;quit
+ s epis="" 
+ for {
+	 set epis=$o(^TMP($zn,$j,"ENQ",epis)) quit:epis="" 
+     do scanone^MIF000(mi,epis)
+     if $$select^LVBEPVIS(epis,"Y") k ^TMP($zn,$j,"ENQ",epis) continue
+     set modeInquiry=$get(^TMP($zn,$j,"ENQ",epis))
+     set sex=$s($g(PLIST(5))="M":"1",$g(PLIST(5))="F":"2",1:"3")
+     ;s sex=$s($g(PLIST(5))="М":"M",$g(PLIST(5))="Ж":"F",1:"U")
+     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
+     set status="0" // 0- not registered 1-registered,2-Quality control
+     set dateOrder=$zdate($h,8)
+     set string0=stx_"S"_"1"_status_dateOrder_"000"_$$RightAlign^KSUTIL1(epis,15)_"00"_"000000"_"00"_modeInquiry_$$LeftAlign^KSUTIL1("",16)
+      // строка 1
+     set $extract(string0,3)="1"
+     set string=string0_$$LeftAlign^KSUTIL1(surname_" "_name,40)
+     set string=string_sex_$$LeftAlign^KSUTIL1("",8)_$$LeftAlign^KSUTIL1("",20)_$$LeftAlign^KSUTIL1("",20)_$$LeftAlign^KSUTIL1("",40)_$$LeftAlign^KSUTIL1("",18,"0")
+     for ii=1:1:$length(recOrder1,"/") {
+	     set tcx=$piece(recOrder1,"/",ii)
+	     set tc=$piece(tcx,",",1) 
+	     set pp=0
+ 	     if tc'="" if $data(^TMP("MIF-SINGLE",$j,mi,epis,tc)) set pp=1
+ 	     set ll=$piece(tcx,",",2)
+ 	     if +ll'=0 set pp=$$LeftAlign^KSUTIL1(pp,ll,"0") 
+         set string=string_pp
+     }
+     set string=string_etx
+     set line=$order(^TMIF(mi,10,""),-1)+1
+     set ^TMIF(mi,10,line)=string
+     // строка 2
+     set $extract(string0,3)="2"
+     set string=string0_$$LeftAlign^KSUTIL1("",100)_$$LeftAlign^KSUTIL1("",97,"0")_etx
+     set line=$order(^TMIF(mi,10,""),-1)+1
+     set ^TMIF(mi,10,line)=string
+     kill ^TMP($zn,$j,"ENQ",epis)
+     d Send
+ }
+ quit
+Send ; send list of orders if exists
+ set x="" for  set x=$Order(^TMIF(mi,10,x)) quit:x=""  quit:$$SEND(^TMIF(mi,10,x))
+ if x="" kill ^TMIF(mi,10)
+ quit
+SEND(str) ; send string to instrument
+ ;set str=str_cr_etx,chsum="" ;$$CHSUM(str)
+ write str,*-3 //stx,str,chsum,cr,lf,*-3 
+ do trace^MIF000(mi,str,"H-->M")
+ for j=1:1:10 {
+	 read *R:1 
+	 quit:($c(R)=ack)!($c(R)=eot)!($c(R)=nak)
+	 d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
+ }
+ if $c(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
+ if $c(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
+ if $c(R)=nak do trace^MIF000(mi,"EOT","H<--M") quit 1
+ do trace^MIF000(mi,R,"H<--M")
+ quit 2
+
+ACK w ack,*-3 d trace^MIF000(mi,"ACK","H-->M") q
+NAK w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+EOT w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+ENQ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M") q
+
+
+]]></Routine>
+</Export>

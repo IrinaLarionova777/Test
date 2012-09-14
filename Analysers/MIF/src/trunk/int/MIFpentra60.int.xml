@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFpentra60" type="INT" languagemode="0"><![CDATA[
+MIFpentra60(mi) ; ABX protocol  -  Pentra 60 (Russion EMC)
+ // protokol ABX , with scatter plot and histogramms
+ // доп прога MIFpentra60dop
+ //type for ScatterPlot =3 $p(^TMIF(mi,1,epis,"PLOT","DIFF",0),"\",6)=3
+ //type for Histogram =3 $p(^TMIF(mi,1,epis,"PLOT",codeHistogram,0),"\",2)=3
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ if $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(15)
+ s lf=$c(10),cr=$c(13),soh=$c(1),(result,epis)=""
+ if $$start^MIF000() q
+ d trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ set num=""
+ set threasholdsStruct="NoL/NoN/NoE/LN/RN/LL/AL/LMU/LMD/LMN/MN/RM/NL/NE/RMN"
+ for {
+	 d Main 
+	 if $$stop^MIF000() quit
+ }
+ c par4
+ q
+Main 
+ read *R:10
+ ;i $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ i $char(R)'=stx quit
+ do receiveSTX
+ quit
+ ;обработка полученного от прибора ENQ
+receiveSTX 
+ do trace^MIF000(mi,"STX","H<--M")
+ set record=$$read^MIF000("",etx) if '$length(record) quit
+ ;set record=$e(record,1,$length(record)-1)
+ set len=$length(record)
+ //проверка packet length
+ set lengthDeclare=+$extract(record,1,5)
+ set lengthFact=$length(record)
+ if lengthDeclare'=lengthFact do trace^MIF000(mi,"Declare packet length="_lengthDeclare_" Fact packet length="_lengthFact,"H<--M") quit
+ // check record validity
+ set csDeclare=$e(record,len-4,len-1)
+ set csFact=$$CheckSum(record)
+ if csDeclare'=csFact do trace^MIF000(mi,"Declare checksum="_lengthDeclare_" Fact checksum="_lengthFact,"H<--M") quit
+ //; check data type 
+ set dataType=$piece(record,cr,2)
+ set dataType=$extract(dataType,3,8)
+ if dataType'="RESULT" do trace^MIF000(mi,"Data type: wait RESULT, rective "_dataType,"H<--M") quit
+ set recresult=$e(record,18,len-15)
+ set (epis,sample,surname,date,time,QC)="" 
+ kill ScatRes set result=""
+ for pp=1:1:$length(recresult,$char(13)) {
+     set subrecord=$piece(recresult,$char(13),pp)
+     set len=$length(subrecord)
+     do trace^MIF000(mi,subrecord,"H<--M")
+     set identificator=$e(subrecord,1)
+     // episode num
+     if identificator="u" {
+	     set epis=+$tr($extract(subrecord,3,len)," ","")
+	     // не знаю, проверять ли на наличие в базе 
+     }
+     // scatter plot 
+     if identificator="[" {
+	     set bitmap0=$e(subrecord,3,$length(subrecord)),test="DIFF" 
+	     do scatPlot^MIFpentra60dop(bitmap0,test)
+     }
+     // histogramm
+     if identificator="W"!(identificator="X")!(identificator="Y")!(identificator="Z") {
+	     set histogram=$e(subrecord,3,$length(subrecord)) set test=$select(identificator="W":"C",identificator="X":"RBCH",identificator="Y":"PLTH",identificator="Z":"S",1:"")
+	     if $length(histogram)=128 do histogram^MIFpentra60dop(histogram,test)
+     }
+     // threasholds for scatter plot
+     if identificator="a" {
+	     //"NoL/NoN/NoE/LN/RN/LL/AL/LMU/LMD/LMN/MN/RM/NL/NE/RMN"
+	     set threasholds=$extract(subrecord,3,$length(subrecord))
+	     //set NoL=$piece(threasholds," ",1),NoN=$piece(threasholds," ",2),NoE=$piece(threasholds," ",3)
+	     //set LN=$piece(threasholds," ",4),RN=$piece(threasholds," ",5),LL=$piece(threasholds," ",6)
+	     //set AL=$piece(threasholds," ",7),LMU=$piece(threasholds," ",8),LMD=$piece(threasholds," ",9)
+	     //set LMN=$piece(threasholds," ",10),MN=$piece(threasholds," ",11),RN=$piece(threasholds," ",12)
+	     //set NL=$piece(threasholds," ",13),NE=$piece(threasholds," ",14),RMN=$piece(threasholds," ",15) 
+	     for ii=1:1:$length(threasholdsStruct,"/") {
+		    set namevar=$piece(threasholdsStruct,"/",ii) if namevar="" continue
+		    set value=$piece(threasholds," ",ii)
+		    if +value>0 set value=$tr($j(value,3)," ","0")
+		    else  set value=""
+		    ;if (namevar="NoL")||(namevar="LL")||(namevar="AL")||(namevar="LN")||(namevar="LMD")||(namevar="RN")||(namevar="RM")||(namevar="NoN")||(namevar="NoE")||(namevar="LMU")||(namevar="LMN")||(namevar="MN") set value=value
+		    ;if (namevar="NL")||(namevar="NE")||(namevar="RMN") set value=128-value
+		    set @namevar=value
+	     }
+	     set test="DIFF"
+	     set typeScatterPlot=3 
+	     set delim=$char(20)
+	     set strParams=$get(NoL)_delim_$get(NoN)_delim_$get(NoE)_delim_$get(LN)_delim_$get(RN)_delim_typeScatterPlot_delim_$get(LL)_delim_$get(AL)_delim_$get(LMU)_delim_$get(LMD)_delim_$get(LMN)_delim_$get(MN)_delim_$get(RM)_delim_$get(NL)_delim_$get(NE)_delim_$get(RMN)
+	     if $data(ScatRes(test)) set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_strParams_$c(par11)
+     }
+     // threasholds for histogram WBC(]):5,RBC(^):2,PLT(_):1,BASOPHIL('):3   
+     if (identificator="]")||(identificator="^")||(identificator="_")||(identificator="'") {
+	     set threasholds=$extract(subrecord,3,$length(subrecord))
+	     set test=$select(identificator="]":"C",identificator="^":"RBCH",identificator="_":"PLTH",identificator="'":"Z",1:"")
+	     set typeHistogram=3
+	     if test'="" set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_$char(20)_typeHistogram_$char(20)_$translate(threasholds," ",$char(20))_$c(par11)
+     }
+   	 // results
+     if $$IsTestResult(identificator,.test) {
+	     set res=$tr($e(subrecord,3,7)," ","")
+	     if $data(^TMIF(mi,"3",test)) set result=result_test_$c(par10)_res_$c(par10)_""_$c(par11)   
+     }
+ }
+ if $l(epis),$l(result) do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ set result=""
+ if $data(ScatRes) {
+	 set test="" set result=""
+	 if $data(ScatRes("DIFF"))&&('$data(ScatRes("DIFF",0))) {
+		 set typeReport="3"
+	    //set ScatRes("DIFF",0)="024 027 050 035 118 "_typeReport_" 031 069 073 100 069 100 118 029 077 051"	
+	    set $piece(ScatRes("DIFF",0)," ",6)=typeReport	 
+	 }
+	 for {
+		 set test=$order(ScatRes(test)) if test="" quit
+		 if $order(ScatRes(test,""),-1)=0&&($order(ScatRes(test,""))=0) kill ScatRes(test) continue
+		 if $data(ScatRes(test))&&('$data(ScatRes(test,0))) {
+			 set typeHistogram=3
+			 set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_$char(20)_typeHistogram_$c(par11)
+		 }
+		 set x="" 
+		 for {
+			 set x=$order(ScatRes(test,x)) if x="" quit
+			 set result=result_ScatRes(test,x)
+		 }
+	 }
+     if $length(result) d filesp^MIF000(mi,sample,epis,result)
+ }
+ do trace^MIF000(mi,$s($c(R)=eot:"ETX",1:R),"H<--M")
+ quit
+
+CheckSum(x) ; calculate check sum
+ new z,y 
+ set z=0 for y=1:1:($l(x)-7) set z=z+$a(x,y)
+ set z=$zhex(z#65536)
+ q z
+ 
+ACK w ack,*-3 d trace^MIF000(mi,"ACK","H-->M") q
+NAK w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+EOT w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+ENQ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M") q
+
+IsTestResultOld(pIdentificator,pTest)
+ set pTest="",pResult=""
+ if $get(pIdentificator)="" quit 0
+ if pIdentificator="!" set pTest=pIdentificator quit 1 //set pTest="WBC" quit 1
+ if pIdentificator="""" set pTest=pIdentificator quit 1 //set pTest="LYM#" quit 1
+ if pIdentificator="#" set pTest=pIdentificator quit 1 //set pTest="LYM%" quit 1
+ if pIdentificator="$" set pTest=pIdentificator quit 1 //set pTest="MON#" quit 1
+ if pIdentificator="%" set pTest=pIdentificator quit 1 //set pTest="MON%" quit 1
+ if pIdentificator="(" set pTest=pIdentificator quit 1 //set pTest="NEU#" quit 1
+ if pIdentificator=")" set pTest=pIdentificator quit 1 //set pTest="NEU%" quit 1
+ if pIdentificator="*" set pTest=pIdentificator quit 1 //set pTest="EOS#" quit 1
+ if pIdentificator="+" set pTest=pIdentificator quit 1 //set pTest="EOS%" quit 1
+ if pIdentificator="," set pTest=pIdentificator quit 1 //set pTest="BAS#" quit 1
+ if pIdentificator="-" set pTest=pIdentificator quit 1 //set pTest="BAS%" quit 1
+ if pIdentificator="/" set pTest=pIdentificator quit 1 //set pTest="ALY%" quit 1
+ if pIdentificator="1" set pTest=pIdentificator quit 1 //set pTest="LIC%" quit 1
+ if pIdentificator="2" set pTest=pIdentificator quit 1 //set pTest="RBC" quit 1
+ if pIdentificator="3" set pTest=pIdentificator quit 1 //set pTest="HGB" quit 1
+ if pIdentificator="4" set pTest=pIdentificator quit 1 //set pTest="HCT" quit 1
+ if pIdentificator="5" set pTest=pIdentificator quit 1 //set pTest="MCV" quit 1
+ if pIdentificator="6" set pTest=pIdentificator quit 1 //set pTest="MCH" quit 1
+ if pIdentificator="7" set pTest=pIdentificator quit 1 //set pTest="MCHC" quit 1
+ if pIdentificator="8" set pTest=pIdentificator quit 1 //set pTest="RDW" quit 1
+ if pIdentificator="@" set pTest=pIdentificator quit 1 //set pTest="PLT" quit 1
+ if pIdentificator="A" set pTest=pIdentificator quit 1 //set pTest="MPV" quit 1
+ if pIdentificator="B" set pTest=pIdentificator quit 1 //set pTest="THT" quit 1
+ if pIdentificator="C" set pTest=pIdentificator quit 1 //set pTest="PDW" quit 1
+ quit 0
+
+
+IsTestResult(pIdentificator,pTest)
+ set pTest="",pResult=""
+ if $get(pIdentificator)="" quit 0
+ if pIdentificator="!" set pTest="WBC" quit 1
+ if pIdentificator="""" set pTest="LYM#" quit 1
+ if pIdentificator="#" set pTest="LYM%" quit 1
+ if pIdentificator="$" set pTest="MON#" quit 1
+ if pIdentificator="%" set pTest="MON%" quit 1
+ if pIdentificator="(" set pTest="NEU#" quit 1
+ if pIdentificator=")" set pTest="NEU%" quit 1
+ if pIdentificator="*" set pTest="EOS#" quit 1
+ if pIdentificator="+" set pTest="EOS%" quit 1
+ if pIdentificator="," set pTest="BAS#" quit 1
+ if pIdentificator="-" set pTest="BAS%" quit 1
+ if pIdentificator="/" set pTest="ALY%" quit 1
+ if pIdentificator="1" set pTest="LIC%" quit 1
+ if pIdentificator="2" set pTest="RBC" quit 1
+ if pIdentificator="3" set pTest="HGB" quit 1
+ if pIdentificator="4" set pTest="HCT" quit 1
+ if pIdentificator="5" set pTest="MCV" quit 1
+ if pIdentificator="6" set pTest="MCH" quit 1
+ if pIdentificator="7" set pTest="MCHC" quit 1
+ if pIdentificator="8" set pTest="RDW" quit 1
+ if pIdentificator="@" set pTest="PLT" quit 1
+ if pIdentificator="A" set pTest="MPV" quit 1
+ if pIdentificator="B" set pTest="THT" quit 1
+ if pIdentificator="C" set pTest="PDW" quit 1
+ quit 0
+ 
+convertDecimalToBinary(numDec)
+ set numDec=+$get(numDec)
+ if numDec>255!(numDec<0) quit "" 
+ set numBinary="00000000"
+ for i=7:-1:0 {
+	 set pp=2**i
+     if numDec'<pp set $e(numBinary,(7-i+1))="1" set numDec=numDec-pp
+ }
+ quit numBinary
+]]></Routine>
+</Export>

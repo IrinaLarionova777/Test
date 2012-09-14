@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFstartServer" type="INT" languagemode="0"><![CDATA[
+MIFstartServer // LIS подключается к прибору через ethernet (не через COM + MOX) ЛИС может быть сервером, не только клиентом 
+ ;host - server (для этого надо в настройках прибора не вводить ip-адрес, только порт)
+ // пример вызова в программе MIFxt4000iB
+ // input: exec - only for server 
+ // output: client/server/""
+start(mi,dev,params,exec)
+ ;s $zt="err" //????
+ s $zt="err^MIF000" 
+ s date=$$extdate2^SSUTIL4(+$h),time=$$exttime^SSUTIL4($p($h,",",2))
+ ;if '$$TestLicense(mi) d message^MIF000(mi,"Unable to start due to License limit "_date_" "_time) quit ""
+ set ip=$g(^TMIF(mi,"TCP")) 
+ ;set ip="" // пока насильственно сервер   
+ ;клиент
+ if $length(ip) {
+	 open dev:(ip::"C"):20 set ok=$test
+	 if 'ok do message^MIF000(mi,"Unable to start "_date_" "_time) quit ""
+	 do setStart(mi)
+	 x "use dev"_$select($get(params)'="":":"_params,1:"")
+	 quit "client"
+ }
+ ;сервер
+ if '$length(ip) {
+	 S mode="A" // тогда не теряется первый байт от клиента
+     Open dev:(:$piece(dev,"|TCP|",2):mode):5 set ok=$test    
+     if 'ok do message^MIF000(mi,"Unable to start "_date_" "_time) quit ""
+     do setStart(mi)
+     Set to=0 // job time out
+     set jobflag=4 //Pass an open TCP/IP socket to the spawned job using the principal I/O device ($PRINCIPAL).
+     For  { 
+            if $$stop^MIF000() quit     
+            use dev Read x:5 // wait connection
+            if x=-1 continue
+            if $get(exec)'="" xecute "Job "_exec_"(mi,dev):(:jobflag:$IO:$IO):to"    
+      }
+     close dev
+     lock -^TMIFLOCK(mi):1
+ }
+ quit "server"
+
+setStart(mi)
+ new (mi)
+ s date=$$extdate2^SSUTIL4(+$h),time=$$exttime^SSUTIL4($p($h,",",2))
+ s stop="N"
+   ;---&sql(UPDATE MIF_MachineParameters (MIMP_ShutDown) VALUES (:stop) WHERE MIMP_RowID = :mi)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, mi, stop
+ Do %0Ao^MIF000
+ d message^MIF000(mi,"Started "_date_" "_time)
+ ; clear sending queue
+ k ^TMIF(mi,10)
+ l +^TMIFLOCK(mi):1
+ q 
+ 
+TestLicense(mi)
+ new (mi) 
+ set mi=$g(mi),ok=0 
+ if $l(mi) do  ;
+ .s date=$$extdate2^SSUTIL4(+$h),time=$$exttime^SSUTIL4($p($h,",",2))
+ .s $zt="err^MIF000" l +^TMIFLOCK(mi):1 e  q 
+ . ; find number of instruments already running
+ .s (cnt,x)="" f  s x=$o(^TMIF(x)) q:x=""  i x'=mi d
+ ..l +^TMIFLOCK(x):0 e  s cnt=cnt+1
+ ..l -^TMIFLOCK(x)
+ .i cnt'<$p($p($g(^CF("SM",1,"KEY")),"^",1),",",2) l -^TMIFLOCK(mi)  q
+ .l -^TMIFLOCK(mi)
+ .set ok=1
+ quit ok 
+ 
+err
+ if $get(dev)'="" close dev
+ do err^MIF000
+ quit
+  
+]]></Routine>
+</Export>

@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFpentra60dop" type="INT" languagemode="0"><![CDATA[
+MIFpentra60dop ; ABX protocol  -  Pentra 60 (Russion EMC) продолжение
+         // программа - довесок к MIFpentra60
+scatPlot(bitmap0,test)
+         // У нас 128 строк по 32 байта (байт:1,2,3,...,E,F) - в результате график 128 на 128 (32*4)
+         // typeScatterPlot=3
+         // ^TMIF(mi,1,epis,"PLOT","DIFF",0)="NoL\NoN\NoE\LN\RN\typeScatterPlot\LL\AL\LMU\LMD\LMN\MN\RM\NL\NE\RMN"
+         // в ScatRes("DIFF",0)= test_$c(par10)_"0"_$c(par10)_коорд верт линии_$c(20)_коорд верт линии_$c(20)_"???"_$c(20)_"коорд гор линии"_$c(20)_"коорд гор линии"_$c(par11) - пороги
+         //     ^
+         // 127 | byte1 byte2  ...       byte16        
+         //     | byte17       ...       byte32
+         //     |              ...
+         //     | byte2033             byte2048
+         //  0  | ---------------------------->
+         //     0                            127
+         // каждый байт представлен двумя байтами - поэтому 4096 байт (2*2048)
+         // каждфй из 4096 байт (1,2,3,...,E,F) надо превратьть в битовую строку и кадый бит - это (покрасить точку или нет)
+         // цвет определяется в зависимости от координат относиельно границ (threathholds)
+         //
+         //               v(2) v(4)     v(3)     v(11) v(5)
+         //       ------------------------------------------------------
+         //       |                      |                             |
+         //       |                      |                             |
+         //       |                      |                             |
+         //       |                      |                             |
+         //       |                      |                             |
+         //       |         -------------------------------------------- v(15)
+         //       |         |   |                               |      |
+         //       |         |   |                               |      |
+         //       |         |   |                               |      |
+         //       |         |   |                               |      |
+         //       |         |   |                    *-------------    | v(16)
+         //       |         |   |                  *              |    |
+         // v(14) |      ------------------------*----            |    |
+         //       |      |   |                    |   *           |    |
+         //       |      |   |                    |    *          |    |
+         //       |      |   |                    |     *         |    |
+         //       |      |   |                    |      *        |    |
+         //       ----------------------------------------*------------
+         //             v(1)v(7)                v(8)v(9)  v(10)   v(13)
+         set scale=32,kolrow=$length(bitmap0)\scale 
+	     kill A1
+	     for j=1:1:kolrow {
+		     set str=$e(bitmap0,(j-1)*scale+1,j*scale) 
+		     for k=1:1:scale {
+			    set A1(j,k)=$extract(str,k) 
+		     }
+	     }
+         set j="" 
+	     for {
+		     set j=$order(A1(j)) 
+		     if j="" quit
+		     set str=""
+		     set k=""
+		     for {
+			     set k=$order(A1(j,k)) 
+			     if k="" quit
+			     set str=str_A1(j,k)
+		     }
+		     set line=$o(ScatRes(test,""),-1)+1
+	         s ScatRes(test,line)=test_$c(par10)_line_$c(par10)_str_$c(par11)  
+	     }
+	     if $data(ScatRes(test)) set $piece(ScatRes(test,0),$char(20),6)=3  
+     quit
+
+scatPlotold2(bitmap0,test)
+         //пока все не очень
+         // У нас 128 строк по 32 байта (каждые 2 байта - один байт для bitmap
+         // Еще картинка развернута (чтобы получить как надо поворачиваю против часовой стрелки на 90 гр)
+         // 64 строки удаляю - все нулевые строки сверху и снизу , а потом нечетные сверху пока не наберу 64 строки
+         // 32 байта - расширяю , дублируя каждую пару байтов - так как пара потом преобразуется в одно дес число - закомментировано так как не очень красиво
+         // в ScatRes("DIFF",0)= test_$c(par10)_"0"_$c(par10)_коорд верт линии_$c(20)_коорд верт линии_$c(20)_"???"_$c(20)_"коорд гор линии"_$c(20)_"коорд гор линии"_$c(par11) - пороги
+         //     ^
+         // 127 | byte1 byte2  ...       byte16        
+         //     | byte17       ...       byte32
+         //     |              ...
+         //     | byte2033             byte2048
+         //  0  | ---------------------------->
+         //     0                            127
+         // каждый байт представлен двумя байтами - поэтому 4096 байт (2*2048)
+         //
+         // раскладываем в массив, сразу поворачивая
+	     set scale=32,kolrow=$length(bitmap0)\scale 
+	     kill A1
+	     for j=1:1:kolrow {
+		     set str=$e(bitmap0,(j-1)*scale+1,j*scale) 
+		     ;set ^test("fig1",$o(^test("fig1",""),-1)+1,j)=str
+		     for k=1:1:scale {
+			    set A1(k,kolrow-j+1)=$extract(str,k) //set A1(kolrow-j+1,k)=$extract(str,k)
+		     }
+	     }
+	     kill A3 m A3=A1
+	     /*
+         kill delChannel // тут будем сохранять удаленные строки (так как надо уместить 128 строк(каналов) в 64) - для дальнейшей корректировки значений для пороговых линий (горизонтальных) 
+	     ;set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_"029"_$c(20)_"077"_$c(20)_""_$c(20)_"024"_$c(20)_"069"_$c(par11)
+	     set countDelString=0 // кол-во удаленный строк
+	     // удаляем нижние строки со всеми 0 (длина строки 32)
+         set flDel=1
+         set j=""
+         for {
+	         set j=$order(A1(j)) if j="" quit
+	         if flDel=0||(countDelString>64) quit
+             set ok=1 for k=1:1:scale if A1(j,k)'="0" set ok=0 quit
+		     if ok=1 {
+			     set countDelString=countDelString+1 
+			     set delChannel(j)=""
+			     kill A1(j)
+			     continue
+		     }
+		     if flDel=1,ok=0 set flDel=0
+	     }
+	     // удаляем верхние строки со всеми 0 (длинв строки 32)
+         set flDel=1
+         set j=""
+         for {
+	         set j=$order(A1(j),-1) if j="" quit
+	         if flDel=0||(countDelString>64) quit
+             set ok=1 for k=1:1:scale if A1(j,k)'="0" set ok=0 quit
+		     if ok=1 {
+			     set countDelString=countDelString+1 
+			     set delChannel(j)=""
+			     kill A1(j)
+			     continue
+		     }
+		     if flDel=1,ok=0 set flDel=0
+	     }
+ 	     // удаляем сверху через одну еще стоки, чтобы всего удаленных строк стало 64 , так как видно только 64 строки
+         set j=""
+         for {
+	         set j=$order(A1(j),-1) if j="" quit
+	         if (countDelString>64) quit
+    	     if j#2'=0 {
+			     set countDelString=countDelString+1 
+			     set delChannel(j)=""
+			     kill A1(j)
+			     continue
+		     }
+	     }
+        // перенумеровываем первый индекс массива по порядку
+         kill A2
+	     set j="",jj=0
+         for {
+	         set j=$order(A1(j)) if j="" quit
+	         set jj=jj+1
+             merge A2(jj)=A1(j)
+         }
+	    // поворачиваем массив
+	     kill A3
+	     set kolrow=$order(A2(""),-1)
+	     for j=1:1:kolrow {
+             for k=1:1:scale {
+	             set A3(k,j)=A2(j,k)
+             }
+	     }
+	     */
+	     // массив обратно в строку
+	     set j="" 
+	     for {
+		     set j=$order(A3(j)) 
+		     if j="" quit
+		     set str=""
+		     set k=""
+		     for {
+			     set k=$order(A3(j,k)) 
+			     if k="" quit
+			     set str=str_A3(j,k)
+		     }
+		     set line=$o(ScatRes(test,""),-1)+1
+	         s ScatRes(test,line)=test_$c(par10)_line_$c(par10)_str_$c(par11)  
+	     }
+	     //if $data(ScatRes) set $piece(ScatRes(test,0),"\",6)=2   
+  
+     quit
+     
+
+
+scatPlotold(bitmap0,test)
+         //пока все не очень
+         //Похоже VB экран настроен на обработку 64 строк по 64 байта
+         // У нас 128 строк по 32 байта
+         // Еще картинка развернута (чтобы получить как надо поворачиваю против часовой стрелки на 90 гр)
+         // 64 строки удаляю - все нулевые строки сверху и снизу , а потом нечетные сверху пока не наберу 64 строки
+         // 32 байта - расширяю , дублируя каждую пару байтов - так как пара потом преобразуется в одно дес число - закомментировано так как не очень красиво
+         // в ScatRes("DIFF",0)= test_$c(par10)_"0"_$c(par10)_коорд верт линии_$c(20)_коорд верт линии_$c(20)_"???"_$c(20)_"коорд гор линии"_$c(20)_"коорд гор линии"_$c(par11) - пороги
+         //     ^
+         // 127 | byte1 byte2  ...       byte16        
+         //     | byte17       ...       byte32
+         //     |              ...
+         //     | byte2033             byte2048
+         //  0  | ---------------------------->
+         //     0                            127
+         // каждый байт представлен двумя байтами - поэтому 4096 байт (2*2048)
+         //
+         kill delChannel // тут будем сохранять удаленные строки (так как надо уместить 128 строк(каналов) в 64) - для дальнейшей корректировки значений для пороговых линий (горизонтальных) 
+	     ;set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_"029"_$c(20)_"077"_$c(20)_""_$c(20)_"024"_$c(20)_"069"_$c(par11)
+	     set countDelString=0 // кол-во удаленный строк
+	     // удаляем нижние строки со всеми 0 (длинв строки 32)
+	     set bitmap="" 
+         set scale=32,kolrow=$length(bitmap0)\scale
+         set flDel=1
+	     for j=1:1:kolrow {
+		     set str=$e(bitmap0,(j-1)*scale+1,j*scale)
+		     /* 
+		     if (flDel=1)&&($tr(str,"0","")="")&&(countDelString<64) {
+			     set countDelString=countDelString+1 
+			     set delChannel(j)=""
+			     continue
+		     }
+		     */
+		     if flDel=1 if $tr(str,"0","")'="" set flDel=0
+		     set bitmap=bitmap_str
+	     }
+	     set bitmap0=bitmap
+	     // удаляем верхние строки со всеми 0 (длинв строки 32)
+	     set bitmap="" 
+         set scale=32,kolrow=$length(bitmap0)\scale
+         set flDel=1
+	     for j=kolrow:-1:1 {
+		     set str=$e(bitmap0,(j-1)*scale+1,j*scale)
+		     /* 
+		     if (flDel=1)&&($tr(str,"0","")="")&&(countDelString<64) {
+			     set countDelString=countDelString+1 
+			     set delChannel(j)="" w j,! b  
+			     continue
+		     }
+		     */
+		     if flDel=1 if $tr(str,"0","")'="" set flDel=0
+		     set bitmap=str_bitmap
+	     }
+	     // удаляем сверху через одну еще стоки, чтобы всего удаленных строк стало 64 , так как видно только 64 строки
+	     set bitmap0=bitmap
+	     set bitmap="" 
+         set scale=32,kolrow=$length(bitmap0)\scale
+	     for j=1:1:kolrow {
+		     set str=$e(bitmap0,(j-1)*scale+1,j*scale) 
+		     if countDelString<64 {
+			     if j#2'=0 {
+				     set countDelString=countDelString+1
+				     set delChannel(j)=""
+			     } 
+			     continue
+		     }
+		     set bitmap=bitmap_str
+	     }
+	     ;дублируем каждую пару байтов
+	     ;set bitmap0=bitmap
+	     ;set bitmap="" 
+	     ;for j=1:2:$length(bitmap0) {
+		 ;    set sym=$extract(bitmap0,j)_$extract(bitmap0,j+1)
+		 ;    set bitmap=bitmap_sym_sym
+	     ;}
+	    
+	    // раскладываем в массив, сразу поворачивая
+	     set scale=32,kolrow=$length(bitmap)\scale 
+	     kill A1
+	     for j=1:1:kolrow {
+		     set str=$e(bitmap,(j-1)*scale+1,j*scale) 
+		     ;set ^test("fig1",$o(^test("fig1",""),-1)+1,j)=str
+		     for k=1:1:scale {
+			     set A1(k,kolrow-j+1)=$extract(str,k)
+			     ;set A1(j,k)=$extract(str,k)
+		     }
+	     } 
+	     // массив обратно в строку
+	     set j="" 
+	     for {
+		     set j=$order(A1(j)) 
+		     if j="" quit
+		     set str=""
+		     set k=""
+		     for {
+			     set k=$order(A1(j,k)) 
+			     if k="" quit
+			     set str=str_A1(j,k)
+		     }
+		     set line=$o(ScatRes(test,""),-1)+1
+	         s ScatRes(test,line)=test_$c(par10)_line_$c(par10)_str_$c(par11)  
+	     }     
+  
+	     ;for j=1:2:$length(bitmapLong) set bitmap=bitmap_$e(bitmapLong,j) 
+	     ;for j=1:2:$l(bitmapLong) set pp=$e(bitmapLong,j,j+1) set bitmap=bitmap_pp_pp_pp_pp_pp_pp_pp_pp_pp_pp
+	     ;надо перевернуть график , полученный с помощью 
+	     ;set scale=64 for j=1:1:($l(bitmap)\scale) s ScatRes(test,j)=test_$c(par10)_j_$c(par10)_$e(bitmap,(j-1)*scale+1,j*scale)_$c(par11)
+	     ;на 90 градусов
+	     ;создаем матрицу сразу перевернутую
+	     ;set scale=64
+	     ;kill A
+	     ;for j=1:1:($length(bitmap)\scale) set str=$e(bitmap,(j-1)*scale+1,j*scale) for k=1:1:$length(str) set A(k,($length(bitmap)\scale)-j+1)=$extract(str,k) 
+	     ;for j=1:1:($length(bitmap)\32) set str=$e(bitmap,(j-1)*32+1,j*32) for k=1:2:$length(str) set A(k,($length(bitmap)\32)-j+1)=$extract(str,k)
+	     ;for j=1:1:($length(bitmap)\32) set str=$e(bitmap,(j-1)*32+1,j*32) for k=1:2:$length(str) set A(($length(bitmap)\32)-j+1,k)=$extract(str,k) 
+	     ;b  ;for j=1:1:($length(bitmap)\scale) set str=$e(bitmap,(j-1)*scale+1,j*scale) for k=1:2:$length(str) set aa(scale-j+1,k)=$e(str,k,k+1)
+	     ;set len=0,j="" f  set j=$order(A(j)) quit:j=""  set len=len+1  
+         ;for k=1:1:len {
+	     ;     set str="" set j="" for  set j=$order(A(k,j)) q:j=""  set str=str_A(k,j)
+	     ;     s ScatRes(test,$o(ScatRes(test,""),-1)+1)=test_$c(par10)_k_$c(par10)_str_$c(par11)  
+         ;}  
+     quit
+     
+     // histogramm
+     //нельзя непосредственно передавать строку, приходящую с прибора, так как символы с кодами типа 128 передаются неадекватно
+     // поэтому преобразуем в код каждого символа в hex и передаем его двумя байтами - vb программа будем разбирать соответственно
+histogram(histogram,test)
+     if $get(test)=""||($get(histogram)="") quit
+     
+     set str=""
+     for j=1:1:$length(histogram) {
+	     set sym=$a($extract(histogram,j))
+	     if sym'<32 set sym=sym-32
+	     else  set sym=0
+	     set str=str_$translate($j($zhex(+sym),2)," ","0")
+     }
+     set ScatRes(test,1)=test_$c(par10)_"1"_$c(par10)_str_$c(par11) 
+     quit
+
+     // histogramm
+histogramOld(histogram,test)
+     // создаем массив arrowhist(numChannel)=value
+     // в Trak рисуется гистограмма на 256 channels, у нас 128 channels => пока заполняем через один
+     // сразу преобразуем по величине, так как в этом приборе величмны от 32 (соответсвует 9) до 255(соответсвует 255): 
+     //if sym'<32 set sym=+$j(255*sym-8160/223,0,0)
+           // 32->0, 255->255
+	      //A->B B=A+f(A) f ищем в виде f(A)=kA+c
+	      // 32+k*32+c=0
+	      // 255+k*255+c=255
+          // Из этой системы k=32/223 c=-32*255/223
+     kill arrowhist 
+     for j=1:1:$length(histogram) {
+	     set sym=$a($e(histogram,j))
+	     if sym'<32 set sym=+$j(255*sym-8160/223,0,0) //sym-32 
+	     set arrowhist(j*2-1)=sym 
+     }
+     // дополняем пропущенные каналы значениями такими, чтобы получались прямые, соединяющие две соседние реальные точки
+     
+     set j="",jprev=""
+     for {
+	     set jprev=j
+	     set j=$order(arrowhist(j)) if j="" quit
+	     if jprev="" continue
+	     if j-jprev=1 continue
+	     set val=arrowhist(j),valprev=arrowhist(jprev)
+	     // уравнение прямой, проходящей через точки (jprev,valprev) и (j,val) y=kx+b
+	     set k=(val-valprev)/(j-jprev) set b=val-(k*j) 
+         for jj=(jprev+1):1:(j-1) {
+		         set arrowhist(jj)=k*jj+b\1   
+	     }
+	         
+	 } 
+	 
+	 for j=($order(arrowhist(""),-1)+1):1:256 set arrowhist(j)=0
+   
+     // преобразуем в строку, где код каждого символа в начальной строке выражен двумя символами в шестнадцатиричном виде
+     set strhex=""
+     set j="" 
+     for {
+	     set j=$order(arrowhist(j)) if j="" quit
+         set sym=arrowhist(j)
+         set hex=$tr($j($zh(sym),2)," ","0") 
+	     set strhex=strhex_hex 
+	 }
+ 
+	 // удваиваем каждый символ - чтоб растянуть график
+	//set hist="" for j=1:2:256 set sym=$e(strhex,j,j+1) set hist=hist_sym_sym
+		      ;set str0="" for j=1:2:256 set str0=str0_$char($zhex($e(hist,j,j+1)_"H"))
+	     ;f  q:'$l(res)  s hex=$e(res,1,2),res=$e(res,3,99999),hex=$zh(hex_"H"),x2=x2_$s($l(x2):",",1:"")_hex
+	     ;set x2="" for j=1:1:$l(res)  s sym=$e(res,j),x2=x2_$s($l(x2):",",1:"")_$a(sym)
+	     ;f  q:'$l(res)  s hex=$e(res,1),res=$e(res,2,99999),x2=x2_$c($a(hex)-32) //$s($l(x2):",",1:"")_($zh($a(hex)_"H")) ;set x2=x2_","_($a(hex)-32)
+	     ;for ii=1:1:$length(histstr) set  
+	     ;set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_""_$c(20)_""_$c(20)_""_$c(20)_""_$c(20)_""_$c(par11)    
+	 if test'="" { 
+	     ;set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_"100"_$c(20)_"150"_$c(20)_"200"_$c(20)_"50"_$c(20)_"100"_$c(par11) не работает
+	     set ScatRes(test,1)=test_$c(par10)_"1"_$c(par10)_strhex_$c(par11) 
+	 }
+     quit
+
+]]></Routine>
+</Export>

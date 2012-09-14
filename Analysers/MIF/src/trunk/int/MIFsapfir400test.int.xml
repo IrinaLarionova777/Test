@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFsapfir400test" type="INT" languagemode="0"><![CDATA[
+MIFsapfir400test(mi) ; ASTM protocol  -  SAPPHIRE 400 (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^vrTMIF(mi,10) s $zt="err^MIF000test"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(21),etb=$char(23)
+ s lf=$c(10),cr=$c(13)
+ s (sample,epis,containernumber,surname,result,date,time,QC)=""
+ i $$start^MIF000test() q
+ d trace^MIF000test(mi,"Started job="_$j,"DEBUG")
+ set lasttime=$piece($h,",",2)
+ for {
+	 do Main
+	 set curtime=$piece($h,",",2)
+	 if (curtime-lasttime)>30 do Ping set lasttime=$piece($h,",",2)
+	 if $$stop^MIF000test() quit
+ }
+ c par4
+ d trace^MIF000test(mi,"Closed job="_$j,"DEBUG")
+ q
+Main 
+ read *R:10
+ ;i $c(R)'=enq d trace^MIF000test(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ if $c(R)'=enq quit
+ do receiveENQ
+ Do Send
+ set lasttime=$piece($h,",",2)
+ quit
+ 
+  ;обработка полученного от прибора ENQ
+receiveENQ 
+ do trace^MIF000test(mi,"ENQ","H<--M")
+ do ACK
+ set buffer=""
+ for {
+	 read *R:10 
+	 if $c(R)=eot quit
+     if $c(R)'=stx continue
+     set record=$$read^MIF000test("",lf) if '$l(record)  continue
+     do trace^MIF000test(mi,record,"H<--M")
+     set record=$e(record,1,$l(record)-1)
+     ;do trace^MIF000test(mi,$tr(record,$c(13,3)," "),"H<--M")
+     ; check record validity
+     set endtext=$select('$find(record,etx):etb,1:etx)
+     set chsum=$p(record,endtext,2),chrecord=$piece(record,endtext,1)_endtext
+     if $$CHSUM(chrecord)'=chsum do NAK continue
+     do ACK
+     set record=$piece(record,endtext,1)
+     set record=$e(record,2,$l(record)) ;на 1-ом месте стоит номер записи - на записях-продолжениях он мешает
+     if endtext=etb {
+	     set buffer=buffer_record
+	     continue
+     }
+     set buffer=buffer_record
+     if buffer="" continue
+     do trace^MIF000test(mi,"buffer="_buffer,"H<--M")
+     for pp=1:1:$length(buffer,$c(13)) {
+	     set record=$piece(buffer,$c(13),pp)
+	     if record="" continue 
+	     set typerecord=$piece(record,"|",1)
+	     if typerecord="" continue
+	     set typerecord=$select($length(typerecord)=1:typerecord,1:$e(typerecord,2))
+	     do trace^MIF000test(mi,typerecord_" "_record,"H<--M")
+         ; query record
+         if typerecord="Q" {
+            Set epis=$Piece(record,"|",3)
+            If epis="" Quit
+            If epis="ALL" Do PrepareAllOrders(mi)
+            continue
+         }   
+         ; patient record
+         if typerecord="P" {
+            do Last s (sample,epis,containernumber,surname,result,date,time,QC)=""
+            set surname=$tr($tr($p(record,"|",6),""),"^"," ")
+            continue
+         }
+         ; order record
+         if typerecord="O" {
+            Set containernumber=$Piece($Piece(record,"|",3),"^",1)
+            If containernumber="" Set containernumber=$tr($p($p(record,"|",4),"^",1)," ")
+            Set epis=$$Episode4Container^KSMIF000test(containernumber)
+            Set QC=$tr($p(record,"|",12)," ")
+            i QC="Q" s QC="Y"
+            continue
+         }
+         ; result record
+         if typerecord="R" {
+            ; strip trailing spaces
+            set x1=$tr($p($p(record,"|",3),"^",5)," ") //s xx1=x1 f i=$l(x1):-1 q:$e(x1,i)'=" "  s xx1=$e(x1,1,i-1)
+            Set x2=$tr($p(record,"|",4),", ","."),x3=$tr($p(record,"|",7)," ")
+            if x3="N" s x3="" ; normal flag
+            if $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+            ; date and time
+            if $l($tr($p(record,"|",13)," ")) {
+               set date=$$intdate^SSUTIL4($e($p(record,"|",13),5,6)_"/"_$e($p(record,"|",13),7,8)_"/"_$e($p(record,"|",13),1,4))
+               set time=($e($p(record,"|",13),9,10)*3600)+($e($p(record,"|",13),11,12)*60)
+            }
+            continue
+         }
+         ; last record
+         if typerecord="L" {
+	        d Last 
+	        continue
+         }
+    }
+    set buffer=""
+ } 
+ do trace^MIF000test(mi,$s($c(R)=eot:"EOT",1:R),"H<--M")
+ quit
+ ;запись результата
+Last ; file result if exists
+ i epis?1.99AN,$l(result) d file^MIF000test(mi,sample,epis,surname,result,date,time,QC)
+ s (sample,epis,containernumber,surname,result,date,time,QC)=""
+ q
+ // создание глобали ^vrTMIF(pInstrument,10) с заказами к прибору 
+ // c использованием ETB в случае длинных записей
+PrepareAllOrders(pInstrument) [stx,etx,ack,enq,eot,nak,etb,lf,cr] public {
+	do PrepareBefore(pInstrument) //так как прибор может "забыть" посланные нами заказы, а scanall^MIF000test(pInstrument) их больше не посыл
+	b  set typeOrder=$$typeOrder^MIFsapfir400dop() if typeOrder="" set typeOrder="A" 
+	set stop=0,patientnum=0,qEpisodeAll=0
+	for {
+	  if stop=1 quit 
+	  if qEpisodeAll>40 quit	
+	  Do scanall^MIF000test(pInstrument)
+	  set qEspisode=0 
+	  set epis=""
+	  for {
+		  set epis=$order(^TMP("MIF-SCAN",$j,pInstrument,epis))
+		  if epis="" quit
+		  set qEspisode=qEspisode+1
+		  set qEpisodeAll=qEpisodeAll+1
+	  } 
+	  if qEspisode<11 set stop=1
+	  Set epis=""
+	  For  {
+		Set epis=$Order(^TMP("MIF-SCAN",$Job,pInstrument,epis))
+		If epis="" Quit
+		if $$select^LVBEPVIS(epis,"Y") continue
+        set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+        set surname2=$get(PLIST(3)),name=$get(PLIST(4)) //,birthday=$zdate($get(PLIST(6)),8) 
+        ;d trace^MIF000test(mi,"epis="_epis_" $get(PLIST(3))="_$get(PLIST(3))_" surname2="_surname2_" Translit^KSUTIL1="_$$Translit^KSUTIL1(surname2_"^"_name),"H-->M")
+		Set teststr=""
+		Set test=""
+		For  {
+			Set test=$Order(^TMP("MIF-SCAN",$Job,pInstrument,epis,test))
+			If test="" Quit
+			If teststr'="" {
+				Set teststr=teststr_"\"
+			}
+			Set teststr=teststr_"^^^^"_test_"^0"
+		}
+		If teststr="" Continue
+		set patientnum=patientnum+1
+		Set line=$Order(^vrTMIF(pInstrument,10,""),-1)+1	
+		Set ^vrTMIF(pInstrument,10,line)="P|"_patientnum_"|"_epis_"|||"_$extract($$Translit^KSUTIL1(surname2_"^"_name),1,200)_"|||"_sex_cr_etx
+		set recOstatok="O|1|"_epis_"||"_teststr_"|R||||||"_typeOrder_"||||Serum||||||||||O"
+		for {
+			set recpiece=$extract(recOstatok,1,240) if recpiece="" quit
+			set recOstatok=$extract(recOstatok,241,$length(recOstatok))
+			Set line=$Order(^vrTMIF(pInstrument,10,""),-1)+1
+            Set ^vrTMIF(pInstrument,10,line)=recpiece_$select(recOstatok'="":etb,1:cr_etx)
+		}
+	  }
+	}
+	Set line=$Order(^vrTMIF(pInstrument,10,""),-1)+1	
+	Set ^vrTMIF(pInstrument,10,line)="L|1|N"_cr_etx
+    /* так как в документации (стр 24) сказано, что если нет записей, то надо послать Header,Terminate
+	If patientnum>0 {
+		Set line=$Order(^vrTMIF(pInstrument,10,""),-1)+1	
+		Set ^vrTMIF(pInstrument,10,line)="L|1|N"_cr_etx
+	}
+	*/	
+
+}
+
+ //создание глобали ^vrTMIF(pInstrument,10) с заказами к прибору 
+ //каждый тест в отдельной записи Order
+PrepareAllOrders2(pInstrument) [stx,etx,ack,enq,eot,nak,etb,lf,cr] public {
+	do PrepareBefore(pInstrument) //так как прибор может "забыть" посланные нами заказы, а scanall^MIF000test(pInstrument) их больше не посыл
+	set stop=0,patientnum=0,qEpisodeAll=0
+	set typeOrder=$$typeOrder^MIFsapfir400dop() if typeOrder="" set typeOrder="A" 
+	for {
+	  if stop=1 quit 
+	  if qEpisodeAll>40 quit	
+	  Do scanall^MIF000test(pInstrument)
+	  set qEspisode=0 
+	  set epis=""
+	  for {
+		  set epis=$order(^TMP("MIF-SCAN",$j,pInstrument,epis))
+		  if epis="" quit
+		  set qEspisode=qEspisode+1
+		  set qEpisodeAll=qEpisodeAll+1
+	  } 
+	  if qEspisode<11 set stop=1
+	  Set epis=""
+	  For  {
+		Set epis=$Order(^TMP("MIF-SCAN",$Job,pInstrument,epis))
+		If epis="" Quit
+		if $$select^LVBEPVIS(epis,"Y") continue
+        set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+        set surname2=$get(PLIST(3)),name=$get(PLIST(4)) //,birthday=$zdate($get(PLIST(6)),8) 
+        ;d trace^MIF000test(mi,"epis="_epis_" $get(PLIST(3))="_$get(PLIST(3))_" surname2="_surname2_" Translit^KSUTIL1="_$$Translit^KSUTIL1(surname2_"^"_name),"H-->M")
+		set patientnum=patientnum+1
+		Set line=$Order(^vrTMIF(pInstrument,10,""),-1)+1	
+		if $data(^TMP("MIF-SCAN",$Job,pInstrument,epis))\10 Set ^vrTMIF(pInstrument,10,line)="P|"_patientnum_"|"_epis_"|||"_$extract($$Translit^KSUTIL1(surname2_"^"_name),1,200)_"|||"_sex_cr_etx
+		set ordernum=0
+		Set test=""
+		For  {
+			Set test=$Order(^TMP("MIF-SCAN",$Job,pInstrument,epis,test))
+			If test="" Quit
+			set ordernum=ordernum+1
+			Set line=$Order(^vrTMIF(pInstrument,10,""),-1)+1
+			Set ^vrTMIF(pInstrument,10,line)="O|"_ordernum_"|"_epis_"||"_"^^^^"_test_"^0"_"|R||||||"_typeOrder_"||||Serum||||||||||O"_cr_etx
+			
+		}
+	  }
+	}
+	Set line=$Order(^vrTMIF(pInstrument,10,""),-1)+1	
+	Set ^vrTMIF(pInstrument,10,line)="L|1|N"_cr_etx
+    /* так как в документации (стр 24) сказано, что если нет записей, то надо послать Header,Terminate
+	If patientnum>0 {
+		Set line=$Order(^vrTMIF(pInstrument,10,""),-1)+1	
+		Set ^vrTMIF(pInstrument,10,line)="L|1|N"_cr_etx
+	}
+	*/
+
+}
+
+PrepareBefore(pInstrument) public {
+	//set timeoutMin=$$timeoutMin^MIFsapfir400dop(pInstrument) //timeout на время обработки заказа (в секундах)
+	set timeoutMax=$$timeoutMax^MIFsapfir400dop(pInstrument) //timeout на время стухания биоматериала - сыворотки (в днях) 
+	set epis=""
+	for {
+		set epis=$order(^vrTMIF(pInstrument,20,epis))
+		if epis="" quit
+		set record=$get(^vrTMIF(pInstrument,20,epis))
+		;if epis="10013366" b 
+		//if $piece(record,"\",3)'="" continue // trire are results already
+		if $piece(record,"\",2)="" continue // do not order yet
+		;kill ^TMP("MIF-SINGLE",$j,pInstrument)
+		;set $piece(^vrTMIF(pInstrument,20,epis),"\",2)=""
+        ;do scanone^MIF000test(pInstrument,epis)
+        ;if '($d(^TMP("MIF-SINGLE",$j,pInstrument,epis))\10) {
+	    ;    set ^vrTMIF(pInstrument,20,epis)=record
+	    ;    kill ^TMP("MIF-SINGLE",$j,pInstrument)
+	    ;    continue
+        ;}
+        ;kill ^TMP("MIF-SINGLE",$j,pInstrument) 
+		// дата-время ввода эпизода
+		set datetimeAppearenceEpisode=$piece(record,"\",1)
+		set dateAppearenceEpisode=+datetimeAppearenceEpisode 
+		set timeAppearenceEpisode=$piece(datetimeAppearenceEpisode,",",2)  
+		;if datetimeAppearenceEpisode>62553 
+		// дата-время посылки задания на прибор
+		set datetimeOrderEpisode=$piece(record,"\",2)
+		set dateOrderEpisode=+datetimeOrderEpisode 
+		set timeOrderEpisode=$piece(datetimeOrderEpisode,",",2)
+		set datecur=+$h
+		set timecur=$piece($zts,",",2)
+		// timeout minimum
+		//if (datecur=dateOrderEpisode)&&(timecur-timeOrderEpisode)<timeoutMin continue
+		// timeout max
+		if (datecur-datetimeAppearenceEpisode)>timeoutMax quit  // эпизод уже давнишний - не надо перепосылать по нему заказ
+		set $piece(^vrTMIF(pInstrument,20,epis),"\",2)=""
+		/*
+		// авторизация эпизода
+		set ts="",okAuthorize=1
+		for {
+			set ts=$order(^TEPI(epis,1,ts)) 
+			if ts="" quit
+			if '$data(^vrTMIF(pInstrument,0,ts)) continue  // not for this instrument
+			//set xx=$get(^vrTMIF(mi,2,ti)),direction=$piece(xx,"\",3) ;,suffix=$piece(xx,"\",4) 
+			//           if '(" IL "[(" "_direction_" ")) continue
+            if $piece(^TEPI(epis,1,ts),"\",4)="" set okAuthorize=0 quit
+		}    
+		*/
+		
+	}
+}
+
+Send ; send list of orders if exists
+ d ENQ f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ i $c(R)=enq q
+ i $c(R)'=ack d EOT q
+ q:$$SEND($$getHeadRecord())
+ s x="" f FRAME=2:1 s x=$O(^vrTMIF(mi,10,x)) q:x=""  q:$$SEND(FRAME#8_^vrTMIF(mi,10,x))
+ i x=""  k ^vrTMIF(mi,10)
+ d EOT
+ q
+SEND(str,flagNoComment) ; send string to instrument
+ set flagNoComment=$get(flagNoComment)
+ ;s str=str_cr_etx,chsum=$$CHSUM(str)
+ s str=str,chsum=$$CHSUM(str)
+ w stx,str,chsum,cr,lf,*-3 
+ d:flagNoComment="" trace^MIF000test(mi,str_chsum,"H-->M")
+ f j=1:1:6 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d:flagNoComment="" trace^MIF000test(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d:flagNoComment="" trace^MIF000test(mi,"EOT","H<--M") q 1
+ d:flagNoComment="" trace^MIF000test(mi,R,"H<--M")
+ q 2
+ // для отладки
+Sendtest ; send list of orders if exists
+ ;d ENQ f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ ;i $c(R)=enq q
+ ;i $c(R)'=ack d EOT q
+ q:$$SENDtest($$getHeadRecord())
+ s x="" f FRAME=2:1 s x=$O(^vrTMIF(mi,10,x)) q:x=""  q:$$SENDtest(FRAME#8_^vrTMIF(mi,10,x))
+ ;i x=""  k ^vrTMIF(mi,10)
+ q
+ // для отладки
+SENDtest(str,flagNoComment) ; send string to instrument
+ s str=str,chsum=$$CHSUM(str)
+ set ^vrTMPmif(mi,$i(^vrTMPmif(mi)))=stx_str_chsum_cr_lf
+ q 0
+
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK w ack,*-3 d trace^MIF000test(mi,"ACK","H-->M") q
+NAK w nak,*-3 d trace^MIF000test(mi,"NAK","H-->M") q
+EOT w eot,*-3 d trace^MIF000test(mi,"EOT","H-->M") q
+ENQ w enq,*-3 d trace^MIF000test(mi,"ENQ","H-->M") q
+ ;
+Ping ; send ENQ чтобы не терять связи 
+ w enq,*-3 //do ENQ 
+ for j=1:1:10 read *R:1 if $c(R)=ack!($c(R)=enq) quit
+ if $c(R)=enq quit
+ if $c(R)'=ack w eot,*-3 quit //do EOT quit
+ quit:$$SEND($$getHeadRecord(),1)
+ w eot,*-3 //do EOT
+ quit
+getHeadRecord()
+ quit "1H|\^&|||HOST^P_1|||||Prestige24i^SYSTEM1||P|1|"_$Translate($ZDateTime($Horolog,8)," :")_cr_etx 
+]]></Routine>
+</Export>

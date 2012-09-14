@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFroller20PN" type="INT" languagemode="0"><![CDATA[
+MIFroller20PN(mi)	; ALIFAX Автоматический СОЭ-метр Roller 20PN (EMC)
+    ; 
+	set $ztrap="err^MIF000"
+	set mi=$get(mi) if '$length(mi) quit
+	set stx=$char(2),etx=$char(3),eot=$char(4),ack=$char(6),nak=$char(21)
+	kill ^TMP(mi,$job)
+	do trace^MIF000(mi,"*** Starting ***","DEBUG")
+	if $$select^LVBMIMP(mi) do trace^MIF000(mi,"Error select^LVBMIMP(mi)","DEBUG") quit
+	for j=1:1:PLIST set @("par"_j)=PLIST(j)
+	if $$start^MIF000() do trace^MIF000(mi,"Cannot open device "_par4,"DEBUG") quit
+	do trace^MIF000(mi,"Started $j="_$job,"DEBUG")
+ 
+	set compiled=$listget(^rINDEX($zname,"OBJ"),1)
+	; Neutral State
+	for  {
+		do Main
+		if $$stop^MIF000() quit
+	    //if $listget(^rINDEX($zname,"OBJ"))'=compiled ztrap "EDIT"
+	}
+	close par4
+	do trace^MIF000(mi,"Finished","DEBUG")
+	kill ^TMP(mi,$job)
+	quit
+	
+Main 
+    read *R:10
+    //if $c(R)'=stx d trace^MIF000(mi,"Waiting <STX> but received <"_R_">","H<--M") q
+    if $c(R)'=stx q
+    set nameMachine="",nameLIS=""
+    do receiveSTX
+    quit	
+	
+receiveSTX
+    set record=$$read^MIF000("",etx) 
+	d trace^MIF000(mi,"record="_record,"M-->H")
+	if $extract(record)="R" do result quit
+	quit 
+	
+result
+	s epis=$tr($e(record,4,18)," ")
+	set res=$extract(record,25,28)
+	if $extract(res)="-" set res=""
+	if $length(res) set res=+res
+	
+	if '$length(res) quit
+    if '$length(epis) quit
+	
+	set (sample,surname,date,time,QC)=""
+	set result="VSG"_$char(par10)_res_$char(par10)_$char(par10)_$char(par10)_$char(par11)
+	do trace^MIF000(mi,"File epis="_epis_" sample="_sample_" result="_result_" QC="_QC,"DEBUG")
+	do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+	quit	
+	
+	;------------------------------------------- из драйвера для TEST1 (Bion)
+receive	; Ready to receive
+	for  quit:'$$read(stx,etx_eot,,30)  do receiving
+	quit
+receiving
+	set record=$extract(record,2,$length(record)-1) ; remove <STX>....<ETX>
+	do trace^MIF000(mi,"record="_record,"H<--M")
+ 
+	if $extract(record)="R" do result quit
+	if $extract(record)="Q" do query quit
+	do trace^MIF000(mi,"Unknow message","DEBUG")
+	quit
+	
+resultOld
+	;s label=$tr($e(record,4,18)," ")
+	set rack=+$extract(record,19,20)
+	set pos=+$extract(record,21,22)
+	set unk=$extract(record,23,24)
+	set res=$extract(record,25,28)
+	if $extract(res)="-" set res=""
+	if $length(res) set res=+res
+	
+	do trace^MIF000(mi,"rack="_rack_" pos="_pos_" unk="_unk_" res="_res,"DEBUG")
+ 
+	if '$length(rack) do trace^MIF000(mi,"rack empty","DEBUG") quit
+	if '$length(pos) do trace^MIF000(mi,"position empty","DEBUG") quit
+	if '$length(res) quit
+	
+	set label=$piece($get(^TMIF(mi,"LL",rack,"PAT",pos)),"\",1)
+	set epis=$extract(label,1,9)
+	if '$length(epis) quit
+	
+	set (sample,surname,date,time,QC)=""
+	set result="VSG"_$char(par10)_res_$char(par10)_$char(par10)_$char(par10)_$char(par11)
+	do trace^MIF000(mi,"File epis="_epis_" sample="_sample_" result="_result_" QC="_QC,"DEBUG")
+	do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+	quit
+query
+	do trace^MIF000(mi,"Query "_record,"H<--M")
+	quit
+read(start,stop,term,timeout)	new (mi,record,start,stop,term,timeout)
+	; start: string of start characters i.e. stx
+	; stop : string of stop characters i.e. etb_etx
+	; term : string of terminator characters i.e. eot
+	; Returns: 0 - Failed
+	;          1 - Done
+	;          record = string received
+	set start=$get(start),stop=$get(stop),term=$get(term),timeout=$get(timeout),ok=0
+	if '$length(start) set ok=1
+	if '$length(timeout) set timeout=30
+	set record="",swterm=0,zh=$zhorolog
+	for  read *x:timeout quit:x=-1  do  quit:swterm  quit:$find(stop,$char(x))  if ($zhorolog-zh)>timeout set x=-2 quit
+	. if $find(term,$char(x)) set swterm=1 quit
+	. if 'ok,$find(start,$char(x)) set ok=1
+	. if 'ok do trace^MIF000(mi,"Wait for "_start_" but received "_$char(x),"DEBUG") quit
+	. set record=record_$char(x)
+	if swterm do  do trace^MIF000(mi,mess,"DEBUG") quit 0
+	. set mess="Received terminate char "_$char(x) if $length(record) set mess=mess_". Record="_record
+	if x=-1 do  do trace^MIF000(mi,mess,"DEBUG") quit 0
+	. set mess="Timeout ocurred",join=1 if $length(record) set mess=mess_". Record="_record,join=0
+	if x=-2 do  do trace^MIF000(mi,mess,"DEBUG") quit 0
+	. set mess="General timeout ocurred" if $length(record) set mess=mess_". Record="_record
+	do trace^MIF000(mi,record,"DEBUG")
+	quit 1
+
+
+
+]]></Routine>
+</Export>

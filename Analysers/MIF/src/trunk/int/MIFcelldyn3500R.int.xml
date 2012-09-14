@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFcelldyn3500R" type="INT" languagemode="0"><![CDATA[
+MIFcelldyn3500R(mi) ; CELL-DYN 3500R with histogramm (Russion Burdenko)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(15)
+ s lf=$c(10),cr=$c(13),soh=$c(1),(result,epis)=""
+ set df="," ;delimeter fields
+ i $$start^MIF000() q
+ d trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ for {
+	 d Main 
+	 if $$stop^MIF000() quit
+ }
+ c par4
+ q
+Main 
+ read *R:10
+ ;i $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ i $char(R)'=stx quit
+ do receiveSTX
+ quit
+ ;обработка полученного от прибора ENQ
+receiveSTX 
+ do trace^MIF000(mi,"STX","H<--M")
+ set record=$$read^MIF000("",etx) if '$length(record) quit
+ do trace^MIF000(mi,record,"H<--M")
+ ;set record=$e(record,1,$length(record)-1)
+ set len=$length(record)
+ // check record validity
+ set csDeclare=$extract(record,len-1,len)
+ set record=$extract(record,1,len-2)
+ set csFact=$$CheckSum(record)
+ if csDeclare'=csFact do trace^MIF000(mi,"Declare checksum="_csDeclare_" Fact checksum="_csFact,"H<--M") quit
+ //
+ set (epis,sample,surname,date,time,QC)="" 
+ set messagetype=$tr($piece(record,df,1),"""","") // message type
+ set specimentype=$tr($piece(record,df,4),"""","")
+ if specimentype'=0 do trace^MIF000(mi,"Specimen Type <> 0 :"_specimentype,"H<--M") quit
+ set epis=$tr($piece(record,df,5),""" ","")
+ set date=$tr($piece(record,df,8),"""","") set year=$piece(date,"/",3) if $length(year)=2 set year="20"_year set $piece(date,"/",3)=year
+ if date'="" set date=$zdateh(date,4)
+ set time=$tr($piece(record,df,9),"""","") if $tr(time," ","")'="" set time=$ztimeh(time,1)
+ set firstFieldOfResult=$select(messagetype="   ":10,messagetype="RTC":13,1:11)
+ set countFields=$length(record,df)
+ set resultdata=$piece(record,df,firstFieldOfResult,countFields)
+ set result="" kill ScatRes
+ //Count Data Message
+ if messagetype="   " {
+	 for field=10:1:31 {
+		 set test="" if '$$getTestFromNumField(field,.test) continue
+		 set res=$tr($piece(record,df,field),"-","") if res="" continue
+	     //if $data(^TMIF(mi,"3",test)) set result=result_test_$c(par10)_res_$c(par10)_""_$c(par11)
+	     set result=result_test_$c(par10)_res_$c(par10)_""_$c(par11)
+	 }
+ }
+ // histogramm (для 256 каналов указано значение для каждого четвертого канала)
+ 
+ if messagetype="WB1"!(messagetype="WB2")!(messagetype="RBC")!(messagetype="PLT")!(messagetype="WIC") {
+	 set test=$select(messagetype="WB1":"S",messagetype="WB2":"C",messagetype="RBC":"RBC",messagetype="PLT":"PLT",messagetype="WIC":"V",1:"")
+	 kill arrowhist set j=-2
+	 for field=11:1:74 {
+		 set val=$piece(record,df,field)
+		 set j=j+3
+	     set arrowhist(j)=val 
+	 }
+	 // дополняем пропущенные каналы значениями такими, чтобы получались прямые, соединяющие две соседние реальные точки
+     set j="",jprev=""
+     for {
+	     set jprev=j
+	     set j=$order(arrowhist(j)) if j="" quit
+	     if jprev="" continue
+	     if j-jprev=1 continue
+	     set val=arrowhist(j),valprev=arrowhist(jprev)
+	     // уравнение прямой, проходящей через точки (jprev,valprev) и (j,val) 
+	     set k=(val-valprev)/(j-jprev) set b=val-(k*j) 
+         for jj=(jprev+1):1:(j-1) {
+		         set arrowhist(jj)=k*jj+b\1   
+	     }
+	 } 
+	 
+	 for j=($order(arrowhist(""),-1)+1):1:256 set arrowhist(j)=0
+   
+     // преобразуем в строку, где код каждого символа в начальной строке выражен двумя символами в шестнадцатиричном виде
+     set strhex=""
+     set j="" 
+     for {
+	     set j=$order(arrowhist(j)) if j="" quit
+         set sym=arrowhist(j)
+         set hex=$tr($j($zh(sym),2)," ","0") 
+	     set strhex=strhex_hex 
+	 }
+ 
+	 if test'="" { 
+	     set ScatRes(test,1)=test_$c(par10)_"1"_$c(par10)_strhex_$c(par11) 
+	 }
+ }
+ // запись результатов числовых
+ do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"H<--H")
+ if $l(epis),$l(result) do file^MIF000(mi,sample,epis,surname,result,date,time,QC) //do trace^MIF000(mi,"Write results episode="_epis_": "_result,"H<--H")
+ // или запись гистограммы
+ set result=""
+ if $d(ScatRes) {
+	 set test="" set result="" 
+	 for {
+		 set test=$order(ScatRes(test)) if test="" quit
+		 set x="" 
+		 for {
+			 set x=$order(ScatRes(test,x)) if x="" quit
+			 set result=result_ScatRes(test,x)
+		 }
+	 }
+     if $length(result) d filesp^MIF000(mi,sample,epis,result)
+ }
+ do trace^MIF000(mi,"ETX","H<--M")
+ quit
+
+CheckSum(x) ; calculate check sum
+ new z,y 
+ set z=0 for y=1:1:$length(x) set z=z+$a(x,y)
+ set z=$tr($j($zhex(z#256),2)," ","0")
+ q z
+ 
+ACK w ack,*-3 d trace^MIF000(mi,"ACK","H-->M") q
+NAK w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+EOT w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+ENQ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M") q
+
+getTestFromNumField(pNumField,pTest)
+ set pTest=""
+ if $get(pNumField)="" quit 0
+ if pNumField=10 set pTest="WBC" quit 1
+ if pNumField=11 set pTest="NEU" quit 1
+ if pNumField=12 set pTest="LYM" quit 1
+ if pNumField=13 set pTest="MONO" quit 1
+ if pNumField=14 set pTest="EOS" quit 1
+ if pNumField=15 set pTest="BASO" quit 1
+ if pNumField=16 set pTest="RBC" quit 1
+ if pNumField=17 set pTest="HGB" quit 1
+ if pNumField=18 set pTest="HTC" quit 1
+ if pNumField=19 set pTest="MCV" quit 1
+ if pNumField=20 set pTest="MCH" quit 1
+ if pNumField=21 set pTest="MCHC" quit 1
+ if pNumField=22 set pTest="RDW" quit 1
+ if pNumField=23 set pTest="PLT" quit 1
+ if pNumField=24 set pTest="MPV" quit 1
+ if pNumField=25 set pTest="PCT" quit 1
+ if pNumField=26 set pTest="PDW" quit 1
+ if pNumField=27 set pTest="NEU%" quit 1
+ if pNumField=28 set pTest="LYM%" quit 1
+ if pNumField=29 set pTest="MONO%" quit 1
+ if pNumField=30 set pTest="EOS%" quit 1
+ if pNumField=31 set pTest="BASO%" quit 1
+ quit 0
+ 
+
+]]></Routine>
+</Export>
