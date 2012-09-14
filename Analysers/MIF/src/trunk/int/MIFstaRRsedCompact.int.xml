@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFstaRRsedCompact" type="INT" languagemode="0" generated="1"><![CDATA[
+MIFstaRRsedCompact(mi) ;StaRRsed Compact (Burdenko Russia)
+    // предполагается ACK/NAK выключено
+	Set mi=$Get(mi) 
+	If mi="" Quit
+	Kill ^TMIF(mi,10) 
+	Set $ZTRAP="err^MIF000"
+	set stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(21),etb=$c(23),lf=$c(10),cr=$c(13)
+	If $$select^LVBMIMP(mi) Quit
+	For j=1:1:PLIST Set @("par"_j)=PLIST(j)
+	If $$start^MIF000() Quit
+	Do trace^MIF000(mi,"Started job="_$Job,"DEBUG")
+	For  {
+		Do Main(mi)
+		If $$stop^MIF000() Quit
+	}	
+	Close par4
+	Do trace^MIF000(mi,"Stopped job="_$Job,"DEBUG")
+	Quit
+Main(mi) [par10,par11,stx,eot,etx,ack,enq,nak,etb,lf,cr] public {
+	Set record=$$ReadRecord(mi)
+	If record="" Quit
+	Do trace^MIF000(mi,record,"H<--M")
+	set result=""
+	set len=$length(record)
+	set ok=1
+	//сообщение с контрольной сумммой
+	if $extract(record,len-1,len)'=cr_lf { 
+	    set csDeclare=$extract(record,len,len)
+	    set csFact=$$CheckSum(stx_$extract(record,1,len-1)) 
+	    if csDeclare'=csFact do trace^MIF000(mi,"Declare checksum="_csDeclare_" Fact checksum="_csFact,"H<--M") set ok=0 quit 	
+	}
+	if ok=0 do NAK quit 
+	do ACK 
+	//Data consists, if 30 min. output is switched to OFF 
+	set error=$extract(record,48,69) ;if error'="" quit   //??????? 
+	set epis=$$DeleteLeftAndRightSpaces^KSUTIL1($extract(record,1,10)) //Patient identification text
+	//
+	set test="ESR60"  
+	set res=$$DeleteLeftAndRightSpaces^KSUTIL1($extract(record,13,15)) //E.S.R. in mm. 60 minute
+	if res'="" set result=result_test_$Char(par10)_res_$Char(par11)
+	set test="ESRCOR"
+	set res=$$DeleteLeftAndRightSpaces^KSUTIL1($extract(record,18,20)) //E.S.R. in mm. (60 min corrected for temp)
+	if res'="" set result=result_test_$Char(par10)_res_$Char(par11)
+	set test="ESRASP"
+	set res=$$DeleteLeftAndRightSpaces^KSUTIL1($extract(record,22,30)) // aspect (CLEAR, HAZY) возможные значения по док: 0	Sample is clear.,Sample is hazy < 10,Sample is hazy < 25,Sample is hazy > 25
+	if res'="" set result=result_test_$Char(par10)_res_$Char(par11)
+	do trace^MIF000(mi,"Write results episode="_epis_": "_result,"H<--H")
+	If epis'="",result'="" {
+			Do file^MIF000(mi,"",epis,"",result,"","","")
+	}
+	
+}	
+
+ReadRecord(mi) [stx,eot,etx,ack,enq,nak,etb,lf,cr] public {
+	Set record=""
+	For  {
+		Read *Y:5
+		If Y=-1 Quit
+		Set char=$Char(Y)
+		Do trace^MIF000(mi,"resieved "_char_" код "_Y,"H<--M")
+		if char'=stx continue
+		set record=$$read^MIF000("",eot) 
+		quit
+	}
+	Quit record
+}
+
+CheckSum(x) ; calculate check sum
+ new z,y 
+ set z=0 for y=1:1:$length(x) set z=z+$a(x,y)
+ quit $char(256-(z#256))
+ 
+ACK write ack,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
+NAK write nak,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
+EOT write eot,*-3 do trace^MIF000(mi,"EOT","H-->M") quit
+ENQ write enq,*-3 do trace^MIF000(mi,"ENQ","H-->M") quit 
+
+]]></Routine>
+</Export>
