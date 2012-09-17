@@ -1,0 +1,461 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Report.PCLBurdenko">
+<Description>
+Печать результата в PCL для Биона</Description>
+<Super>TCLEx.Report.AbstractPCLForm</Super>
+<TimeCreated>62346,40782.878585</TimeCreated>
+
+<Method name="RowCount">
+<Description>
+Число строк для отдела pDepCode</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDepCode:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	//If (pDepCode="H")||(pDepCode="D") Quit 47
+	Quit 45
+]]></Implementation>
+</Method>
+
+<Method name="CreateValuesBuf">
+<Description>
+Загрузить значения полей, необходимых для печати результата
+pEpis - эпизод
+pTestSets - буфер наборов тестов 
+pDepCode - отдел исследований
+pLanguage - язык результата  
+pRepParamGlb - глобал с данными</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pDepCode:%String,pLanguage:%String,pRepParamGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	Kill @pRepParamGlb
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit
+	//
+	Set @pRepParamGlb@("FullName")=$$NameFormat^KSUTIL1(1,episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1)
+	If $IsObject(episobj.EPVISSpeciesDR) {
+		Set @pRepParamGlb@("Sex")=episobj.EPVISSpeciesDR.CTSPDesc
+	}
+	If $IsObject(episobj.EPVISDebtorNumberDR) {
+		Set @pRepParamGlb@("MRN")=episobj.EPVISDebtorNumberDR.%Id()
+	}
+	Set @pRepParamGlb@("Episode")=pEpis
+	Set age="Неизвестен" 
+	If episobj.EPVISAge'="" {
+		Set age=episobj.EPVISAge
+	}	  
+	//Set @pRepParamGlb@("Age")=age
+	Set @pRepParamGlb@("Age")=##class(TCLEx.Report.Function).Age(episobj.EPVISDateOfBirth,episobj.EPVISDateOfCollection,pLanguage)
+	
+	Set @pRepParamGlb@("DateOfCollection")=$$DisplayDate^KSPCLUtils(episobj.EPVISDateOfCollection)
+	If episobj.EPVISTimeOfEntry'="" {
+		Set @pRepParamGlb@("TimeOfEntry")=$$DisplayTime^KSPCLUtils(60*episobj.EPVISTimeOfEntry,2)
+	}
+	If $IsObject(episobj.EPVISHospitalCodeOriginalDR) {
+		Set @pRepParamGlb@("HospitalDepartment")=episobj.EPVISHospitalCodeOriginalDR.CTHOSName
+	}	
+	Set depcode=$Piece(pDepCode,$Char(1),1)
+	If (depcode'="")&&(##class(User.CTSuperSet).%ExistsId(depcode)) {
+		Do ##class(TCLEx.Function.SuperSet).CreateItemsBuf(depcode,$NA(^||Report.SuperSetItems))
+		Set firsttestset=$Order(^||Report.SuperSetItems(""))
+		Set depcode=$Extract(firsttestset,1,1)
+	} 
+	Set depobj=##class(User.CTDepartment).%OpenId(depcode,0)
+	If $IsObject(depobj) {
+		Set @pRepParamGlb@("Department")=depobj.CTDEPName
+	}
+	//
+	Set summarytestset=##class(TCLEx.Function.SuperSet).SummaryTestSet(pDepCode)
+	Set (authtestset,canceltestset,authtestsetWithRealDoctor)=""
+	Set key="",testobj="",canceledobj=""
+	For  {
+		Set testobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testobj) Continue
+		Set testsetid=testobj.%Id()
+		If ..IsTestSet4Department(testsetid,.pTestSets,pDepCode,summarytestset) Continue
+		If ##class(TCLEx.Function.TestSet).IsAuthorised(testobj) {
+			Set authtestset=testsetid
+			Set authdoctor=testobj.VISTSUserAuthorisedDRGetObjectId()														// Врач, который авторизовал набор тестов
+	        Set officialdoctor=##class(TCLEx.Function.EMED).OfficialDoctor(authdoctor,testobj.VISTSTestSetDRGetObjectId())
+			if authdoctor'=""&&(authdoctor=officialdoctor) set authtestsetWithRealDoctor=testsetid
+			if authtestsetWithRealDoctor'="" Quit
+		}	
+		If ##class(TCLEx.Function.TestSet).IsCanceled(testobj) {
+			Set canceltestset=testsetid
+		}	
+	}
+	Set testsetid=""
+	If (authtestsetWithRealDoctor'="") {						// Либо берем подходящий авторизованный набор тестов
+		Set testsetid=authtestsetWithRealDoctor
+	} Else {
+	    If (authtestset'="") {						// Либо берем подходящий авторизованный набор тестов
+		    Set testsetid=authtestset
+	    } Else {
+		    If (canceltestset'="") {				// (если нет авторизованных, то берем отмененный)
+			    Set testsetid=canceltestset
+		    }
+	    }	
+	}		
+	If testsetid="" Quit
+	Do ..SetTestSetVals(testsetid,pLanguage,pRepParamGlb)
+]]></Implementation>
+</Method>
+
+<Method name="SetTestSetVals">
+<Description>
+Загрузить значения полей для печати, которые берутся из набора тестов 
+pTestSetId - Id набора тестов
+pTestSets - буфер наборов тестов 
+pLanguage - язык результата  
+pRepParamGlb - глобал с данными</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pLanguage:%String,pRepParamGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj) Quit
+	
+	Set @pRepParamGlb@("TS_ID")=testsetobj.%Id()
+	Set @pRepParamGlb@("TS_DateOfAuthorisation")=$$DisplayDate^KSPCLUtils(testsetobj.VISTSDateOfAuthorisation)
+	;
+	Set cttestsetobj=testsetobj.VISTSTestSetDR
+	If $IsObject(cttestsetobj) { 
+		Set depobj=cttestsetobj.CTTSDepartmentDR
+		If $IsObject(depobj) {
+			Set @pRepParamGlb@("TS_DepartmentName")=depobj.CTDEPName
+			Set @pRepParamGlb@("TS_DepartmentCode")=depobj.%Id()
+		}
+	}	
+	;
+	Set authdoctor=testsetobj.VISTSUserAuthorisedDRGetObjectId()														// Врач, который авторизовал набор тестов
+	Set officialdoctor=##class(TCLEx.Function.EMED).OfficialDoctor(authdoctor,testsetobj.VISTSTestSetDRGetObjectId())	// Если авторизовал лаборант, то врач по умолчанию для отдела авторизованного набора тестов
+	Set userobj=##class(User.SSUser).%OpenId(officialdoctor,0) //testsetobj.VISTSUserAuthorisedDR
+	If $IsObject(userobj) { 
+		Set @pRepParamGlb@("TS_AuthorisedDoctorId")=userobj.%Id()
+		Set @pRepParamGlb@("TS_AuthorisedDoctor")=userobj.SSUSRName
+	}	
+	;
+	Set specimen=""
+	Set specobj=testsetobj.VISTSSpecimenTypeDR
+	If $IsObject(specobj) Set specimen=specobj.CTSPEDesc
+	If specimen="" Set specimen=$$TestSpecimen^KSReportSQL($Piece(testsetobj.%Id(),"||",2))
+	Set @pRepParamGlb@("TS_Specimen")=specimen
+	;
+]]></Implementation>
+</Method>
+
+<Method name="Header">
+<Description>
+Печать заголовка отчета в PCL формате 	</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pDepCode:%String,pPDF:%Boolean,pLanguage:%String,pValuesGlb:%String,pRepGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	;
+	Set hospcode=$Get(@pValuesGlb@("НospitalCode"))
+	;
+	Do ..Add(pRepGlb,"HDR","~RESET")          
+	Do ..Add(pRepGlb,"HDR","~PORTRAIT")     
+	Do ..Add(pRepGlb,"HDR",$Char(27)_"&l26a")  
+	;
+	Set wasimage=0,dyimage=260			; сдвиг по вертикали, если не печатаем растровую графику (заголовок бланка, печать, подпись врача, если печатаем, то 0)
+	Do ..PrintLogo(pRepGlb,"HDR",,.wasimage)
+	Do ..PrintFooterImage(pRepGlb,"HDR",,.wasimage)
+	If 'wasimage Set dyimage=0 ; не нужен сдвиг по вертикали, если не печатали растровую графику (заголовок бланка, печать, подпись врача...)
+	;
+	Set dyrows=0 ; additional rows (если нет шапки в таблице)
+	;
+	Set line="",$Piece(line,"_",90)="" 
+	Set YH=1300,YStep=125     ;шаг строки
+ 	Do ..Add(pRepGlb,"PRT",$C(27)_"*v0O")          
+	Do ..SetNormalFont(pRepGlb,"PRT",14)
+	Do ..SetBoldFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",396,YH,"ФИО пациента: ")
+	Do ..SetMediumFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",1600,YH,$Get(@pValuesGlb@("FullName")))
+	Set YH=YH+(1.5*YStep)
+	Do ..SetNormalFont(pRepGlb,"PRT",12)
+	Do ..SetBoldFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",396,YH,"№ ИБ: ")
+	Do ..SetMediumFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",1400,YH,$Get(@pValuesGlb@("MRN")))
+	Do ..SetBoldFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",2800,YH,"Дата исследования:")
+	Do ..SetMediumFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",4140,YH,$Get(@pValuesGlb@("DateOfCollection")))
+	Set YH=YH+YStep
+	Do ..SetBoldFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",396,YH,"№ Рег: ")
+	Do ..SetMediumFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",1400,YH,$Get(@pValuesGlb@("Episode")))
+	Do ..SetBoldFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",2800,YH,"Время регистрации:")
+	Do ..SetMediumFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",4140,YH,$Get(@pValuesGlb@("TimeOfEntry")))
+	Set YH=YH+YStep
+	Do ..SetBoldFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",396,YH,"Возраст/Пол:")
+	Do ..SetMediumFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",1400,YH,$Get(@pValuesGlb@("Age"))_"/"_$Get(@pValuesGlb@("Sex")))
+	Do ..SetBoldFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",2800,YH,"Отделение:")
+	Do ..SetMediumFont(pRepGlb,"PRT")
+	Do ..Line(pRepGlb,"PRT",4140,YH,$Get(@pValuesGlb@("HospitalDepartment")))
+	Set YH=YH+(1.5*YStep)
+	Do ..SetFont(pRepGlb,"PRT",12,1)
+	Set val=$Get(@pValuesGlb@("Department"))
+	Do ..Line(pRepGlb,"PRT",$$CenterPosX^KSPCLUtils(val),YH,val) 
+	Set recty=YH+(0.5*YStep\1)+100
+	Set YH=YH+YStep
+	Do ..SetNormalFont(pRepGlb,"PRT")
+	Do ..GotoXY(pRepGlb,"PRT",100,recty)
+	Do ..Add(pRepGlb,"PRT",$Char(27)_"*c5380H")
+	Do ..Add(pRepGlb,"PRT",$Char(27)_"*c300V")
+	Do ..Add(pRepGlb,"PRT",$Char(27)_"*c4G") ;4G
+	Do ..Add(pRepGlb,"PRT",$Char(27)_"*c2P")
+	//
+	Set YH=YH+(0.6*YStep\1)+100
+	Do ..Add(pRepGlb,"PRT","~FONTSIZE=10")
+	/*
+	Do ..Line(pRepGlb,"PRT",600,YH,"Наименование теста")
+	Do ..Line(pRepGlb,"PRT",2160,YH,"Результат") 
+	Do ..Line(pRepGlb,"PRT",2920,YH,"Единицы") 
+	Do ..Line(pRepGlb,"PRT",3740,YH,"Референсные")
+	;
+	Set YH=YH+(0.7*YStep\1)
+	Do ..Line(pRepGlb,"PRT",2920,YH,"измерения")
+	Do ..Line(pRepGlb,"PRT",3740,YH,"значения")
+	*/
+	Do ..Line(pRepGlb,"PRT",600,YH,"Наименование теста")
+	Do ..Line(pRepGlb,"PRT",2950,YH,"Результат") 
+	Do ..Line(pRepGlb,"PRT",3715,YH,"Единицы") 
+	Do ..Line(pRepGlb,"PRT",4700,YH,"Референсные")
+	;
+	Set YH=YH+(0.7*YStep\1)
+	Do ..Line(pRepGlb,"PRT",3715,YH,"измерения")
+	Do ..Line(pRepGlb,"PRT",4700,YH,"значения")
+
+	Set YH=recty+407
+	Set recty=recty+290 ;300
+
+	If 'pPDF Set recty=recty-5 ; По разному для PDF и для печати центрирование в зебре выглядит
+	
+	Do ..SetNormalFont(pRepGlb,"PRT")
+
+	Set rowcount=..RowCount(pDepCode)
+	For i=1:1:rowcount {
+		If i#2 Continue
+		Do ..GotoXY(pRepGlb,"PRT",100,YH)
+		Do ..Add(pRepGlb,"PRT",$Char(27)_"*c5380H")
+		Do ..Add(pRepGlb,"PRT",$Char(27)_"*c100V")
+		Do ..Add(pRepGlb,"PRT",$Char(27)_"*c4G")
+		Do ..Add(pRepGlb,"PRT",$Char(27)_"*c2P")
+		Set YH=YH+200
+	}	
+	; Рамка таблицы
+	Do ..Add(pRepGlb,"PRT",$C(27)_"%0B")          
+	Do ..Add(pRepGlb,"PRT","IN;")          
+	Do ..Add(pRepGlb,"PRT","SP1;")          
+	
+	Do ..Add(pRepGlb,"PRT","PA140,"_(8435-dyimage)_";")          
+	Do ..Add(pRepGlb,"PRT","PD140,"_(8435-dyimage)_",7740,"_(8435-dyimage)_",7740,"_(8850-dyimage)_",140,"_(8850-dyimage)_",140,"_(8435-dyimage)_";")          
+	Do ..Add(pRepGlb,"PRT","PA140,"_(2060-dyimage-dyrows)_";")          
+	Do ..Add(pRepGlb,"PRT","PD140,"_(2060-dyimage-dyrows)_",7740,"_(2060-dyimage-dyrows)_",7740,"_(8435-dyimage)_",140,"_(8435-dyimage)_",140,"_(2060-dyimage-dyrows)_";")          
+	Do ..Add(pRepGlb,"PRT",$C(27)_"%0A")
+	;          
+	Do ..GotoXY(pRepGlb,"PRT",100,recty) ; Позиционируемся в нижнюю левую точку заголовка таблицы
+	Do ..Add(pRepGlb,"PRT","!")
+]]></Implementation>
+</Method>
+
+<Method name="PrintLogo">
+<Description>
+Печать логотипа лаборатории или ЛПУ в заголовке
+pRepGlb - глобал с отчетом
+pSection - секция отчета
+pHospId - ID ЛПУ
+pWasImage - возвращаемое по ссылке значения была ли печать изображения (вляет на сдвиг координаты Y)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pRepGlb:%String,pSection:%String,pHospId:%String,&pWasImage:%Boolean]]></FormalSpec>
+<Implementation><![CDATA[
+	Set glb=$Name(^PCLImg("Header"))
+	If ($Data(@glb))&&('pWasImage) {
+		Set pWasImage=1
+	}	
+	Set i=""
+	For  {
+		Set i=$Order(@glb@(i),1,val)
+		If i="" Quit
+		Do ..Add(pRepGlb,pSection,val)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="PrintFooterImage">
+<Description>
+Печать изображения в footer-е отчета
+pRepGlb - глобал с отчетом
+pSection - секция отчета
+pHospId - ID ЛПУ
+pWasImage - возвращаемое по ссылке значения была ли печать изображения (вляет на сдвиг координаты Y)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pRepGlb:%String,pSection:%String,pHospId:%String,&pWasImage:%Boolean]]></FormalSpec>
+<Implementation><![CDATA[
+	Set glb=$Name(^PCLImg("Footer"))
+	If ($Data(@glb))&&('pWasImage) {
+		Set pWasImage=1
+	}	
+	Set i=""
+	For  {
+		Set i=$Order(@glb@(i),1,val)
+		If i="" Quit
+		Do ..Add(pRepGlb,pSection,val)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="Footer">
+<Description>
+Формирование footer-а отчета для печати отдела эпизода
+Параметры:
+pEpis - ID эпизода
+pTestSets - буфер печатаемых наборов тестов
+pDepCode - код отдела
+pPDF - =1 - вывод в PDF файл; = 0 - вывод на принтер
+pPageNumber - номер страницы
+pTotalPages - всего страниц
+pLanguage - язык результата
+pValuesGlb - глобал со значениями для печати эпизода
+pRepGlb - формируемый глобал с полученными PCL командами</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pDepCode:%String,pPDF:%Boolean,pPageNumber:%Integer,pTotalPages:%Integer,pLanguage:%String,pValuesGlb:%String,pRepGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	/*
+	Set doctor=""
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis,0) 
+	If $IsObject(episobj) {
+		Set doctorid=episobj.EPVISUserIDDRGetObjectId()
+		Set userobj=##class(User.SSUser).%OpenId(doctorid,0)
+		If $IsObject(userobj) {
+			Set doctor=userobj.SSUSRName
+		}	
+	}*/	
+	Set YH=7200,YStep=125
+	Do ..SetNormalFont(pRepGlb,"PRT",12)
+	Do ..Line(pRepGlb,"PRT",396,YH,"Анализ производил ___________________________ ( "_$Get(@pValuesGlb@("TS_AuthorisedDoctor"))_" )")
+
+	If pPageNumber'=pTotalPages {
+		Do ..Add(pRepGlb,"PRT","#")
+	}
+]]></Implementation>
+</Method>
+
+<Method name="EpisodeResultFileName">
+<Description>
+Получение имени файла результата для эпизода
+Параметры:
+pEpis - ID эпизода
+pTestSets - буфер с ID наборов тестов (если пусто,то все наборы эпизода)
+pLanguage - язык отчета
+pExtension - расширение файла
+Возвращаемое значение:
+Имя файла результата для эпизода</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pLanguage:%String,pExtension:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	
+	Quit pEpis_$Select(pLanguage=2:"E",1:"R")_"."_pExtension
+]]></Implementation>
+</Method>
+
+<Method name="Departments">
+<Description>
+Разбиение списка наборов тестов pTestSets эпизода pEpis по отделам в которые входят эти наборы тестов
+Необходимо для того, что каждый отдел печатается с новой страницы
+Параметры:
+pEpis - ID эпизода
+pTestSets - буфер с ID наборов
+pGlb - формируемый глобал в формате
+@pGlb@(КодОтделаИлиКодСуперНабора_$Char(1)_КодПечатаемойОчереди _$Char(1)_ ГруппаПечати)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,&pTestSets:%String,pGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+        ; Определяем из каких отделов TestSet-ы эпизода
+        Set pGlb=$Get(pGlb,$Name(^||deptestsets))
+        Kill @pGlb
+        
+       	Do ##class(TCLEx.Function.Episode).MakeTestSetsBuf(pEpisode,$Name(^||EMED.TestSets))
+       	Do ##class(TCLEx.Function.EMED).EpisodeTestBuf2ReportGroupBuf($Name(^||EMED.TestSets),$Name(^||EMED.ReportGroups))
+       	
+	  	Set testsetid=""
+		For  {
+			Set testsetid=$Order(^||EMED.TestSets(testsetid),1,vals)
+			If testsetid="" Quit
+            //
+            If $Data(pTestSets) {
+                    If '$Data(pTestSets(testsetid)) Continue
+            }
+            //
+			If '##class(TCLEx.Function.TestSet).IsPrintableLB(vals) Continue
+			Set testset=##class(TCLEx.Function.TestSet).GetPropertyValue(vals,"VISTSTestSetDR")
+			If testset="" Continue
+			Set reportgroup=##class(TCLEx.Function.TestSet).ReportGroup(testset)
+			If reportgroup'="" {
+				Set authorised=$Get(^||EMED.ReportGroups(reportgroup),0)
+				If 'authorised Continue
+			}
+            Set depcode=""
+            Set depcode=##class(TCLEx.Function.TestSet).DepartmentCode(testset)
+            If depcode="" Continue
+            Set @pGlb@(depcode,testsetid)=""
+		}
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+/// Разбиение списка наборов тестов pTestSets эпизода pEpis по отделам в которые входят эти наборы тестов
+/// Необходимо для того, что каждый отдел печатается с новой страницы
+/// Параметры:
+/// pEpis - ID эпизода
+/// pTestSets - буфер с ID наборов
+/// pGlb - формируемый глобал в формате
+/// @pGlb@(КодОтделаИлиКодСуперНабора_$Char(1)_КодПечатаемойОчереди _$Char(1)_ ГруппаПечати)
+ClassMethod Departments2(pEpis As %String, ByRef pTestSets As %String, pGlb As %String)
+{
+        ; Определяем из каких отделов TestSet-ы эпизода
+        Set pGlb=$Get(pGlb,$Name(^||deptestsets))
+        Kill @pGlb
+        Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+        If '$IsObject(episobj) Quit ""
+        Set key=""
+        For  {
+                Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+                If key="" Quit
+                If '$IsObject(testsetobj) Continue
+                //
+                Set testsetid=testsetobj.%Id()
+                If (testsetid="") Continue
+                If '##class(TCLEx.Function.TestSet).IsPrintable(testsetobj) Continue ; Пропускаем непечатаемые TestSet-ы
+                //
+                If $Data(pTestSets) {
+                        If '$Data(pTestSets(testsetid)) Continue
+                }
+                //
+                Set depcode=""
+
+                Set testsetcode=testsetobj.VISTSTestSetDRGetObjectId()
+                If (testsetcode'="") {
+                        Set depcode=##class(TCLEx.Function.TestSet).DepartmentCode(testsetcode)
+                }
+                If depcode="" Continue
+                Set @pGlb@(depcode,testsetid)=""
+        }
+}
+*/
+]]></Content>
+</UDLText>
+</Class>
+</Export>

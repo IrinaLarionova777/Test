@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.innerUtil">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62543,44694.814878</TimeCreated>
+
+<Method name="moveGlobTMIF">
+<Description>
+Перенос настроек прибора с тестовой базы в текущую
+Если указана строка devices (например, devices="VIT,IMM", через запятую узлы ^TMIF, то переносятся только они, в этом случае могут быть перенесены и настройки приборов, которые настроены в namespaceTo
+узлы, которые не переносим 1 - вроде результаты, 9 - , 10 - эпизоды для формирования задания прибору, 20 - ,LL,LL1-рабочие листы
+узлы, которые переносим (на самом деле переносим все, кроме перечисленных в строке выше)
+FLAG,TRANS-ANT,TRANS-BUG,TRANS-SEN,QC,TCP,0,2,3,"TG" </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespaceFrom:%String,namespaceTo:%String,devices:%String</FormalSpec>
+<Implementation><![CDATA[
+   if $get(namespaceFrom)="" write !,"Не указана область, откуда копировать" quit
+   if $get(namespaceTo)="" write !,"Не указана область, куда копировать" quit
+   set devices=$get(devices)
+   kill excludenodein for nodein="1","9","10","20","LL","LL1" set excludenodein(nodein)=""  //узлы, которые не переносим
+   try {
+	   set namespace=$zu(5)
+       zn namespaceFrom
+       set glob=$name(^TMIF)
+       if devices'="" {
+	       kill ^||devices
+	       for i=1:1:$length(devices,",") {
+	           set node=$piece(devices,",",i)
+	           if '$data(^TMIF(node)) continue
+	           set ^||devices(node)=""
+	       }
+	       set glob=$name(^||devices)
+       }
+       set node=""
+       for {
+	       set node=$order(@glob@(node)) if node="" quit
+	       if $data(^|namespaceTo|TMIF(node)) {
+		       write !,"Настройки по прибору с кодом "_node_" уже существуют в базе "_namespaceTo
+		       write !,"Вы уверены, что хотите их переписать? Для подтверждения нажмите Y :"
+		       set answer="N" read *answer set answer=$char(answer) if $zcvt(answer,"U")="Y" set answer="Y" 
+		       if answer'="Y" write !,"НЕ перенесены настройки для прибора с кодом "_node_"!!!",! continue
+		       kill ^|namespaceTo|TMIF(node)
+		       /*
+		       set nodein=""
+		       for {
+			       set nodein=$order(@glob@(node,nodein)) if nodein="" quit
+			       if excludenodein[nodeif continue
+		           kill ^|namespaceTo|TMIF(node,nodein)
+		       }*/
+	       }
+	       set ^|namespaceTo|TMIF(node)=^|namespaceFrom|TMIF(node)
+	       set nodein=""
+		   for {
+			       set nodein=$order(^TMIF(node,nodein)) if nodein="" quit
+			       if $data(excludenodein(nodein)) continue
+		           merge ^|namespaceTo|TMIF(node,nodein)=^|namespaceFrom|TMIF(node,nodein)
+		   }
+		   write !,"Перенесены настройки для прибора с кодом "_node,!
+       }
+       zn namespace
+       write !,"Перенос настроек из базы "_namespaceFrom_" в базу "_namespaceTo_" успешно завершен."
+   
+   } catch(exception) {
+	   Set ok=exception.AsStatus()
+	   do $system.OBJ.DisplayError(ok)
+	   zn namespace
+   }
+]]></Implementation>
+</Method>
+</Class>
+</Export>

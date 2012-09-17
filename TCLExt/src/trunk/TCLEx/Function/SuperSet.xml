@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Function.SuperSet">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62172,59935.362219</TimeCreated>
+
+<Method name="IsComplete">
+<Description>
+Является ли выполненным супер-набор pSuperSet в эпизоде pEpisId	
+Если целиком выполнен, то возвращаем %Id первого набора тестов супер-набора (для регистрации на него авторизации супер-набора) </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisId:%String,pSuperSet:%String,&pFirstTestSetId:%String]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set pFirstTestSetId=""
+	If ($Get(pEpisId)="")||($Get(pSuperSet)="") Quit 0
+	Set result=0
+	Do ..CreateTestSetBuf(pEpisId,pSuperSet,$Name(^||SuperSet.TestSet),.isall,.pFirstTestSetId)
+	If 'isall Quit 0
+	Set result=1,testset=""
+	For  {
+		Set testset=$Order(^||SuperSet.TestSet(testset),1,testsetid)
+		If testset="" Quit
+		Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
+		If ('$IsObject(testsetobj))||('##class(TCLEx.Function.TestSet).IsPrintable(testsetobj)) {
+			Set result=0
+			Quit
+		} Else {
+			If pFirstTestSetId="" Set pFirstTestSetId=testsetobj.%Id()
+		}		
+	}	
+	If 'result Set pFirstTestSetId=""
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="CreateItemsBuf">
+<Description>
+Создание буфера pItemsGlb элементов супер-набора pSuperSet	</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pSuperSet:%String,pItemsGlb:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Kill @pItemsGlb
+	&sql(
+		DECLARE ItemsCursor CURSOR FOR
+	    Select CTSSI_TestSet_DR 
+	    Into :testset
+	    From SQLUser.CT_SuperSetItems 
+	    Where CTSSI_ParRef=:pSuperSet
+	)
+	&sql(OPEN ItemsCursor)
+	&sql(FETCH ItemsCursor)
+
+	While (SQLCODE = 0) {
+	If testset'="" {
+		Set @pItemsGlb@(testset)=""
+	} 	
+	&sql(FETCH ItemsCursor)
+	}
+	&sql(CLOSE ItemsCursor)
+]]></Implementation>
+</Method>
+
+<Method name="CreateTestSetBuf">
+<Description>
+Создание буфера наборов тестов pItemsGlb супер-набора pSuperSet в эпизоде pEpisode	
+Также по ссылке передаем pAllTestSets - есть ли все наборы тестов необходимые для супер-набора 
+и pFirstTestSetId - ID первого набора тестов супер-набора (используется для регистрации на него авторизации супер-набора)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pSuperSet:%String,pTestSetGlb:%String,&pAllTestSets:%Boolean,&pFirstTestSetId:%String]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	
+	Kill @pTestSetGlb,^||tmp
+	&sql(
+		DECLARE VisitTSCursor CURSOR FOR
+	    Select VISTS_RowId,VISTS_TestSet_DR,VISTS_SuperSet_DR  
+	    Into :testsetid,:testset,:superset
+	    From SQLUser.EP_VisitTestSet 
+	    Where VISTS_ParRef=:pEpisode
+	)
+	&sql(OPEN VisitTSCursor)
+	&sql(FETCH VisitTSCursor)
+
+	While (SQLCODE = 0) {
+	If (testset'="")&&(testsetid'="") {
+		If superset=pSuperSet {
+			Set ^||tmp(testset)=testsetid
+		} Else {
+			Set ^||tmp(testset,testsetid)=superset
+		}		
+	} 	
+	&sql(FETCH VisitTSCursor)
+	}
+	&sql(CLOSE VisitTSCursor)
+	Do ..CreateItemsBuf(pSuperSet,$Name(^||SuperSet.Items))
+	Set testset="",pAllTestSets=1,pFirstTestSetId="",firstestset=""
+	For  {
+		Set testset=$Order(^||SuperSet.Items(testset))
+		If testset="" Quit
+		If '$Data(^||tmp(testset)) {
+			Set pAllTestSets=0
+			Continue
+		}	
+		Set testsetid=$Get(^||tmp(testset)) 
+		If testsetid'="" {
+			Set @pTestSetGlb@(testset)=testsetid
+			If pFirstTestSetId="" {
+				Set pFirstTestSetId=testsetid 						// Запоминаем ID первого набора тестов у которого прописан супер-набор
+			}	
+		} Else {
+			Set testsetid=$Order(^||tmp(testset,""))
+			If testsetid'="" {
+				Set @pTestSetGlb@(testset)=testsetid
+				If firstestset="" {
+					Set firstestset=testsetid						// Запоминаем ID первого набора тестов, который входит в супер-набор, но у которого не прописан наш супер-набор (отдельное исследование или другой супер-набор)
+				}	
+			} Else {
+			 Set pAllTestSets=0
+			}		
+		}		
+	}
+	If ('pAllTestSets) {
+		Set pFirstTestSetId=""										// Если неполный набор, то пустой Id
+	} Else {
+		If pFirstTestSetId="" {
+			Set pFirstTestSetId=firstestset							// Если нет набора с нашим прописанным супер-наборов, то запоминаем Id первого входящего в супер-набор
+		}	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="SummaryTestSet">
+<Description>
+Определение набора тестов - заключения для супер-набора pSuperSet</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pSuperSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	&sql(
+		DECLARE SummaryTSCursor CURSOR FOR
+	    Select CTSSI_TestSet_DR  
+	    Into :testsetid
+	    From SQLUser.CT_SuperSetItems
+	    Where CTSSI_ParRef=:pSuperSet
+	)
+	&sql(OPEN SummaryTSCursor)
+	&sql(FETCH SummaryTSCursor)
+
+	Set result=""
+	While (SQLCODE = 0) {
+		If ..IsSuperSetSummaryTestSet(pSuperSet,testsetid) {
+			Set result=testsetid
+			Quit
+		}		
+		&sql(FETCH SummaryTSCursor)
+	}
+	&sql(CLOSE SummaryTSCursor)
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="IsSuperSetSummaryTestSet">
+<Description>
+Набор тестов pTestSetId является итоговым для pSuperSet</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pSuperSet:%String,pTestSetId:%Boolean</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If $Length(pTestSetId)'=5 Quit 0
+	If $Extract(pTestSetId,1,$Length(pSuperSet))'=pSuperSet Quit 0
+	If $Extract(pTestSetId,$Length(pSuperSet)+1,$Length(pTestSetId))'=+$Extract(pTestSetId,$Length(pSuperSet)+1,$Length(pTestSetId)) Quit 0
+	Quit 1
+]]></Implementation>
+</Method>
+
+<Method name="AuthorisationDate">
+<Description>
+Дата авторизации супер-набора (максимальная дата авторизации входящих в него наборов тестов)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pSuperSet:%String</FormalSpec>
+<ReturnType>%Date</ReturnType>
+<Implementation><![CDATA[
+	Set result=""
+	Kill ^||SuperSet.TestSet
+	Do ..CreateTestSetBuf(pEpisode,pSuperSet,$Name(^||SuperSet.TestSet),.isall)
+	If 'isall Quit ""
+	Set testset="",ok=1
+	For  {
+		Set testset=$Order(^||SuperSet.TestSet(testset),1,testsetid)
+		If testset="" Quit
+		Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
+		If '$IsObject(testsetobj) {
+			Set ok=0
+			Quit
+		}
+		If ##class(TCLEx.Function.TestSet).IsAuthorised(testsetobj) {
+			Set date=testsetobj.VISTSDateOfAuthorisation
+			If date>result Set result=date
+		} Else {
+			If '##class(TCLEx.Function.TestSet).IsCanceled(testsetobj) {
+				Set ok=0
+				Quit
+			}	
+		}		
+	}	
+	If 'ok Quit ""
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="UpdatePrintQueueBuffer">
+<Description>
+Обновить буфер очереди печати супер-набором</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisId:%String,pSuperSet:%String,pIsComplete:%Boolean,pDoctorId:%String</FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisId="")||(pSuperSet="") Quit
+	Set hospitalid=""
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisId)
+	If $IsObject(episobj)&&($IsObject(episobj.EPVISHospitalCodeDR)) {
+		Set hospitalid=episobj.EPVISHospitalCodeDR.%Id()
+	}
+	If hospitalid="" Quit
+	
+	Kill ^||SuperSet.TestSet
+	Do ..CreateTestSetBuf(pEpisId,pSuperSet,$Name(^||SuperSet.TestSet))
+	Set testset=""
+	For  {
+		Set testset=$Order(^||SuperSet.TestSet(testset),1,testsetid)
+		If testset="" Quit
+		Set testsetnum=$Piece(testsetid,"||",3)
+		If (testset="")||(testsetnum="") Continue
+		If pIsComplete {
+			Set ^TRPT("DR",hospitalid,"H",hospitalid,pEpisId,testset,testsetnum)="\\\\"_pDoctorId
+		} Else {
+			Kill ^TRPT("DR",hospitalid,"H",hospitalid,pEpisId,testset,testsetnum)
+		}		
+	}
+]]></Implementation>
+</Method>
+
+<Method name="IsVirtual">
+<Description>
+Является ли супер-набор pSuperSet Виртуальным  
+(т.е. наборы тестов обрабатываются независимо друг от друга, объединение их в супер-набор
+нужно только для единой цены)
+Признаком такого супер-набора является отсутсвие итогового набора тестов</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pSuperSet:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If ..SummaryTestSet(pSuperSet)="" Quit 1
+	Quit 0
+]]></Implementation>
+</Method>
+</Class>
+</Export>

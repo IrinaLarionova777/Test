@@ -1,0 +1,1124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Report.ResultForm">
+<Description>
+Создание отчета с результами эпизода как для печати на принтере, так и для ормирования PDF-результата</Description>
+<Super>%RegisteredObject</Super>
+<TimeCreated>62336,44898.98751</TimeCreated>
+
+<Method name="MakePrintingReport">
+<Description>
+Формирование отчетов для печати на принтере 
+(метод вызывается из PRTDR00)
+Параметры:
+pReportType - тип отчета 
+pCourier - код курьера
+pUser - пользователь запустивший отчет</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportType:%String,pCourier:%String,pUser:%String</FormalSpec>
+<Implementation><![CDATA[
+	//s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
+	//If (pReportType'="C")&&(pReportType'="DR") Quit		// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
+	If (pReportType'="C") Quit								// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
+	Set pUser=$Get(pUser)
+	// Составляем буфер с эпизодами и наборами тестов для печати
+	Kill ^||ResultForm.Episodes
+	Do ..MakePrintingEpisodesBuf(pReportType,pCourier,pUser,$Name(^||ResultForm.Episodes))
+	If '$Data(^||ResultForm.Episodes) Quit
+	//m ^test(1)=^||ResultForm.Episodes
+	//
+	Set reporttype=""
+	For  {
+		Set reporttype=$Order(^||ResultForm.Episodes(reporttype))
+		If reporttype="" Quit
+		Set user=""
+		For  {
+			Set user=$Order(^||ResultForm.Episodes(reporttype,user))
+			If user="" Quit
+			set qcopies=""
+			for {
+			 set qcopies=$order(^||ResultForm.Episodes(reporttype,user,qcopies)) 
+			 if qcopies="" quit
+			 if reporttype["word" {
+				 //делим по языкам
+				 Set epis=""
+	             For  {
+		              Set epis=$Order(^||ResultForm.Episodes(reporttype,user,qcopies,epis))
+		              If epis="" Quit
+		              Set languages=##class(TCLEx.Function.Episode).ResultLanguages(epis)
+		              If languages="" continue
+ 		              Set langcnt=$ListLength(languages)
+		              For i=1:1:langcnt {
+			             Set language=$ListGet(languages,i)
+			             If language="" Continue
+	        			 set testsetid=""
+				         for {
+					        set testsetid=$order(^||ResultForm.Episodes(reporttype,user,qcopies,epis,testsetid))
+					        if testsetid="" quit
+					        set status="R"
+					        set params=epis_$char(0)_testsetid_$char(0)_user_$char(0)_language
+					        Do ..SaveLISReportWord(pCourier,user,qcopies,params,status)   
+				         }   
+			         }
+			     }
+			 }
+			 else {
+				Kill ^||ResultForm.PCL
+			    Do ..MakePCLCommandsBuf($Name(^||ResultForm.Episodes(reporttype,user,qcopies)),$Name(^||ResultForm.PCL))
+			    //If '$Data(^||ResultForm.PCL) Quit
+			    Set lang=""
+			    For  {
+				    Set lang=$Order(^||ResultForm.PCL(lang))
+				    If lang="" Quit
+				    Kill ^||ResultForm.LISReport
+				    Do ..MakeLISReportBuf($Name(^||ResultForm.PCL(lang)),$Name(^||ResultForm.LISReport))
+				    If $Data(^||ResultForm.LISReport) {
+					    Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.Episodes(reporttype,user,qcopies)))
+					    Do ..SaveLISReport(pCourier,user,qcopies,$Get(^||ResultForm.PCL(lang),0),$Name(^||ResultForm.LISReport))
+				    }	
+			    }
+			 }
+			}
+		}
+	}
+]]></Implementation>
+</Method>
+
+<Method name="MakePrintingEpisodesBuf">
+<Description>
+Создание буфера со списком эпизодов и наборов тестов, которые нужно распечатать
+Параметры:
+pReportType - тип отчета 
+pCourier - код курьера
+pBuf - формируемый буфер</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportType:%String,pCourier:%String,pUser:%String,pBuf:%String</FormalSpec>
+<Implementation><![CDATA[
+	// получаем кол-во копий по курьеру (в привязке к DRP)
+	set printerinfo=##class(TCLEx.Function.Printer).getPrinterByCourierDRP(pCourier)
+	set qCopies=$piece(printerinfo,$char(0),2)
+	if +qCopies=0 set qCopies=1
+
+	Kill @pBuf
+	Do ..MakePatientLocationEpisodesBuf(pReportType,pCourier,pUser,pBuf,qCopies)
+	Do ..MakeDoctorEpisodesBuf(pReportType,pCourier,pUser,pBuf,qCopies)
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+//  pQCopies - кол-во копий 
+
+]]></Content>
+</UDLText>
+
+<Method name="MakePatientLocationEpisodesBuf">
+<Description>
+Создание буфера со списком эпизодов и наборов тестов для Местарасположения Пользователя , которые нужно распечатать
+Параметры:
+pCourier - код курьера
+pBuf - формируемый буфер</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportType:%String,pCourier:%String,pUser:%String,pBuf:%String,pQCopies:%String</FormalSpec>
+<Implementation><![CDATA[
+	set pQCopies=$get(pQCopies,1)
+	Set glb=$Name(^TRPT)
+	Set hosp=""
+	For  {
+		Set hosp=$Order(@glb@(pReportType,pCourier,"H",hosp))
+		If hosp="" Quit
+		Set epis=""
+		For  {
+			Set epis=$Order(@glb@(pReportType,pCourier,"H",hosp,epis))
+			If epis="" Quit
+			Set testset=""
+			For  {
+				Set testset=$Order(@glb@(pReportType,pCourier,"H",hosp,epis,testset))
+				If testset="" Quit
+				Set testcnt=""
+				For  {
+					Set testcnt=$Order(@glb@(pReportType,pCourier,"H",hosp,epis,testset,testcnt),1,vals)
+					If testcnt="" Quit
+					Set testsetid=epis_"||"_testset_"||"_testcnt
+					If $$printable^LVBCTTS(testset,testsetid) {
+						set userAuth=$$seldata^LVBVISTS(testsetid,9)
+						set user=$translate($get(pUser)," ","")
+						if user="" {
+							set user=$Piece(vals,"\",2)
+						}
+						If user="" Set user=" "
+						// if testset - word type
+						set key="H"
+						if $$seldata^LVBCTTS(testset,54)="Y",+$get(^Settings("WordToPdf","stop"))=0 {
+							set key="Hword"
+						}
+						Set @pBuf@(key,user,pQCopies,epis,testsetid)=""
+						Kill @glb@(pReportType,pCourier,"H",hosp,epis,testset,testcnt)
+					}		
+				}	
+			}	
+			Kill @glb@(pReportType,pCourier,"H",hosp,epis)
+		}
+	}
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+//  pQCopies - кол-во копий 
+
+]]></Content>
+</UDLText>
+
+<Method name="MakeDoctorEpisodesBuf">
+<Description>
+Создание буфера со списком эпизодов и наборов тестов для Врача , которые нужно распечатать
+Параметры:
+pCourier - код курьера
+pBuf - формируемый буфер</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportType:%String,pCourier:%String,pUser:%String,pBuf:%String,pQCopies:%String</FormalSpec>
+<Implementation><![CDATA[
+	set pQCopies=$get(pQCopies,1)
+	Set glb=$Name(^TRPT)
+	Set doctor=""
+	For  {
+		Set doctor=$Order(@glb@(pReportType,pCourier,"D",doctor))
+		If doctor="" Quit
+		Set epis=""
+		For  {
+			Set epis=$Order(@glb@(pReportType,pCourier,"D",doctor,epis))
+			If epis="" Quit
+			Set testset=""
+			For  {
+				Set testset=$Order(@glb@(pReportType,pCourier,"D",doctor,epis,testset))
+				If testset="" Quit
+				Set testcnt=""
+				For  {
+					Set testcnt=$Order(@glb@(pReportType,pCourier,"D",doctor,epis,testset,testcnt),1,vals)
+					If testcnt="" Quit
+					Set testsetid=epis_"||"_testset_"||"_testcnt
+					If $$printable^LVBCTTS(testset,testsetid) {
+						set userAuth=$$seldata^LVBVISTS(testsetid,9)
+						set user=$translate($get(pUser)," ","")
+						if user="" {
+							set user=$Piece(vals,"\",2)
+						}
+						If user="" Set user=" "
+						set key="D"
+						if $$seldata^LVBCTTS(testset,54)="Y",+$get(^Settings("WordToPdf","stop"))=0 {
+							set key="Dword"
+						}
+						Set @pBuf@(key,user,pQCopies,epis,testsetid)=""
+						If user="" Set user=" "
+						Kill @glb@(pReportType,pCourier,"D",doctor,epis,testset,testcnt)
+					}		
+				}	
+			}	
+			Kill @glb@(pReportType,pCourier,"D",doctor,epis)
+		}
+	}
+]]></Implementation>
+</Method>
+
+<Method name="MakePCLCommandsBuf">
+<Description>
+Создание буфера со списком PCL-комманд pPCLGlb для печати результатов буфера эпизодов
+Параметры:
+pEpisodesGlb - списка эпизодов
+pPCLGlb - формируемый буфер с PCL командами</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisodesGlb:%String,pPCLGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Kill @pPCLGlb
+	Set epis=""
+	For  {
+		Set epis=$Order(@pEpisodesGlb@(epis))
+		If epis="" Quit
+		Set languages=##class(TCLEx.Function.Episode).ResultLanguages(epis)
+		If languages="" Continue
+		Kill testsets
+		Set testsetid=""
+		For  {
+			Set testsetid=$Order(@pEpisodesGlb@(epis,testsetid))
+			If testsetid="" Quit
+			Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
+			If '$IsObject(testsetobj) Quit
+			Set superset=""
+			If $IsObject(testsetobj.VISTSSuperSetDR) Set superset=testsetobj.VISTSSuperSetDR.%Id()
+			If superset'="" {
+				Set testsets(superset)=""
+			} Else {
+				Set testsets(testsetid)=""
+			}		
+		}
+		Set langcnt=$ListLength(languages)
+		For i=1:1:langcnt {
+			Set language=$ListGet(languages,i)
+			If language="" Continue
+			Do ..PCLReport2Glb(epis,.testsets,0,language,$Name(@pPCLGlb@(language,epis)))
+			If $Data(@pPCLGlb@(language,epis)) Set @pPCLGlb@(language)=$Get(@pPCLGlb@(language))+1
+		}
+	}
+]]></Implementation>
+</Method>
+
+<Method name="MakeLISReportBuf">
+<Description>
+Создание буфера со структурой отчета ЛИС по буферу PCL-команд
+Параметры:
+pPCLGlb - буфер PCL-команд
+pLISGlb - буфер отчета ЛИС</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPCLGlb:%String,pLISGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set epis="",i1=""
+	For  {
+		Set epis=$Order(@pPCLGlb@(epis))
+		If epis="" Quit
+		If '$Data(@pLISGlb@("HDR")) {									// Берем заголовок (узел "HDR") от первого эпизода 
+			Merge @pLISGlb@("HDR")=@pPCLGlb@(epis,"HDR")
+		}
+		Set i2=""
+		For  {
+			Set i2=$Order(@pPCLGlb@(epis,"PRT",i2),1,val)				// В тело (узел "PRT") дописываем содержимое узла "PRT" очередного эпизода
+			If i2="" Quit
+			If val="" Continue
+			Set i1=i1+1
+			Set @pLISGlb@("PRT",i1)=val
+		}
+		If $Order(@pPCLGlb@(epis))'="" { 								// Если не последний эпизод, то добавляем разрыв страницы ("#")
+			Set i1=i1+1
+			Set @pLISGlb@("PRT",i1)="#"
+		}		
+	}
+]]></Implementation>
+</Method>
+
+<Method name="UpdateTestSetsPrintingInfo">
+<Description>
+Обновить информармацию о печати наборов тестов списка эпизодов
+Параметры:
+pEpisodesGlb - буфер со списком эпизодов и ID наборов тестов</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisodesGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set epis=""
+	For  {
+		Set epis=$Order(@pEpisodesGlb@(epis))
+		If epis="" Quit
+		Set testsetid=""
+		For  {
+			Set testsetid=$Order(@pEpisodesGlb@(epis,testsetid))
+			If testsetid="" Quit
+			Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
+			If $IsObject(testsetobj)&&(testsetobj.VISTSPrinted'="Y") {			// Если набор тестов еще не был распечан
+				Set testsetobj.VISTSPrinted="Y"									// прописываем признак печати
+				Set horolog=$Horolog
+				Set testsetobj.VISTSDateOfLastChange=$Piece(horolog,",",1)		// и дату-время печати
+				Set testsetobj.VISTSTimeOfLastChange=$Piece(horolog,",",2)
+				Do testsetobj.%Save()
+			}	
+		}	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="SaveLISReport">
+<Description>
+Сохранить полученный отчет в User.PRReport
+Параметры:
+pCourier - код курьера
+pUser - пользователь запустивший отчет
+pEpisCount - число эпизодов в отчете
+pQCopies - число копий 
+pLISGlb - буфер отчета в формате ЛИС</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisCount:%Integer,pLISGlb:%String</FormalSpec>
+<PublicList>PLIST</PublicList>
+<Implementation><![CDATA[
+	Set repobj=##class(User.PRReport).%New()
+	Set repid=$Get(^PR)
+	If (repid="")||($Data(^PR(repid))) {
+		Set repid=$Increment(^PR)
+	}
+	Set repobj.PRPRReportID=repid
+	Set repobj.PRPRReportDR=##class(User.SSReportGeneric).%OpenId("DRP")
+	Set repobj.PRPRContentType="I"
+	Set hor=$Horolog
+	Set repobj.PRPRCreatedDate=$Piece(hor,",",1)
+	Set repobj.PRPRCreatedTime=$Piece(hor,",",2)
+	Set repobj.PRPRParameters="C\"_pCourier
+	Set repobj.PRPRREPORTPARAMETERS="C-"_pCourier_"-"_pEpisCount
+	Set repobj.PRPRStatus="R" 
+	set userCall=$tr($piece(pUser,$char(1),1)," ","") // пользователь, запусающий на печать (он указан при одиночной печати, при групповой, не указан)
+	set userAuth=$piece(pUser,$char(1),2) // пользователь, авторизовавший набор тестов
+	Set repobj.PRPRUserDR=##class(User.SSUser).%OpenId(userCall)
+	Set ok=repobj.%Save()
+	If 'ok {
+		;Do $system.OBJ.DisplayError(ok)
+		Quit
+	}	
+	//
+	Merge ^PR(repid,"HDR")=@pLISGlb@("HDR")
+	Merge ^PR(repid,"PRT")=@pLISGlb@("PRT")
+	// Также необходимо запись в PR_ReportDestination (почему-то только через SQL можно добавить запись...)
+	Kill PLIST
+	set typePrinter=$select(userCall'="":"single",1:"group")
+	set user=$select(userCall="":userAuth,1:userCall)
+	//set ^test("grprint","before")=user_"*"_typePrinter_"*"_userAuth_"*"_userCall_"*"_pCourier
+	Set PLIST(3)=..getPrinter(pCourier,user) 
+	//set ^test("grprint","before2")=PLIST(3)
+	Set PLIST(4)=pQCopies 
+	Set PLIST(5)="R" 
+	Set PLIST(6)=$Piece(hor,",",1) 
+	Set PLIST(7)=$Piece(hor,",",2)
+	Set sqlcode=$$insert^LVBPRPRD(repobj.%Id())
+]]></Implementation>
+</Method>
+
+<Method name="PCLReport2Glb">
+<Description>
+Формирование глобала PCL отчета эпизода 
+Параметры:
+pEpis - ID эпизода
+pTestSets - буфер печатаемых наборов тестов
+pPDF - =1 - вывод в PDF файл; = 0 - вывод на принтер
+pLanguage - язык результата
+pPCLRepGlb - глобал с полученными результатами</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pPDF:%Boolean,pLanguage:%String,pPCLRepGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	Set pLanguage=$Get(pLanguage) 
+	Kill @pPCLRepGlb
+	Kill ^||ResultForm.EpisodePCL
+	// Определяем какой класс будет использоваться для печати
+	Set reportclassname=$$PCLResultClassName^Settings.Reports()
+	If '##class(%Dictionary.CompiledClass).%ExistsId(reportclassname) Quit	// Если нет такого класса, то выходим
+	//
+	Do ..PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL))
+	Set totalpages=..PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
+	If '$Data(^||ResultForm.EpisodePCL) Quit
+	Set depcode="",pagenum=0,i1=0
+	For  {
+		Set depcode=$Order(^||ResultForm.EpisodePCL(depcode))
+		If depcode="" Quit
+		Kill ^||ResultForm.EpisodePCL.Values
+		Do ..CallCreateValuesBuf(reportclassname,pEpis,.pTestSets,depcode,pLanguage,$Name(^||ResultForm.EpisodePCL.Values))
+		Set page=""
+		For  {
+			Set page=$Order(^||ResultForm.EpisodePCL(depcode,page))
+			If page="" Quit
+			Set pagenum=pagenum+1
+			Kill ^||ResultForm.EpisodePCL.Header
+			Do ..CallHeader(reportclassname,pEpis,.pTestSets,depcode,pPDF,pLanguage,$Name(^||ResultForm.EpisodePCL.Values),$Name(^||ResultForm.EpisodePCL.Header))
+			If '$Data(@pPCLRepGlb@("HDR")) {
+				Set i2=""
+				For  {
+					Set i2=$Order(^||ResultForm.EpisodePCL.Header("HDR",i2),1,val)
+					If i2="" Quit
+					Set @pPCLRepGlb@("HDR",i2)=val
+				}	
+			}
+			Set i2=""
+			For  {
+				Set i2=$Order(^||ResultForm.EpisodePCL.Header("PRT",i2),1,val)
+				If i2="" Quit
+				Set i1=i1+1
+				If '$Data(@pPCLRepGlb@("Pages4PRT",pagenum)) Set @pPCLRepGlb@("Pages4PRT",pagenum)=i1
+				Set @pPCLRepGlb@("PRT",i1)=val
+			}
+			Set row=""
+			For  {
+				Set row=$Order(^||ResultForm.EpisodePCL(depcode,page,row))
+				If row="" Quit
+				Set i2=""
+				For  {
+					Set i2=$Order(^||ResultForm.EpisodePCL(depcode,page,row,i2),1,val)
+					If i2="" Quit
+					Set i1=i1+1
+					If '$Data(@pPCLRepGlb@("Pages4PRT",pagenum)) Set @pPCLRepGlb@("Pages4PRT",pagenum)=i1
+					Set @pPCLRepGlb@("PRT",i1)=val
+				}
+			}
+			Kill ^||ResultForm.EpisodePCL.Footer
+			Do ..CallFooter(reportclassname,pEpis,.pTestSets,depcode,pPDF,pagenum,totalpages,pLanguage,$Name(^||ResultForm.EpisodePCL.Values),$Name(^||ResultForm.EpisodePCL.Footer))
+			//Do Footer^PRTDR0RU02(pEpis,.pTestSets,depcode,pagenum,totalpages,$Name(^||ResultForm.EpisodePCL.Footer))
+			Set i2=""
+			For  {
+				Set i2=$Order(^||ResultForm.EpisodePCL.Footer("PRT",i2),1,val)
+				If i2="" Quit
+				Set i1=i1+1
+				If '$Data(@pPCLRepGlb@("Pages4PRT",pagenum)) Set @pPCLRepGlb@("Pages4PRT",pagenum)=i1
+				Set @pPCLRepGlb@("PRT",i1)=val
+				
+			}
+						
+		}
+
+	}
+]]></Implementation>
+</Method>
+
+<Method name="PCLEpisodeResult">
+<Description>
+Формирование буфера pEpisPCLGlb с PCL-командами для печати наборов тестов pTestSets эпизода pEpis 
+Параметры:
+pReportClassName - класс, формирующий содержание отчета
+pEpis - ID эпизода
+pTestSets - буфер печатаемых наборов тестов
+pLanguage - язык отчета
+pEpisPCLGlb - глобал с полученными результатами в виде PCL команд</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pReportClassName:%String,pEpis:%String,&pTestSets:%String,pLanguage:%String,pEpisPCLGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	
+	Set pLanguage=$Get(pLanguage)
+	Kill ^||ResultForm.Departments
+	Do ##class(TCLEx.Function.TestSet).Departments(pEpis,.pTestSets,$Name(^||ResultForm.Departments))
+	// Составляем буфер результатов по отделам эпизода с разбивкой по страницам
+	Kill @pEpisPCLGlb
+	Set depcode=""
+	For  {
+		Set depcode=$Order(^||ResultForm.Departments(depcode))
+		If depcode="" Quit
+		Set rowscnt=..CallRowCount(pReportClassName,depcode) 							// Строк на страницу
+		Set testsetid="",row=1,page=1,firstonpage=1
+		For  {
+			Set testsetid=$Order(^||ResultForm.Departments(depcode,testsetid))
+			If testsetid="" Quit
+			//
+			Do ##class(TCLEx.Function.TestSet).PCLResult(testsetid,rowscnt,firstonpage,pLanguage)
+			If '$Data(^||testset) Continue
+			Do ..PCLAddTestSetResult(depcode,rowscnt,.page,.row,.firstonpage,pEpisPCLGlb)
+			//
+			If (row<rowscnt)&&(row>1)&&($Order(^||ResultForm.Departments(depcode,testsetid))'="") {	; Дополнительный отступ между TestSet-ами на странице
+				Set @pEpisPCLGlb@(depcode,page,row,1)="!"
+				Set row=row+1
+			}	
+		}	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="PCLAddTestSetResult">
+<Description>
+Добавить результаты набора тестов в общий отчет 
+Параметры:
+pDepСode - код отдела
+pMaxRowCount - число строк на страницу
+pPage - номер страницы (по ссылке)
+pRow - номер строки (по ссылке)
+pFirstOnPage - признак первого набора тестов на странице (по ссылке)
+pEpisPCLGlb - глобал с полученными результатами в виде PCL команд</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pDepСode:%String,pMaxRowCount:%Integer,&pPage:%Integer,&pRow:%Integer,&pFirstOnPage:%Boolean,pEpisPCLGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	Set testsetrows=##class(TCLEx.Function.TestSet).TotalRowCount($NA(^||testset))
+	If ((pRow-1+testsetrows)>pMaxRowCount)&&('((pPage=1)&&(pRow=1))) {	; Переход на следующую страницу, если результаты TestSet-а не влазиют на текущую страницу
+		Do ..PCLEposodeNextPage(.pPage,.pRow,.pFirstOnPage)
+	}	
+	If pFirstOnPage { 
+		Set pFirstOnPage=0
+	}	
+	Set j=""
+	For  {
+		Set j=$Order(^||testset(j))
+		If j="" Quit
+		If ($Get(^||testset(j,1))=$Char(12)) {						; Переход на следующую страницу, если встретили символ перевода страницы
+			Do ..PCLEposodeNextPage(.pPage,.pRow,.pFirstOnPage)
+			Continue
+		}	
+		Set pFirstOnPage=0
+		Merge @pEpisPCLGlb@(pDepСode,pPage,pRow)=^||testset(j)
+		Set pRow=pRow+1
+		If (pRow#(pMaxRowCount+1)=0) {								; Переход на следующую страницу, если данные набора тестов не влазят на одну страницу
+			Do ..PCLEposodeNextPage(.pPage,.pRow,.pFirstOnPage)
+		}	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="PCLEposodeNextPage">
+<Description>
+Изменение переменных pPage,pRow,pFirstOnPage при переходе на новую страницу
+Параметры:
+pPage - номер страницы (по ссылке)
+pRow - номер строки (по ссылке)
+pFirstOnPage - признак первого набора тестов на странице (по ссылке)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pPage:%Integer,&pRow:%Integer,&pFirstOnPage:%Boolean]]></FormalSpec>
+<Implementation><![CDATA[
+	Set pPage=pPage+1
+	Set pRow=1
+	Set pFirstOnPage=1
+]]></Implementation>
+</Method>
+
+<Method name="PCLEpisodeTotalPages">
+<Description>
+Число страниц для PCL-отчета
+Параметры:
+pPCLGlb - глобал с полученными результатами в виде PCL команд
+Возвращаемое значение:
+Число страниц для PCL-отчета</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPCLGlb:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Set result=0
+	Set depcode=""
+	For  {
+		Set depcode=$Order(@pPCLGlb@(depcode))
+		If depcode="" Quit
+		Set page=""
+		For  {
+			Set page=$Order(@pPCLGlb@(depcode,page))
+			If page="" Quit
+			Set result=result+1
+		}	
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="CallEpisodeResultFileName">
+<Description>
+Вызов получения имени файла результата для эпизода
+Параметры:
+pReportClassName - класс, формирующий отчет
+pEpis - ID эпизода
+pTestSets - буфер с ID наборов тестов (если пусто,то все наборы эпизода)
+pLanguage - язык отчета
+pExtension - расширение файла
+Возвращаемое значение:
+Имя файла результата для эпизода</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pReportClassName:%String,pEpis:%String,&pTestSets:%String,pLanguage:%String,pExtension:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set pReportClassName=$Get(pReportClassName)
+	If pReportClassName="" {
+		Set pReportClassName=$$PCLResultClassName^Settings.Reports()
+	}	
+	Set result=""
+	Try {
+		Set result=$ClassMethod(pReportClassName,"EpisodeResultFileName",pEpis,.pTestSets,pLanguage,pExtension)
+	} Catch {
+		/// Значение по умолчанию - %Фамилия(%NЭпизода-%ПризнакОкончательныйИлиПромежуточный).%Расширение
+		Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+		If $IsObject(episobj) {
+			Set result=episobj.EPVISSurname_"("_pEpis_"-"
+			If ##class(TCLEx.Function.Episode).IsComplete(pEpis,.pTestSets) {
+			Set result=result_"Окончательный"
+			} Else {
+				Set result=result_"Промежуточный"
+			}		
+			Set result=result_")."_pExtension
+		}	
+	}		
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="CallRowCount">
+<Description>
+Вызов получения числа строк в PCL отчете для отдела
+Параметры:
+pReportClassName - класс, формирующий отчет
+pDepCode - код отдела
+Возвращаемое значение:
+Число строк на странице для отдела</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportClassName:%String,pDepCode:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Try {
+		Set result=$ClassMethod(pReportClassName,"RowCount",pDepCode)
+	} Catch {
+		Set result=45
+	}		
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="CallCreateValuesBuf">
+<Description>
+Вызов формирования буфера со значениями, необходимыми для печати отдела эпизода
+pReportClassName - класс, формирующий отчет
+pEpis - ID эпизода
+pTestSets - буфер печатаемых наборов тестов
+pDepCode - код отдела
+pLanguage - язык результата
+pGlb - формируемый глобал</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pReportClassName:%String,pEpis:%String,&pTestSets:%String,pDepCode:%String,pLanguage:%String,pGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+ 
+	Kill @pGlb
+	
+	Try {
+		Do $ClassMethod(pReportClassName,"CreateValuesBuf",pEpis,.pTestSets,pDepCode,pLanguage,pGlb)
+	} Catch {
+	}
+]]></Implementation>
+</Method>
+
+<Method name="CallHeader">
+<Description>
+Вызов формирования заголовка отчета для печати отдела эпизода
+Параметры:
+pReportClassName - класс, формирующий отчет
+pEpis - ID эпизода
+pTestSets - буфер печатаемых наборов тестов
+pDepCode - код отдела
+pPDF - =1 - вывод в PDF файл; = 0 - вывод на принтер
+pLanguage - язык результата
+pValuesGlb - глобал со значениями для печати эпизода
+pPCLRepGlb - формируемый глобал с полученными PCL командами</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pReportClassName:%String,pEpis:%String,&pTestSets:%String,pDepCode:%String,pPDF:%Boolean,pLanguage:%String,pValuesGlb:%String,pPCLRepGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+ 
+	Kill @pPCLRepGlb
+	Try {
+		Do $ClassMethod(pReportClassName,"Header",pEpis,.pTestSets,pDepCode,pPDF,pLanguage,pValuesGlb,pPCLRepGlb)
+	} Catch {
+	}
+]]></Implementation>
+</Method>
+
+<Method name="CallFooter">
+<Description>
+Вызов формирования footer-а отчета для печати отдела эпизода
+Параметры:
+pReportClassName - класс, формирующий отчет
+pEpis - ID эпизода
+pTestSets - буфер печатаемых наборов тестов
+pDepCode - код отдела
+pPDF - =1 - вывод в PDF файл; = 0 - вывод на принтер
+pPageNumber - номер страницы
+pTotalPages - всего страниц
+pLanguage - язык результата
+pValuesGlb - глобал со значениями для печати эпизода
+pPCLRepGlb - формируемый глобал с полученными PCL командами</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pReportClassName:%String,pEpis:%String,&pTestSets:%String,pDepCode:%String,pPDF:%Boolean,pPageNumber:%Integer,pTotalPages:%Integer,pLanguage:%String,pValuesGlb:%String,pPCLRepGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+ 
+	Kill @pPCLRepGlb
+	Try {
+		Do $ClassMethod(pReportClassName,"Footer",pEpis,.pTestSets,pDepCode,pPDF,pPageNumber,pTotalPages,pLanguage,pValuesGlb,pPCLRepGlb)
+	} Catch {
+	}
+]]></Implementation>
+</Method>
+
+<Method name="CurrentUser">
+<Description>
+Получить ID текущего пользователя</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit $Get(^TMP("USER",$Job))
+]]></Implementation>
+</Method>
+
+<Method name="getPrinter">
+<Description>
+Получить принтер  
+Параметры:
+pCourier - ID курьера
+pUser - ID пользователя
+Возвращаемое значение:
+Id принтера</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCourier,pUser</FormalSpec>
+<ProcedureBlock>0</ProcedureBlock>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	// при одиночной печати просто определяем принтер по пользователю, если пользователь вдруг не задан. тогда принтер по умолчанию
+	//при групповой печати - принтер определяем по курьеру
+	set printer=""
+	if $get(pCourier)'="" {
+		set printerinfo=##class(TCLEx.Function.Printer).getPrinterByCourierDRP(pCourier)
+		set printer=$piece(printerinfo,$char(0),1)
+	} 
+	if printer="" {
+		if $get(pUser)'="" {
+		    set printer=##class(TCLEx.Function.Printer).getUserDefaultPrinter(pUser)
+	    }
+	}
+	if printer="" {
+	    	set printer=##class(TCLEx.Function.Printer).DefaultPrinter()
+	}
+	quit printer
+]]></Implementation>
+</Method>
+
+<Method name="getPrinter2">
+<Description>
+Получить принтер  
+Параметры:
+pCourier - ID курьера
+pUser - ID пользователя
+typePrint - тип печати ("single" - одиночная печать, "group" - печать из модуля Группвая печать вручную
+Возвращаемое значение:
+Id принтера</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCourier,pUser,typePrint</FormalSpec>
+<ProcedureBlock>0</ProcedureBlock>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set typePrint=$get(typePrint)
+	if typePrint="" {
+	   set typePrint=$select($get(pUser)'="":"single",1:"group")	
+	}
+	// при одиночной печати просто определяем принтер по пользователю, если пользователь вдруг не задан. тогда принтер по умолчанию
+	//при групповой печати - принтер определяем по курьеру
+	set printer=""
+	if typePrint="group" {
+		if $get(pCourier)'="" {
+		set printerinfo=##class(TCLEx.Function.Printer).getPrinterByCourierDRP(pCourier)
+		set printer=$piece(printerinfo,$char(0),1)
+	    }
+	} 
+	if printer="" {
+		if $get(pUser)'="" {
+		    set printer=##class(TCLEx.Function.Printer).getUserDefaultPrinter(pUser)
+	    }
+	}
+	if printer="" {
+	    	set printer=##class(TCLEx.Function.Printer).DefaultPrinter()
+	}
+	quit printer
+	
+	/*
+	 //set info="Y"
+ //do DEST^PRTREP00(99999999999999,"DRP","C-"_$get(pCourier)_"-*",pUser,"",.info)
+ //set printer=$piece(info,$char(1),2)
+  set printer=""
+ ; find destinations against report parameters (exact)
+ set REPORT="DRP",REPPAR="C-"_pCourier_"-*"
+ if $$open^LVBCTCLD(REPORT,"Y")
+ For {
+	 set sc=$$fetch^LVBCTCLD(REPORT,"Y") if sc!(printer'="") quit 
+     k plist m plist=PLIST f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+     set ok=0 
+     if '$length(plist(3))!(plist(3)="*")
+     else  if plist(3)=REPPAR set ok=1
+     if ok {
+        set printer=plist(4)
+     }
+ }
+ If $$close^LVBCTCLD()
+ 
+ // дальше принтер определяется по pUser
+ if printer="" {
+  set printer=..UserPrinter(pUser)
+ }
+ Quit printer
+ */
+]]></Implementation>
+</Method>
+
+<Method name="UserPrinter">
+<Description>
+Получить принтер для пользователя 
+Если для пользователя принтер не задан, то берется принтер по умолчанию для системы 
+Параметры:
+pUser - ID пользователя
+Возвращаемое значение:
+Id принтера</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pUser</FormalSpec>
+<ProcedureBlock>0</ProcedureBlock>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	New PLIST,sqlcode
+	Set result=""
+	//Set user=..CurrentUser()
+	If pUser'="" {										// Ищем принтер по умолчанию для пользователя
+		Kill PLIST		
+		Set sqlcode=$$selrow^MVBSSUSR(pUser)				// ( таблица SS_USER поле CTPrintDestination)
+		If sqlcode=0 {
+			Set result=$Piece(PLIST(13),$Char(1),1)
+		}	
+	}	
+	If result'="" Quit result							// Если для пользователя принтер не заполнен
+	Quit ..DefaultPrinter()
+]]></Implementation>
+</Method>
+
+<Method name="DefaultPrinter">
+<Description>
+Получить принтер по умолчанию (анализируется таблицаCF_SystemDefaults поле CFSM_DefaultDestination_DR)
+Возвращаемое значение:
+Id принтера по умолчанию</Description>
+<ClassMethod>1</ClassMethod>
+<ProcedureBlock>0</ProcedureBlock>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	New PLIST,sqlcode
+	Set sqlcode=$$select^MVBCFSM(1)
+	If sqlcode'=0 Quit ""
+	Quit $Get(PLIST(29))
+]]></Implementation>
+</Method>
+
+<Method name="CreateEpisodePDFReport">
+<Description>
+Создание файла PDF отчета для резултатов эпизода
+Параметры:
+pEpis - Id эпизода
+pTestSets - буфер с Id наборов тестов (если пусто, все авторизованные)
+pPDF - признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+pLanguage - язык результата (2-ENG, иначе - RUS )
+pExtraParams - дополнительные параметры формироваия отчета в формате $ListBuild
+pPDFDir - каталог, куда выгружать файл
+pOverWritePDF - если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+pPDFFileName - по сслке возвращается имя созданного PDF файла
+Возвращаемое значение:
+Результат создания файла в формате %Status</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pPDF:%Boolean,pLanguage:%String,pExtraParams:%String,pPDFDir:%String,pOverWritePDF:%Boolean,&pPDFFileName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set pPDFFileName=""
+	Set reportclassname=$$ZenResultClassName^Settings.Reports()
+	Kill ^||ResultForm.EpisodePCL
+	Do ..PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL))
+	If '$Data(^||ResultForm.EpisodePCL) {
+		Quit $$$ERROR($$$GeneralError,"Нет данных для эпизода "_pEpis_" !")
+	}	
+	//
+	If '$$TestDirectory^KSUTIL1(pPDFDir) {
+		Quit $$$ERROR($$$GeneralError,"Не удалось создать каталог  "_pPDFDir_" !")
+	}	
+	//
+	Set filename=..CallEpisodeResultFileName(reportclassname,pEpis,.pTestSets,pLanguage,"pdf")
+	Set pPDFFileName=pPDFDir_"\"_filename
+	If ##class(%File).Exists(pPDFFileName) {
+		If pOverWritePDF {
+			Set ok=##class(%File).Delete(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$GeneralError,"Не удалось удалить существующий файл "_pPDFFileName_" !")
+
+		} Else {	
+			Set pPDFFileName=$$ArchiveFileName^KSUTIL1(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$GeneralError,"Не удалось сформировать очередное имя файла для  "_pPDFFileName_" !")
+		}
+	}
+	If '$Data(%request) {
+		Set %request=##class(%CSP.Request).%New()
+		Set %request.URL="/csp/"_$ZUtil(5)_"/"_..%ClassName(1)_".xml"
+		Set %request.CgiEnvs("SERVER_NAME")="127.0.0.1"
+		Set %request.Data("$CSPTOFILE",1)=1
+		//Set %request.Data("RequestId",1)=pId
+	}
+	Kill ^||ResultForm.EpisodeTable
+	Do ..PCLGlb2TableGlb($Name(^||ResultForm.EpisodePCL),$Name(^||ResultForm.EpisodeTable))
+	Set repobj=$ClassMethod(reportclassname,"%New")
+	Set repobj.Episode=pEpis
+	Set repobj.PDF=pPDF
+	Set repobj.Language=pLanguage
+	Set repobj.DataGlobal=$Name(^||ResultForm.EpisodeTable)
+	Set repobj.ExtraParams=$Get(pExtraParams)
+	Set repobj.TotalPages=..PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
+	Set ok=repobj.GenerateReport(pPDFFileName,2)
+	If 'ok {
+		Set pPDFFileName=""
+	}	
+	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="PCLGlb2TableGlb">
+<Description>
+Преобразование глобала отчета (разбивка по отделам и страницам) PCL команд в глобал отчета в табличной форме (строки и столбцы)
+Параметры:
+pPCLGlb - глобал PCL-команд
+pTableGlb - глобал с табличными значениями </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPCLGlb:%String,pTableGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Kill @pTableGlb
+	Set dep=""
+	For  {
+		Set dep=$Order(@pPCLGlb@(dep))
+		If dep="" Quit
+		Set page=""
+		For  {
+			Set page=$Order(@pPCLGlb@(dep,page))
+			If page="" Quit
+			Do ..PCLPageGlb2TablePageGlb($Name(@pPCLGlb@(dep,page)),$Name(@pTableGlb@(dep,page)))
+		}
+	}
+]]></Implementation>
+</Method>
+
+<Method name="PCLPageGlb2TablePageGlb">
+<Description>
+Преобразование страницы PCL команд в таблицу (строки и столбцы)
+Параметры:
+pPCLGlb - глобал PCL-команд
+pTableGlb - глобал с табличными значениями </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPCLGlb:%String,pTableGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Kill @pTableGlb
+	Set notprintable=""
+	For i=0:1:12 Set notprintable=notprintable_$Char(i)
+	For i=14:1:31 Set notprintable=notprintable_$Char(i)
+	Set row="",cssclass="NORMAL",bold="",italic="",underline=""
+	For  {
+		Set row=$Order(@pPCLGlb@(row))
+		If row="" Quit
+		Set i="",col=1
+		For  {
+			Set i=$Order(@pPCLGlb@(row,i),1,pclcmd)
+			If i="" Quit
+			Set pclcmd=$$RemomeNotPrintableCharacters^KSUTIL1(pclcmd,notprintable)
+			If (pclcmd=$Char(13))||(pclcmd="!") Continue
+			If $Extract(pclcmd,1,1)="?" {
+				Set col=+$Extract(pclcmd,2,4)
+				If (col'>0)||(col>90) Continue
+				Set value=$Extract(pclcmd,5,$Length(pclcmd))
+				If value'="" {
+					Set @pTableGlb@(row,col,"Value")=value
+					Set @pTableGlb@(row,col,"CSSClass")=cssclass
+					If bold'="" {
+						Set @pTableGlb@(row,col,"Bold")=bold
+					}	
+					If italic'="" {
+						Set @pTableGlb@(row,col,"Italic")=italic
+					}	
+					If underline'="" {
+						Set @pTableGlb@(row,col,"Underline")=underline
+					}	
+				}
+				Continue	
+			}
+			If $Extract(pclcmd,1,1)="~" {
+				Set cmd=$Extract(pclcmd,2,$Length(pclcmd))
+				If (cmd="RES-ABNORMAL")||(cmd="NORMAL")||(cmd="RES-TSHEADER") {
+					Set cssclass=cmd
+					Set bold=""
+					Set italic=""
+					Set underline=""
+				}
+				If cmd="FLAG-HIGH" {
+					Set @pTableGlb@(row,col,"Value")=$Char(8593)
+					Set @pTableGlb@(row,col,"CSSClass")="FLAG"
+					Set cssclass="RES-ABNORMAL"
+					Set bold=""
+					Set italic=""
+					Set underline=""
+				}			
+				If cmd="FLAG-LOW" {
+					Set @pTableGlb@(row,col,"Value")=$Char(8595)
+					Set @pTableGlb@(row,col,"CSSClass")="FLAG"
+					Set cssclass="RES-ABNORMAL"
+					Set bold=""
+					Set italic=""
+					Set underline=""
+				}
+				If cmd="BOLD" {
+					Set bold=1
+				}
+				If cmd="ITALIC" {
+					Set italic=1
+				}
+				If cmd="UNDERLINE" {
+					Set underline=1
+				}
+				Continue			
+			}
+			If col>90 Continue
+			Set @pTableGlb@(row,col,"Value")=$Get(@pTableGlb@(row,col,"Value"))_pclcmd
+			Set @pTableGlb@(row,col,"CSSClass")=cssclass
+			If bold'="" {
+				Set @pTableGlb@(row,col,"Bold")=bold
+			}	
+			If italic'="" {
+				Set @pTableGlb@(row,col,"Italic")=italic
+			}	
+			If underline'="" {
+				Set @pTableGlb@(row,col,"Underline")=underline
+			}	
+		}	
+	}
+	
+	// Второй проход для определения colspan ячеек
+	Set row=""
+	For  {
+		Set row=$Order(@pTableGlb@(row))
+		If row="" Quit
+		Set firstcol=$Order(@pTableGlb@(row,""))
+		If (firstcol'="")&&(firstcol'=1) {
+			Set @pTableGlb@(row,1,"ColSpan")=firstcol-1
+		}	
+		Set col=""
+		For  {
+			Set col=$Order(@pTableGlb@(row,col))
+			If col="" Quit
+			If (col=1)&&($Get(@pTableGlb@(row,col,"ColSpan"))'="") Continue
+			Set nextcol=$Order(@pTableGlb@(row,col))
+			If nextcol="" {
+				Set nextcol=91
+			}	
+			Set @pTableGlb@(row,col,"ColSpan")=nextcol-col
+		}
+	}
+]]></Implementation>
+</Method>
+
+<Method name="SaveLISReportWord">
+<Description>
+Сохранить полученный отчет в User.PRReport
+Параметры:
+pCourier - код курьера
+pUser - пользователь запустивший отчет
+fileResult - имя файла для печати
+pQCopies - число копий </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCourier:%String,pUser:%String,pQCopies:%Integer,pParams:%String,pStatus:%String</FormalSpec>
+<PublicList>PLIST</PublicList>
+<Implementation><![CDATA[
+	Set repobj=##class(User.PRReport).%New()
+	Set repid=$Get(^PR)
+	If (repid="")||($Data(^PR(repid))) {
+		Set repid=$Increment(^PR)
+	}
+	Set repobj.PRPRReportID=repid
+	Set repobj.PRPRReportDR=##class(User.SSReportGeneric).%OpenId("DRP")
+	Set repobj.PRPRContentType="W"
+	Set hor=$Horolog
+	Set repobj.PRPRCreatedDate=$Piece(hor,",",1)
+	Set repobj.PRPRCreatedTime=$Piece(hor,",",2)
+	Set repobj.PRPRParameters="C\"_pCourier
+	Set repobj.PRPRREPORTPARAMETERS="C-"_pCourier_"-"_"1"
+	Set repobj.PRPRStatus=$select($get(pStatus)'="":pStatus,1:"R") 
+	set userCall=$tr($piece(pUser,$char(1),1)," ","") // пользователь, запусающий на печать (он указан при одиночной печати, при групповой, не указан)
+	set userAuth=$piece(pUser,$char(1),2) // пользователь, авторизовавший набор тестов
+	Set repobj.PRPRUserDR=##class(User.SSUser).%OpenId(userCall)
+	Set ok=repobj.%Save()
+	If 'ok {
+		;Do $system.OBJ.DisplayError(ok)
+		Quit
+	}	
+	//
+	//Merge ^PR(repid,"HDR")=@pLISGlb@("HDR")
+	set ^PR(repid,"PRT")=$get(pParams)
+	// Также необходимо запись в PR_ReportDestination (почему-то только через SQL можно добавить запись...)
+	Kill PLIST
+	//set typePrinter=$select(userCall'="":"single",1:"group")
+	set user=$select(userCall="":userAuth,1:userCall)
+	Set PLIST(3)=..getPrinter(pCourier,user) 
+	Set PLIST(4)=pQCopies 
+	Set PLIST(5)="R" 
+	Set PLIST(6)=$Piece(hor,",",1) 
+	Set PLIST(7)=$Piece(hor,",",2)
+	Set sqlcode=$$insert^LVBPRPRD(repobj.%Id())
+]]></Implementation>
+</Method>
+</Class>
+</Export>

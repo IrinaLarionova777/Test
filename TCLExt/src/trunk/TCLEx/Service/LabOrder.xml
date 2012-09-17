@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Service.LabOrder">
+<Description>
+Web-сервисы для работы с заказами</Description>
+<Super>%SOAP.WebService</Super>
+<TimeCreated>62003,48825.282383</TimeCreated>
+
+<Parameter name="NAMESPACE">
+<Description>
+Namespace. Change this to the namespace used by the web service.</Description>
+<Default>http://tempuri.org</Default>
+</Parameter>
+
+<Parameter name="SERVICENAME">
+<Default>TrakCareLabOrder</Default>
+</Parameter>
+
+<Method name="Import">
+<Description>
+Импорт объекта заказа в TrakCareLab </Description>
+<FormalSpec>pOrder:TCLEx.Object.LabOrder</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	If '$IsObject(pOrder)||(pOrder.%ClassName(1)'="TCLEx.Object.LabOrder") Quit $$$ERROR($$$GeneralError,"Некорректный объект класса TCLEx.Object.LabOrder !")
+	;
+	Set patientid=pOrder.PatientId
+	Set ok=..InsertPatient(.patientid)
+	If 'ok Quit ok
+	Set pOrder.PatientId=patientid
+	;
+	If '##class(User.EPVisitNumber).%ExistsId(pOrder.EpisId) {
+		Set ok=..InsertEpisode(pOrder)
+		If 'ok Quit ok
+	}
+	;
+	Set ok=..InsertTestSets(pOrder.EpisId,pOrder.TestSets,pOrder.Specimens,pOrder.Containers)
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="InsertPatient">
+<Description>
+Добавление записи в  User.DEBDebtor, если PatinentID не заполнен или нет данных в User.DEBDebtor для этого PatinentID</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pPatientId:%String]]></FormalSpec>
+<PublicList>SQLCODE,PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	If pPatientId="" {
+		Kill PLIST
+		If '$$new^LVBDEB("") Set pPatientId=PLIST(1)
+	} 
+	If pPatientId="" Quit $$$ERROR($$$GeneralError,"Не удалось получить ID пациента для записи в таблице SQLUser.DEB_Debtor !")		
+	If '$Data(^TDEB(pPatientId)) { ; Нет записи в User.DEBDebtor
+		Kill PLIST
+ 		Set PLIST(2)=pPatientId,PLIST=$Order(PLIST(""),-1) 
+ 		If $$insert^LVBDEB() Quit $$$ERROR($$$GeneralError,"Не удалось добавить запись в таблицу SQLUser.DEB_Debtor (SQLCODE="_$Get(SQLCODE)_") !")
+ 	}	
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="InsertEpisode">
+<Description>
+Добавление записи в  User.EPVisitNumber</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrder:TCLEx.Object.LabOrder</FormalSpec>
+<PublicList>SQLCODE,PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	If pOrder.EpisId="" Quit $$$ERROR($$$GeneralError,"Не заполнен номера заказа !")
+	If $Data(^TEPI(pOrder.EpisId)) Quit $$$ERROR($$$GeneralError,"Уже есть запись для заказа номер "_pOrder.EpisId_"!")
+	
+	Kill PLIST
+	Set PLIST(2)=pOrder.EpisId					;EPVIS_VisitNumber
+	Set PLIST(20)=pOrder.PatientId				;EPVIS_DebtorNumber_DR
+	Set PLIST(31)=pOrder.UserId					;EPVIS_UserID_DR
+	Set PLIST(65)=","_pOrder.HospitalMRN		;EPVIS_Hospital_EpisodeUR_Number
+	Set PLIST(66)=..LaboratoryCode()			; Location
+	Set PLIST(86)=0								; EPVIS_StatusPatient (0=Fully Entered)
+	
+	;
+	Set PLIST(3)=pOrder.Surname					;EPVIS_Surname
+	Set PLIST(4)=pOrder.Name	 				;EPVIS_GivenName
+	Set PLIST(99)=pOrder.FatherName 			;EPVIS_Name_1
+	Set PLIST(6)=pOrder.DOB 					;EPVIS_DateOfBirth
+	Set PLIST(26)=pOrder.Age 					;EPVIS_Age
+	Set PLIST(5)=pOrder.Sex 					;EPVIS_Species_DR
+	Set PLIST(63)=pOrder.Pregnant 				;EPVIS_Pregnant
+	Set PLIST(64)=pOrder.PregnantNumberOfWeeks 	;EPVIS_PregnantNumberOfWeeks
+	Set PLIST(98)=pOrder.ClinicalConditions 	;EPVIS_ClinicalConditions_DR
+	Set horolog=$Horolog
+	Set PLIST(10)=$Piece(horolog,",",1)			;EPVIS_DateOfEntry
+	Set PLIST(61)=$Piece(horolog,",",1)			;EPVIS_DateOfReceiving
+	Set PLIST(62)=$Piece(horolog,",",2)			;EPVIS_TimeOfReceiving
+	Set PLIST(14)=pOrder.DateOfRequest 			;EPVIS_DateOfRequest
+	Set PLIST(12)=pOrder.DateOfCollection 		;EPVIS_DateOfCollection
+	Set PLIST(13)=pOrder.TimeOfCollection 		;EPVIS_TimeOfCollection
+	Set PLIST(17)=pOrder.Priority 				;EPVIS_PriorityCode_DR
+	Set PLIST(22)=pOrder.Hospital 				;EPVIS_HospitalCode_DR
+	Set PLIST(9)=pOrder.Hospital 				;EPVIS_PaymentCode_DR
+	Set PLIST(74)=pOrder.Hospital 				;EPVIS_BillLocation_DR
+	Set PLIST(81)=pOrder.HospitalDepartment 	;EPVIS_Extra8
+	Set PLIST(15)=pOrder.Doctor 				;EPVIS_DoctorCode_DR
+
+	Set PLIST(32)=pOrder.PatientAddress1 		;EPVIS_PatientAddress1
+	Set PLIST(33)=pOrder.PatientAddress2 		;EPVIS_PatientAddress2
+	Set PLIST(82)=pOrder.InsuranceCompany 		;EPVIS_Extra9
+	Set PLIST(83)=pOrder.PolicySeries 			;EPVIS_Extra10
+	Set PLIST(114)=pOrder.PolicyNumber 			;EPVIS_Extra11
+	Set PLIST(115)=pOrder.Pasport	 			;EPVIS_Extra12
+
+	;Set PLIST(32)=pOrder.Diagnosis 			;???
+	;Set PLIST(33)=pOrder.Antibiotics 			;??
+	Set PLIST(78)=pOrder.Height 				;EPVIS_Extra5
+	Set PLIST(79)=pOrder.Weight 				;EPVIS_Extra6
+	Set PLIST(80)=pOrder.DailyDiuresis 			;EPVIS_Extra7
+	Set PLIST(116)=pOrder.MedicalComment		;EPVIS_Extra13
+	Set PLIST(43)=pOrder.MobilePhone 			;EPVIS_PhoneHome
+	Set PLIST(44)=pOrder.EMail		 			;EPVIS_PhoneWork
+	Set sqlcode=$$insert^LVBEPVIS()
+	Set sqlcode=$Piece(sqlcode,$Char(1),1)
+	If sqlcode'=0 Quit $$$ERROR($$$GeneralError,"Не удалось добавить запись в таблицу SQLUser.EP_VisitNumber (SQLCODE="_$Get(sqlcode)_") !")
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="InsertTestSets">
+<Description>
+Добавление заказанных тестов в эпизод</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode,pTestSets:%String,pSpecimens:%String,pContainers:%String</FormalSpec>
+<PublicList>SQLCODE,PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set addsupersets=..SuperSetSummaryTestSets(pTestSets)
+	If (addsupersets'="") {
+		Set pTestSets=pTestSets_","_addsupersets
+	}	
+	Set err=""
+	Set cnt=$Length(pTestSets,",")
+	For i=1:1:cnt {
+		Set testsetstr=$Piece(pTestSets,",",i)
+		Set testset=$Piece(testsetstr,":",1)
+		Set superset=$Piece(testsetstr,":",2)
+		If testset="" Continue
+		Kill PLIST
+		Set PLIST(0)=pEpisode										// ID
+		Set PLIST(2)=$Order(^TEPI(pEpisode,1,testset,""),-1)+1		// VISTS_TestSetCounter
+		Set PLIST(3)=testset										// VISTS_TestSet_DR
+		Set PLIST(32)=superset										// VISTS_SuperSet_DR
+		Set specimenstr=$Piece(pSpecimens,",",i)
+		If $Length(specimenstr,";")>1 {
+			Set specimenstr=""
+		}	
+		Set PLIST(47)=specimenstr									// VISTS_SpecimenType_DR
+		Set containerstr=$Piece(pContainers,",",i)
+		If $Length(containerstr,";")=1 {							// Если 1 контейнер
+			Set containerstr=$Piece(containerstr,":",1)				// то не нужен тип контейнера 
+			If containerstr=pEpisode Set containerstr=""			// Если номер эпизода совпалает с номером контейнера, то не нужно дополнительное значение
+		}	
+		Set PLIST(48)=containerstr									// VISTS_SpecimenNo
+		Set horolog=$Horolog
+		Set PLIST(24)=+horolog										// VISTS_DateOfCreation
+		Set PLIST(25)=$Piece(horolog,",",2)							// VISTS_TimeOfCreation
+		Set PLIST(29)=..LaboratoryCode()
+		Set PLIST(40)=..ReferralLaboratory4TestSet(testset)			// VISTS_MoveToReferralLab_DR
+		Set SQLCODE=$$insert^LVBVISTS(pEpisode)
+		Set SQLCODE=$Piece(SQLCODE,$Char(1),1)
+		If SQLCODE'=0 Set err="SQLCODE="_SQLCODE_",TestSet="_testset
+		If err'="" Quit
+	}	
+	If err'="" Quit $$$ERROR($$$GeneralError,"Не удалось добавить запись в таблицу SQLUser.EP_VisitTestSet ("_err_")!")
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="SuperSetSummaryTestSets">
+<Description>
+Список итоговых наборов тестов для супернаборов, входящих в строку назначенных наборов тестов pTestSets</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSets:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=""
+	Kill ^||tmp
+	Set cnt=$Length(pTestSets,",")
+	For i=1:1:cnt {
+		Set testsetstr=$Piece(pTestSets,",",i)
+		Set testset=$Piece(testsetstr,":",1)
+		Set superset=$Piece(testsetstr,":",2)
+		If (superset'="") {
+			Set ^||tmp(superset)=""
+		}	
+	}
+	Set (result,superset)=""
+	For  {
+		Set superset=$Order(^||tmp(superset))
+		If superset="" Quit
+		Set summaryts=##class(TCLEx.Function.SuperSet).SummaryTestSet(superset)
+		If summaryts="" Continue
+		If result'="" Set result=result_","
+		Set result=result_summaryts_":"_superset
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="ReferralLaboratory4TestSet">
+<Description>
+Получение кода лаборатии, в случае аутсорсинга набора тестов</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String</FormalSpec>
+<PublicList>SQLCODE,laboratory,pTestSet</PublicList>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set laboratory=""
+	&sql(
+		Select CTTSK_Value  Into :laboratory from SQLUser.CT_TestSetActions where CTTSK_ParRef=:pTestSet and CTTSK_FieldToSet=40
+	)
+	Quit laboratory
+]]></Implementation>
+</Method>
+
+<Method name="ValidateOrder">
+<Description>
+Проверка коррректности заполнения объекта заказа</Description>
+<FormalSpec>pOrder:TCLEx.Object.LabOrder</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="LaboratoryCode">
+<Description>
+Код лаборатории, которой передается эпизод (значение из справочника CTUserLocation, там должна быть только  запись)</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit "BION"
+]]></Implementation>
+</Method>
+</Class>
+</Export>

@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Service.OrderResult">
+<Description>
+Web-сервисы для работы с заказами</Description>
+<Super>%SOAP.WebService</Super>
+<TimeCreated>62003,48825.282383</TimeCreated>
+
+<Parameter name="NAMESPACE">
+<Description>
+Namespace. Change this to the namespace used by the web service.</Description>
+<Default>http://tempuri.org</Default>
+</Parameter>
+
+<Parameter name="SERVICENAME">
+<Default>TrakCareLabOrder</Default>
+</Parameter>
+
+<Method name="Export">
+<Description>
+Импорт объекта заказа в TrakCareLab 
+pOrder = номер заказа, от которого идет $Order при pType=1
+или
+ pOrder = конкретный номер заказа $Order при pType=2</Description>
+<FormalSpec>pOrder:%String,pType:%Integer</FormalSpec>
+<ReturnType>TCLEx.Object.OrderResult</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	If $Get(pType)="" Set pType=1
+	Set result=##class(TCLEx.Object.OrderResult).%New()
+	Set order=""
+	If pType=1 {
+		Set order=$Order(^TCLEx("PDFResult",pOrder),1,vals)
+	}
+	If (pType=2)&&($Data(^TCLEx("PDFResult",pOrder))) {
+		Set order=pOrder
+	}
+	If order'="" {
+		Lock +^TCLEx("PDFResult",order)
+		Set result.OrderNumber=order
+		Set result.UpdateDateTime=$ListGet(vals,1)
+		Set fullfilename=$ListGet(vals,2)
+		Set filename=##class(%File).GetFilename(fullfilename)
+		Set result.PDFFileName=filename
+		Set typestr=$Piece(filename,")",$Length(filename,")")-1)
+		Set typestr=$Piece(typestr,"-",$Length(typestr,"-"))
+		Set result.IsComplete=(typestr["Окончательный")
+		Set filestream=##class(%Library.FileBinaryStream).%New()
+		Set filestream.Filename=fullfilename
+		Set result.PDFResult=##class(%FileBinaryStream).%New()
+		Do result.PDFResult.CopyFrom(filestream)
+		Lock -^TCLEx("PDFResult",order)
+		// 
+		If $Data(^TCLEx("TXTResult",order)) {
+			Lock +^TCLEx("TXTResult",order)
+			Set fullfilename=$ListGet($Get(^TCLEx("TXTResult",order)),2)
+			Set filename=##class(%File).GetFilename(fullfilename)
+			Set result.TXTFileName=filename
+			Set typestr=$Piece(filename,")",$Length(filename,")")-1)
+			Set typestr=$Piece(typestr,"-",$Length(typestr,"-"))
+			Set filestream=##class(%Library.FileBinaryStream).%New()
+			Set filestream.Filename=fullfilename
+			Set result.TXTResult=##class(%FileBinaryStream).%New()
+			Do result.TXTResult.CopyFrom(filestream)
+			Lock -^TCLEx("TXTResult",order)
+	
+		}	
+
+		Do ..InsertTestSetStatuses(result)
+
+	}	
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="InsertTestSetStatuses">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pResultObj:TCLEx.Object.OrderResult</FormalSpec>
+<Implementation><![CDATA[
+	Do ##class(TCLEx.Function.LabOrder).CreateOrderEpisodesGlb(pResultObj.OrderNumber,$Name(^||Episodes))
+	Set epis=""
+	For  {
+		Set epis=$Order(^||Episodes(epis))
+		If epis="" Quit
+		
+		Set episobj=##class(User.EPVisitNumber).%OpenId(epis)
+		If '$IsObject(episobj) Continue
+		Set key="",cnt=0
+		For  {
+			Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+			If key="" Quit
+			If '$IsObject(testsetobj) Continue
+			Set status=2						// Передан в ЛИС
+			If ##class(TCLEx.Function.TestSet).IsCanceled(testsetobj) {
+				Set status=3					//Отменен
+			} ElseIf ##class(TCLEx.Function.TestSet).IsAuthorised(testsetobj) {
+				Set status=4					//Авторизован
+			}
+			Set statusobj=##class(TCLEx.Object.TestSetStatus).%New()
+			Set statusobj.Episode=epis
+			If $IsObject(testsetobj.VISTSTestSetDR) Set statusobj.TestSet=testsetobj.VISTSTestSetDR.%Id()
+			If $IsObject(testsetobj.VISTSSpecimenTypeDR) Set statusobj.Specimen=testsetobj.VISTSSpecimenTypeDR.%Id()
+			Set statusobj.Status=status
+			Do pResultObj.TestSetStatuses.Insert(statusobj)	
+		}
+	}
+]]></Implementation>
+</Method>
+
+<Method name="RemoveOrderFromResultsQueue">
+<Description>
+Удалить из очереди результатов (^TCLEx("PDFResult") заказа pOrder после передачи результата в WebER
+Смотрим дату время в текущий момент и в момент передачи (если несовпадают, то было обновление результата. Поэтому оставляем)</Description>
+<FormalSpec>pOrder:%String,pUpdateDateTime:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	Lock +^TCLEx("PDFResult",pOrder)
+	Set vals=$Get(^TCLEx("PDFResult",pOrder))
+	If $ListGet(vals,1)=pUpdateDateTime {	// Не было изменений файла со времени его передачи в WebER
+		Kill ^TCLEx("PDFResult",pOrder)		// Чистим очередь
+		Set filename= $ListGet(vals,2)
+		If ##class(%File).Exists(filename) {
+			Do ##class(%File).Delete(filename)
+		}	
+	}	
+	Lock -^TCLEx("PDFResult",pOrder)
+	//
+	If $Data(^TCLEx("TXTResult",pOrder)) {
+		Lock +^TCLEx("TXTResult",pOrder)
+		Set vals=$Get(^TCLEx("TXTResult",pOrder))
+		If $ListGet(vals,1)=pUpdateDateTime {	// Не было изменений файла со времени его передачи в WebER
+			Kill ^TCLEx("TXTResult",pOrder)		// Чистим очередь
+			Set filename= $ListGet(vals,2)
+			If ##class(%File).Exists(filename) {
+				Do ##class(%File).Delete(filename)
+			}	
+		}	
+	
+	}	
+	Quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+</Export>

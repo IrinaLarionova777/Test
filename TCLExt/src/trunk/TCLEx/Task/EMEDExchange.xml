@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Task.EMEDExchange">
+<Super>%SYS.Task.Definition</Super>
+<TimeCreated>62552,44900.968879</TimeCreated>
+
+<Method name="OnTask">
+<Description>
+Callback метод класса задачи</Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	If '$Data(^$Lock("^EMED.Task")) {
+		Job ##class(TCLEx.Task.EMEDExchange).DoTask()
+	}	
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="DoTask">
+<Description><![CDATA[
+Собственно выполняемый код с заданной периоличностью тайм-аута
+Нужно для работы с тайм-аутами < 1 минуты]]></Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	// Иногда возникают ошибки при доступе к MS SQL.
+	// Чтобы задание не тормозилось вся обработка в Try {} Catch {}
+	// Ошибку логгируем в файл
+	Lock +^EMED.Task
+	Try {
+		//
+		Set timeout=10,deletedate=+$Horolog
+		//
+		Do ##class(TCLEx.Function.EMED).DeleteOldOrders() 			// Удаление старых заявок при заруске процесса
+		For  {
+			Set starttime=$ZHorolog
+			Do ..ProcessRequests()
+			Do ##class(TCLEx.Function.EMED).ProcessUpdatedStatuses()
+
+			If (+$Horolog)'=deletedate {							// Удаление заявок при наступлении нового дня
+				Do ##class(TCLEx.Function.EMED).DeleteOldOrders()	
+				Set deletedate=+$Horolog
+			}	
+		
+			Set deltatime=($ZHorolog-starttime)\1
+			If deltatime<timeout {
+				Hang (timeout-deltatime)
+			}	
+			If $Data(^EMED.EndTask) {
+				Kill ^EMED.EndTask
+				Quit
+			}	
+		}	
+	} Catch {
+		Set errstr=$ECODE_","_$ZERROR
+		Do LogMessage^KSUTIL1($ZUtil(12)_"LIS\","Произошла ошибка в классе TCLEx.Task.EMCImportOrder в области "_$ZUtil(5),3,1)
+		Do LogMessage^KSUTIL1($ZUtil(12)_"LIS\",errstr,3,1)
+	}	
+	Lock -^EMED.Task
+]]></Implementation>
+</Method>
+
+<Method name="StopTask">
+<Description>
+Останов задачи</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	If $Data(^$Lock("^EMED.Task")) {
+		Set id=##Class(%SYS.Task).FindId("MIS-LIS")
+		If id'="" {
+			Set ok=##Class(%SYS.Task).Suspend(id)
+			If ok {
+				Write !,"Приостановлено задание MIS-LIS менеджера задач"
+			} Else {
+				Do $System.OBJ.DisplayError(ok)
+			}		
+		}	
+		Set ^EMED.EndTask=1
+		For  {
+			If '$Data(^EMED.EndTask) Quit
+			Hang 1
+		}
+		Write !,"Задача остановлена" 	
+	} Else {
+		Write !,"Нет активных задач" 	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="OnTask2">
+<Description>
+Callback метод класса задачи</Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	// Иногда возникают ошибки при доступе к MS SQL.
+	// Чтобы задание не тормозилось вся обработка в Try {} Catch {}
+	// Всегда возвращаем $$$OK
+	// А ошибку логгируем в файл
+	Set result=$$$OK
+	Try
+	{
+		Do ..ProcessRequests()
+		Do ##class(TCLEx.Function.EMED).ProcessUpdatedStatuses()
+	} Catch {
+		Set errstr=$ECODE_","_$ZERROR
+		Do LogMessage^KSUTIL1($ZUtil(12)_"LIS\","Произошла ошибка в классе TCLEx.Task.EMCImportOrder в области "_$ZUtil(5),3,1)
+		Do LogMessage^KSUTIL1($ZUtil(12)_"LIS\",errstr,3,1)
+	}	
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ProcessRequests">
+<Description>
+Обработка поступивших запросов в талицу dbo.emc_interface_labo_request</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	Kill ^||Task.AddOrders,^||Task.DeleteOrders
+	Do ##class(dbo.TCLRequest).CreateRequestBuffers($Name(^||Task.AddOrders),$Name(^||Task.DeleteOrders))
+	Do ##class(TCLEx.Function.EMED).AddOrders($Name(^||Task.AddOrders)) 				// Добавляем заказы
+	Do ##class(TCLEx.Function.EMED).DeleteOrders($Name(^||Task.DeleteOrders))			// Удаляем заказы
+]]></Implementation>
+</Method>
+
+<Method name="CreateTask">
+<Description>
+Создание объекта задачи для менеджера задач</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	Set obj=""
+	Set id=##Class(%SYS.Task).FindId("MIS-LIS")
+	If id'="" Set obj=##Class(%SYS.Task).%OpenId(id)
+	If '$IsObject(obj) {
+		Set obj=##Class(%SYS.Task).%New()
+		Set obj.Name="MIS-LIS"
+		Set obj.Description="Передача заказов из МИС в ЛИС"
+	}
+
+	Set obj.TaskClass=..%ClassName(1)
+	Set obj.NameSpace=$ZUtil(5)
+	Set obj.DailyFrequency=obj.DailyFrequencyDisplayToLogical("Several")
+	Set obj.DailyFrequencyTime=obj.DailyFrequencyTimeDisplayToLogical("Minutes")
+	Set obj.DailyIncrement=5
+	Set obj.DailyStartTime=$ZTH("00:00:00")
+	Set obj.DailyEndTime=$ZTH("23:59:00")
+
+	Set ok=obj.%Save()
+	If ok {
+		Write !,"Создан объект %SYS.Task с ID=",obj.%Id()
+	} Else {
+		Do $system.OBJ.DisplayError(ok)
+	}
+]]></Implementation>
+</Method>
+</Class>
+</Export>

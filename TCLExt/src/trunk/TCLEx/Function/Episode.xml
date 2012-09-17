@@ -1,0 +1,576 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Function.Episode">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62031,40378.510786</TimeCreated>
+
+<Method name="IsCito">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpis:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	if $piece($get(^TEPI(pEpis)),"\",15)="U" Quit 1
+	Quit 0
+	;Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	;If '$IsObject(episobj) Quit 0
+	;If '$IsObject(episobj.EPVISPriorityCodeDR) Quit 0
+	;If episobj.EPVISPriorityCodeDR.%Id()="U" Quit 1
+ 	;Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="IsComplete">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String]]></FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit 0
+	Set totalcnt=..TotalTestSetNumber(pEpis)
+	Set printablecnt=..CompletedTestSetNumber(pEpis,.pTestSets)
+	If totalcnt=printablecnt Quit 1
+	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="TotalTestSetNumber">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpis:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit 0
+	Set key="",cnt=0
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		Set cnt=cnt+1
+	}
+	Quit cnt
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/* Раньше использовался для определения является ли набор тестов завершенным. 
+Корректнее испльзовать CompletedTestSetNumber - отмененные тесты также уже завершенные
+/// Число печатаемых наборов тестов (авторизованных или отмененных с печатаемой причиной отмены) из списка  pTestSets эпизода pEpis
+ClassMethod PrintableTestSetNumber(pEpis As %String, ByRef pTestSets As %String) As %Integer
+{
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit 0
+	Set cnt=0
+	Set key=""
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		//
+		If '##class(TCLEx.Function.TestSet).IsPrintable(testsetobj) Continue ; Пропускаем неавторизованные или отмененные TestSet-ы
+		Set testsetid=testsetobj.%Id()
+		If testsetid="" Continue
+		//
+		Set superset=""
+		If $IsObject(testsetobj.VISTSSuperSetDR) Set superset=testsetobj.VISTSSuperSetDR.%Id()
+		If (superset'="")&&('##class(TCLEx.Function.SuperSet).IsComplete(pEpis,superset)) Continue
+		//
+		If $Data(pTestSets) {
+			If (superset'="")&&($Data(pTestSets(superset))) {
+				Set cnt=cnt+1
+			}	
+			If (superset="")&&($Data(pTestSets(testsetid))) {
+				Set cnt=cnt+1
+			}	
+		} Else {	
+			Set cnt=cnt+1
+		}
+	}	
+	Quit cnt
+}
+*/
+]]></Content>
+</UDLText>
+
+<Method name="CompletedTestSetNumber">
+<Description>
+Число печатаемых наборов тестов (авторизованных или отмененных с печатаемой причиной отмены) из списка  pTestSets эпизода pEpis</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String]]></FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit 0
+	Set cnt=0
+	Set key=""
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		//
+		If '##class(TCLEx.Function.TestSet).IsCompleted(testsetobj) Continue ; Пропускаем неавторизованные или отмененные TestSet-ы
+		Set testsetid=testsetobj.%Id()
+		If testsetid="" Continue
+		//
+		Set superset=testsetobj.VISTSSuperSetDRGetObjectId()
+		If (superset'="")&&('##class(TCLEx.Function.SuperSet).IsComplete(pEpis,superset)) Continue
+		//
+		If $Data(pTestSets) {
+			If (superset'="")&&($Data(pTestSets(superset))) {
+				Set cnt=cnt+1
+			}	
+			If (superset="")&&($Data(pTestSets(testsetid))) {
+				Set cnt=cnt+1
+			}	
+		} Else {	
+			Set cnt=cnt+1
+		}
+	}	
+	Quit cnt
+]]></Implementation>
+</Method>
+
+<Method name="PCLResult">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	
+	Do ##class(TCLEx.Function.TestSet).Departments(pEpis,.pTestSets)
+	; Составляем буфер результатов по отделам эпизода с разбивкой по страницам
+	Kill ^||episode
+	Set depcode=""
+	For  {
+		Set depcode=$Order(^||deptestsets(depcode))
+		If depcode="" Quit
+		// ***Set rowscnt=$$RowCount^PRTDR0RU01(depcode) ; Строк на страницу
+		Set rowscnt=$$RowCount^PRTDR0RU02(depcode) ; Строк на страницу
+		Set testsetid="",row=1,page=1,firstonpage=1
+		For  {
+			Set testsetid=$Order(^||deptestsets(depcode,testsetid))
+			If testsetid="" Quit
+			;
+			Do ##class(TCLEx.Function.TestSet).PCLResult(testsetid,rowscnt,firstonpage)
+			If '$Data(^||testset) Continue
+			Do ..AddTestSetResult(depcode,rowscnt,.page,.row,.firstonpage)
+			;
+			If (row<rowscnt)&&(row>1)&&($Order(^||deptestsets(depcode,testsetid))'="") {	; Дополнительный отступ между TestSet-ами на странице
+				Set ^||episode(depcode,page,row,1)="!"
+				Set row=row+1
+			}	
+		}	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="PCLTotalPages">
+<Description>
+Число страниц для PCL-отчета в буфере pPCLGlb</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPCLGlb:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Set result=0
+	Set depcode=""
+	For  {
+		Set depcode=$Order(@pPCLGlb@(depcode))
+		If depcode="" Quit
+		Set page=""
+		For  {
+			Set page=$Order(@pPCLGlb@(depcode,page))
+			If page="" Quit
+			Set result=result+1
+		}	
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="PCLReport2Glb">
+<Description>
+Формирование глобала PCL отчета для эпизода pEpis эпизодов pTestSets, pPDF=1 для вывода в PDF, pPDF=0 для вывода на печать
+Результаты записать в глобал pPCLRepGlb</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pPDF:%Boolean,pPCLRepGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	Kill @pPCLRepGlb
+	Kill ^||episode
+	Do ..PCLResult(pEpis,.pTestSets)
+	Set totalpages=..PCLTotalPages($Name(^||episode))
+	If '$Data(^||episode) Quit
+	Set depcode="",pagenum=0,i1=0
+	For  {
+		Set depcode=$Order(^||episode(depcode))
+		If depcode="" Quit
+		Set page=""
+		For  {
+			Set page=$Order(^||episode(depcode,page))
+			If page="" Quit
+			Set pagenum=pagenum+1
+			Kill ^||Episode.Header
+			Do Header^PRTDR0RU02(pEpis,.pTestSets,depcode,pPDF,$Name(^||Episode.Header))
+			If '$Data(@pPCLRepGlb@("HDR")) {
+				Set i2=""
+				For  {
+					Set i2=$Order(^||Episode.Header("HDR",i2),1,val)
+					If i2="" Quit
+					Set @pPCLRepGlb@("HDR",i2)=val
+				}	
+			}
+			Set i2=""
+			For  {
+				Set i2=$Order(^||Episode.Header("PRT",i2),1,val)
+				If i2="" Quit
+				Set i1=i1+1
+				If '$Data(@pPCLRepGlb@("Pages4PRT",pagenum)) Set @pPCLRepGlb@("Pages4PRT",pagenum)=i1
+				Set @pPCLRepGlb@("PRT",i1)=val
+			}
+			Set row=""
+			For  {
+				Set row=$Order(^||episode(depcode,page,row))
+				If row="" Quit
+				Set i2=""
+				For  {
+					Set i2=$Order(^||episode(depcode,page,row,i2),1,val)
+					If i2="" Quit
+					Set i1=i1+1
+					If '$Data(@pPCLRepGlb@("Pages4PRT",pagenum)) Set @pPCLRepGlb@("Pages4PRT",pagenum)=i1
+					Set @pPCLRepGlb@("PRT",i1)=val
+				}
+			}
+			Kill ^||Episode.Footer
+			Do Footer^PRTDR0RU02(pEpis,.pTestSets,depcode,pagenum,totalpages,$Name(^||Episode.Footer))
+			Set i2=""
+			For  {
+				Set i2=$Order(^||Episode.Footer("PRT",i2),1,val)
+				If i2="" Quit
+				Set i1=i1+1
+				If '$Data(@pPCLRepGlb@("Pages4PRT",pagenum)) Set @pPCLRepGlb@("Pages4PRT",pagenum)=i1
+				Set @pPCLRepGlb@("PRT",i1)=val
+				
+			}
+						
+		}
+
+	}
+]]></Implementation>
+</Method>
+
+<Method name="NextPage">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pPage:%Integer,&pRow:%Integer,&pFirstOnPage:%Boolean]]></FormalSpec>
+<Implementation><![CDATA[
+	Set pPage=pPage+1
+	Set pRow=1
+	Set pFirstOnPage=1
+]]></Implementation>
+</Method>
+
+<Method name="AddTestSetResult">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pDepDode:%String,pMaxRowCount:%Integer,&pPage:%Integer,&pRow:%Integer,&pFirstOnPage:%Boolean]]></FormalSpec>
+<Implementation><![CDATA[
+	Set testsetrows=##class(TCLEx.Function.TestSet).TotalRowCount($NA(^||testset))
+	If ((pRow-1+testsetrows)>pMaxRowCount)&&('((pPage=1)&&(pRow=1))) {	; Переход на следующую страницу, если результаты TestSet-а не влазиют на текущую страницу
+		Do ..NextPage(.pPage,.pRow,.pFirstOnPage)
+	}	
+	If pFirstOnPage { 
+		Set pFirstOnPage=0
+	}	
+	Set j=""
+	For  {
+		Set j=$Order(^||testset(j))
+		If j="" Quit
+		If ($Get(^||testset(j,1))=$Char(12)) {						; Переход на следующую страницу, если встретили символ перевода страницы
+			Do ..NextPage(.pPage,.pRow,.pFirstOnPage)
+			Continue
+		}	
+		Set pFirstOnPage=0
+		Merge ^||episode(pDepDode,pPage,pRow)=^||testset(j)
+		Set pRow=pRow+1
+		If (pRow#(pMaxRowCount+1)=0) {								; Переход на следующую страницу, если данные набора тестов не влазят на одну страницу
+			Do ..NextPage(.pPage,.pRow,.pFirstOnPage)
+		}	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="PaymentDate">
+<Description>
+Дата платежа для выставления в счет
+Возвращаем пусто, если в эризоде есть незавершенные наборы тестов
+Завершенными считаются авторизованные и отмененные наборы тестов
+Для завершенных наборов тестов ищем максимальную дату 
+либо авторизации, либо ввода причины отмены
+Также пропускаются наборы тестов с VISTSSupressBilling="Y"
+Если есть неавторизованные, то возвращаем пусто  </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpis:%String</FormalSpec>
+<ReturnType>%Date</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit ""
+	Set key="",doneepis=1,maxdate=""
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		Set donetestset=0 			// Набор тестов выполнен, если он авторизован или отменен// Набор тестов выполнен, если он авторизован или отменен
+		Set billable=0				// Набор тестов попадает в счет, если авторизован или отменен с причиной отмены у которой CTRBillable="Y"		 
+		Set testsetdate=""
+		If ##class(TCLEx.Function.TestSet).IsCanceled2(testsetobj) {		
+			Set donetestset=1
+			If ($IsObject(testsetobj.VISTSReasonDR))&&(testsetobj.VISTSReasonDR.CTRBillable="Y") {
+				Set billable=1
+				Set testsetdate=testsetobj.VISTSDateOfReason
+			}	
+		}
+		If ##class(TCLEx.Function.TestSet).IsAuthorised(testsetobj) {
+			Set donetestset=1
+			Set billable=1
+			Set testsetdate=testsetobj.VISTSDateOfAuthorisation
+		}
+		If 'donetestset {			// Если какой-то из наборов не выполнен, то эпизод в целом не выполнен
+			Set doneepis=0
+			Quit
+		}	
+		If (billable)&&(testsetobj.VISTSSupressBilling'="Y") {	// Пропускаем наборы с VISTSSupressBilling="Y"
+			If testsetdate>maxdate Set maxdate=testsetdate
+		}	
+	}
+	If 'doneepis Quit ""
+	Quit maxdate
+]]></Implementation>
+</Method>
+
+<Method name="HospitalId4Episode">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisId)
+	If '$IsObject(episobj) Quit ""
+	Set hospobj=episobj.EPVISHospitalCodeDR
+	If '$IsObject(hospobj) Quit ""
+	Quit hospobj.%Id()
+]]></Implementation>
+</Method>
+
+<Method name="MakeResultResport">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportType:%String,pHospital:%String</FormalSpec>
+<PublicList>PLIST</PublicList>
+<Implementation><![CDATA[
+	If pReportType'="C" Quit
+	Kill ^||Episode.Prn
+	Set epis=""
+	For  {
+		Set epis=$Order(^TRPT(pReportType,pHospital,"H",pHospital,epis))
+		If epis="" Quit
+		Set testset=""
+		For  {
+			Set testset=$Order(^TRPT(pReportType,pHospital,"H",pHospital,epis,testset))
+			If testset="" Quit
+			Set testcnt=""
+			For  {
+				Set testcnt=$Order(^TRPT(pReportType,pHospital,"H",pHospital,epis,testset,testcnt))
+				If testcnt="" Quit
+				Set testsetid=epis_"||"_testset_"||"_testcnt
+				If $$printable^LVBCTTS(testset,testsetid) {
+					Set ^||Episode.Prn(epis,testsetid)=""
+					Kill ^TRPT(pReportType,pHospital,"H",pHospital,epis,testset,testcnt)
+				}		
+			}	
+		}	
+		Kill ^TRPT(pReportType,pHospital,"H",pHospital,epis)
+	}
+
+	Kill ^||Episode.PCL
+	Set epis="",episcnt=0
+	For  {
+		Set epis=$Order(^||Episode.Prn(epis))
+		If epis="" Quit
+		Kill ^||episode
+		Kill testsets
+		Set testsetid=""
+		For  {
+			Set testsetid=$Order(^||Episode.Prn(epis,testsetid))
+			If testsetid="" Quit
+			Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
+			If '$IsObject(testsetobj) Quit
+			Set superset=""
+			If $IsObject(testsetobj.VISTSSuperSetDR) Set superset=testsetobj.VISTSSuperSetDR.%Id()
+			If superset'="" {
+				Set testsets(superset)=""
+			} Else {
+				Set testsets(testsetid)=""
+			}		
+		}	
+		Do ..PCLReport2Glb(epis,.testsets,0,$Name(^||Episode.PCL(epis)))
+		If $Data(^||Episode.PCL(epis)) Set episcnt=episcnt+1
+	}
+	If '$Data(^||Episode.PCL) Quit
+	Kill ^||Episode.PCLReport
+	Set epis="",i1=""
+	For  {
+		Set epis=$Order(^||Episode.PCL(epis))
+		If epis="" Quit
+		If '$Data(^||Episode.PCLReport("HDR")) {
+			Merge ^||Episode.PCLReport("HDR")=^||Episode.PCL(epis,"HDR")
+		}
+
+		Set i2=""
+		For  {
+			Set i2=$Order(^||Episode.PCL(epis,"PRT",i2),1,val)
+			If i2="" Quit
+			If val="" Continue
+			Set i1=i1+1
+			Set ^||Episode.PCLReport("PRT",i1)=val
+		}
+		If $Order(^||Episode.PCL(epis))'="" { 								// Page break if not last episode
+			Set i1=i1+1
+			Set ^||Episode.PCLReport("PRT",i1)="#"
+		}		
+	}
+	//
+	Set epis=""
+	For  {
+		Set epis=$Order(^||Episode.Prn(epis))
+		If epis="" Quit
+		Set testsetid=""
+		For  {
+			Set testsetid=$Order(^||Episode.Prn(epis,testsetid))
+			If testsetid="" Quit
+			Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
+			If $IsObject(testsetobj)&&(testsetobj.VISTSPrinted'="Y") {
+				Set testsetobj.VISTSPrinted="Y"
+				Set horolog=$Horolog
+				Set testsetobj.VISTSDateOfLastChange=$Piece(horolog,",",1)
+				Set testsetobj.VISTSTimeOfLastChange=$Piece(horolog,",",2)
+				Do testsetobj.%Save()
+			}	
+		}	
+	}
+	//	
+	Set repobj=##class(User.PRReport).%New()
+	Set repid=$Get(^PR)
+	If (repid="")||($Data(^PR(repid))) {
+		Set repid=$Increment(^PR)
+	}
+	Set repobj.PRPRReportID=repid
+	Set repobj.PRPRReportDR=##class(User.SSReportGeneric).%OpenId("DRP")
+	Set repobj.PRPRContentType="I"
+	Set hor=$Horolog
+	Set repobj.PRPRCreatedDate=$Piece(hor,",",1)
+	Set repobj.PRPRCreatedTime=$Piece(hor,",",2)
+	Set repobj.PRPRParameters="C\"_pHospital
+	Set repobj.PRPRREPORTPARAMETERS="C-"_pHospital_"-"_episcnt
+	Set repobj.PRPRStatus="R"
+	Set ok=repobj.%Save()
+	If 'ok {
+		;Do $system.OBJ.DisplayError(ok)
+		Quit
+	}	
+	//
+	Merge ^PR(repid,"HDR")=^||Episode.PCLReport("HDR")
+	Merge ^PR(repid,"PRT")=^||Episode.PCLReport("PRT")
+	//
+	Kill PLIST
+	Set PLIST(3)="MAIN" 
+	Set PLIST(4)=1 
+	Set PLIST(5)="R" 
+	Set PLIST(6)=$Piece(hor,",",1) 
+	Set PLIST(7)=$Piece(hor,",",2)
+	Set sqlcode=$$insert^LVBPRPRD(repobj.%Id())
+]]></Implementation>
+</Method>
+
+<Method name="GetMaxAuthorizationTime">
+<Description>
+Получить максимальное время авторизации наборов тестов эпизода</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpis:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit ""
+	Set key="",result=""
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		If '##class(TCLEx.Function.TestSet).IsAuthorised(testsetobj) {
+			Set ok=0
+			Quit
+		}
+		Set date=testsetobj.VISTSDateOfAuthorisation
+		Set time=testsetobj.VISTSTimeOfAuthorisation
+		Set hor=date_","_(time*60)
+		If hor]]result Set result=hor
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="PatientEMail4Episode">
+<Description>
+E-Mail пациента для эпизода pEpisId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisId)
+	If '$IsObject(episobj) Quit ""
+	Quit episobj.EPVISPhoneWork
+]]></Implementation>
+</Method>
+
+<Method name="DoctorName4Episode">
+<Description>
+Фамилия врача для эпизода pEpisId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisId)
+	If '$IsObject(episobj) Quit ""
+	Set doctobj=episobj.EPVISDoctorCodeDR
+	If '$IsObject(doctobj) Quit ""
+	Set name=doctobj.CTDRSurname
+	If name="-" Quit ""
+	Quit name
+]]></Implementation>
+</Method>
+
+<Method name="PatientFullName4Episode">
+<Description>
+Фамилия врача для эпизода pEpisId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisId)
+	If '$IsObject(episobj) Quit ""
+	Quit $$FullName^KSPCLUtils(episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1)
+]]></Implementation>
+</Method>
+
+<Method name="XMLResult2File">
+<Description>
+Формирование XML файла pFileName с результатами по эпизоду pEpis
+pTestSets - список наборов тестов по которым выгружать данные</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pFileName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set xmlobj=##class(TCLEx.XML.Episode).ResultObject(pEpis,.pTestSets)
+	If '$IsObject(xmlobj) Quit $$$ERROR($$$GeneralError,"Не удалось создать XML объект с данными по эпизоду "_pEpis_" !")
+	Set writer=##class(%XML.Writer).%New()
+	Set writer.Indent=1
+	Set ok=writer.OutputToFile(pFileName)
+	If 'ok Quit ok
+	Set ok=writer.RootObject(xmlobj)
+	Quit ok
+]]></Implementation>
+</Method>
+</Class>
+</Export>

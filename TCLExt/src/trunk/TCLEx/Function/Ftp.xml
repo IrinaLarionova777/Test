@@ -1,0 +1,498 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Function.Ftp">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62509,42538.874594</TimeCreated>
+
+<Method name="OpenFtp">
+<Description>
+open ftp connect
+input: server, user, password, port, mode
+mode=1 - active, mode=0 - passive (by default)
+ftp - handle ftp session (%Net.FtpSession)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>server:%String,user:%String,password:%String,port:%Integer=21,mode:%Integer=0,*ftp:%Net.FtpSession</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ if ($g(server)="")!($g(user)="")!($g(password)="") q "0"_r_"Не определены параметры для ftp соединения"
+ if $g(port)="" s port=21
+ if $g(mode)="" s mode=0
+ ;
+ s str="ftp-соединение ftp://"_server_"/"_user_" (mode="_$s(mode=1:"active",1:"passive")_")"
+ ;
+ ;open ftp-connect
+ s ftp=##class(%Net.FtpSession).%New()
+ s ftp.Timeout=30
+ if mode=0 s ftp.UsePASV=1
+ else  s ftp.UsePASV=0
+ If 'ftp.Connect(server,user,password,port) q 0_r_"Не удалось установить "_str
+ ;
+ q 1_r_"Установлено "_str  
+ ;
+]]></Implementation>
+</Method>
+
+<Method name="OpenFtpDir">
+<Description>
+open ftp connect and move to dir
+input: server, user, password, port, mode, dir, flCreateDir	
+mode=1 - active, mode=0 - passive (by default)
+flCreateDir=1 (by default) - директории в dir создаются, flCreateDir=0 - дир-и не создаются , возвращается ошибка</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>server:%String,user:%String,password:%String,port:%Integer=21,mode:%Integer=0,dir:%String,flCreateDir:%Integer=1,*ftp:%Net.FtpSession</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ if ($g(server)="")!($g(user)="")!($g(password)="") q "0"_$c(0)_"Íåâåðíûå ïàðàìåòðû"
+ if $g(port)="" s port=21
+ if $g(mode)="" s mode=0
+ if $g(flCreateDir)="" s flCreateDir=1
+ s dir=$tr($g(dir),"/","\") if dir'="" if dir'["\" s dir=dir_"\"
+ ;
+ s r=$c(0)
+ s str="ftp-соединение ftp://"_server_"/"_user s:dir'="" str=str_"/"_dir s str=str_" mode="_$s(mode=1:"active",1:"passive")
+ ;
+ s ret=..OpenFtp(server,user,password,port,mode,.ftp) if +ret=0 q "0"_r_$p(ret,r,2) 
+ ;
+ ;move id dir
+ i $g(dir)'="" s flExit=0 d  i flExit=1 d ftp.Logout() q 0_r_"Не удалось перейти в директорию "_dir
+ .f i=1:1:$l(dir,"\") d  i flExit=1 q
+ ..s pp=$p(dir,"\",i) i pp="" q
+ ..if ftp.SetDirectory(pp) q   
+ ..if flCreateDir=0 s flExit=1 q
+ ..i 'ftp.MakeDirectory(.pp) s flExit=1 q
+ ..i 'ftp.SetDirectory(pp) s flExit=1 
+ ;
+ q 1_r_"Установлено "_str  
+ ;
+]]></Implementation>
+</Method>
+
+<Method name="CloseFtp">
+<Description>
+close ftp connect</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&ftp:%Net.FtpSession]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ if $d(ftp) if $IsObject(ftp) if 'ftp.Logout() q 0_r_"Не удалось закрыть ftp-соединение"
+ q 1
+]]></Implementation>
+</Method>
+
+<Method name="CopyFileToFtp">
+<Description>
+Copy path_file to ftp (ftp - handle ftp session (%Net.FtpSession))</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&ftp:%Net.FtpSession,file:%String,path:%String,flagCrypto:%Integer=0]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ if ($g(file)="")!($g(path)="")!($IsObject(ftp)'=1) q 0_r_"Не определены параметры для ftp соединения"
+ s path=$tr($g(path),"/","\") if $e(path,$l(path))'="\" s path=path_"\"
+ ;
+ ;stream - file
+ s stream=##class(%FileBinaryStream).%New()
+ set stream.Filename=path_file
+ if stream.Size=0 q 0_r_"Не удалось открыть файл "_path_file
+ ;
+ ;turn on binary mode
+ If 'ftp.Binary() q 0_r_"Не удалось включить бинарную моду" 
+ ;
+ ;sream -> temporary file ftp
+ s fileTmp=file_".temp"
+ ;if 'ftp.Store(fileTmp,$s(okCrypto=1:streamCrypto,1:stream)) q 0_r_"Не удалось скопировать файл "_path_fileTmp_" на ftp"
+ if 'ftp.Store(fileTmp,stream) q 0_r_"Не удалось скопировать файл "_path_fileTmp_" на ftp"
+ ;rename temporary file 
+ if 'ftp.Rename(fileTmp,file) q 0_r_"Не удалось переименовать временный файл "_path_fileTmp_"."
+ ;
+ q 1_r_"Скопирован файл "_path_file_" на ftp."
+]]></Implementation>
+</Method>
+
+<Method name="CopyFileToFtpWrap">
+<Description>
+Copy path_file to ftp (ftp is not opened)
+input: 
+server, user, password, port, mode, dir, flCreateDir	
+mode=1 - active, mode=0 - passive (by default)
+flCreateDir=1 (by default) - директории в dir создаются, flCreateDir=0 - дир-и не создаются , возвращается ошибка
+path_file - file for copy to ftp</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>server:%String,user:%String,password:%String,port:%Integer=21,mode:%Integer=0,dir:%String,file:%String,path:%String,flagCrypto:%Integer=0</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ s ret=..OpenFtpDir(server,user,password,,mode,dir,,.ftp) if +ret=0 q "0"_r_$p(ret,r,2)  
+ s flagCryptoFtp=0 ;if $g(flagCrypto)=1 s flagCryptoFtp=..getFlagCrypto(server)
+ s ret=..CopyFileToFtp(.ftp,file,path,flagCryptoFtp)
+ d ..CloseFtp(.ftp)
+ q ret
+]]></Implementation>
+</Method>
+
+<Method name="DelFileFromFtp">
+<Description>
+delete path_file from ftp</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&ftp:%Net.FtpSession,file:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ if ($g(file)="") q 0_r_"Не определен файл для удаления"
+ if ($IsObject(ftp)'=1) q 0_r_"Не открыто ftp-соединение при удалении файла "_file
+ ;
+ ;delete file ftp
+ If 'ftp.Delete(file) q 0_r_"Не удается удалить файл "_file_" на ftp."
+ ;
+ q 1
+]]></Implementation>
+</Method>
+
+<Method name="DeleteOldProt">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>node:%String,mp:%String,days:%Integer</FormalSpec>
+<Implementation><![CDATA[
+ if $g(node)=""!($g(mp)="") quit	
+ if $g(days)="" s days=30
+ s mpp=$$LastData^data($p(mp,",",1),days)_","_$p(mp,",",2)
+ f  s mpp=$o(^Protokol(node,mpp),-1) q:mpp=""  k ^Protokol(node,mpp)
+ quit
+]]></Implementation>
+</Method>
+
+<Method name="GetDateFile">
+<Description>
+get date of file
+ftp: server, user, password, port, mode (mode=1 - active, mode=0 - passive (by default)), dir
+file - file, to which recognize date </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>server:%String,user:%String,password:%String,port:%Integer=21,mode:%Integer=0,dir:%String,file:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ if $g(file)="" q 0_r_"Не определен файл"
+ ;
+ s ret=..OpenFtpDir($g(server),$g(user),$g(password),$g(port),$g(mode),$g(dir),0,.ftp) if +ret=0 q ""
+ ;
+ q ..GetDateFile0(ftp,file)
+]]></Implementation>
+</Method>
+
+<Method name="GetDateFile0">
+<Description>
+get date of file
+ftp - handle ftp session (%Net.FtpSession)
+file - file, to which recognize date</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&ftp:%Net.FtpSession,file:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ if $g(file)=""!($IsObject(ftp)'=1) q ""  
+ ;
+ s file=$ZCONVERT(file,"U")
+ ;
+ k stream if 'ftp.List("",.stream) q ""  
+ ;
+ s day="",mes="",god="",time=""
+ s exit=0 f k=1:1 d  if exit=1 q 
+ .s str=stream.ReadLine() if str="" s exit=1 q
+ .s str=$ZCONVERT(str,"U")
+ .if str[file d  s exit=1
+ ..s str=$zzdsp(str,7)   
+ ..s mes=$p(str," ",6) 
+ ..s day=$p(str," ",7) 
+ ..s god=$p(str," ",8) if god[":" s time=god,god=""
+ if mes'="" s mes=$s(mes="JAN":1,mes="FEB":2,mes="MAR":3,mes="APR":4,mes="MAY":5,mes="JUN":6,mes="JUL":7,mes="AUG":8,mes="SEP":9,mes="OCT":10,mes="NOV":11,1:12)
+ ;
+ q day_r_mes_r_god_r_time
+]]></Implementation>
+</Method>
+
+<Method name="GetFileFromFtp">
+<Description>
+get path_file from ftp
+ftp: server, user, password, port, mode (mode=1 - active, mode=0 - passive (by default)), dir
+flDelFile=1 - flag delete whether file after get</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>server:%String,user:%String,password:%String,port:%Integer=21,mode:%Integer=0,dir:%String,file:%String,path:%String,flDelFile:%Integer=0,flagCrypto:%Integer=0</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ if $g(file)=""!($g(path)="") q 0_r_"Не определен файл"
+ if $g(flDelFile)="" s flDelFile=0
+ s path=$tr(path,"/","\") if $e(path,$l(path))'="\" s path=path_"\"
+ ;
+ s ret=..OpenFtpDir($g(server),$g(user),$g(password),$g(port),$g(mode),$g(dir),0,.ftp) if +ret=0 q ret	
+ ;
+ s flagCryptoFtp=0 ;if $g(flagCrypto)=1 s flagCryptoFtp=..getFlagCrypto(server)
+ ;
+ s ret=..GetFileFromFtp0(ftp, file, path, flDelFile, flagCryptoFtp)
+ ;
+ ;close ftp-connect
+ d ..CloseFtp(.ftp) 
+ ;
+ q ret
+]]></Implementation>
+</Method>
+
+<Method name="GetFileFromFtp0">
+<Description>
+get path_file from ftp
+ftp - handle ftp session (%Net.FtpSession)
+flDelFile=1 - flag delete whether file after get</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&ftp:%Net.FtpSession,file:%String,path:%String,flDelFile:%Integer=0,flagCrypto:%Integer=0]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ if $g(file)=""!($g(path)="") q 0_r_"Не определен файл"
+ if ($IsObject(ftp)'=1) q 0_r_"Не открыто ftp-соединение при получении файла "_path_file_"с ftp."
+
+ if $g(flDelFile)="" s flDelFile=0
+ s path=$tr(path,"/","\") if $e(path,$l(path))'="\" s path=path_"\"
+ ;
+ ;turn on binary mode
+ If 'ftp.Binary() q 0_r_"Не удалось включить бинарную моду."
+ ;
+ ;read file from ftp in stream
+ Set stream=##class(%FileBinaryStream).%New()  
+ s stream.Filename=path_file 
+ d stream.Clear()
+ If 'ftp.Retrieve(file,stream) q 0_r_"Не удалось прочитать с ftp файл "_file_"."
+ i stream.Size'>0 q 0_r_"Не удалось прочитать с ftp файл "_file_"."
+ ;
+ ;decript data 
+ s okCrypto=0 
+ /*
+ if $g(flagCrypto)=1 d  
+ .s errorText=""
+ .s classCrypto=$$GetCryptoClass^libCrypto() if classCrypto="" q 
+ .s cryptoObj=$zobjclassmethod(classCrypto,"Initialize",.inputParam,.errorText) i $g(errorText)'="" q
+ .s streamDecrypto=##class(%GlobalBinaryStream).%New()
+ .s errorText=cryptoObj.Decrypt(stream,streamDecrypto) if errorText'="" q 
+ .d stream.Clear()
+ .if stream.CopyFromAndSave(streamDecrypto)'=$$$OK q
+ .s okCrypto=1
+ */
+ .
+ ;
+ if okCrypto=0 if 'stream.SaveStream() q 0_r_"Не удалось прочитать с ftp файл "_file_"."
+ ;
+ ;delete file on ftp
+ if flDelFile=1 If 'ftp.Delete(file) q 0_r_"Не удалось удалить на ftp файл "_file_"."
+ ;
+ q 1
+]]></Implementation>
+</Method>
+
+<Method name="GetList">
+<Description>
+взять список файлов или директорий с ftp и положить в fileArray
+ftp - handle ftp session (%Net.FtpSession)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&ftp:%Net.FtpSession,*fileArray:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ k fileArray
+ s r=$c(0)
+ if $IsObject(ftp)'=1 q 0_r_"Не открыто ftp-соединение при получении списка файлов с ftp "
+ ;
+ ;get file list
+ If 'ftp.NameList("",.fileArray) q 0_r_"Не удалось получить список файлов с ftp"
+ if fileArray.Next("")="" q 1
+ ;
+ q 1
+]]></Implementation>
+</Method>
+
+<Method name="GetListWrap">
+<Description>
+взять список файлов или директорий с ftp и положить в fileArray
+input: server, user, password, port, mode, dir, flCreateDir	
+flCreateDir=1 (by default) - директории в dir создаются, flCreateDir=0 - дир-и не создаются , возвращается ошибка</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>server:%String,user:%String,password:%String,port:%Integer=21,mode:%Integer=0,dir:%String,*fileArray:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ k fileArray	
+ s ret=..OpenFtpDir($g(server),$g(user),$g(password),$g(port),$g(mode),$g(dir),,.ftp) if +ret=0 q ret		
+ s ret=..GetList(.ftp,.fileArray)
+ d ..CloseFtp(ftp)
+ q ret
+]]></Implementation>
+</Method>
+
+<Method name="ProcessQueueOut">
+<Description>
+обработка очереди на выкладывание файлов на ftp </Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ s r=$c(0),r1=$c(1),r2=$c(2)
+ if '$d(^SP("Ftp","QueueOut")) q
+ s now=$$MP^data()
+ s prot=$na(^Protokol("FtpQueueOut",now))
+ ;óäàëåíèå ñòàðûõ ïðîòîêîëîâ
+ d ..DeleteOldProt("FtpQueueOut",now)
+ ;
+ s npp="" f {
+ s npp=$o(^SP("Ftp","QueueOut","npp",npp)) if npp="" quit
+ s rec=^(npp)
+ s mp=$p(rec,r2,4),timeOut=+$p(rec,r2,5),flagCrypto=$p(rec,r2,6)
+ if timeOut>0 {
+	if $$HourBetw^data($p(now,",",1),$p(now,",",2),$p(mp,",",1),$p(mp,",",2),2)>timeOut {
+		s strParam=$p(rec,r2,1,3)
+		k ^SP("Ftp","QueueOut","npp",npp)
+		k ^SP("Ftp","QueueOut","ind",strParam)
+		continue
+	}
+	s ftpParam=$p(rec,r2,1)
+	s server=$p(ftpParam,r1,1),user=$p(ftpParam,r1,2),password=$p(ftpParam,r1,3),port=$p(ftpParam,r1,4)
+	s modeFtp=$p(ftpParam,r1,5),dirFtp=$p(ftpParam,r1,6)
+	s ret=..OpenFtpDir(server,user,password,port,modeFtp,dirFtp,,.ftp) 
+	s @prot@($o(@prot@(""),-1)+1)=$p(ret,r,2)
+	if +ret=0 continue
+	;
+	s flagCryptoFtp=0 if $g(flagCrypto)=1 s flagCryptoFtp=..getFlagCrypto(server)
+	;
+	s file=$p(rec,r2,2),path=$p(rec,r2,3)
+	s ret=..CopyFileToFtp(.ftp,file,path,flagCryptoFtp) 
+	d ..CloseFtp(.ftp)
+	s @prot@($o(@prot@(""),-1)+1)=$p(ret,r,2)
+	if +ret=0 continue
+	s strParam=$p(rec,r2,1,3)
+	k ^SP("Ftp","QueueOut","npp",npp)
+	k ^SP("Ftp","QueueOut","ind",strParam)
+	s @prot@($o(@prot@(""),-1)+1)="Ýëåìåíò î÷åðåäè "_npp_" ("_$tr(strParam,r1_r2,"  ")_") âûïîëíåí è óäàëåí èç î÷åðåäè"
+ } 
+ }
+]]></Implementation>
+</Method>
+
+<Method name="PutFileQueueOut">
+<Description>
+Поставить файл в очередь на выкладывание на ftp, например, когда ftp оказывается не доступен
+ftpParam=server_r1_user_r1_password_r1_port_r1_mode_r1_dirFtp
+file - файл, который надо выложить на ftp
+path - путь к файлу
+timeOut - время (в часах), в течении которого имеет смысл пытаться выложить файл , по истечении его надо удалить элемент в очереди</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>ftpParam:%String,file:%String,path:%String,timeOut:%Integer,flagCrypto:%Integer=0</FormalSpec>
+<Implementation><![CDATA[
+ s r2=$c(2),strParam=ftpParam_r2_file_r2_path	
+
+ if $d(^SP("Ftp","QueueOut","ind",strParam)) {
+	 tstart
+	 s npp=^SP("Ftp","QueueOut","ind",strParam) 
+	 k ^SP("Ftp","QueueOut","ind",strParam) 
+	 k:npp'="" ^SP("Ftp","QueueOut","npp",npp)
+	 tcommit
+	 }  
+ tstart 	 
+ s npp=$o(^SP("Ftp","QueueOut","npp",""),-1)+1
+ s ^SP("Ftp","QueueOut","ind",strParam)=npp
+ s ^SP("Ftp","QueueOut","npp",npp)=strParam_r2_$$MP^data()_r2_$g(timeOut)_r2_flagCrypto
+ tcommit
+]]></Implementation>
+</Method>
+
+<Method name="ReadAllDir">
+<Description>
+âçÿòü âñå èç ftp è ïîëîæèòü íà path
+ïîñëå ýòîãî óäàëèòü ôàéëû íà ftp
+åñëè ôàéë ñ ðàñøèðåíèåì arj, òî ðàçàðõèâèðîâàòü è óäàëèòü arj
+ftp - ññûëêà îòêðûòîå ftp-ñîåäèíåíèå (íà îáúåêò %Net.FtpSession)
+path - êóäà ïîëîæèòü ôàéëû </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&ftp:%Net.FtpSession,path:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ s r=$c(0)
+ if ($g(path)="")!($IsObject(ftp)'=1) q 0_r_"Íåâåðíûå ïàðàìåòðû"
+ s path=$tr(path,"/","\") if $e(path,$l(path))="\" s path=$e(path,1,$l(path)-1)
+ ;
+ ;turn on binary mode
+ If 'ftp.Binary() q 0_r_"Íå óäàëîñü âêëþ÷èòü ó ftp-ñîåäèíåíèÿ áèíàðíóþ ìîäó."
+ ;
+ ;copy files from ftp in path and then delete theme on ftp and rearj if type of file=arj
+ Set stream=##class(%FileBinaryStream).%New()  
+ s err1="",err2="",err3="",err4=""
+ s dirWork=$zu(168) 
+ d $zu(168,path)  ;óñòàíàâëèâàåò ðàáî÷óþ äèðåêòîðèþ â path, ò ê èíà÷å arj ïî÷åìó-òî íå ðàáîòàåò
+ If 'ftp.NameList("",.fileArray) q 0_r_"Íå óäàëîñü ïîëó÷èòü ñïèñîê ôàéëîâ ñ ftp-ñîåäèíåíèÿ."
+ if fileArray.Next("")="" q 1_r_"Íåò ôàéëîâ íà ftp."
+ Set key=""	For  s key=fileArray.Next(key) Quit:(key="")   d  ;
+ .s file=fileArray.GetAt(key),ext=$p(file,".",2)
+ .i ext="" q  ;
+ .;
+ .;copy file
+ .Set stream=##class(%FileBinaryStream).%New() 
+ .s stream.Filename=path_"\"_file
+ .d stream.Clear()
+ .If 'ftp.Retrieve(file,stream) s err1=err1_" "_file q
+ .;
+ .;delete file
+ .If 'ftp.Delete(file) s err2=err2_" "_file
+ .;
+ .;rearj file and delete
+ .s flDel=0 i $ZCONVERT(ext,"U")="ARJ" d  
+ ..i $zf(-1,"arj x -y "_file)'=0  s err3=err3_" "_file q  ;-y - íà âñå âîïðîñû - äà 
+ ..d stream.Clear() s flDel=1
+ .;
+ .i flDel=0 d stream.SaveStream()
+ .d stream.%Close() ;k stream   
+ .;i $zu(140,5,path_"\"_file)'=0 s err4=err4_" "_file 
+ d $zu(168,dirWork) ; âîññòàíîâèòü ðàáî÷óþ äèðåêòîðèþ
+ ;
+ s err=""
+ i err1'="" s err=err_"Íå óäàëîñü ïðî÷èòàòü ôàéëû "_err1
+ i err2'="" s err=err_"Íå óäàëîñü óäàëèòü ôàéëû íà ftp "_err2
+ i err3'="" s err=err_"Íå óäàëîñü ðàçàðõèâèðîâàòü ôàéëû "_err3
+ i err4'="" s err=err_"Íå óäàëîñü óäàëèòü ôàéëû ïîñëå ðàçàðõèâèðîâàíèÿ "_err4
+ i err'="" q 0_r_err
+ ; 
+ q 1_r_"Âñå ôàéëû ñ ftp ïåðåíåñåíû â "_path
+ ;
+]]></Implementation>
+</Method>
+
+<Method name="Test">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ s r1=$c(1)
+ s File="vid_tvr.dbf"
+ ;s server="ftp-apt.rosno-is.ru",user="bajenov",password="Y$JO-KN",port=21,dirFtp="bajenov\VID_TVR\N437",mode=1
+ s server="ftp.esc.ru",user="lgota_zel_omo",password="eXTVCi9Kzb0C40Dm",port=21,dirFtp="test",mode=0
+ s ret=..OpenFtpDir(server,user,password,port,mode,dirFtp,0,.ftp) if +ret=0 q ret	
+ ;s Date=..GetDateFile0(ftp, File)
+ ;s Date=..GetDateFile(server, user, password, port, mode, dirFtp, File)
+ s ret=..GetFileFromFtp(server, user, password, port, mode, dirFtp, "APRWORA.arj", "c:\temp", , 1)
+ d ..CloseFtp(.ftp) 
+ q ret
+]]></Implementation>
+</Method>
+
+<Method name="TestProcessQueueOut">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ s r1=$c(1)
+ ;s server="ftp.esc.ru",user="lgota_zel_omo",password="eXTVCi9Kzb0C40Dm",dirFtp="test",modeFtp=0
+ s server="ftp-apt.rosno-is.ru",user="sia",password="63B*LS-A",dirFtp="1",modeFtp=1	
+ ;d ..PutFileQueueOut(server_r1_user_r1_password_r1_r1_modeFtp_r1_dirFtp, "vr.upd", "c:\temp", 20)	
+ ;d ..ProcessQueueOut()
+ s server="ftp-apt.rosno-is.ru",user="sia",password="63B*LS-A",dirFtp="1",modeFtp=1	
+ ;
+]]></Implementation>
+</Method>
+
+<Method name="getFlagCrypto">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>server:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[ quit $$GetCrypto^libCrypto()&$$GetCryptoFtp^libCrypto(server)
+]]></Implementation>
+</Method>
+</Class>
+</Export>

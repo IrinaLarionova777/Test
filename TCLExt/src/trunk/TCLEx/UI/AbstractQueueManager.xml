@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.UI.AbstractQueueManager">
+<Description>
+Абстрактный класс для очередей</Description>
+<Abstract>1</Abstract>
+<Super>%Base</Super>
+<TimeCreated>62648,70148.961543</TimeCreated>
+
+<Parameter name="QUEUERESOURCENAME">
+<Description>
+Имя ресурса, соответствующего очереди (необходимо переопределить в потомке)</Description>
+<Default>^queue.A2A6F52D.D1BE.4D1F.B2FE</Default>
+</Parameter>
+
+<Parameter name="STOPPINGQUEUERESOURCENAME">
+<Description>
+Имя ресурса-семафора, наличие которого сигнализирует о том, что выполняется штатный останов процесса/процессов обработки очереди (необходимо переопределить в потомке)</Description>
+<Default>^stop.A2A6F52D.D1BE.4D1F.B2FE</Default>
+</Parameter>
+
+<Parameter name="WAITINTERVAL">
+<Description>
+Продолжительность (в секундах) каждой итерации ожидания появления нового сообщения в очереди</Description>
+<Default>5</Default>
+</Parameter>
+
+<Method name="getResourceName">
+<Description>
+Имя ресурса, соответствующего очереди</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit ..#QUEUERESOURCENAME
+]]></Implementation>
+</Method>
+
+<Method name="getStoppingResourceName">
+<Description>
+Имя ресурса-семафора, наличие которого сигнализирует о том, что выполняется штатный останов процесса/процессов обработки очереди</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit ..#STOPPINGQUEUERESOURCENAME
+]]></Implementation>
+</Method>
+
+<Method name="enqueue">
+<Description>
+Помещение нового сообщения в очередь</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>msg:%Persistent</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim sc As %Status
+
+	// проверяем наличие ресурса, соответствующего очереди
+	if '..isStarted() quit $$$ERROR($$$GeneralError, "Процесс обработки очереди не запущен")
+	
+	// проверяем наличие ресурса-семафора, наличие которого сигнализирует о том, что выполняется штатный останов
+	if ..isStopping() quit $$$ERROR($$$GeneralError, "Выполняется штатный останов процесса/процессов обработки очереди")
+	
+	// вызов метода потомка
+	set sc = ..OnPreEnqueue(msg)
+	if $$$ISERR(sc) quit sc
+	
+	// если сообщение не сохранено в БД, то пытаемся его сохранить
+	if (msg.%Id() = "")
+	{
+		set sc = msg.%Save()
+		if $$$ISERR(sc) quit sc
+	}
+	
+	// помещаем id сообщения в очередь
+	set sc = $System.Event.Signal(..getResourceName(), msg.%Id())
+	if (sc = 1) quit $$$OK
+	
+	quit $$$ERROR($$$GeneralError, "Не удалось поместить сообщение в очередь: " _ sc)
+]]></Implementation>
+</Method>
+
+<Method name="OnPreEnqueue">
+<Description>
+Метод, вызываемый перед помещением нового сообщения в очередь; переопределяется в потомке.
+Если возвращает ошибку, то сообщение не помещается в очередь.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>msg:%Persistent</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="dequeueLoop">
+<Description>
+Обработка очереди</Description>
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	#dim sc As %Status
+	#dim msgId As %Integer
+	#dim waitResult As %List
+	
+	// "вечный" цикл обработки очереди
+	while (1)
+	{
+		set waitResult = $System.Event.WaitMsg(..getResourceName(), ..#WAITINTERVAL)
+		
+		// если удалили ресурс (stopImmediate), то на выход
+		if ($lg(waitResult, 1) = -1) quit
+		
+		// если тайм-аут, то...
+		if ($lg(waitResult, 1) = 0)
+		{
+			// ...проверяем, не инициирован ли останов
+			if ..isStopping() quit
+			
+			set msgId = ""
+			
+			// метод, реализованный в потомке
+			set sc = ..OnIdle()
+		}
+		else
+		{
+			set msgId = $lg(waitResult, 2)
+		
+			// метод, реализованный в потомке
+			set sc = ..OnDequeue(msgId)
+		}
+		
+		// обработка фатальных ошибок, реализованная в потомке
+		if $$$ISERR(sc) do ..OnError(sc, msgId)   
+	}
+	
+	// удаляем ресурсы
+	do $System.Event.Delete(..getResourceName())
+	do $System.Event.Delete(..getStoppingResourceName())
+]]></Implementation>
+</Method>
+
+<Method name="OnDequeue">
+<Description>
+Метод, вызываемый для обработки очередного сообщения, извлеченного из очереди; переопределяется в потомке.
+Возвращаемые ошибки игнорируются (пока так).</Description>
+<Abstract>1</Abstract>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>msgId:%Integer</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+</Method>
+
+<Method name="OnError">
+<Description>
+Метод, вызываемый для обработки фатальных ошибок методов OnDequeue/OnIdle; переопределяется в потомке.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>sc:%Status,msgId:%Integer</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	// по умолчанию - игнорируем фатальные ошибки
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="OnIdle">
+<Description>
+Метод, вызываемый в случае холостого прогона вечного цикла обработки очереди; переопределяется в потомке.</Description>
+<ClassMethod>1</ClassMethod>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="start">
+<Description>
+Запуск процессов обработки очереди.
+Аргумент n - кол-во запускаемых процессов (по умолчанию 1)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>n:%Integer=1</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	if (n < 1) quit $$$ERROR($$$GeneralError, "Недопустимое значение аргумента: " _ n)
+	
+	// создаем ресурс
+	#dim sc As %Status = $System.Event.Create(..getResourceName())
+	if (sc = 0) quit $$$ERROR($$$GeneralError, "Не удалось создать ресурс " _ ..getResourceName())
+	
+	// на всякий случай удаляем ресурс-семафор, наличие которого сигнализирует о том, что выполняется штатный останов
+	do $System.Event.Delete(..getStoppingResourceName())
+	
+	// запускаем процесс(ы) обработки очереди
+	try
+	{
+		for i = 1:1:n
+		{
+			job ..dequeueLoop()
+		}
+	}
+	catch ex
+	{
+		set sc = ex.AsStatus()
+		do ..stopImmediately()
+	}
+	
+	quit sc
+]]></Implementation>
+</Method>
+
+<Method name="stop">
+<Description>
+Инициирование штатного останова, предусматривающего обработку оставшихся в очереди сообщений</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	// создаем ресурс-семафор, наличие которого сигнализирует о том, что выполняется штатный останов
+	do $System.Event.Create(..getStoppingResourceName())
+	
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="isStopping">
+<Description>
+Проверка, не выполняется ли штатный останов процесса обработки очереди</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[	quit ($System.Event.Defined(..getStoppingResourceName()) = 1)
+]]></Implementation>
+</Method>
+
+<Method name="isStarted">
+<Description>
+Проверка того, что был запущен процесс обработки очереди</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[	quit ($System.Event.Defined(..getResourceName()) = 1)
+]]></Implementation>
+</Method>
+
+<Method name="stopImmediately">
+<Description>
+Останов процесса/процессов обработки очереди с потерей содержимого этой очереди</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	// Останов с потерей содержимого очереди - удаляем ресурс
+	quit $System.Event.Delete(..getResourceName())
+]]></Implementation>
+</Method>
+
+<Method name="getQueueSize">
+<Description>
+Выдает кол-во сообщений в очереди</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	if '..isStarted() quit -1
+	
+	quit $System.Event.Count(..getResourceName())
+]]></Implementation>
+</Method>
+</Class>
+</Export>

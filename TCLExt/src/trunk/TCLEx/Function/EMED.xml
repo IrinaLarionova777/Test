@@ -1,0 +1,1285 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Function.EMED">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62552,44985.300312</TimeCreated>
+
+<Method name="AddOrders">
+<Description>
+Создать новые заказы по данным из глобала pGlb</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set requestid=""
+	For  {
+		Set requestid=$Order(@pGlb@(requestid))
+		If requestid="" Quit
+		Set orderobj=..Global2Object($Name(@pGlb@(requestid)))
+		If '$IsObject(orderobj) Continue
+		Do ..AddOrder(orderobj)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="AddOrder">
+<Description>
+Создать новый заказ по данным из объекта pOrderObj
+Результат в формате %Status (= $$$OK, если создан объект временного буфера или обновлен эпизод в EPVisitNumber)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrderObj:TCLEx.Object.EMEDOrder</FormalSpec>
+<Implementation><![CDATA[
+	Set requestid=pOrderObj.RequestId
+	Set requestguid=pOrderObj.RequestGUID
+	Set epis=..GetEpisodeByRequestId(requestid)
+	If (epis="")||('##class(User.EPVisitNumber).%ExistsId(epis)) {						 	// Еще нет эпизода в User.EPVisitNumber
+		Set hosppatobj=..EMEDOrder2HospitalPatient(pOrderObj)					// Добавляем/обновляем User.HOSHospitalPatients
+		Set ok=hosppatobj.%Save()
+		If 'ok {
+			Set errstr="Не удалось сохранить объект User.HOSHospitalPatients ("_$$Status2Str^KSUTIL1(ok)_")!"
+			Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
+			Quit
+		}
+		Set ok=..DeleteExistingHospitalPatientTestSets(hosppatobj.%Id())
+		If 'ok {
+			Set errstr="Не удалось удалить существующие записи в User.HOSHospitalPatientвTSet ("_$$Status2Str^KSUTIL1(ok)_")!"
+			Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
+			Quit
+		}	
+		Set requestok=1
+		Kill ^||EMED.TestSets
+		Do ..HospitalPatientTestSets(hosppatobj.%Id(),$Name(^||EMED.TestSets))	// Составляем буфер с уже имеющимися наборами тестов в User.HOSHospitalPatients
+		
+		Set maxcount=$ListGet($Get(^||EMED.TestSets),1)
+		Set cnt=pOrderObj.RequestTestCodes.Count()							// Пробегаем по всем назначенным исследованиям заказ
+		For i=1:1:cnt {
+			Set teststr=pOrderObj.RequestTestCodes.GetAt(i)
+			Set testsetrequestid=$ListGet(teststr,1)								// Id записи буферной таблицы
+			Set testset=$ListGet(teststr,2)									// Код исследования
+			Set ok=..IsCorrectTestSet(testset,.errstr)						// Корректное исследование ?
+			If 'ok {														// Если нет, то пишем ошибочный статус и идем на следущее исследование
+				Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
+				Do ##class(dbo.TCLRequestTestSet).UpdateStatus(requestguid,testset,2)
+				Set requestok=0
+				Quit
+			}
+			// 
+			If $Data(^||EMED.TestSets(testsetrequestid_$Char(1)_testset)) {		// Исследование уже есть в HOSHospitalPatientsTSet (пропускаем его) 
+				Continue
+			}		
+			If ##class(User.CTSuperSet).%ExistsId(testset) {				// Если это супер-набор
+				Set superset=testset
+				Kill ^||EMED.SuperSet
+				Do ##class(TCLEx.Function.SuperSet).CreateItemsBuf(superset,$Name(^||EMED.SuperSet))	// определяем элементы супер-набора
+				Set supersetitem="",supersetok=1
+				For  {
+					Set supersetitem=$Order(^||EMED.SuperSet(supersetitem))
+					If supersetitem="" Quit
+					If '$Data(^||EMED.TestSets(requestid_$Char(1)_superset,supersetitem)) {		// Если такого набора тестов нет в User.HOSHospitalPatientsTSet, то добавляем его
+						Set maxcount=maxcount+1
+						Set hosptestsetobj=##class(User.HOSHospitalPatientsTSet).%New()
+						Set hosptestsetobj.HOSPTParRef=hosppatobj
+						Set hosptestsetobj.HOSPTExtraExternalID=testsetrequestid
+						Set hosptestsetobj.HOSPTCounter=maxcount
+						Do hosptestsetobj.HOSPTSuperSetDRSetObjectId(superset)
+						Do hosptestsetobj.HOSPTTestSetDRSetObjectId(supersetitem)
+ 						Set ok=hosptestsetobj.%Save()
+						If 'ok {
+							Set supersetok=ok
+						}	
+					}	
+				}
+				If supersetok {												// Проверка успешности добавления по всем элементам супер-набора
+					Do ##class(dbo.TCLRequestTestSet).UpdateStatus(requestguid,testset,4)
+				} Else {
+					Set errstr="Не удалось сохранить объект User.HOSHospitalPatientsTSet ("_$$Status2Str^KSUTIL1(supersetok)_")!"
+					Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
+					Do ##class(dbo.TCLRequestTestSet).UpdateStatus(requestguid,testset,2)
+					Set requestok=0
+					Quit
+				}			
+			} Else {														// Если обычный набор тестов (не супер-набор !!!)
+				Set ok=1
+				Set maxcount=maxcount+1
+				Set hosptestsetobj=##class(User.HOSHospitalPatientsTSet).%New()
+				Set hosptestsetobj.HOSPTParRef=hosppatobj
+				Set hosptestsetobj.HOSPTExtraExternalID=testsetrequestid
+				Set hosptestsetobj.HOSPTCounter=maxcount
+				//Set hosptestsetobj.HOSPTHospitalRefNumber=testset
+				Do hosptestsetobj.HOSPTTestSetDRSetObjectId(testset)
+				Set ok=hosptestsetobj.%Save()
+				If ok {														// Проверка успешности добавления набора тестов
+					Do ##class(dbo.TCLRequestTestSet).UpdateStatus(requestguid,testset,4)
+				} Else {
+					Set errstr="Не удалось сохранить объект User.HOSHospitalPatientsTSet ("_$$Status2Str^KSUTIL1(ok)_")!"
+					Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
+					Do ##class(dbo.TCLRequestTestSet).UpdateStatus(requestguid,testset,2)
+					Set requestok=0
+					Quit
+				}			
+			}
+		}	
+		If requestok {
+			Do ##class(dbo.TCLRequest).UpdateStatus(requestid,4)
+		}			
+	} Else {																// Дозаказ наборов тестов в существующий эпизод
+		Set errstr="Для запроса "_requestid_" уже существует эпизод "_epis_"!"
+		Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="DeleteExistingHospitalPatientTestSets">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospitalPatientId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	&Sql(
+		Delete from SQLUser.HOS_HospitalPatientsTSet
+		Where HOSPT_ParRef=:pHospitalPatientId
+	)
+	If (SQLCODE=0)||(SQLCODE=100) Quit $$$OK
+	Quit $$$ERROR($$$SQLCode,SQLCODE)
+]]></Implementation>
+</Method>
+
+<Method name="GetEpisodeByRequestId">
+<Description>
+Получение ID эпизода ЛИС по ID запроса буферной таблицы EMED
+Параметры:
+pRequestId - ID запроса буферной таблицы EMED
+Возвращаемое значение:
+ID эпизода ЛИС. Пусто, если эпизода еще нет</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pRequestId:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	If pRequestId="" Quit ""
+	Quit $Get(^EMED.RequestId(pRequestId))
+]]></Implementation>
+</Method>
+
+<Method name="SetEpisodeByRequestId">
+<Description>
+Запоминаем соответствие эпизода и RequestId буферной таблицы
+Параметры:
+pRequestId - ID запроса буферной таблицы EMED
+Возвращаемое значение:
+ID эпизода ЛИС. Пусто, если эпизода еще нет</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pRequestId:%String</FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pRequestId="") Quit
+	Set ^EMED.RequestId(pRequestId)=pEpisode
+]]></Implementation>
+</Method>
+
+<Method name="HospitalPatientTestSets">
+<Description>
+Формируем буфер pGlb с имеющимися наборами тестов для записи  HOSHospitalPatientsTSet  с Id=pHospPatId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospPatId:%String,pGlb:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Kill @pGlb
+	&sql(
+		Declare HospTSCursor CURSOR FOR
+		Select HOSPT_ExtraExternal_ID,HOSPT_RowID,HOSPT_Counter,HOSPT_TestSet_DR,HOSPT_SuperSet_DR
+		INTO :requestid,:testsetid,:count,:testset,:superset
+		From SQLUser.HOS_HospitalPatientsTSet 
+		Where HOSPT_ParRef=:pHospPatId
+	)
+	&sql(Open HospTSCursor)
+	&sql(Fetch HospTSCursor)
+
+	Set maxcount=0
+	While (SQLCODE = 0) {
+		If (count'="")&&(testset'="") {
+			If superset="" {
+				Set @pGlb@(requestid_$Char(1)_testset)=$ListBuild(testsetid)
+			} Else {
+				Set @pGlb@(requestid_$Char(1)_superset)=$Get(@pGlb@(superset))_$ListBuild(testsetid)
+				Set @pGlb@(requestid_$Char(1)_superset,testset)=$ListBuild(testsetid)
+			}		
+		}
+		If count>maxcount {
+			Set maxcount=count
+		}		
+		&sql(Fetch HospTSCursor)
+	}
+	&sql(Close HospTSCursor)
+	Set @pGlb=$ListBuild(maxcount)
+]]></Implementation>
+</Method>
+
+<Method name="HospitalPatientRequestId4TestSets">
+<Description>
+Формируем буфер pGlb с соответсвием request_id буферной таблицы наборам тестов 
+для записи  HOSHospitalPatientsTSet  с Id=pHospPatId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospPatId:%String,pGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Kill @pGlb
+	&sql(
+		Declare HospTSCursor2 CURSOR FOR
+		Select HOSPT_ExtraExternal_ID,HOSPT_TestSet_DR,HOSPT_SuperSet_DR,HOSPT_ExtraPriority_DR
+		INTO :requestid,:testset,:superset,:cito
+		From SQLUser.HOS_HospitalPatientsTSet 
+		Where HOSPT_ParRef=:pHospPatId
+	)
+	&sql(Open HospTSCursor2)
+	&sql(Fetch HospTSCursor2)
+
+	Set maxcount=0
+	While (SQLCODE = 0) {
+		If (requestid'="")&&(testset'="") {
+			If superset="" {
+				Set @pGlb@(testset,requestid)=$ListBuild(cito)
+			} Else {
+				Set @pGlb@(superset,requestid)=$ListBuild(cito)
+			}		
+		}
+		&sql(Fetch HospTSCursor2)
+	}
+	&sql(Close HospTSCursor2)
+]]></Implementation>
+</Method>
+
+<Method name="IsCorrectTestSet">
+<Description>
+Является ли корректным код исследования pTestSet 
+т.е. есть запись с этим кодом в User.CTSuperSet или в User.CTTestSet(для наборов также проверяем флаг активности CTTSActiveFlag)
+возвращаем 1 (ok) или 0 и описание ошибки в pError</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTestSet:%String,&pError:%String]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If pTestSet="" {
+		Set pError="Не заполнен код исследования !"
+		Quit 0
+	}
+	If ##class(User.CTSuperSet).%ExistsId(pTestSet) {
+		Set obj=##class(User.CTSuperSet).%OpenId(pTestSet,0)
+		If '$IsObject(obj) {
+			Set pError="Неверный код исследования "_pTestSet_"!"
+			Quit 0
+		}
+		Quit 1
+		
+	}	
+	Set obj=##class(User.CTTestSet).%OpenId(pTestSet,0)
+	If '$IsObject(obj) {
+		Set pError="Неверный код исследования "_pTestSet_"!"
+		Quit 0
+	}
+	If obj.CTTSActiveFlag'="Y" {
+		Set pError="Исследование с кодом "_pTestSet_" деактивировано!"
+		Quit 0
+	}
+	Quit 1
+]]></Implementation>
+</Method>
+
+<Method name="EMEDOrder2HospitalPatient">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrderObj:TCLEx.Object.EMEDOrder</FormalSpec>
+<ReturnType>User.HOSHospitalPatients</ReturnType>
+<Implementation><![CDATA[
+	Set obj=##class(User.HOSHospitalPatients).%OpenId("L||L||"_pOrderObj.RequestId)
+	If '$IsObject(obj) {
+		Set obj=##class(User.HOSHospitalPatients).%New()
+		Set obj.HOSPDebtorNumber="L"
+		Set obj.HOSPVisit=pOrderObj.RequestId
+	}
+	Set obj.HOSPLabTrakMRN=pOrderObj.MRN
+	Do obj.HOSPParRefSetObjectId("L")
+	Do obj.HOSPPatientSiteDRSetObjectId(..GetPatientSiteByTestCodes($ListGet(pOrderObj.RequestTestCodes.GetAt(1),2)))
+	Set obj.HOSPAdmissionDate=$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfRequest)
+	Set obj.HOSPTransDate=$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfRequest)
+	
+	Set obj.EPVISDateOfCollection="" //$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfCollection)
+	Set obj.EPVISTimeOfCollection=$$TimeStamp2Secunds^KSUTIL1(pOrderObj.DateTimeOfCollection)
+	Set obj.HOSPSurname=pOrderObj.Surname
+	Set obj.HOSPGivenName=pOrderObj.Name
+	Set obj.HOSPExtraName1=pOrderObj.FartherName
+	Set sexcode=""
+	If pOrderObj.Sex="муж" {
+		Set sexcode="M" 
+	} ElseIf pOrderObj.Sex="жен" {
+		Set sexcode="F" 
+	}			
+ 	Do obj.HOSPSexDRSetObjectId(sexcode)
+	Set obj.HOSPDOB=pOrderObj.DOB
+	Set hospcode=##class(TCLEx.Function.EMED).GetHospitalCodeByName(pOrderObj.HospitalDepartment)
+	If (hospcode'="")&&(##class(User.CTHospital).%ExistsId(hospcode)) {
+		Do obj.HOSPLocationDRSetObjectId(hospcode)
+	} Else {
+		Do obj.HOSPLocationDRSetObjectId("")
+	}		
+	If (pOrderObj.Cito=1) {
+		Do obj.EPVISPriorityCodeDRSetObjectId("U")
+	} Else {
+		Do obj.EPVISPriorityCodeDRSetObjectId("")
+	}	
+	Set obj.EPVISExtra1=pOrderObj.PlaceOfCollection
+	Do obj.HOSPDoctorReferringDRSetObjectId(..GetDoctorCodeForOrder(pOrderObj))
+	Quit obj
+]]></Implementation>
+</Method>
+
+<Method name="GetPatientSiteByTestCodes">
+<Description>
+Получение кода подразделения (значение справочника CT.UserLocation ) по коду исследования</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=""
+	Set department=$Extract(pTestSet,1)
+	If (department="A")||(department="C")||(department="D")||(department="P") {
+		Set result="KDL"
+	} ElseIf (department="B")||(department="H") {
+		Set result="BHL"
+	} 
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetDoctorCodeForOrder">
+<Description>
+Получение кода врача (значение справочника CT.Doctor) по коду первого исследования заказа</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrderObj:TCLEx.Object.EMEDOrder</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	If '$IsObject(pOrderObj) Quit ""
+	If pOrderObj.RequestTestCodes.Count()<1 Quit ""
+	Set vals=pOrderObj.RequestTestCodes.GetAt(1)
+	Set testset=$ListGet(vals,2)
+	Quit ..GetDoctorCodeForTestSet(testset)
+]]></Implementation>
+</Method>
+
+<Method name="GetDoctorCodeForTestSet">
+<Description>
+Получение кода врача (значение справочника CT.Doctor) по коду исследования</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=""
+	Set department=$Extract(pTestSet,1,1)
+	If (department="A")||(department="C")||(department="D")||(department="P") {
+		Set result="KDL"
+	} ElseIf (department="H") {
+		Set result="HOR"
+	} ElseIf (department="R") {
+		Set result="ICU"
+	} ElseIf (department="B") {
+		Set result="BCH"
+		Set section=""
+		Set testsetobj=##class(User.CTTestSet).%OpenId(pTestSet,0)
+		If $ISObject(testsetobj) {
+			Set section=testsetobj.CTTSSectionDRGetObjectId()
+		}
+		If section="B1" {
+			Set result="ICU"
+		}		
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*???
+/// Добавить(если нет записи)/Обновить(если отличаются данные) запись справочника User.CTHospital по значениям
+/// pDepartmentCode- код отделения, pDepartment - наименование отделения 
+ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
+{
+	If pDepartmentCode="" Quit
+	Set exists=##class(User.CTHospital).%ExistsId(pDepartmentCode)
+	Set obj=##class(User.CTHospital).%OpenId(pDepartmentCode)
+	If (exists)&&('$IsObject(obj)) Quit								// Запись блокирована другим пользователем - не пытаемся ее редактировать	
+	Set needupdate=0
+	If 'exists {
+		Set obj=##class(User.CTHospital).%New()
+		Set obj.CTHOSCumulative="N"
+		Set obj.CTHOSDisplaySequence=99999
+		Set obj.CTHOSExcludeFromAutoFax="N"
+		Set obj.CTHOSFaxAlways="N"
+		Set obj.CTHOSUserBasedPrinting="N"
+		Set obj.CTHOSNoOfCopies=1
+		Set obj.CTHOSCourierRunDR=##class(User.CTCourier).%OpenId("HP1200",0) 
+		Set obj.CTHOSPrintFormatDR=##class(User.CTPrintFormat).%OpenId("I",0) 
+		
+		Set needupdate=1
+	}	 
+	If obj.CTHOSCode'=pDepartmentCode {
+		Set obj.CTHOSCode=pDepartmentCode
+		Set needupdate=1
+	}	
+	If obj.CTHOSName'=pDepartment {
+		Set obj.CTHOSName=pDepartment
+		Set needupdate=1
+	}
+	If obj.CTHOSActiveFlag'="Y" {
+		Set obj.CTHOSActiveFlag="Y"
+		Set needupdate=1
+	}
+	If needupdate Do obj.%Save()
+}
+*/
+]]></Content>
+</UDLText>
+
+<Method name="Global2Object">
+<Description>
+Создать объект TCLEx.Object.EMEDOrder из значений глобала pGlb</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pGlb:%String</FormalSpec>
+<ReturnType>TCLEx.Object.EMEDOrder</ReturnType>
+<Implementation><![CDATA[
+	Set vals=$Get(@pGlb)
+	If vals="" Quit ""
+	Set orderobj=##class(TCLEx.Object.EMEDOrder).%New()
+	Set orderobj.RequestGUID=$Translate($ListGet(vals,1),$Char(0),"")
+	Set orderobj.RequestId=$Translate($ListGet(vals,2),$Char(0),"")
+	Set orderobj.PatientId=$Translate($ListGet(vals,3),$Char(0),"")
+	Set orderobj.Surname=$Translate($ListGet(vals,4),$Char(0),"")
+	Set orderobj.Name=$Translate($ListGet(vals,5),$Char(0),"")
+	Set orderobj.FartherName=$Translate($ListGet(vals,6),$Char(0),"")
+	Set orderobj.Sex=$Translate($ListGet(vals,7),$Char(0),"")
+	Set orderobj.DOB=$Translate($ListGet(vals,8),$Char(0),"")
+	Set mrn=""
+	If $Translate($ListGet(vals,9),$Char(0),"")'="" {
+		Set mrn=$Translate($ListGet(vals,9),$Char(0),"")
+	} Else {
+		Set mrn=$Translate($ListGet(vals,3),$Char(0),"")
+	}		
+	Set orderobj.MRN=mrn
+	Set orderobj.DateTimeOfRequest=$Translate($ListGet(vals,10),$Char(0),"")
+	Set orderobj.Cito=$Translate($ListGet(vals,11),$Char(0),"")
+	Set orderobj.HospitalDepartment=$Translate($ListGet(vals,12),$Char(0),"")
+	Set orderobj.DateTimeOfCollection=$Translate($ListGet(vals,13),$Char(0),"")
+	Set orderobj.PlaceOfCollection=$Translate($ListGet(vals,14),$Char(0),"")
+	Set testsetrequestid=""
+	For  {
+		Set testsetrequestid=$Order(@pGlb@(testsetrequestid),1,vals)
+		If testsetrequestid="" Quit
+		Set testset=$ListGet(vals,1)
+		Do orderobj.RequestTestCodes.Insert($ListBuild(testsetrequestid,testset))
+	}
+	Quit orderobj
+]]></Implementation>
+</Method>
+
+<Method name="DeleteOrders">
+<Description>
+Удалить исследования по существующим заказам в pGlb</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set requestid=""
+	For  {
+		Set requestid=$Order(@pGlb@(requestid))
+		If requestid="" Quit
+		Do ..DeleteOrder(requestid)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="DeleteOrder">
+<Description>
+Удалить исследования по существующим заказам в pGlb</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pRequestId:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set epis=..GetEpisodeByRequestId(pRequestId)
+	Set hosppatid=""
+	If (epis'="")&&(##class(User.EPVisitNumber).%ExistsId(epis)) {
+		Set errstr="Нельзя отменить исследование уже переданное в ЛИС!"
+		Do ##class(dbo.TCLRequest).UpdateStatus(pRequestId,2,errstr)
+		Quit
+	}	
+	Set hosppatid=..GetHospitalPatientIdByRequestId(pRequestId)
+	Set ok=##class(User.HOSHospitalPatients).%DeleteId(hosppatid)
+	If 'ok {
+		Set errstr="Не удалось удалить объект User.HOSHospitalPatients ("_$$Status2Str^KSUTIL1(ok)_")!"
+		Do ##class(dbo.TCLRequest).UpdateStatus(pRequestId,2,errstr)
+		Quit
+	} 
+	Do ##class(dbo.TCLRequest).UpdateStatus(pRequestId,8)
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Вернуть ID записи в HOS_HospitalPatients для эпизода pEpisode
+
+]]></Content>
+</UDLText>
+
+<Method name="GetHospitalPatientIdByRequestId">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pRequestId:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set hosppatid=""
+	&sql(
+		Select HOSP_RowID Into :hosppatid From SQLUser.HOS_HospitalPatients where HOSP_Visit=:pRequestId
+	)
+	If SQLCODE=0 Quit hosppatid
+	Quit ""
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Вернуть Code записи в CT_Hospital по имени pHospitalName 
+
+]]></Content>
+</UDLText>
+
+<Method name="GetHospitalCodeByName">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospitalName:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set hospid=""
+	&sql(
+		Select CTHOS_Code 
+		Into :hospid 
+		From SQLUser.CT_Hospital 
+		Where CTHOS_Name=:pHospitalName
+	)
+	If SQLCODE=0 Quit hospid
+	Quit ""
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Вернуть ID записи в HOS_HospitalPatients для эпизода pEpisode
+
+]]></Content>
+</UDLText>
+
+<Method name="HospitalPatientTestSetCount">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospitalPatientId:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set testsetcount=0
+	&sql(
+		Select Count(*) Into :testsetcount
+		From SQLUser.HOS_HospitalPatientsTSet 
+		Where HOSPT_ParRef=:pHospitalPatientId	)
+	If SQLCODE=0 Quit testsetcount
+	Quit 0
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Вернуть ID записи в HOS_HospitalPatients для эпизода pEpisode
+
+]]></Content>
+</UDLText>
+
+<Method name="GetRequestId4Episode">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set hospurn=""
+	&sql(
+		Select EPVIS_Hospital_EpisodeUR_Number 
+		Into :hospurn
+		From SQLUser.EP_VisitNumber 
+		Where EPVIS_VisitNumber=:pEpisode	)
+	If SQLCODE=0 Quit $Piece(hospurn,",",1)
+	Quit ""
+]]></Implementation>
+</Method>
+
+<Method name="TestSetTrigger">
+<Description>
+Регистрация авторизации\деавторизации набора тестов для последующих действий (отправка E-Mail, передача результата в WebER...)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTrigger:%String,pTestSetRequestId:%String,pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pTestSetId="") Quit
+	Set episoderequestid=##class(TCLEx.Function.EMED).GetRequestId4Episode(pEpisode)
+	If episoderequestid="" Quit
+	Set testset=$Get(pValues(3)) 											// SQLUser.EP_VisitTestSet\VISTS_TestSet_DR
+	If pTrigger="AfterDelete" {
+		Set testset=$Get(pOldValues(3)) 
+	}
+	If testset="" Quit
+	If pTrigger="AfterInsert" {
+		Set datetimeofcreation=$Get(pValues(24))_","_(60*$Get(pValues(25)))
+		Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,5,$ListBuild(datetimeofcreation))		// 5 - заказ передан в ЛИС
+	} ElseIf pTrigger="AfterDelete" {
+		Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,7,$ListBuild("",testset))									// 7 - заказ отменен в ЛИС
+	} ElseIf pTrigger="AfterUpdate" {
+		If ..IsTestSetAuthorized(pEpisode,pTestSetId,.pValues,.pOldValues){					// Авторизация набора тестов
+			If ##class(TCLEx.Function.TestSet).NeedRemoveFromGroupPrinting(pTestSetId) {
+				Do ##class(TCLEx.Function.TestSet).RemoveFromGroupPrinting(pTestSetId)
+			}	
+			Set datetimeofauth=$Get(pValues(7))_","_(60*$Get(pValues(8)))
+			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,6,$ListBuild(datetimeofauth,$Get(pValues(9)),testset))
+		} ElseIf ..IsTestSetCanceled(pEpisode,pTestSetId,.pValues,.pOldValues){				// Отмена набора тестов
+			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,7,$ListBuild($Get(pValues(58)),testset))
+		} ElseIf (..IsTestSetUndoOfAuthorization(pEpisode,pTestSetId,.pValues,.pOldValues)) {		// Деавторизация набора тестов
+			Set datetimeofcreation=$Get(pValues(24))_","_(60*$Get(pValues(25)))
+			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,10,$ListBuild(datetimeofcreation))	
+		} ElseIf (..IsTestSetUndoOfCancelation(pEpisode,pTestSetId,.pValues,.pOldValues)) {		// Анулирование отмены набора тестов
+			Set datetimeofcreation=$Get(pValues(24))_","_(60*$Get(pValues(25)))
+			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,5,$ListBuild(datetimeofcreation))	
+		}	
+	}
+	If (pTrigger="AfterInsert")||(pTrigger="AfterDelete") {			// Меняем число наборов тестов в эпизоде
+		Do ..UpdateTestSetCount4Episode(pEpisode)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="IsTestSetAuthorized">
+<Description>
+Была ли авторизация набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	/*
+	Set ^YYY($I(^YYY))=$LB("IsTestSetAuthorized",pEpisode,pTestSetId)
+	Merge ^YYY($I(^YYY))=pValues
+	Merge ^YYY($I(^YYY))=pOldValues
+	*/
+	If (pEpisode="")||(pTestSetId="") Quit 0
+	;
+	Set dateofauthorisation=$Get(pValues(7))
+	Set authoriseduser=$Get(pValues(9)) 
+	If (dateofauthorisation="")||(authoriseduser="") Quit 0			// Дата авторизации и авторизовавший пользователь должны быть заполнены
+
+	Set olddateofauthorisation=$Get(pOldValues(7))
+	Set oldauthoriseduser=$Get(pOldValues(9)) 
+	If (olddateofauthorisation="")&&(oldauthoriseduser="") Quit 1	// а старой даты авторизации и авторизовавшего пользователя не должно быть
+	Quit 0
+	;
+]]></Implementation>
+</Method>
+
+<Method name="IsTestSetCanceled">
+<Description>
+Была ли отмена  набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues
+Для EMC не являются настоящей причиной отмены причины с CTRBillable="Y" (например, 	Дозаказ и Материал ожидается, т.е. это как бы откладывание набора тестов)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pTestSetId="") Quit 0
+	;
+	Set reason=$Get(pValues(58))
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(reason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}	
+	If (reason="")||(notreason)  Quit 0								// Новая причина должна быть и у этой причины отмены не должно быть CTRBillable="Y"
+	//
+	Set oldreason=$Get(pOldValues(58))							 
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(oldreason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}
+	If (oldreason="")||(notreason)  Quit 1							// а также старой причины отмены не должно быть или у нее было CTRBillable="Y"
+	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="IsTestSetUndoOfCancelation">
+<Description>
+Была ли анулирование отмены набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pTestSetId="") Quit 0
+	;
+	Set oldreason=$Get(pOldValues(58))							 
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(oldreason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}
+	If (oldreason="")||(notreason)  Quit 0							// Старая причина отмены должна быть и у нее не должно быть CTRBillable="Y"
+	//
+	Set reason=$Get(pValues(58))
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(reason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}	
+	If (reason="")||(notreason)  Quit 1								// и новая причины отмены не должна быть заполнена или у нее CTRBillable="Y"
+	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="IsTestSetUndoOfAuthorization">
+<Description>
+Была ли анулирование авторизации набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pTestSetId="") Quit 0
+	;
+	Set status=$Get(pValues(33))
+	Set oldstatus=$Get(pOldValues(33))
+	Set result=0
+	If (status="E")&&((oldstatus="A")||(oldstatus="")) { 							// Была деавторизация набора тестов (иногда старый значение становится пусто, а не "А")
+		Set result=1
+	}	
+	Quit result
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Регистрация нового статуса pStatus для эпизода pEpisode, Id набора тестов pTestSetId с кодом pTestSet. pValues - дополнительные значения в формате $LB
+
+]]></Content>
+</UDLText>
+
+<Method name="LogRequestStatus">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisodeRequestId:%String,pTestSetRequestId:%String,pEpisode:%String,pTestSet:%String,pTestSetId:%String,pStatus:%Integer,pValues:%String</FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisodeRequestId="")||(pEpisode="")||(pTestSetId="")||(pTestSet="")||(pStatus="") Quit
+	If (pTestSetRequestId="") {
+		Set pTestSetRequestId=pTestSetId
+	}	
+	Set pValues=$Get(pValues)
+	Set horolog=$Horolog
+	Lock +^TCLEx("RequestStatus",pEpisodeRequestId,horolog)
+	Set ^TCLEx("RequestStatus",pEpisodeRequestId,horolog)=$ListBuild(pEpisode,pStatus,pValues)
+	Set ^TCLEx("RequestStatus",pEpisodeRequestId,horolog,pTestSetRequestId)=$ListBuild(pTestSet,pTestSetId,pStatus,pValues)
+	Lock -^TCLEx("RequestStatus",pEpisodeRequestId,horolog)
+]]></Implementation>
+</Method>
+
+<Method name="ProcessUpdatedStatuses">
+<Description>
+Обработка измененных статусов эпизодов</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	Set requestid=""
+	For  {
+		Set requestid=$Order(^TCLEx("RequestStatus",requestid))
+		If requestid="" Quit
+		//If requestid'="bchk_281374" Continue
+		Set requestguid=..GetRequestGUIDByCode(requestid)
+		If requestguid="" Continue
+		Set horolog=""
+		For  {
+			Set horolog=$Order(^TCLEx("RequestStatus",requestid,horolog),1,vals)
+			If horolog="" Quit
+			Set epis=$ListGet(vals,1)
+			Set status=$ListGet(vals,2)
+			Set extravals=$ListGet(vals,3)
+	       	// Формируем буферы с данными наборов тестов эпизод и групп печати эпизода, чтобы определить нужно ли передавать информацию о 
+	       	Do ##class(TCLEx.Function.Episode).MakeTestSetsBuf(epis,$Name(^||EMED.TestSetsSQL))
+	       	Do ##class(TCLEx.Function.Episode).MakeTestSetsBufObj(epis,$Name(^||EMED.TestSets))
+	       	/*
+	       	If ('$Data(^||EMED.TestSetsSQL))&&($Data(^||EMED.TestSets)) {
+	       		Set nnn=$I(^Y1)
+				Set ^Y1(nnn,"Time")=$Horolog
+				Set ^Y1(nnn,"Info")=$LB(epis)
+	       	} */  	
+	       	Do ##class(TCLEx.Function.EMED).EpisodeTestBuf2ReportGroupBuf($Name(^||EMED.TestSets),$Name(^||EMED.ReportGroups))
+			//
+			Lock +^TCLEx("RequestStatus",requestid,horolog)
+			Set episodeok=1,errstr=""
+			Set tsrequestid=""
+			For  {
+				Set tsrequestid=$Order(^TCLEx("RequestStatus",requestid,horolog,tsrequestid),1,tsvals)
+				If tsrequestid="" Quit
+				Set testset=$ListGet(tsvals,1)
+				Set testsetid=$ListGet(tsvals,2)
+				Set testsetstatus=$ListGet(tsvals,3)
+				Set testsetextravals=$ListGet(tsvals,4)
+				Set ok=1
+				If tsrequestid["||" {			// Если набор тестов добавили в ЛИС
+					Set count=##class(dbo.TCLRequestTestSet).Count(requestguid,testset)
+					If count=0 {
+						Set ok=##class(dbo.TCLRequestTestSet).Insert(requestguid,requestid,testset)
+					}				
+				}	
+				If (ok)&&(testsetstatus'=5)&&(testsetstatus'=6)&&(testsetstatus'=7)&&(testsetstatus'=10) {
+					Set ok=0
+				}	
+				If testsetstatus=5 {								// Набор тестов создан в ЛИС
+					Set datetimeofcreation=horolog
+					If testsetextravals'="" {
+						Set datetimeofcreation=$ListGet(testsetextravals,1)
+					}	
+					Set ok=##class(dbo.TCLRequestTestSet).UpdateStatus2CreateEpisode(requestguid,testset,datetimeofcreation)
+				} ElseIf testsetstatus=6 {							// Набор тестов авторизован в ЛИС
+					// Проверяем входит ли набор тестов в группу печати (информация о его авторизации будет передаваться только при авторизации всех наборов тестов группы печати)
+					Set reportgroup=##class(TCLEx.Function.TestSet).ReportGroup(testset)
+					
+					If reportgroup'="" {
+						/*
+						If epis'=2159204 {
+							Set nnn=$I(^Y1)
+							Set ^Y1(nnn,"Time")=$Horolog
+							Set ^Y1(nnn,"Info")=$LB(epis,requestid,horolog,tsrequestid,tsvals)
+							Merge ^Y1(nnn,"^||EMED.TestSets")=^||EMED.TestSets
+							Merge ^Y1(nnn,"^||EMED.ReportGroups")=^||EMED.ReportGroups
+							Set ^Y1(nnn,"Authorised")=$Get(^||EMED.ReportGroups(reportgroup),0)
+							Set ^Y1(nnn,"Authorised_A001")=##class(TCLEx.Function.TestSet).IsAuthorised(##class(User.EPVisitTestSet).%OpenId(epis_"||A001||1",0))
+							Set ^Y1(nnn,"Authorised_A005")=##class(TCLEx.Function.TestSet).IsAuthorised(##class(User.EPVisitTestSet).%OpenId(epis_"||A005||1",0))
+						}*/
+						Set authorised=$Get(^||EMED.ReportGroups(reportgroup),0)
+						If 'authorised Continue
+					}
+					//					
+					Set testsetguid=##class(dbo.TCLRequestTestSet).GetGUIDByRequestGUIDAndTestSet(requestguid,testset)
+					If testsetguid="" {
+						Set episodeok=0
+						Set errstr="Не найдена запись в таблице dbo.tcl_testset для исследования "_testset_"  !"
+						Do ##class(dbo.TCLRequestTestSet).UpdateStatus(requestguid,testset,2)
+						Continue
+					}	
+					Set ok=..SaveTestSetData(requestid,testsetguid,testset,testsetid)
+
+					/*
+					If reportgroup'="" {
+						Set ^Y1($I(^Y1))="SaveTestSetData ="_ok
+					}*/
+						
+					If ok {
+						Set datetimeofauth="",authdoctor=""
+						If testsetextravals'="" {
+							Set datetimeofauth=$ListGet(testsetextravals,1)
+							Set doctorid=$ListGet(testsetextravals,2)
+							Set doctorid=##class(TCLEx.Function.EMED).OfficialDoctor(doctorid,testset)
+							Set userobj=##class(User.SSUser).%OpenId(doctorid,0)
+							If $IsObject(userobj) {
+								Set authdoctor=userobj.SSUSRName
+							}	
+						}	
+						Set ok=##class(dbo.TCLRequestTestSet).UpdateStatus2Authorized(requestguid,testset,datetimeofauth,authdoctor)
+						/*
+						If reportgroup'="" {
+							Set ^Y1($I(^Y1))="UpdateStatus2Authorized ="_ok
+						}*/	
+						
+					}
+				} ElseIf testsetstatus=7 {							// Набор тестов удален в ЛИС или установлена причина по которой его не будут делать
+					Set reason="Набор тестов удален"
+					If testsetextravals'="" {
+						Set reasoncode=$ListGet(testsetextravals,1)
+						Set reasonobj=##class(User.CTReason).%OpenId(reasoncode,0)
+						If $IsObject(reasonobj) {
+							Set reason="Набор тестов отменен. Причина отмены - "_reasonobj.CTRDescription
+						}
+					}	
+					Set ok=##class(dbo.TCLRequestTestSet).UpdateStatus2Canceled(requestguid,testset,reason)
+				} ElseIf  testsetstatus=10 {
+					Set ok=##class(dbo.TCLRequestTestSet).UpdateStatus2CancelationOfAuthorization(requestguid,testset)
+				}	
+				If 'ok {
+					Set episodeok=ok
+					Set errstr="Не удалось обновить запись tcl_testset для исследования "_testset_" ("_$$Status2Str^KSUTIL1(episodeok)_")!"
+				}	
+				If ok {
+					set ^TCLExLog("RequestStatus",requestid,horolog,tsrequestid)=$get(^TCLEx("RequestStatus",requestid,horolog,tsrequestid)) 
+					Kill ^TCLEx("RequestStatus",requestid,horolog,tsrequestid)
+				}
+			
+			}
+			If episodeok {
+				Set ok=1
+				If (status'=5)&&(status'=6)&&(status'=7)&&(status'=10) {
+					Set ok=0
+				}	
+				If status=5 {
+					Set datetimeofcreation=horolog
+					If extravals'="" {
+						Set datetimeofcreation=$ListGet(extravals,1)
+					}	
+					Set ok=##class(dbo.TCLRequest).UpdateStatus2CreateEpisode(requestid,epis,datetimeofcreation)
+				} ElseIf status=6 {
+					Set authdoctor=""
+					If extravals'="" {
+						Set doctorid=$ListGet(extravals,2)
+						Set testset=$ListGet(extravals,3)
+						// Проверяем входит ли набор тестов в группу печати (информация о его авторизации будет передаваться только при авторизации всех наборов тестов группы печати)
+						Set reportgroup=##class(TCLEx.Function.TestSet).ReportGroup(testset)
+						If reportgroup'="" {
+							Set authorised=$Get(^||EMED.ReportGroups(reportgroup),0)
+							If 'authorised {
+								Lock -^TCLEx("RequestStatus",requestid,horolog) // Ничего не делаем, просто уходим на след. запись
+								Continue
+							}	
+						}
+						set doctoridold=doctorid
+						Set doctorid=##class(TCLEx.Function.EMED).OfficialDoctor(doctorid,testset)
+						Set userobj=##class(User.SSUser).%OpenId(doctorid,0)
+						If $IsObject(userobj) {
+							Set authdoctor=userobj.SSUSRName
+						}
+						// если авторизовавший доктор подменен (т.е. авторизовал лаборант) 
+						// и уже заполнено поле dbo.TCLRequest:"ТКЛ_ЗВК: Лицо авторизовавшее результаты выполнения заявки",
+						// то не меняем значение этого поля
+						if doctoridold'=doctorid {
+							set doctorAuthorised=##class(dbo.TCLRequest).GetDoctorAuthorised(requestid)
+							if doctorAuthorised'="" set authdoctor=doctorAuthorised	
+						}
+					}	
+					Set ok=##class(dbo.TCLRequest).UpdateStatus2Authorized(requestid,authdoctor)
+				} ElseIf status=7 {							// Набор тестов удален в ЛИС или установлена причина по которой его не будут делать
+					Set reason="Набор тестов удален."
+					If extravals'="" {
+						set reasontext=""
+						Set reasoncode=$ListGet(extravals,1)
+						Set reasonobj=##class(User.CTReason).%OpenId(reasoncode,0)
+						If $IsObject(reasonobj) {
+							Set reasontext=" Причина отмены - "_reasonobj.CTRDescription
+						}
+						Set testsetcode=$ListGet(extravals,2)
+						if testsetcode'="" {
+							Set testsetobj=##class(User.CTTestSet).%OpenId(testsetcode,0)
+							If $IsObject(testsetobj) {
+							   Set reason="Набор тестов """_testsetobj.CTTSName_""""_$select(reasontext'="":" отменен."_reasontext,1:" удален.")
+							}
+						}
+					}	
+					Set ok=##class(dbo.TCLRequest).UpdateStatus2Canceled(requestid,reason)
+				} ElseIf  status=10 {
+					Set ok=##class(dbo.TCLRequest).UpdateStatus2CancelationOfAuthorization(requestid)
+				}	
+				If ok {
+					set ^TCLExLog("RequestStatus",requestid,horolog)=$get(^TCLEx("RequestStatus",requestid,horolog))
+					Kill ^TCLEx("RequestStatus",requestid,horolog)
+				}		
+			} Else {
+				Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
+		
+			}		
+			Lock -^TCLEx("RequestStatus",requestid,horolog)
+		}
+	}
+]]></Implementation>
+</Method>
+
+<Method name="SaveTestSetData">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pRequestId:%String,pTestSetRequestId:%String,pTestSet:%String,pTestSetId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set ok=##class(dbo.TCLRequestTestData).DeleteTestSetData(pTestSetRequestId)
+	If 'ok Quit ok
+	Kill ^||EMED.TestOrder,^||EMED.TestSetDataId
+	Do ##class(TCLEx.Function.TestSet).TemplateTestOrder(pTestSet,$Name(^||EMED.TestOrder))
+	Do ##class(TCLEx.Function.TestSet).TestSetDataIdOrder(pTestSetId,$Name(^||EMED.TestOrder),$Name(^||EMED.TestSetDataId))
+	Kill ^||EMED.EMEDTest
+	Set ok=##class(dbo.confeprtcl).CreateTestBuffer(pTestSet,$NA(^||EMED.EMEDTest))
+	If 'ok Quit ok
+	Set n="",testsetok=1
+	For  {
+		Set n=$Order(^||EMED.TestSetDataId(n))
+		If n="" Quit
+		Set testdataid=""
+		For  {
+			Set testdataid=$Order(^||EMED.TestSetDataId(n,testdataid),1,testcode)
+			If testdataid="" Quit
+			Kill ^||EMED.TestSetData
+			Do ##class(TCLEx.Function.TestSet).GetResultInfo(testdataid,,$Name(^||EMED.TestSetData))
+			Set testcode=$Get(^||EMED.TestSetData(testdataid,"Code"))
+			If '$Data(^||EMED.EMEDTest(testcode)) Continue
+			Set test=$Get(^||EMED.TestSetData(testdataid,"Description"))
+			Set result=$Get(^||EMED.TestSetData(testdataid,"Value"))
+			Set units=$Get(^||EMED.TestSetData(testdataid,"Units"))
+			Set comment=$$Buffer2String^KSUTIL1($Name(^||EMED.TestSetData(testdataid,"CommentStrings")),$Char(13,10)) //$Get(^||EMED.TestSetData(testdataid,"Comment"))
+
+			Set minrange=$Get(^||EMED.TestSetData(testdataid,"MinRange"))			
+			Set maxrange=$Get(^||EMED.TestSetData(testdataid,"MaxRange"))
+			Set range=""
+			If (minrange'="")&&(maxrange'="") {
+				Set range=minrange_"-"_maxrange
+			} ElseIf (minrange'="")&&(maxrange="")&&(($Extract(minrange,1,1)'="<")&&($Extract(minrange,1,1)'=">")&&($Extract(minrange,1,1)'="=")){
+				Set range="> "_minrange
+			} ElseIf (minrange'="")&&(maxrange="")&&(($Extract(minrange,1,1)="<")||($Extract(minrange,1,1)=">")||($Extract(minrange,1,1)="=")){
+				Set range=minrange
+			} ElseIf (minrange="")&&(maxrange'="")&&(($Extract(maxrange,1,1)'="<")&&($Extract(maxrange,1,1)'=">")&&($Extract(maxrange,1,1)'="=")){
+				Set range="< "_maxrange
+			} ElseIf (minrange="")&&(maxrange'="")&&(($Extract(maxrange,1,1)="<")||($Extract(maxrange,1,1)=">")||($Extract(maxrange,1,1)'="=")){
+				Set range=maxrange
+			}					
+			Set refrangestatus=$Get(^||EMED.TestSetData(testdataid,"Flag"))
+			Set emedragngestatus=2
+			If (refrangestatus="L") {
+				Set emedragngestatus=1
+			} ElseIf(refrangestatus="N") {
+				Set emedragngestatus=2
+			} ElseIf(refrangestatus="H") {
+				Set emedragngestatus=3
+			} ElseIf(refrangestatus="A") {
+				Set emedragngestatus=4
+			}		
+			Set critical=$Get(^||EMED.TestSetData(testdataid,"Panic"))
+			If (critical="L") {
+				Set emedragngestatus=5
+			} ElseIf(critical="H") {
+				Set emedragngestatus=6
+			}
+			If units'="" {
+				If range'="" {
+					Set range=range_" "
+				}	
+				Set range=range_units
+			}	
+			If $Data(^||EMED.TestSetData(testdataid,"ComplexRefRanges")) {
+				Set range=$$Buffer2String^KSUTIL1($Name(^||EMED.TestSetData(testdataid,"ComplexRefRanges")),$Char(13,10)) //$Get(^||EMED.TestSetData(testdataid,"Comment"))
+			}	
+			Set ok=##class(dbo.TCLRequestTestData).Insert(pRequestId,pTestSetRequestId,pTestSet,testcode,test,result,comment,range,emedragngestatus)
+			If 'ok{
+				Set testsetok=ok
+			}
+		}
+	}	
+	Quit testsetok
+]]></Implementation>
+</Method>
+
+<Method name="DeleteLog4NonExistingRequest">
+<Description>
+Удалить из ^TCLEx запись для отсутвствующих в буферной таблице обмена запросов</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pRequestId:%String,pHorolog</FormalSpec>
+<Implementation><![CDATA[
+	Set ok=##CLASS(dbo.EMCInterfaceLaboRequest).IsRequestExists(pRequestId,.exists)
+	If (ok)&&('exists){
+		set ^TCLExLog("RequestStatus",pRequestId,pHorolog)="delete "_$get(^TCLEx("RequestStatus",pRequestId,pHorolog))
+		Kill ^TCLEx("RequestStatus",pRequestId,pHorolog)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="TestSetTimeOuts">
+<Description>
+Тайм-ауты для выгрузки набора тестов pTestSetId
+pFirstTimeOut - время с момента авторизации первого набора тестов
+pLastTimeOut - время с момента авторизации последнего набора тестов
+Для приоритетов "U" (Cito) и "C" (Срочный) берутся меньшие тайм-ауты</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTestSetId:%String,&pFirstTimeOut:%Integer,&pLastTimeOut:%Integer]]></FormalSpec>
+<Implementation><![CDATA[
+	Set iscito=0
+	/* 	В итоге решили, что смотрим только приоритет набора тестов и закрываем 
+		для пользователей возможность менять приоритет эпизода целиком
+	// Сначала смотрим проиритет эпизода целиком
+	Set episobj=##class(User.EPVisitNumber).%OpenId($Piece(pTestSetId,"||",1))
+	If ($IsObject(episobj))&&($IsObject(episobj.EPVISPriorityCodeDR)) {
+		Set priority=episobj.EPVISPriorityCodeDR.%Id()
+		If (priority="U")||(priority="C") {
+			Set iscito=1
+		}	
+	}*/
+	// Если для эпизода не задано, то смотрим приоритет набора тестов
+	If 'iscito {
+		Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+		If ($IsObject(testsetobj))&&($IsObject(testsetobj.VISTSPriorityDR)) {
+			Set priority=testsetobj.VISTSPriorityDR.%Id()
+			If (priority="U")||(priority="C") {
+				Set iscito=1
+			}	
+		}
+	}
+		
+	If iscito {																			// Для CITO
+		Set pFirstTimeOut=$$CitoFirtsTestSetTimeOut^Settings.Reports() 					// Сколько ждем с момента  первой авторизации TestSet-а эпизода или последней выгрузки результатов по эпизоду 
+		Set pLastTimeOut=$$CitoLastTestSetTimeOut^Settings.Reports()						// Сколько ждем с момента после авторизации TestSet-а						
+	}
+	Else {
+		Set pFirstTimeOut=$$FirtsTestSetTimeOut^Settings.Reports()
+		Set pLastTimeOut=$$LastTestSetTimeOut^Settings.Reports()
+	}
+]]></Implementation>
+</Method>
+
+<Method name="UpdateTestSetCount4Episode">
+<Description>
+Обновить число наборов тестов в эпизоде pEpisode
+Для числа наборов тестов используем поле </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String</FormalSpec>
+<Implementation><![CDATA[
+	If '##class(User.EPVisitNumber).%ExistsId(pEpisode)
+	Set testsetcount=0
+	&Sql(
+		Select Count(*) 
+		Into :testsetcount
+		From SQLUser.EP_VisitTestSet
+		Where VISTS_ParRef=:pEpisode
+	)
+	If SQLCODE'=0 {
+		Set testsetcount=0
+	}
+	&Sql(
+		Update SQLUser.EP_VisitNumber(EPVIS_Extra14)
+		Values (:testsetcount)
+		Where EPVIS_VisitNumber=:pEpisode
+	)
+]]></Implementation>
+</Method>
+
+<Method name="IsTime4ResultFiles">
+<Description>
+Настало ли время для формирования файлов результата
+Должен пройти тайм-ауты с момента автоизации первого набора тестов в эпизоде, и тайм-аут с момента авторизации текущего набора тестов
+Параметры:
+pEpisodeId - ID эпизода
+pTestSetId - ID набора тестов
+pAuthDateTime - дата-времени авторизации набора (в формате $Horolog)
+Возвращаемое значение:
+1 - время настало (отработали тайм-ауты)
+0 - еще рано</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisodeId:%String,pTestSetId:%String,pAuthDateTime:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set result=1
+	// Время авторизации первого набора тестов в эпизоде
+	Set firstauthdatetime=##class(TCLEx.Function.Episode).FirstAuthorizationDateTime(pEpisodeId)
+	If firstauthdatetime="" {		// Если его нет, то берем время аворизации текущего набора тестов (перестраховка, такого быть не должно)
+		Set firstauthdatetime=pAuthDateTime
+	}
+	Do ..TestSetTimeOuts(pTestSetId,.firsttimeout,.lasttimeout) 	// Тайм-ауты для эпизода с учетом срочности набора тестов
+	Set now=$Horolog
+	Set deltatime=$$DeltaTimeSec^KSUTIL1(firstauthdatetime,now)	// Сравниваем разницу с момента авторизации первого набора тестов 
+	If deltatime<firsttimeout {
+		Set result=0
+	} Else {
+		Set deltatime=$$DeltaTimeSec^KSUTIL1(pAuthDateTime,now)	// Сравниваем разницу с момента авторизации текщего набора тестов
+		If deltatime<lasttimeout {
+			Set result=0
+		}
+	}		  										
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetRequestGUIDByCode">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pRequestCode:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=##class(dbo.TCLRequest).GetGUIDByCode(pRequestCode)
+	If result'="" {
+		Set ^EMED.GUID("tcl_request")=$ListBuild($ZDateTime($Horolog,3),pRequestCode)
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetTestSetGUIDByRequestGUIDAndTestSet">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pRequestGUID:%String,pTestSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=##class(dbo.TCLRequestTestSet).GetGUIDByRequestGUIDAndTestSet(pRequestGUID,pTestSet)
+	If result'="" {
+		Set ^EMED.GUID("tcl_testset")=$ListBuild($ZDateTime($Horolog,3),pRequestGUID,pTestSet)
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="DeleteOldOrders">
+<Description>
+Удалить страрые заявки из временного буфера 
+(дату создания заявки смотрим по HOS_HospitalPatients)</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	Set prehospmaxdate=+$Horolog-180		// Записи с HOSP_Location_DR='PH' (Предгоспитализация храним 180 дней)
+	Set normalmaxdate=+$Horolog-3			// остальные 3 дня
+	&sql(
+		Delete From SQLUser.HOS_HospitalPatients
+		Where (HOSP_Location_DR='PH' and Hosp_TransDate<:prehospmaxdate) or (HOSP_Location_DR<>'PH' and Hosp_TransDate<:normalmaxdate)
+	)
+]]></Implementation>
+</Method>
+
+<Method name="OfficialDoctor">
+<Description>
+Код официального врача 
+(Если авторизовал лаборант лаборант, то ищем врача по умолчанию для отдела авторизованного исследования.
+Если врач по умолчанию для отдела не проставлен, то возвращаем начальное значение)
+Параметры:
+pDoctorId - код авторизовавшего врача
+pTestSet - код, авторизованного набора тестов
+Возвращаемое значение:
+Код врача, который официально должен авторизовать исследования</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDoctorId:%String,pTestSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set userobj=##class(User.SSUser).%OpenId(pDoctorId,0)
+	If '$IsObject(userobj) Quit ""
+	Set usertype=userobj.SSUSRPersonnelTypeDRGetObjectId()
+	If usertype'="LBR" Quit pDoctorId						// Тип пользователя - лаборант
+	If $Get(pTestSet)="" Quit pDoctorId
+	Set department=$Extract(pTestSet,1,1)
+	Set departmentobj=##class(User.CTDepartment).%OpenId(department,0)
+	If '$IsObject(departmentobj) Quit pDoctorId
+	Quit departmentobj.CTDEPDefaultPathologistDRGetObjectId()
+]]></Implementation>
+</Method>
+
+<Method name="EpisodeTestBuf2ReportGroupBuf">
+<Description>
+Преобразование буфера с информацией о наборах тестов эпизода в буфер с информацией по группам печати эпизода
+Если все наборы тестов группы печати авторизованы, то @pReportGroupGlb@(reportgroup)=1
+Параметры:
+pTestSetGlb - буфер с данными наборов тестов эпизода
+pReportGroupGlb - возвращаемый глобал с данными групп печати в формате
+@pReportGroupGlb@(reportgroup)=1 (если все наборы тестов группы печати авторизованы)
+@pReportGroupGlb@(reportgroup)=0 (если хотя бы один из наборов тестов группы печати неавторизован)
+@pReportGroupGlb@(reportgroup,testsetid)=Values (где Values - значения передаваемые для набора тестов в pTestSetGlb)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetGlb:%String,pReportGroupGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	
+	Kill @pReportGroupGlb
+	Set testsetid=""
+	For  {
+		Set testsetid=$Order(@pTestSetGlb@(testsetid),1,vals)
+		If testsetid="" Quit
+		Set testset=##class(TCLEx.Function.TestSet).GetPropertyValue(vals,"VISTSTestSetDR")
+		If testset="" Continue
+		Set reportgroup=##class(TCLEx.Function.TestSet).ReportGroup(testset)
+		If reportgroup'="" {
+			Set @pReportGroupGlb@(reportgroup,testsetid)=vals 
+		}	
+	}
+	Set reportgroup=""
+	For  {
+		Set reportgroup=$Order(@pReportGroupGlb@(reportgroup))
+		If reportgroup="" Quit
+		Set done=1
+		Set testsetid=""
+		For  {
+			Set testsetid=$Order(@pReportGroupGlb@(reportgroup,testsetid),1,vals)
+			If testsetid="" Quit
+			If ('##class(TCLEx.Function.TestSet).IsAuthorisedLB(vals))&&('##class(TCLEx.Function.TestSet).IsCanceledLB2(vals)) {
+				Set done=0
+				Quit 
+			}	
+		}
+		Set @pReportGroupGlb@(reportgroup)=done	
+	}
+]]></Implementation>
+</Method>
+</Class>
+</Export>

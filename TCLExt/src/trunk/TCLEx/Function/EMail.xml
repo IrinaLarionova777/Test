@@ -1,0 +1,609 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Function.EMail">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62031,55862.859372</TimeCreated>
+
+<Method name="EpisodeNeedEMail">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisId)
+	If '$IsObject(episobj) Quit 0
+	Set hospobj=episobj.EPVISHospitalCodeDR
+	If '$IsObject(hospobj) Quit 0
+	Quit ..HospitalNeedEMail(hospobj.%Id())
+]]></Implementation>
+</Method>
+
+<Method name="HospitalNeedEMail">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospitalId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set hospobj=##class(User.CTHospital).%OpenId(pHospitalId)
+	If '$IsObject(hospobj) Quit 0
+	Set clientobj=hospobj.CTHOSClientDR
+	If '$IsObject(clientobj) Quit 0
+	Quit ..ClientNeedEMail(clientobj.%Id())
+]]></Implementation>
+</Method>
+
+<Method name="ClientNeedEMail">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClientId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set clientobj=##class(User.CTClient).%OpenId(pClientId)
+	If '$IsObject(clientobj) Quit 0
+	If clientobj.CTCLNEmail'="" Quit 1
+	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="GenerateExtraFiles">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pHospId:%String,pEpis:%String,&pTestSets:%String,pFileDir:%String,&pFileName:%String,pLogDir:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set ok=$$$OK
+	If (##class(TCLEx.Function.Hospital).NeedTxtResult4EMail(pHospId)) {
+		Set ok=##class(TCLEx.Function.PCL2TXT).EpisodeResults2TXTFile(pEpis,.pTestSets,pFileDir,.pFileName)
+		If (ok) {
+			Do LogMessage^KSUTIL1(pLogDir,"Успешно сформирован файл "_pFileName,1,1)
+		} Else {
+			Do LogStatus^KSUTIL1(pLogDir,ok,3,1)
+		}		
+	}	
+	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="HospitalResultDirectory">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit $$HospitalResultDirectory^Settings.EMail()
+]]></Implementation>
+</Method>
+
+<Method name="PCLDirectory">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit $$PCLDirectory^Settings.EMail()
+]]></Implementation>
+</Method>
+
+<Method name="LogDirectory">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit $$LogDirectory^Settings.EMail()
+]]></Implementation>
+</Method>
+
+<Method name="HospitalArchiveDirectory">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit $$HospitalArchiveDirectory^Settings.EMail()
+]]></Implementation>
+</Method>
+
+<Method name="PatientResultDirectory">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit $$PatientResultDirectory^Settings.EMail()
+]]></Implementation>
+</Method>
+
+<Method name="PatientArchiveDirectory">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	Quit $$PatientArchiveDirectory^Settings.EMail()
+]]></Implementation>
+</Method>
+
+<Method name="SendHospitalEMail">
+<ClassMethod>1</ClassMethod>
+<PublicList>PLIST</PublicList>
+<Implementation><![CDATA[
+	Set resultdir=..HospitalResultDirectory()
+	Set archivedir=..HospitalArchiveDirectory()
+	Set logdir=..LogDirectory() 
+	;
+	If $$select^MVBCFLAB(1) Quit
+	Set ip=PLIST(11),from=PLIST(17) 
+	If '$Length(ip) Quit
+	;
+	Do ..EMailClients($NA(^||clients))
+	Do ..EMailHospitals($NA(^||hospitals),$NA(^||clients))
+	Set hospcode=""
+	For  {
+		;
+		Set hospcode=$Order(^||hospitals(hospcode),1,vals)
+		If hospcode="" Quit
+		;
+		Set hospname=$ListGet(vals,1)
+		Set email=$ListGet(vals,2)
+		Do ..CreateHospitalFileList(hospcode,resultdir,$NA(^||files))
+		If '$Data(^||files) Continue
+		Do ..Send($$SMTPServer^Settings.EMail(),from,hospcode,hospname,email,resultdir,archivedir,logdir,$NA(^||files))
+	}
+]]></Implementation>
+</Method>
+
+<Method name="EMailClients">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pGlb:%String</FormalSpec>
+<PublicList>SQLCODE,id,name,email</PublicList>
+<Implementation><![CDATA[
+	Kill @pGlb
+	&sql(DECLARE C1 CURSOR FOR
+    SELECT CTCLN_Code,CTCLN_Desc,CTCLN_Email
+    INTO :id, :name,:email
+    FROM SQLUser.CT_Client
+    WHERE CTCLN_Email IS NOT NULL)
+	&sql(OPEN C1)
+	&sql(FETCH C1)
+	While (SQLCODE=0) {
+		Set @pGlb@(id)=email        
+		&sql(FETCH C1)
+	}
+  	&sql(CLOSE C1)
+]]></Implementation>
+</Method>
+
+<Method name="EMailHospitals">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospGlb:%String,pClntGlb:%String</FormalSpec>
+<PublicList>SQLCODE,code,name,client</PublicList>
+<Implementation><![CDATA[
+	Kill @pHospGlb
+	&sql(DECLARE C2 CURSOR FOR
+    SELECT CTHOS_Code,CTHOS_Name,CTHOS_Client_DR
+    INTO :code,:name,:client
+    FROM SQLUser.CT_Hospital
+    WHERE CTHOS_Client_DR IS NOT NULL)
+	&sql(OPEN C2)
+	&sql(FETCH C2)
+	While (SQLCODE=0) {
+		If (code'="")&&(client'="")&&($Get(@pClntGlb@(client))'="") {
+			Set @pHospGlb@(code)=$ListBuild(name,@pClntGlb@(client))
+		}        
+		&sql(FETCH C2)
+	}
+  	&sql(CLOSE C2)
+]]></Implementation>
+</Method>
+
+<Method name="CreateHospitalFileList">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospitalCode:%String,pBaseDir:%String,pGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set maxsize=5242880 						; Max размер вложения - 5 Мб
+	Set size=0
+	Kill @pGlb
+	Set dir=pBaseDir_"\"_pHospitalCode
+	If '##class(%File).DirectoryExists(dir) Quit
+	Set rs=##class(%ResultSet).%New("%File:FileSet")
+	Set ok=rs.Execute(dir,"*.pdf")  
+	If 'ok Quit
+	While rs.%Next() { 
+ 		Set fullname=$Get(rs.Data("Name"))
+ 		Set size=size+$Get(rs.Data("Size"))
+ 		If size>maxsize Quit
+ 		If fullname'="" { 
+ 			Set dir=##class(%File).GetDirectory(fullname)
+			Set name=$Piece(fullname,dir,2)
+			Set @pGlb@($Increment(@pGlb))=$ListBuild(fullname,dir,name,1)
+			Set txtfilename=$$ChangeFileExtension^KSUTIL1(fullname,"txt") // Если есть такой же .txt файл, то его также добавляем в письмо
+			If ##class(%File).Exists(txtfilename) {
+				Set @pGlb@($Increment(@pGlb))=$ListBuild(txtfilename,dir,$Piece(txtfilename,dir,2),0)
+			}	
+ 		}
+ 	}
+]]></Implementation>
+</Method>
+
+<Method name="Send">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pSmtpServer:%String,pFromAddress:%String,pHospitalCode:%String,pHospitalName:%String,pEmailAddress:%String,pDir:%String,pArchiveDir:%String,pLogDir:%String,pFilesGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Do LogMessage^KSUTIL1(pLogDir,"",1,0)
+	Do LogMessage^KSUTIL1(pLogDir,"Подготовлено "_$Get(@pFilesGlb)_" файлов для отправки в "_pHospitalName_" ("_pHospitalCode_")",1,1)
+	Set i=""
+	For  {
+		Set i=$Order(@pFilesGlb@(i),1,vals)
+		If i="" Quit
+		Do LogMessage^KSUTIL1(pLogDir,$ListGet(vals,1),1,0)
+	}	
+	;
+	Set archivdir=pArchiveDir_"\"_pHospitalCode_"\"_$ZDate(+$Horolog,8)
+	If '$$TestDirectory^KSUTIL1(archivdir) {
+		Do LogMessage^KSUTIL1(pLogDir,"Недоступен каталог архива "_archivdir,3,1)
+		Quit
+	}	
+	;
+	;
+	Set s=##class(%Net.SMTP).%New()
+	Set auth=##class(%Net.Authenticator).%New() ; use default authentication list
+	Set auth.UserName=$$SMTPUserName^Settings.EMail()
+	Set auth.Password=$$SMTPPassword^Settings.EMail()
+	Set s.authenticator=auth
+	Set s.smtpserver=pSmtpServer ;"mail.bionlab.ru"  ;pSmtpServer
+	Set m=##class(%Net.MailMessage).%New()
+	Set m.IsHTML=1
+	Set m.From="support@bionlab.ru" ;pFromAddress
+	Set tocnt=$Length(pEmailAddress,";")
+	For i=1:1:tocnt {
+		Set adr=$Piece(pEmailAddress,";",i)
+		If (adr="")||(adr'["@") Continue
+		Do m.To.Insert(adr)
+	}	
+	Set m.Subject=..MessageSubject(pFilesGlb) ;"Результаты анализов лаборатории BION"
+	Set m.Charset="UTF-8"
+	Do ..MessageBody(m,pHospitalCode,pHospitalName,pFilesGlb)
+	Set cnt="",ok=1
+	For  {
+		Set cnt=$Order(@pFilesGlb@(cnt),1,vals)
+		If cnt="" Quit
+		Set dir=$ListGet(vals,2)
+		Set name=$ListGet(vals,3)
+		Set ok=m.AttachFile(dir,name)
+		If 'ok {
+			Do LogMessage^KSUTIL1(pLogDir,"Не удалось сделать вложение файла "_$ListGet(vals,1),3,1)
+			Do LogStatus^KSUTIL1(pLogDir,ok,3,1)
+			Quit
+		}	
+	}
+	If 'ok Quit
+	Set ok=s.Send(m)
+	If 'ok {
+		Do LogMessage^KSUTIL1(pLogDir,"Не удалось отправить E-Mail в "_pHospitalName_" ("_pHospitalCode_") по адресу "_pEmailAddress,3,1)
+		Do LogStatus^KSUTIL1(pLogDir,ok,3,1)
+		Quit
+	}	
+	;
+	Do LogMessage^KSUTIL1(pLogDir,"Успешно отправлен E-Mail в "_pHospitalName_" ("_pHospitalCode_") по адресу "_pEmailAddress,1,1)
+	;Hang 5 																; Задержка перед переименовыванием файлов
+	Set cnt=""
+	For  {
+		Set cnt=$Order(@pFilesGlb@(cnt),1,vals)
+		If cnt="" Quit
+		Set fullname=$ListGet(vals,1)
+		Set dir=$ListGet(vals,2)
+		Set name=$ListGet(vals,3)
+		Set archivename=$$ArchiveFileName^KSUTIL1(archivdir_"\"_name)
+		Set ok=$$Rename^KSUTIL1(fullname,archivename,pLogDir)
+		;Set ok=##class(%File).Rename(fullname,archivename)
+		If ok {
+			Do LogMessage^KSUTIL1(pLogDir,"Файл "_fullname_" успешно переименован в "_archivename,1,1)
+		} Else {
+			Do LogMessage^KSUTIL1(pLogDir,"Не удалось переименовать файл "_fullname_" в "_archivename,3,1)
+			Do LogStatus^KSUTIL1(pLogDir,ok,3,1)
+		}		
+	}	
+	Do LogMessage^KSUTIL1(pLogDir,"",1,0)
+]]></Implementation>
+</Method>
+
+<Method name="MessageSubject">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFilesGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set cnt=""
+	For  {
+		Set cnt=$Order(@pFilesGlb@(cnt),1,vals)
+		If cnt="" Quit
+		Set fname=$ListGet(vals,3)
+		Set name=$Piece(fname,"(",1)
+		If name'="" {
+			Set names(name)=""
+		}
+	}
+	Set namesstr=""
+	Set name=""
+	For  {
+		Set name=$Order(names(name))
+		If name="" Quit
+		If namesstr'="" {
+			Set namesstr=namesstr_","
+		}	
+		Set namesstr=namesstr_name
+	}
+	If namesstr="" Quit "Результаты анализов лаборатории BION"
+	Quit "["_namesstr_"] - Результаты анализов лаборатории BION"
+]]></Implementation>
+</Method>
+
+<Method name="MessageBody">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pMessObj:%String,pHospitalCode:%String,pHospitalName:%String,pFilesGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Kill ^||mess
+	Set ^||mess($Increment(^||mess))="<!DOCTYPE HTML PUBLIC ""-//W3C//DTD HTML 4.0 Transitional//EN"">"
+	Set ^||mess($Increment(^||mess))="<HTML><HEAD>"
+	Set ^||mess($Increment(^||mess))="<META http-equiv=Content-Type content=""text/html; charset=utf-8"">"
+	Set ^||mess($Increment(^||mess))="<META content=""MSHTML 6.00.5730.13"" name=GENERATOR>"
+	Set ^||mess($Increment(^||mess))="<STYLE></STYLE>"
+	Set ^||mess($Increment(^||mess))="</HEAD>"
+	Set ^||mess($Increment(^||mess))="<BODY bgColor=#ffffff>"
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="Сообщение сформировано автоматически системой доставки результатов для ЛПУ: "
+	Set ^||mess($Increment(^||mess))=pHospitalName_" ("_pHospitalCode_")"
+	Set ^||mess($Increment(^||mess))="</FONT></DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+	Set cnt=""
+	For  {
+		Set cnt=$Order(@pFilesGlb@(cnt),1,vals)
+		If cnt="" Quit
+		Set name=$ListGet(vals,3)
+		Set insertname=$ListGet(vals,4)
+		If insertname {
+			Do ..FileInfoBody(name)
+		}
+	}	
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="Если у Вас возникли вопросы и информация, приведенная далее в письме, не дала ответа, Вы можете связаться с отделом клиентской поддержки лаборатории BION:"
+	Set ^||mess($Increment(^||mess))="</FONT></DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="<BR>•&nbsp;Позвонив по многоканальному телефону (495) 258-9400 с 8:00 до 20:00"
+	Set ^||mess($Increment(^||mess))="<BR>•&nbsp;Воспользовавшись круглосуточной e-mail поддержкой - <A href=""mailto:support@bionlab.ru"">support@bionlab.ru</A>"
+	Set ^||mess($Increment(^||mess))="</FONT></DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="Обращаем Ваше внимание на то, что результаты исследований содержатся во вложенном файле формата PDF компании Adobe."
+	Set ^||mess($Increment(^||mess))="</FONT></DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="Для его просмотра на компьютере рекомендуем воспользоваться программой Adobe Reader, распространяемой производителем бесплатно."
+	Set ^||mess($Increment(^||mess))="</FONT></DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="Если Вам не удается открыть для просмотра PDF-файл с результатами, Вы можете воспользоваться ссылкой:"
+	Set ^||mess($Increment(^||mess))="</FONT></DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="<A href=""http://get.adobe.com/reader/download/"">http://get.adobe.com/reader/download/</A>"
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="для загрузки с сайта производителя программы Adobe Reader."
+	Set ^||mess($Increment(^||mess))="</FONT></DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+	Set ^||mess($Increment(^||mess))="Лаборатория BION передает результаты исследований в формате PDF, потому что данный формат сохраняет все шрифты, цвета и структуру исходного документа независимо от программного обеспечения и аппаратных средств. Таким образом, PDF документ будет всегда идентичен оригиналу - он будет выглядеть и печататься как оригинальный документ."
+	Set ^||mess($Increment(^||mess))="</FONT></DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="Обращаем Ваше внимание на то, что лаборатория BION не несет ответственность за возможные последствия установки и использования любого программного обеспечения для работы с файлами формата PDF."
+	Set ^||mess($Increment(^||mess))="</FONT></DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="Данное электронное сообщение, включая вложения, содержит конфиденциальную информацию и предназначено только для использования адресатом. Если Вы не являетесь адресатом и сообщение получено ошибочно, пожалуйста, удалите данное сообщение. Несанкционированное его использование, распространение, публикация, воспроизведение или любые действия либо бездействие, повлекшее за собой это, запрещены и могут преследоваться по закону."
+	Set ^||mess($Increment(^||mess))="</FONT></DIV></BODY></HTML>"
+	
+	Set i=""
+	For  {
+		Set i=$Order(^||mess(i),1,str)
+		If i="" Quit
+		Do pMessObj.TextData.Write(str)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="FileInfoBody">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFileName:%String</FormalSpec>
+<Implementation><![CDATA[
+	If pFileName="" Quit
+	Set episid=$Piece(pFileName,"(",$Length(pFileName,"("))
+	Set resulttype=$Piece(episid,"-",2)
+	Set resulttype=$Piece(resulttype,")",1)
+	Set episid=$Piece(episid,"-",1)
+	Set episobj=##class(User.EPVisitNumber).%OpenId(episid)
+	If '$IsObject(episobj) Quit
+	Set ^||mess($Increment(^||mess))="<DIV><FONT face=Arial size=2>"
+	Set ^||mess($Increment(^||mess))="Заказ № "_$Extract(episid,1,10)_", Образец № "_episid
+	Set ^||mess($Increment(^||mess))="<BR>"
+	Set ^||mess($Increment(^||mess))="Результат - "_resulttype
+	Set ^||mess($Increment(^||mess))="<BR>"
+	Set ^||mess($Increment(^||mess))="ФИО: "_$$FullName^KSPCLUtils(episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1)
+	Set ^||mess($Increment(^||mess))="<BR>"
+	Set doctobj=episobj.EPVISDoctorCodeDR
+	If $IsObject(doctobj) Set ^||mess($Increment(^||mess))="ФИО врача: "_$$FullName^KSPCLUtils(doctobj.CTDRSurname,doctobj.CTDRGivenName)	
+	Set ^||mess($Increment(^||mess))="<DIV>&nbsp;</DIV>"
+]]></Implementation>
+</Method>
+
+<Method name="CreateHospitalResultFiles">
+<Description><![CDATA[
+&&& Создать файлы с результатами, отсылаемые в ЛПУ]]></Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set pcldir=..PCLDirectory()
+	Set pdfdir=..HospitalResultDirectory()
+	Set logdir=..LogDirectory()
+	
+	Set epis=""
+	For  {
+		Set epis=$Order(^TCLEx("E-Mail",epis))
+		If epis="" Quit
+		;
+		Set hospid=##class(TCLEx.Function.Episode).HospitalId4Episode(epis)
+		If hospid="" Continue
+		If 'iscomplete {
+			If '##class(TCLEx.Function.Hospital).NeedEMail4NonCompleteEpisodes(hospid) Continue
+		}	
+		;
+		Set cito=##class(TCLEx.Function.Episode).IsCito(epis)
+		Set iscomplete=##class(TCLEx.Function.Episode).IsComplete(epis)
+		; Тайм-ауты для отправки результата
+		If cito {																	; Для CITO
+			Set episdeltatime=$$CitoEpisodeTimeOut^Settings.EMail() 				; Сколько ждем с момента  первой авторизации TestSet-а эпизода или последней выгрузки результатов по эпизоду 
+			Set testsetdeltatime=$$CitoTestSetTimeOut^Settings.EMail()				; Сколько ждем с момента после авторизации TestSet-а						
+		}
+		Else {
+			Set episdeltatime=$$EpisodeTimeOut^Settings.EMail()
+			Set testsetdeltatime=$$TestSetTimeOut^Settings.EMail()
+		}		
+
+		;
+		Set datetimeh=$Get(^TCLEx("E-Mail",epis))
+		If datetimeh'="" {
+			Set datetime=$ZDateTime(datetimeh,3) 										; Время первой авторизации TestSet-а или последней выгрузки результатов по эпизоду 
+			Set deltatime=$system.SQL.DATEDIFF("ss",datetime,$ZDateTime($Horolog,3))
+			If deltatime<episdeltatime Continue 										; Тайм-аут по эпизоду
+		}
+		Kill testsets
+		Set testset=""
+		For  {
+			Set testset=$Order(^TCLEx("E-Mail",epis,testset),1,datetimeh)
+			If testset="" Quit
+			Set datetime=$ZDateTime(datetimeh,3)
+	       	Set deltatime=$system.SQL.DATEDIFF("ss",datetime,$ZDateTime($Horolog,3))
+     	  	If deltatime'<testsetdeltatime {  											; Тайм-аут по TestSet-у
+       			Set testsets(testset)=""
+       		}   
+		
+		}	
+		If '$Data(testsets) Continue 
+		Lock +^TCLEx("E-Mail",epis)
+		Set ok=##class(TCLEx.Function.PCL2PDF).EpisodeResults2PDFFile(epis,.testsets,pcldir, pdfdir_"\"_hospid, .pdffilename)
+		If (ok) {
+			Set ^TCLEx("E-Mail",epis)=$Horolog				; Записали время последней обработки эпизода 		
+			Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_pdffilename,1,1)
+			Do ..GenerateExtraFiles(hospid,epis,.testsets,pdfdir_"\"_hospid, .txtfilename,logdir)
+			Set testset=""									; Чистим отосланные TestSet-ы эпизода
+			For  {
+				Set testset=$Order(testsets(testset))
+				If testset="" Quit
+				Kill ^TCLEx("E-Mail",epis,testset)
+			}	
+			If iscomplete {
+				Kill ^TCLEx("E-Mail",epis) 					; Все уже послали
+			} 	
+		} Else {
+			Do LogStatus^KSUTIL1(logdir,ok,3,1)
+			Set notprintable=##class(TCLEx.Function.Episode).ProcessOnlyNotPrintableResults(epis,.testsets)
+			If 'notprintable {
+				Do LogStatus^KSUTIL1(logdir,"Удалена регистрация отправки результатов с непечатаемыми результатами эпизода "_epis_" !",3,1)
+			}
+		}
+		If $Data(^TCLEx("E-Mail",epis))=1 {					; Нужно ли послать "-Окончательный)" результат ? 
+			If ##class(TCLEx.Function.Episode).IsComplete(epis) {
+				Set ok=##class(TCLEx.Function.PCL2PDF).EpisodeResults2PDFFile(epis,,pcldir, pdfdir_"\"_hospid, .pdffilename)
+				If (ok) {
+					Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_pdffilename,1,1)
+					Do ..GenerateExtraFiles(hospid,epis,,pdfdir_"\"_hospid, .txtfilename,logdir)
+					Kill ^TCLEx("E-Mail",epis)
+				} Else {
+					Do LogStatus^KSUTIL1(logdir,ok,3,1)
+				}		
+			}	
+		}	
+		Lock -^TCLEx("E-Mail",epis)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="CreatePatientResultFiles">
+<Description>
+Создать файлы с результатами, отсылаемые пациентам</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set pcldir=..PCLDirectory()
+	Set pdfdir=..PatientResultDirectory()
+	Set logdir=..LogDirectory()
+	
+	Set epis=""
+	For  {
+		Set epis=$Order(^TCLEx("PatientEMail",epis))
+		If epis="" Quit
+		Set cito=##class(TCLEx.Function.Episode).IsCito(epis)
+		; Тайм-ауты для отправки результата
+		If cito {																	; Для CITO
+			Set episdeltatime=$$CitoEpisodeTimeOut^Settings.EMail() 				; Сколько ждем с момента  первой авторизации TestSet-а эпизода или последней выгрузки результатов по эпизоду 
+			Set testsetdeltatime=$$CitoTestSetTimeOut^Settings.EMail()				; Сколько ждем с момента после авторизации TestSet-а						
+		}
+		Else {
+			Set episdeltatime=$$EpisodeTimeOut^Settings.EMail()
+			Set testsetdeltatime=$$TestSetTimeOut^Settings.EMail()
+		}		
+		;
+		Set hospid=##class(TCLEx.Function.Episode).HospitalId4Episode(epis)
+		If hospid="" Continue
+		;
+		Set order=$Extract(epis,1,10)
+		Kill ^||Episodes
+		Do ##class(TCLEx.Function.LabOrder).CreateOrderEpisodesGlb(order,$Name(^||Episodes))
+		Set iscomplete=##class(TCLEx.Function.LabOrder).IsComplete(epis,$Name(^||Episodes))
+		Set neednoncomplete=##class(TCLEx.Function.Hospital).NeedPatientEMail4NonCompleteOrders(hospid)
+		If ('iscomplete)&&('neednoncomplete) {    									// Если незакончен заказ и не нужно отсылать промежуточные результаты, то пропускаем
+			Continue
+		}
+		;
+		If (iscomplete) {													// Формируем результат для заказа пациента
+			//Do ..CreatePatientResultFiles(order,hospid,$Name(^||Episodes))
+			Continue
+		}		
+
+		;
+		Set datetimeh=$Get(^TCLEx("PatientEMail",epis))
+		If datetimeh'="" {
+			Set datetime=$ZDateTime(datetimeh,3) 										; Время первой авторизации TestSet-а или последней выгрузки результатов по эпизоду 
+			Set deltatime=$system.SQL.DATEDIFF("ss",datetime,$ZDateTime($Horolog,3))
+			If deltatime<episdeltatime Continue 										; Тайм-аут по эпизоду
+		}
+		Kill testsets
+		Set testset=""
+		For  {
+			Set testset=$Order(^TCLEx("PatientEMail",epis,testset),1,datetimeh)
+			If testset="" Quit
+			Set datetime=$ZDateTime(datetimeh,3)
+	       	Set deltatime=$system.SQL.DATEDIFF("ss",datetime,$ZDateTime($Horolog,3))
+     	  	If deltatime'<testsetdeltatime {  											; Тайм-аут по TestSet-у
+       			Set testsets(testset)=""
+       		}   
+		
+		}	
+		If '$Data(testsets) Continue 
+		Lock +^TCLEx("PatientEMail",epis)
+		Set ok=##class(TCLEx.Function.PCL2PDF).EpisodeResults2PDFFile(epis,.testsets,pcldir, pdfdir_"\"_hospid, .pdffilename)
+		If (ok) {
+			Set ^TCLEx("PatientEMail",epis)=$Horolog				; Записали время последней обработки эпизода 		
+			Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_pdffilename,1,1)
+			Do ..GenerateExtraFiles(hospid,epis,.testsets,pdfdir_"\"_hospid, .txtfilename,logdir)
+			Set testset=""									; Чистим отосланные TestSet-ы эпизода
+			For  {
+				Set testset=$Order(testsets(testset))
+				If testset="" Quit
+				Kill ^TCLEx("PatientEMail",epis,testset)
+			}	
+			If iscomplete {
+				Kill ^TCLEx("PatientEMail",epis) 					; Все уже послали
+			} 	
+		} Else {
+			Do LogStatus^KSUTIL1(logdir,ok,3,1)
+			Set notprintable=##class(TCLEx.Function.Episode).ProcessOnlyNotPrintableResults(epis,.testsets)
+			If 'notprintable {
+				Do LogStatus^KSUTIL1(logdir,"Удалена регистрация отправки результатов с непечатаемыми результатами эпизода "_epis_" !",3,1)
+			}
+		}
+		If $Data(^TCLEx("PatientEMail",epis))=1 {					; Нужно ли послать "-Окончательный)" результат ? 
+			If ##class(TCLEx.Function.Episode).IsComplete(epis) {
+				Set ok=##class(TCLEx.Function.PCL2PDF).EpisodeResults2PDFFile(epis,,pcldir, pdfdir_"\"_hospid, .pdffilename)
+				If (ok) {
+					Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_pdffilename,1,1)
+					Do ..GenerateExtraFiles(hospid,epis,,pdfdir_"\"_hospid, .txtfilename,logdir)
+					Kill ^TCLEx("PatientEMail",epis)
+				} Else {
+					Do LogStatus^KSUTIL1(logdir,ok,3,1)
+				}		
+			}	
+		}	
+		Lock -^TCLEx("PatientEMail",epis)
+	}
+]]></Implementation>
+</Method>
+</Class>
+</Export>
