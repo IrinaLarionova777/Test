@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="Report.PRTCLNRUS24">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62210,55426.940843</TimeCreated>
+
+<Query name="queryRpt">
+<Type>%Query</Type>
+<FormalSpec>refTmp:%String</FormalSpec>
+<SqlProc>1</SqlProc>
+<Parameter name="ROWSPEC" value="Code:%String,Desc:%String,Count:%Float,Amount:%Float,SumAmount:%Float"/>
+</Query>
+
+<Method name="queryRptExecute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,refTmp:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	//for testing
+	if $get(refTmp)="" set refTmp=..refTempGlobal()  
+	if '$d(@refTmp) do ..doDataForReport("62100","62181","2011",$name(@refTmp))
+	//
+  	set $li(qHandle,2)=refTmp
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="queryRptClose">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary]]></FormalSpec>
+<PlaceAfter>queryRptExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set refTmp=$lg(qHandle,2)
+	;if refTmp'="" k @refTmp
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="queryRptFetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>queryRptExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set refTmp=$lg(qHandle,2)
+	set item=$lg(qHandle,1)
+	set item=$o(@refTmp@("REPORT",item)) 
+	if item="" set Row="",AtEnd=1 quit $$$OK
+	set itemvals1=$g(@refTmp@("REPORT",item))
+	set desc=$g(@refTmp@("REPORT-TS",item))
+	set code=$p(item,$c(1),1)
+	set itemcnt=$ListGet(itemvals1,1)
+	set price=$ListGet(itemvals1,2)
+	set itemsum=$ListGet(itemvals1,3)
+	set $li(Row,1)=code
+	set $li(Row,2)=desc
+	set $li(Row,3)=itemcnt
+	set $li(Row,4)=price
+	set $li(Row,5)=itemsum
+	set $li(qHandle,1)=item
+	set AtEnd=0
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="TestqueryRpt">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ Set result=##class(%ResultSet).%New("Test.rpt:queryRpt")
+ Do result.Execute("") 
+ For  Quit:'result.Next()  Do
+ . Write result.Data("Code")," ",result.Data("Desc")," ",result.Data("Count")," ",result.Data("Amount")," ",result.Data("SumAmount"),!
+]]></Implementation>
+</Method>
+
+<Method name="StartRpt">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateFrom:%String,pDateTo:%String,pDateAkt:%String,pHospital:%String,pSortByDate:%String,refTmp:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+  set ret=..getFileReport() if +ret=0 quit "0^"_$p(ret,$c(1),2)
+  s fileReport=$p(ret,$c(1),2) 
+  set msgError="1^Файл отчета "_fileReport_" успешно сформирован"
+  
+  // открываем gateway	
+  try {
+	set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId("JasperGate")
+	set jgw = ##class(%Net.Remote.Gateway).%New()
+	do jgw.%Connect(jvm.Server,jvm.Port)
+  } catch { 
+     //w $System.Status.GetErrorText(%objlasterror) 
+     set msgError="0^Не удалось открыть JDBC gateway" 
+  }
+  if +msgError=0 quit msgError
+  
+  //строка параметров
+  set params = ##class(java.util.HashMap).%New(jgw)
+  do ..doParams(pDateFrom, pDateTo, pDateAkt, pHospital, pSortByDate, refTmp, .params )
+  
+  //удаление файла отчета, если существует
+  if ##class(%File).Exists(fileReport) if '##class(%File).Delete(fileReport) quit "0^Файл "_fileReport_" занят другим приложением"
+  
+  //формирование отчета
+  set connectURL = ..getConnectURL()
+  set fileJasper = ..getFileJasper()
+  try {
+     do ##class(isc.jasper.JasperFacade).executeAndSave(jgw,connectURL,fileJasper, "rtf", params, fileReport) 
+  } catch { 
+      //w $System.Status.GetErrorText(%objlasterror) 
+      set msgError="0^Не удалось сформировать файл с отчетом"
+  }
+  if +msgError=0 quit msgError
+ 
+ try {
+     do jgw.%Disconnect() 
+  } catch { 
+     set msgError="1^Не удалось закрыть JDBC gateway"
+  }
+  
+  quit msgError
+]]></Implementation>
+</Method>
+
+<Method name="StartRptTest">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateFrom:%String,pDateTo:%String,pDateAkt:%String,pHospital:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ // было call Report.PRTCLNRUS24_query24($P{pDateFromHorolog},$P{pDateToHorolog},'2011')
+  set status = $$$OK
+  
+  set refTmp=..refTempGlobal()  
+  
+  if '..doDataForReport(pDateFrom,pDateTo,pHospital,$name(@refTmp)) quit 0
+  if '$data(@refTmp) quit 0
+	
+  try {
+	set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId("JasperGate")
+	set jgw = ##class(%Net.Remote.Gateway).%New()
+	do jgw.%Connect(jvm.Server,jvm.Port)
+  } catch { 
+     w $System.Status.GetErrorText(%objlasterror) 
+     set status = 0 
+  }
+  
+  //s params = ..doParams(pDateFrom, pDateTo, pDateAkt, pHospital, "0", refTmp, jgw )
+  set params = ##class(java.util.HashMap).%New(jgw)
+  do ..doParams(pDateFrom, pDateTo, pDateAkt, pHospital, "0", refTmp, .params )
+
+  set connectURL = ..getConnectURL()
+  set fileJasper = ..getFileJasper()
+  
+  set ret=..getFileReport() if +ret=0 quit 0
+  s fileReport=$p(ret,$c(1),2)
+  
+  try {
+     do ##class(isc.jasper.JasperFacade).executeAndSave(jgw,connectURL,fileJasper, "pdf", params, fileReport) 
+  } catch { 
+      w $System.Status.GetErrorText(%objlasterror) 
+      set status = 0
+  }
+  
+   try {
+     do jgw.%Disconnect() 
+  } catch { 
+      w $System.Status.GetErrorText(%objlasterror) 
+      set status = 0
+  }
+  
+  quit status
+]]></Implementation>
+</Method>
+
+<Method name="doDataForReport">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateFrom:%String,pDateTo:%String,pHospital:%String,refTmp:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  kill @refTmp
+  set status = $$$OK
+  try {
+     do doBODY^PRTCLNRUS24(pDateFrom,pDateTo,0,pHospital,1,$name(@refTmp))  
+  } catch {
+	  set status = 0
+  }
+  //if '$data(@refTmp) quit 0
+  quit status
+]]></Implementation>
+</Method>
+
+<Method name="doParams">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pDateFrom:%String,pDateTo:%String,pDateAkt:%String,pHospital:%String,pSortByDate:%String,refTmp:%String,&params:java.util.HashMap]]></FormalSpec>
+<Implementation><![CDATA[
+    //try {
+	do params.put( "pDateFrom", $tr($zd(pDateFrom,15),"/","."))
+    do params.put( "pDateTo", $tr($zd(pDateTo,15),"/","."))
+    do params.put( "pDateAkt", $tr($zd(pDateAkt,15),"/","."))
+  
+    Set contractvals=$Get(@refTmp@("REPORT-P"))
+    do params.put("pContractNo",$ListGet(contractvals,1))
+	do params.put("pContractDate",$ListGet(contractvals,2))
+	s str=$ListGet(contractvals,3) s:str="" str=" "	do params.put("pPositionHospital",str)
+	s str=$ListGet(contractvals,4) s:str="" str=" " do params.put("pFioHospital",str)
+	s str=$P($G(^TTAB("BI",pHospital)),"\",1) s:str="" str=" " do params.put("pNameHospital",str) 
+		
+	//ООО "БИОН" Мамонов А.Ю.   !!!!!!
+	do params.put("pNameExecuter","ООО ""БИОН""")
+	do params.put("pPositionExecuter","Генеральный директор")
+	do params.put("pFioExecuter","Мамонов А.Ю.")
+	
+	s sumItog=$j(+$g(@refTmp@("REPORT")),0,2)
+	//do params.put("pSumItog", ##class(java.lang.Double).%New(jgw,sumItog))
+	do params.put("pSumItog", sumItog)
+	do params.put("pSumItogProp",$$SumStr^PRTCLNRUS25(sumItog))
+	
+	do params.put("prefTemp",$name(@refTmp)) 
+
+  
+  //} catch (e) { 
+  //  w $System.OBJ.%DisplayError() 
+  //  set status = 0  //ex.AsStatus() 
+  //}
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// вызов : set params = ..doParamsOld(pDateFrom, pDateTo, pDateAkt, pHospital, pSortByDate, refTmp, jgw )
+
+]]></Content>
+</UDLText>
+
+<Method name="doParamsOld">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateFrom:%String,pDateTo:%String,pDateAkt:%String,pHospital:%String,pSortByDate:%String,refTmp:%String,javaGateway:%Net.Remote.Gateway</FormalSpec>
+<ReturnType>java.util.HashMap</ReturnType>
+<Implementation><![CDATA[
+    //try {
+	//s dateFrom="62100",dateTo="62181"
+    // do params.put( "pDateFrom", ##class(java.util.Date).%New(javaGateway, $zd(pDateFrom)) )
+    // do params.put( "pDateTo", ##class(java.util.Date).%New(javaGateway, $zd(pDateTo)) )
+    // do params.put( "pDateFromHorolog", ##class(java.lang.Long).%New(javaGateway, pDateFrom) )
+    // do params.put( "pDateToHorolog", ##class(java.lang.Long).%New(javaGateway, pDateTo) )
+    // do params.put( "pDateFrom", ##class(java.lang.String).%New(javaGateway, $tr($zd(pDateFrom,15),"/",".")))
+    set params = ##class(java.util.HashMap).%New(javaGateway)
+    do params.put( "pDateTo", ##class(java.lang.String).%New(javaGateway, $tr($zd(pDateTo,15),"/",".")))
+    do params.put( "pDateAkt", ##class(java.lang.String).%New(javaGateway, $tr($zd(pDateAkt,15),"/",".")))
+  
+    Set contractvals=$Get(@refTmp@("REPORT-P"))
+    do params.put("pContractNo",$ListGet(contractvals,1))
+	do params.put("pContractDate",$ListGet(contractvals,2))
+	do params.put("pPositionHospital",$ListGet(contractvals,3))
+	do params.put("pFioHospital",$ListGet(contractvals,4))
+	do params.put("pNameHospital",$P($G(^TTAB("BI",pHospital)),"\",1)) 
+	
+	//ООО "БИОН" Мамонов А.Ю.
+	do params.put("pNameExecuter","ООО ""БИОН""")
+	do params.put("pPositionExecuter","Генеральный директор")
+	do params.put("pFioExecuter","Мамонов А.Ю.")
+	
+	s sumItog=$j(+$g(@refTmp@("REPORT")),0,2)
+	//do params.put("pSumItog", ##class(java.lang.Double).%New(jgw,sumItog))
+	do params.put("pSumItog", sumItog)
+	do params.put("pSumItogProp",$$SumStr^PRTCLNRUS25(sumItog))
+	
+	do params.put("prefTemp",$name(@refTmp)) 
+
+  
+  //} catch (e) { 
+  //  w $System.OBJ.%DisplayError() 
+  //  set status = 0  //ex.AsStatus() 
+  //}
+  quit params
+]]></Implementation>
+</Method>
+
+<Method name="getConnectURL">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[ quit "jdbc:Cache://127.0.0.1:56773/DATA/?username=test&password=test"
+]]></Implementation>
+</Method>
+
+<Method name="getFileJasper">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[ quit "C:/JasperTest/reports/rptAkt.jasper"
+]]></Implementation>
+</Method>
+
+<Method name="getFileReport">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ set path=$tr($$Path^REPORTSPB(),"\","/")_"/"_"Clients" if $extract(path,1)="*" s path="C:/JasperTest/reports/"
+ if '##class(%File).Exists(path) if '##class(%File).CreateDirectoryChain(path) quit "0"_$c(1)_"Ошибка при создании директории "_path
+ quit "1"_$c(1)_path_"/"_"rptAkt.rtf"
+]]></Implementation>
+</Method>
+
+<Method name="refTempGlobal">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit $name(^tmp24($j))
+]]></Implementation>
+</Method>
+</Class>
+</Export>

@@ -1,0 +1,625 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="ReportZEN.genReportJasper0">
+<Description>
+Класс для системы связки cache с jasperreports
+Генерации окна запроса параметров для отчета - разбор описания параметров в файле jrxml, инициализация данных в %session, формирование элементов modalGroup для progressBar
+предполагается %request: 
+             user (пользователь),
+             reportKey (ключ в $get(^TTAB("REPORT-GENERIC",reportKey)) (Trak)) (не обязательный, нужен только для Заголовка отчета из настроек Trak),
+             fileJRXML - имя файла (без пути) с расширением .jrxml
+Отчеты типа medium - для них сделаны свои мордочки - должны вызываться напрямую в getReportURL^TCLEx.ReportVB() (для этого в классификаторе Настройке отчетов - долженбыть указан класс zen- .cls </Description>
+<Super>ReportZEN.reportJasperAbstract</Super>
+<TimeCreated>62410,57212.566099</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+//#C0C0C0;#FFFFFF;
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+//#9966FF;#6633FF;
+
+]]></Content>
+</UDLText>
+
+<XData name="Style">
+<Data><![CDATA[
+<style type="text/css">
+
+.general {
+	background-color: #6633FF;
+	<!--border:none;-->
+}
+.selected {
+	background-color: #9966FF;
+	<!--border:none;-->
+}
+
+</style>
+]]></Data>
+</XData>
+
+<XData name="Contents">
+<Description>
+Этот XML блок описывает содержимое этой страницы.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<page height="100%" id="page" xmlns="http://www.intersystems.com/zen" title=""  onclick="zenPage.cancelEventWhenProgressBar();" xmlns:WebER="WebER" xmlns:ZenExt="ZenExt">  
+<form id="mainFormForFaceReport" 
+	width="50%" 
+	layout="vertical"
+	labelPosition="top"
+	cellStyle="padding: 3px;" 
+	align="center"
+	>
+<html id="titleFormForFaceReport">Заголовок</html>
+<vgroup id="formGroupForFaceReport" align="center">
+<!--<spacer height="10" />
+<button align="center" caption="Печать" onclick="zenPage.startRptClient()" />
+<spacer height="10" />-->
+</vgroup>
+
+</form>
+</page>
+]]></Data>
+</XData>
+
+<Method name="%OnAfterCreatePage">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	
+	$$$ThrowOnError(..initSessionData())	
+	
+    $$$ThrowOnError(..getGlobFormParams())
+    
+    $$$ThrowOnError(..createModalGroupServer())
+    
+ } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  } 
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="initSessionData">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	 set user="" 
+	 if $data(%request.Data("user")) set user=%request.Get("user") 
+	 if user="" set user="demo"
+	 if $IsObject(%session) set %session.Data("curUser")=user
+	
+	 set fileJRXML=""
+	 if $data(%request.Data("fileJRXML")) set fileJRXML=%request.Get("fileJRXML") 
+	 //if fileJRXML="" set fileJRXML="report22.jrxml"  
+	 if $IsObject(%session) set %session.Data("fileJRXML")=fileJRXML
+	 
+	 set reportKey=""
+	 if $data(%request.Data("reportKey")) set reportKey=%request.Get("reportKey") 
+	 if $IsObject(%session) set %session.Data("reportKey")=reportKey
+	 
+	 set title=""
+	 if reportKey'="" set title=$piece($get(^TTAB("REPORT-GENERIC",reportKey)),"\",9)
+	 if $IsObject(%session) set %session.Data("title")=title 
+	 
+  } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  } 
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="getGlobFormParams">
+<ClassMethod>1</ClassMethod>
+<PublicList>ref</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK,refParam=""	
+  try
+  {	
+       set fileJRXML="",title="" 
+       if $IsObject(%session) {
+	       if $data(%session.Data("fileJRXML")) set fileJRXML=%session.Data("fileJRXML")
+	       if $data(%session.Data("title")) set title=%session.Data("title")
+       }
+  
+	   kill params
+	   $$$ThrowOnError(..getParamsFromJasper(##class(Report.JasperReportTune).getPathFileJasper()_"\"_fileJRXML,.params))
+	   
+	   $$$ThrowOnError(..dopFormParamsJasper(.params,fileJRXML,title))
+  
+  }
+  Catch exception
+  {		    
+      Set ok=exception.AsStatus()
+  }
+     
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="getParamsFromJasper">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[fileJasper:%String,&params:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  if $get(fileJasper)="" Quit $$$ERROR($$$GeneralError,"Не указан файл jasper шаблона")	
+	
+ // gateway
+  set gateway=##class(Report.JasperReportTune).getNameGateway() 
+  if gateway="" Quit $$$ERROR($$$GeneralError,"Не указан gateway")
+  
+  set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
+  if '$IsObject(jvm) Quit $$$ERROR($$$GeneralError,"Incorrect Java GateWay configuration !")
+
+  //m ^test(111,"params before")=params
+  Set result=$$$OK
+  Try
+	{
+		; запуск шлюза, если он не запущен
+		If $$$ISERR(##class(%Net.Remote.Service).PingGateway(jvm.Port,jvm.Server,jvm.InitializationTimeout)) {
+			$$$ThrowOnError(##class(%Net.Remote.Service).StartGateway(gateway))
+		}	
+	
+		Set jgw=##class(%Net.Remote.Gateway).%New()
+		; подключение к шлюзу
+		$$$ThrowOnError(jgw.%Connect(jvm.Server,jvm.Port))
+		Try
+		{
+            set paramslist=##class(isc.jasper.JasperFacadeDop).getParameters(jgw, fileJasper)
+            
+            kill vsp
+            set c1=$char(1),c2=$char(2)
+            set len=paramslist.size()
+            set num=0
+            //специально два раза проход
+            for i=0:1:len-1 {
+	            set rec=paramslist.get(i)
+	            set name=$piece(rec,c1,1) 
+	            if name="" continue
+	            set let8=$extract(name,1,8)
+	            //данные для узелка "data" пока пропускаем
+	            if let8=("D"_c2_"a"_c2_"t"_c2_"a"_c2)||(let8="B"_c2_"i"_c2_"n"_c2_"d"_c2)||(let8="C"_c2_"o"_c2_"l"_c2_"u"_c2)||(let8="P"_c2_"r"_c2_"o"_c2_"p"_c2)||(let8="T"_c2_"y"_c2_"p"_c2_"y"_c2) continue
+	            set num=num+1
+	            set type=$piece(rec,c1,2)
+	            if '((type="text")!(type="datetext")!(type="checkbox")!(type="listbox")!(type="combobox")!(type="table")!(type="radiobutton")) continue
+                set value=$listbuild(name)
+	            for j=2:1:$length(rec,c1) {
+	                set $li(value,j)=$piece(rec,c1,j)
+	            }
+	            set params(num)=value
+	            set vsp(name)=num_"^"_type
+            }
+            for i=0:1:len-1 {
+	            set rec=paramslist.get(i)
+	            set name=$piece(rec,c1,1) if name="" continue
+	            set let8=$extract(name,1,8) if let8="" continue
+                //данные для узелка "data"
+	            if let8=("D"_c2_"a"_c2_"t"_c2_"a"_c2) {
+		           set name=$extract(name,9,$length(name))
+		           if $data(vsp(name)) {
+			           set num=$piece(vsp(name),"^",1)
+			           set key=$piece(rec,c1,2)
+			           set key=$extract(key,6,$length(key))
+			           if key'="" set params(num,"data",key)=$piece(rec,c1,3)   
+		           }       
+	            }
+	            elseif let8=("B"_c2_"i"_c2_"n"_c2_"d"_c2) {
+		           set name=$extract(name,9,$length(name))
+		           if $data(vsp(name)) {
+		               set num=$piece(vsp(name),"^",1) 
+			           set key=$piece(rec,c1,2)
+			           set key=+$extract(key,6,$length(key))
+			           if key'=0 set params(num,"bind",key)=$piece(rec,c1,3)   
+		           }       
+	            }
+	            elseif let8=("C"_c2_"o"_c2_"l"_c2_"u"_c2) {
+		           set name=$extract(name,9,$length(name))
+		           if $data(vsp(name)) {
+		               set num=$piece(vsp(name),"^",1) 
+			           set key=$piece(rec,c1,2)
+			           set key=$extract(key,8,$length(key))
+			           if key'="" set params(num,"column",$i(params(num,"column")))=$lb(key,$piece(rec,c1,3))  
+		           }       
+	            }
+	            elseif let8=("P"_c2_"r"_c2_"o"_c2_"p"_c2) {
+		           set name=$extract(name,9,$length(name))
+		           if $data(vsp(name)) {
+		               set num=$piece(vsp(name),"^",1) 
+		               set type=$piece(vsp(name),"^",2) 
+			           set key=$piece(rec,c1,2)
+			           set value=$piece(rec,c1,3)
+			           if (key'="")&&(value'="") {
+			              set params(num,"property",key)=value
+			           } 
+		           }       
+	            }
+	            // специальное свойство - тип отчета (pdf, xsl,...) - не параметр
+	            elseif let8=("T"_c2_"y"_c2_"p"_c2_"e"_c2) {
+		           set name=$extract(name,9,$length(name))
+		           if $extract(name,1,6)="format" {
+		               set value=$piece(rec,c1,2) 
+		               if value'="" {
+			               set num=num+1
+			               set params(num)=$listbuild("fffornatReloadReport",value)
+			           } 
+		           }       
+	            }
+            }
+          // m ^test(111,"params after")=params
+		}
+		Catch exception
+		{
+			If $ZERROR["<ZJGTW>" {
+		       Set result=$get(%objlasterror)
+            } 
+		    else {
+		       Set result=exception.AsStatus()
+		    }
+		}
+		; отключение от шлюза
+		Do jgw.%Disconnect()
+	}
+	Catch exception
+	{
+	    If $ZERROR["<ZJGTW>" {
+            Set result=$get(%objlasterror)
+            } 
+		else {
+		    Set result=exception.AsStatus()
+		}
+	}
+  quit result
+]]></Implementation>
+</Method>
+
+<Method name="dopFormParamsJasper">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&params,fileJRXML:%String,title:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ set ref=$name(^||vsp) k @ref 
+ try {
+	    
+   kill %session.Data("params")
+   set formatReport=""
+   set i="" 
+   for  {
+	   set i=$order(params(i)) if i="" quit
+	   set rec=params(i)
+	   set par=$listget(rec,1)
+	   set typeControl=$listget(rec,2)
+	   if par="fffornatReloadReport" set formatReport=typeControl kill params(i) continue // format Report
+       set %session.Data("params","layout",i)=$listbuild(par,$listget(rec,3))
+	   set recnew=$lb("")
+	   for k=2:1:$ll(rec) set $li(recnew,k-1)=$listget(rec,k)
+	   kill %session.Data("params","par",par)
+	   merge %session.Data("params","par",par)=params(i)
+	   set %session.Data("params","par",par)=recnew
+	   ;if $data(params(i,"data")) merge %session.Data("params","par",par,"data")=params(i,"data")
+	   ;if $data(params(i,"bind")) merge %session.Data("params","par",par,"bind")=params(i,"bind")
+	   ;if $data(params(i,"property")) merge %session.Data("params","par",par,"property")=params(i,"property")
+	 
+   }
+   if formatReport="" set formatReport="pdf"
+   if '$data(^Settings("server","formatJasperReport",formatReport)) set formatReport="pdf"
+   set %session.Data("params","par")=$listbuild(title,fileJRXML,formatReport)
+
+      //удаляем несуществующие	и неправильные элементы
+   $$$ThrowOnError(..verifyParams()) 
+   
+   //параметры
+   set par="" kill %session.Data("params","bindparam")
+   for {
+	  set par=$order(%session.Data("params","par",par)) if par="" quit
+      set numparam=""
+      for {
+			 set numparam=$order(%session.Data("params","par",par,"bind",numparam)) if numparam="" quit
+			 set param=$get(%session.Data("params","par",par,"bind",numparam))
+			 if '$data(%session.Data("params","par",param)) continue
+			 set %session.Data("params","bindparam",param,par)=""
+      }
+   }   
+      
+   k @ref
+   //m ^test(111,"ppp")=%session.Data("params") 
+  
+ } 
+ catch(exception)
+ {
+    	 set ok=exception.AsStatus()
+ }
+ kill @ref 
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="verifyParams">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+   //удаляем несуществующие	и неправильные элементы
+   ;m ^test(111,"before verify")=%session.Data("params") 
+   set par="" 
+   for  {
+	   set par=$order(%session.Data("params","par",par)) if par="" quit
+	   set rec=$get(%session.Data("params","par",par))
+	   set type=$listget(rec,1)
+	   //проверка типа
+	   if '((type="text")||(type="datetext")||(type="checkbox")||(type="listbox")||(type="combobox")||(type="table")||(type="radiobutton")) {
+		   kill %session.Data("params","par",par) 
+		   continue
+	   }
+	   // проверка bind
+	   if (type'="listbox")&(type'="combobox")&(type'="table")&($data(%session.Data("params","par",par,"bind"))) kill %session.Data("params","par",par,par,"bind")
+	   
+	   set sql="" if $data(%session.Data("params","par",par,"property","sql")) set sql=$get(%session.Data("params","par",par,"property","sql")) 
+	   if (sql="")!(sql'["?") kill %session.Data("params","par",par,"bind")
+	   
+	   set numparam="" 
+	   for {
+			 set numparam=$order(%session.Data("params","par",par,"bind",numparam)) if numparam="" quit
+			 set param=$get(%session.Data("params","par",par,"bind",numparam))
+			 if param="" kill %session.Data("params","par",par,"bind",numparam) continue
+			 if '$data(%session.Data("params","par",param)) kill %session.Data("params","par",par,"bind",numparam)
+	   }
+	   
+	   // построение columns и valueColumn для table если не определено
+	   if type="table" {
+	     if sql'="" {
+		   $$$ThrowOnError(..getFieldsSQL(sql,.fields))
+		   set valueColumn=$get(%session.Data("params","par",par,"property","valueColumn"))
+		   if valueColumn="" {
+		        set valueColumn=$order(fields("")) if valueColumn'="" set valueColumn=fields(valueColumn)
+		        set %session.Data("params","par",par,"property","valueColumn")=valueColumn
+		   }
+		   if '$data(%session.Data("params","par",par,"column")) {
+			   set fildsCount=$order(fields(""),-1)
+			   set flagEqualWidth=1 if fildsCount=2 set flagEqualWidth=0
+			   set width=100 if +fildsCount'=0 set width=$select(flagEqualWidth=0:100-30\(fildsCount-1),1:100\fildsCount)
+			   set field="",num=0
+			   for {
+				  set field=$order(fields(field)) if field="" quit
+				  set colName=fields(field) if colName="" continue
+				  set num=num+1 
+				  set wcol=width if colName=valueColumn set wcol=30 
+				  set %session.Data("params","par",par,"column",num)=$lb(colName," ^"_wcol_"%")   
+			   }
+		   } 
+	     }
+	     else {
+		   set valueColumn=$get(%session.Data("params","par",par,"property","valueColumn"))
+		   if valueColumn="" {
+		        set %session.Data("params","par",par,"property","valueColumn")="node"
+		   }
+		   if '$data(%session.Data("params","par",par,"column")) {
+     		   set %session.Data("params","par",par,"column",1)=$lb("node"," ^30%")
+     		   set %session.Data("params","par",par,"column",2)=$lb("value"," ^70%")   
+		   } 
+	     }
+	   } 
+   }
+   ;m ^test(111,"after verify")=%session.Data("params") 
+ } 
+ catch(exception)
+ {
+    	 set ok=exception.AsStatus()
+ }
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="createModalGroupServer">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	 set vgroup=%page.%GetComponentById("formGroupForFaceReport")
+	 if $IsObject(vgroup) {
+		 set modalGroup=##class(%ZEN.Component.modalGroup).%New()
+		 set modalGroup.id="%jasperInnerProgressModalGroup"
+		 
+		 // для хранения текущего подсвеченного элемента
+		 set texthidden=##class(%ZEN.Component.text).%New()
+         Set texthidden.id="%jasperInnerCurrColumn"
+         Set texthidden.hidden=1
+         Set texthidden.value="%jasperInnerColumn1"
+         Do modalGroup.%AddChild(texthidden)
+         
+         // для хранения текущего направления движения подсвеченного элемента ("r"-вправо, "l"-влево)
+         set texthidden=##class(%ZEN.Component.text).%New()
+         Set texthidden.id="%jasperInnerCurrDirection"
+         Set texthidden.hidden=1
+         Set texthidden.value="r"
+         Do modalGroup.%AddChild(texthidden)
+         
+         // для хранения текущего статуса modalGroup ("n" - невидима, "y"- Видима)
+         set texthidden=##class(%ZEN.Component.text).%New()
+         Set texthidden.id="%jasperInnerFlagModalGroup"
+         Set texthidden.hidden=1
+         Set texthidden.value="n"
+         Do modalGroup.%AddChild(texthidden)
+         
+         // для хранения кол-ва вызовов по таймеру (каждые 10 вызовов проверка состояния отчета)
+         set texthidden=##class(%ZEN.Component.text).%New()
+         Set texthidden.id="%jasperInnerCalls"
+         Set texthidden.hidden=1
+         Set texthidden.value="1"
+         Do modalGroup.%AddChild(texthidden)
+
+	     Set spacer = ##class(%ZEN.Component.spacer).%New()
+         Set spacer.height=10
+         do modalGroup.%AddChild(spacer)
+    
+         Set text = ##class(%ZEN.Component.label).%New()
+         set text.value="Подождите, пожалуйста. Отчет формируется."
+         do modalGroup.%AddChild(text)
+
+	     Set spacer = ##class(%ZEN.Component.spacer).%New()
+         Set spacer.height=10
+         do modalGroup.%AddChild(spacer)
+
+	     set hgroup=##class(%ZEN.Component.hgroup).%New()
+	     set hgroup.id="%jasperTableProgressBar"
+	     set hgroup.align="center"
+	              
+	     for i=1:1:10 {
+             Set text = ##class(%ZEN.Component.spacer).%New()
+             Set text.id="%jasperInnerColumn"_i
+             set text.width=30
+             set text.height=10
+             set text.enclosingClass=$select(i=1:"selected",1:"general")
+             do hgroup.%AddChild(text)
+          }
+          
+          /*
+          // пробовала titleBox
+ 	     for i=1:1:10 {
+             Set text = ##class(%ZEN.Component.titleBox).%New()
+             Set text.id="%jasperInnerColumn"_i
+             set text.titleStyle="width:10;height:5;background-color:"_$select(i=1:"#9966FF;",1:"#6633FF;")
+             //set text.enclosingStyle //.controlClass=$select(i=1:"selected",1:"general")
+             //set text.controlClass=$select(i=1:"selected",1:"general")
+             do hgroup.%AddChild(text)
+          }
+          // пробовала text
+	     for i=1:1:10 {
+             Set text = ##class(%ZEN.Component.text).%New()
+             Set text.id="%jasperInnerColumn"_i
+             set text.size="3"
+             //set text.height=10
+             set text.controlClass=$select(i=1:"selected",1:"general")
+             set text.value="aaaa"
+             do hgroup.%AddChild(text)
+          }*/
+          
+         do modalGroup.%AddChild(hgroup)
+         
+         /*
+         // вот бы вставить маленький экран с вращающейся девушкой 
+         set image=##class(%ZEN.Component.image).%New()
+         set image.src="file:///c:/temp/gerla.gif"
+         set image.width=100
+         set image.height=200
+         do modalGroup.%AddChild(image)
+         */
+    
+	     Set spacer = ##class(%ZEN.Component.spacer).%New()
+         Set spacer.height=10
+         do modalGroup.%AddChild(spacer)
+         
+         set buttonCancel=##class(%ZEN.Component.button).%New()
+         set buttonCancel.id="%jasperInnerButtonCancel"
+         set buttonCancel.caption="Отмена"
+         set buttonCancel.align="center"
+         set buttonCancel.onclick="zenPage.cancelReport();"
+         do modalGroup.%AddChild(buttonCancel)
+         
+         Set spacer = ##class(%ZEN.Component.spacer).%New()
+         Set spacer.height=10
+         do modalGroup.%AddChild(spacer)
+    
+         Do vgroup.%AddChild(modalGroup) 
+	 } 
+	 
+  } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  } 
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="getFieldsSQL">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[sql:%String,&fields:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK kill fields
+	if $get(sql)="" quit ok
+	try {
+        set sqlUp=$zcvt(sql,"U")
+        set str=$piece(sqlUp,"SELECT",2)
+	    set str=$piece(str,"FROM",1)
+	    set num=0
+	    for i=1:1:$length(str,",") {
+	       set ff=$piece(str,",",i)
+	       set ff=$piece(ff,"AS",1)
+	       set ff=$tr($zstrip(ff,"<>"," "),"""'","")
+	       set field=""
+	       if ff'="" {
+		       set pp=$find(sqlUp,ff)
+		       if pp'=0 set field=$extract(sql,pp-$length(ff),pp-1)
+	       }
+	       if field'="" set num=num+1 set fields(num)=field 
+	    }
+	} 
+	catch(exception)
+    {
+    	 set ok=exception.AsStatus()
+    }
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="test">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	set fileName="report19"
+	// fileReport
+	do ##class(Report.rpt).getPathFileReportGroup(.pathFileReport)
+    set repFormat="pdf"
+    set fileReport=pathFileReport_"\"_fileName_"."_repFormat
+    w !,"fileReport="_fileReport
+    //params
+    kill params 
+    set params("DateFrom")=##class(Report.Function.general).getDateTimeLong($zdh(20110120,8))_$char(1)_"Date" 
+    set params("DateTo")=##class(Report.Function.general).getDateTimeLong($zdh(20120120,8))_$char(1)_"Date"
+    set params("ExternalLab2")=1
+    set params("ExternalLab3")=1
+    set params("ExternalLab5")=1
+    w !,"params="
+    zw params
+    //fileJasper
+    set filePath=##class(Report.JasperReportTune).getPathFileJasper()
+    if fileName'="",filePath'="" set fileJasper=filePath_"\"_fileName_".jasper" 
+    w !,"fileJasper="_fileJasper
+    set debug=1
+    //set ok = ##class(Report.rpt).startRptFacade(fileReport, .params, fileJasper, repFormat, debug)
+    set ok=##class(Report.rpt).startRptNew("isc.jasper.JasperFacade", "executeAndSave", fileReport, .params, repFormat, fileJasper, 1, debug )
+    w !!,ok
+]]></Implementation>
+</Method>
+
+<Method name="cancelEventWhenProgressBar">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+//	alert("ttt");
+ flagModalGroup=zen('%jasperInnerFlagModalGroup');
+ if ((flagModalGroup!=undefined)&&(flagModalGroup!=null)) {
+      if (flagModalGroup.value=="y") {
+         //release mouse up
+         var trap=document.getElementById('zenMouseTrap');
+         if (trap) {
+            trap.onmouseup=""
+         }
+      } 	 
+}
+]]></Implementation>
+</Method>
+</Class>
+</Export>

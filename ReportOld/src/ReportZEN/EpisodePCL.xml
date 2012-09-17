@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="ReportZEN.EpisodePCL">
+<Description>
+Created using the page template: Заголовок страницы
+</Description>
+<Super>%ZEN.Component.page</Super>
+<TimeCreated>62306,51816.420639</TimeCreated>
+
+<Parameter name="APPLICATION">
+<Description>
+Имя приложения, которому принадлежит эта страница.</Description>
+<Default>ReportZEN.ReportApplication</Default>
+</Parameter>
+
+<Parameter name="PAGENAME">
+<Description>
+Отображаемое имя для нового приложения.</Description>
+</Parameter>
+
+<Parameter name="DOMAIN">
+<Description>
+Домен, используемый для локализации.</Description>
+</Parameter>
+
+<XData name="Contents">
+<Description>
+Этот XML блок описывает содержимое этой страницы.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<page xmlns="http://www.intersystems.com/zen">
+<html id="title">Test1</html>
+<form id="myform" 
+	width="60%" 
+	layout="vertical"
+	labelPosition="top"
+	cellStyle="padding: 3px;" 
+	align="center"
+	>
+<vgroup id="formGroup">
+<spacer height="10"/>
+ <hgroup align="center">
+ <label value="^episodeList" id="glob" hidden="true"/> 
+ <label value="Дата ввода эпизода c "/>
+ <spacer width="10"/>
+ <dateText 
+    id="dateFrom" 
+    format="DMY" 
+    originalValue="01-02-2011" 
+     monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"
+     onchange="zenPage.getListEpisodesClient()"
+ />
+  <spacer width="10"/>
+ <label value=" по "/>
+  <spacer width="10"/>
+ <dateText 
+   id="dateTo" 
+    format="DMY" 
+    originalValue="01-05-2011" 
+    monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"
+    onchange="zenPage.getListEpisodesClient()"
+    />
+</hgroup>
+ 
+<spacer height="10"/>
+<tablePane id="episodes" 
+	queryClass="Report.Function"
+	queryName="queryKey1"
+    multiSelect="true" valueColumn="P1"
+  showRowSelector="false" 
+  bodyHeight="400"
+  pageSize="150"
+  >
+  <parameter value='#(%page.%GetValueById("glob"))#' />
+  <parameter value='' />
+
+  <column colName="P1" header="Выбрать все" />
+</tablePane>
+ 
+<spacer height="10"/>
+<button  caption="Печать" align="center" onclick="zenPage.printClient()" /> 
+<spacer height="10"/>
+</vgroup>
+</form>
+</page>
+]]></Data>
+</XData>
+
+<Method name="%OnAfterCreatePage">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set refTmp = ..%GetValueById("glob")
+  s ^test("epi","refTmpAfter")=refTmp
+  if refTmp'="" k @refTmp
+  do ##super()
+  Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="getListEpisodesServer">
+<FormalSpec>dateFrom:%String,dateTo:%String,refTmp:%String</FormalSpec>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	if dateFrom=""!(dateTo="")!(refTmp="") quit
+	;set pDateFrom=%page.%GetValueById("dateFrom") if pDateFrom="" quit   ;"Не определена дата начала отчетного периода"
+	;set pDateTo=%page.%GetValueById("dateTo") if pDateTo="" quit    ;"Не определена дата окончания отчетного периода"
+	;set refTmp=%page.%GetValueById("glob")
+	Set dateFrom = $zdh($tr(dateFrom,"-",""),8)
+    Set dateTo = $zdh($tr(dateTo,"-",""),8)
+    if ##class(Report.Function.Episode).getEpisodes(dateFrom,dateTo,refTmp,2)
+]]></Implementation>
+</Method>
+
+<Method name="getListEpisodesClient">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var dateFrom =zenPage.getComponentById('dateFrom').getProperty('value');
+	var dateTo =zenPage.getComponentById('dateTo').getProperty('value');
+	var refTmp = zenPage.getComponentById('glob').getProperty('value');
+	if (dateTo=="") return;
+	//alert(refTmp);
+	this.getListEpisodesServer(dateFrom,dateTo,refTmp);
+	var table=zenPage.getComponentById('episodes');
+	table.setProperty('parameters',1,refTmp);
+	table.setProperty('parameters',2,"");
+	table.executeQuery();
+]]></Implementation>
+</Method>
+
+<Method name="printClient">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+ 
+  var message = this.printServer();
+  alert(message);
+]]></Implementation>
+</Method>
+
+<Method name="printServer">
+<ReturnType>%String</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	  set refTmp=%page.%GetValueById("glob")
+	  set nameReport="episodePdf"
+	  do ##class(Report.rpt).KillLog(nameReport)
+	
+      Set stringEpisodes = %page.%GetComponentById("episodes").selectedRows 
+   
+      if $tr(stringEpisodes,",","")="" quit "Не выбрано ни одного эпизода"
+      set error="",ok=""
+      for i=1:1:$length(stringEpisodes,",") {
+	     set codeEpisode=$piece(stringEpisodes,",",i)
+	     if codeEpisode'="" 
+	     {
+	        kill pTestSets if $data(@refTmp@(codeEpisode)) merge pTesTsets=@refTmp@(codeEpisode)
+	        set sc =  ##class(Report.EpisodePCL).startRptNew(codeEpisode,.pTestSets)
+	        if sc set ok=ok_$select(ok'="":",",1:"")_codeEpisode 
+	        else   set error=error_$select(error'="":",",1:"")_codeEpisode  do ##class(Report.rpt).Log(nameReport,,sc,codeEpisode)
+	          
+	     }
+}
+    set ^test("epi2","error")=error
+    quit $s(error="":"Сформированы файлы по эпизодам "_ok,1:"Есть ошибки при формировании файлов по эпизодам "_error_". См. ^logReport("""_nameReport_""")")
+]]></Implementation>
+</Method>
+</Class>
+</Export>

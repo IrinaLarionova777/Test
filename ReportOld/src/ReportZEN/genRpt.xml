@@ -1,0 +1,615 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="ReportZEN.genRpt">
+<Description>
+Программа генерации окна запроса параметров для отчета
+предполагается %request user,reportRoutine
+Отчеты типа medium - для них сделаны свои мордочки - должны вызываться напрямую в getReportURL^TCLEx.ReportVB() (для этого в классификаторе Настройке отчетов - долженбыть указан класс zen- .cls </Description>
+<Super>ReportZEN.genRptAbstract</Super>
+<TimeCreated>62360,55862.561989</TimeCreated>
+
+<Parameter name="APPLICATION">
+<Description>
+Имя приложения, которому принадлежит эта страница.</Description>
+<Default>ReportZEN.ReportApplication</Default>
+</Parameter>
+
+<UDLText name="T">
+<Content><![CDATA[
+//APPLICATION = "WebER.Application"
+
+]]></Content>
+</UDLText>
+
+<Parameter name="PAGENAME">
+<Description>
+Отображаемое имя для нового приложения.</Description>
+</Parameter>
+
+<Parameter name="DOMAIN">
+<Description>
+Домен, используемый для локализации.</Description>
+</Parameter>
+
+<XData name="Contents">
+<Description>
+Этот XML блок описывает содержимое этой страницы.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<page height="100%" id="page" xmlns="http://www.intersystems.com/zen" title="#(%session.ReportName)#" >  
+<form id="mainFormForFaceReport" 
+	width="50%" 
+	layout="vertical"
+	labelPosition="top"
+	cellStyle="padding: 3px;" 
+	align="center"
+	>
+<html id="titleFormForFaceReport">Заголовок</html>
+<vgroup id="formGroupForFaceReport" align="center">
+</vgroup>
+<text id="startForOldAndMedium" hidden="true"/>
+<text id="typeStartForOldAndMedium" hidden="true"/>
+</form>
+</page>
+]]></Data>
+</XData>
+
+<Method name="%OnAfterCreatePage">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	 // user	
+	set user=%request.Get("user") if user="" set user="demo"
+	set %session.Data("curUser")=user
+	
+	// reportRoutine
+	set reportRoutine=%request.Get("reportRoutine") 
+	if reportRoutine="" set reportRoutine="Test1"  ;"TestFormReport" ;"Test1"  ;"TestFormReport" ;"PRTCLNRUS51"
+	set %session.Data("reportRoutine")=reportRoutine
+	
+	// получение описания элементов экрана refParam
+    set refParam=""
+    $$$ThrowOnError(..getGlobFormParams(reportRoutine,user,.refParam))
+
+    // title
+    set rec=$get(@refParam@("par"))
+    set title=$listget(rec,1)
+    set ctrlTitle=%page.%GetComponentById("titleFormForFaceReport")
+    if title '= "",$IsObject(ctrlTitle) {
+       set ctrlTitle.content=title
+    }
+    elseif $IsObject(ctrlTitle) {
+	   set ctrlTitle.hidden=1 
+    }
+    
+    set form= %page.%GetComponentById("formGroupForFaceReport")
+    
+    // формирование элементов экрана по описанию
+    $$$ThrowOnError(..runCreatePage(refParam)) 
+    
+    // кнопка Печать
+    Set spacer = ##class(%ZEN.Component.spacer).%New()
+    Set spacer.height=10
+    do form.%AddChild(spacer)  
+    Set button = ##class(%ZEN.Component.button).%New()
+    Set button.align="center"
+    Set button.caption="Печать"
+    Set button.onclick="zenPage.startRptClient()"
+    Do form.%AddChild(button)
+    Set spacer = ##class(%ZEN.Component.spacer).%New()
+    Set spacer.height=10
+    Do form.%AddChild(spacer)
+ 
+  } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  } 
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="runCreatePage">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>refParam:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ 
+
+ set ok=$$$OK
+ try {
+	set rec=$get(@refParam@("par"))
+     	   
+    set row="",maxColumn=0 kill colwidth
+    for {
+	  set row=$order(@refParam@("layout",row)) if row="" quit 
+      set col=""
+	  for {
+		  set col=$order(@refParam@("layout",row,col)) if col="" quit
+		  if col>maxColumn set maxColumn=col
+		  set rec=@refParam@("layout",row,col)
+		  set widthCol=+$listget(rec,2)
+	      set width=$select(widthCol'=0:widthCol,1:100)
+	      if '$data(colwidth(col)) set colwidth(col)=width
+	  }
+    } 
+    ;s ^test(222,"maxColumn")=maxColumn
+	;m ^test(222,"colwidth")=colwidth
+	;m ^test(222,"layout")=@refParam@("layout")
+    
+    set form= %page.%GetComponentById("formGroupForFaceReport")
+    set layoutRow=##class(%ZEN.Component.vgroup).%New()
+    ;set layoutRow.cellSize="" ;"same" ;"stretch"
+    do form.%AddChild(layoutRow) 
+    set row=""
+    for {
+	  set row=$order(@refParam@("layout",row)) if row="" quit 
+	  ;Set spacer = ##class(%ZEN.Component.spacer).%New()
+      ;Set spacer.height=5
+      ;do layoutRow.%AddChild(spacer) 
+	  set layoutCol=##class(%ZEN.Component.hgroup).%New()
+	  ;set layoutCol.cellSize="" ;"same" ;"stretch"
+	  do layoutRow.%AddChild(layoutCol) 
+	  for col=1:1:maxColumn {
+		  set rec=$get(@refParam@("layout",row,col))
+		  set width=0
+		  if rec'="" {
+			 set controlName=$listget(rec,1) ;,widthCol=$listget(rec,2)
+		     set rec=@refParam@("par",controlName)
+	         set typeControl=$tr($listget(rec,1)," ","")
+	         set width=+$tr($listget(rec,4)," ","")
+	         set height=+$tr($listget(rec,5)," ","")  
+		  }
+		  else {
+			 set width=+$get(colwidth(col)) 
+		  }	  	  
+		  set width=width_"px" ;(width*0.35\1)_"mm"
+		  set size=+width*0.2\1
+		  set layoutV=##class(%ZEN.Component.vgroup).%New()
+	      ;Set spacer = ##class(%ZEN.Component.spacer).%New()
+	      ;Set spacer.width=width
+	      ;set spacer.height="1px"
+	      ;do layoutV.%AddChild(spacer)
+	      set layoutV.width=width
+	      do layoutCol.%AddChild(layoutV)
+	      set rec=$get(@refParam@("layout",row,col)) if rec="" continue
+		  set controlName=$listget(rec,1) ;,widthCol=$listget(rec,2)
+		  set rec=@refParam@("par",controlName)
+	      set typeControl=$tr($listget(rec,1)," ","")
+	      set height=$tr($listget(rec,5)," ","")
+	
+	      kill ctrl set ctrl=""
+	      // Label  ----------------------------------------
+	      if typeControl="Label" {
+	    	  set ctrl=##class(%ZEN.Component.label).%New()
+	    	  set ctrl.id=controlName
+	    	  set ctrl.value=$listget(rec,8) 
+	    	  set ctrl.width="100%" ;width
+	    	  do layoutV.%AddChild(ctrl)  
+	      }
+	      // Text   ----------------------------------------
+	      if typeControl="Text" {
+	    	  set ctrl=##class(%ZEN.Component.text).%New()
+	    	  set ctrl.id=controlName
+	    	  set ctrl.name=controlName
+	    	  set ctrl.value=$listget(rec,8) 
+	    	  set ctrl.size=size
+	    	  do layoutV.%AddChild(ctrl)  
+	      }
+	      // DateText   ------------------------------------ 
+	      if typeControl="DateText" {
+	    	  set ctrl=##class(%ZEN.Component.dateText).%New()
+	    	  set ctrl.id=controlName
+	    	  set ctrl.name=controlName
+	    	  set ctrl.format="DMY"
+	    	  set ctrl.monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"
+	    	  set defaultValue=$tr($listget(rec,8)," ","")
+	    	  if defaultValue'="" set ctrl.value=..transDate(defaultValue)
+	    	  do layoutV.%AddChild(ctrl)  
+	      }
+	      // CheckBox  -------------------------------------
+	      if typeControl="CheckBox" {
+	    	  set ctrl=##class(%ZEN.Component.checkbox).%New()
+	    	  set ctrl.id=controlName
+	    	  set ctrl.name=controlName
+	    	  set ctrl.caption=$zstrip($listget(rec,9),"<>"," ")
+	    	  set defaultValue=$tr($listget(rec,8)," ","") 
+	    	  set ctrl.value=$select((defaultValue=1)!($zcvt(defaultValue,"U")="TRUE"):1,1:0) 
+	    	  do layoutV.%AddChild(ctrl)  
+	      }
+	      // RadioButton  ----------------------------------
+	      if typeControl="RadioButton" {
+		      set rs=##class(%ZEN.Component.radioSet).%New()
+	    	  set rs.id=controlName
+	    	  set rs.name=controlName
+	    	  ;set rs.queryClass="ReportZEN.genRpt"
+	    	  ;set rs.queryName="queryList"
+	    	  ;set ctrl.valueColumn="node"
+	    	  ;set par = ##class(%ZEN.Auxiliary.parameter).%New()
+	    	  ;set par.value=$name(@refParamOld@(controlName))
+	    	  ;do rs.parameters.Insert(par)
+	    	  ;Do %page.%AddComponent(par)
+	    	  ;do layoutV.%AddChild(rs)
+	    	  set defaultValue=$tr($listget(rec,8)," ","")
+	    	  /* radioSet не знаю как сделать вертикальным
+	    	  set valueList="",displayList=""
+	    	  set key=""
+	    	  for {
+		    	 set key=$order(@refParam@("par",controlName,key)) if key="" quit
+		    	 set text=$get(@refParam@("par",controlName,key))
+		         set valueList=valueList_$select(valueList'="":",",1:"")_key
+		         set displayList=displayList_$select(displayList'="":",",1:"")_text
+	    	  }
+	    	  set rs.valueList=valueList
+	    	  set rs.displayList=displayList
+	    	  set rs.value=defaultValue
+	    	  do layoutV.%AddChild(rs)
+	    	  */
+	    	  
+	       	  set key=""
+	    	  for {
+		    	 set key=$order(@refParam@("par",controlName,"data",key)) if key="" quit
+		    	 set text=$get(@refParam@("par",controlName,"data",key))
+		    	 set ctrl=##class(%ZEN.Component.radioButton).%New()  
+		    	 set ctrl.id=controlName_key
+		    	 set ctrl.name=controlName
+		    	 set ctrl.caption=$select(text'="":text,1:key)
+		    	 set ctrl.optionValue=key
+		    	 if key=defaultValue set ctrl.value=key,rs.value=key 
+		    	 do layoutV.%AddChild(ctrl)
+	    	  }
+	    	  
+	      } 
+	      // ComboBox  ----------------------------------
+	      if typeControl="ComboBox" {
+		      set sql=$zstrip($listget(rec,9),"<>"," ")
+		      set defaultValue=$tr($listget(rec,8)," ","")
+		      set val11=$tr($listget(rec,11)," ","")
+		      set val12=$tr($listget(rec,12)," ","")
+		      // если задан sql 
+              if sql'="" {
+	             Set ctrl = ##class(%ZEN.Component.dataCombo).%New()
+                 Set ctrl.sql=sql
+	             Set ctrl.auxColumn=0
+	             Set ctrl.valueColumn=$select(val11'="":val11,1:1)
+                 Set ctrl.displayColumns=$select(val12'="":val12,1:2)
+	             set sqlLookup=$zstrip($listget(rec,10),"<>"," ")
+	             if sqlLookup'="" set ctrl.sqlLookup=sqlLookup set ctrl.searchKeyLen="10"
+	             ;set ctrl.value=defaultValue
+	             set param=""
+	             for {
+		            set param=$order(@refParam@("par",controlName,"param",param)) if param="" quit
+		            set nameParam=^(param) 
+		            set objParam= ##class(%ZEN.Auxiliary.parameter).%New()
+                    Set objParam.id="param"_controlName_nameParam
+                    Do ctrl.parameters.Insert(objParam)
+                    Do %page.%AddComponent(objParam)
+	             }
+              }
+              // если просто данные лежат в @refParam@("par",controlName,node) 
+              else {
+	              Set ctrl = ##class(%ZEN.Component.combobox).%New()
+                  do ctrl.options.Clear()
+                  set node="",index=0
+	              for {
+		             set node=$order(@refParam@("par",controlName,"data",node)) if node="" quit
+		             set value=$get(^(node)) if value="" continue
+		             Set opt = ##class(%ZEN.Auxiliary.option).%New()
+		             set opt.value=node
+		             set opt.text=value
+		             Do %page.%AddComponent(opt)
+		             Do ctrl.options.Insert(opt)
+		             if node=defaultValue set ctrl.selectedIndex=index set ctrl.value=value 
+		             set index=index+1
+		             kill opt
+	              }
+              }
+              Set ctrl.id=controlName
+              Set ctrl.name=controlName
+              Set ctrl.size=size
+              ;Set ctrl.width=width
+              set ctrl.dropdownWidth=ctrl.width
+              Set ctrl.unrestricted=1
+              Set ctrl.editable=1
+              ;if defaultValue'="" set ctrl.value=defaultValue
+ 	    	  do layoutV.%AddChild(ctrl)  
+	      }
+	       // ListBox  ----------------------------------
+	       if typeControl="ListBox" {
+		      set sql=$zstrip($listget(rec,9),"<>"," ")
+		      set defaultValue=$tr($listget(rec,8)," ","")
+		      // если задан sql 
+              if sql'="" {
+	             Set ctrl = ##class(%ZEN.Component.dataListBox).%New()
+                 Set ctrl.sql=sql
+	             ;Set ctrl.valueColumn=1
+                 ;Set ctrl.displayColumns="2"
+                 set ctrl.maxRows=50000
+                 ;set ctrl.listHeight=$select(+height'=0:height,1:60)
+                 ;set ctrl.listWidth=width
+                 if defaultValue'="" set ctrl.value=defaultValue
+                 set param=""
+	             for {
+		            set param=$order(@refParam@("par",controlName,"param",param)) if param="" quit
+		            set nameParam=^(param) s ^test(111,"nameParam",nameParam)=controlName 
+		            set objParam= ##class(%ZEN.Auxiliary.parameter).%New()
+                    Set objParam.id="param"_controlName_nameParam
+                    Do ctrl.parameters.Insert(objParam)
+                    Do %page.%AddComponent(objParam)
+	             } 
+              }
+              // если просто данные лежат в @refParam@("par",controlName,node) 
+              else {
+	              Set ctrl = ##class(%ZEN.Component.listBox).%New()
+                  do ctrl.options.Clear()
+                  set node="",index=0
+	              for {
+		             set node=$order(@refParam@("par",controlName,"data",node)) if node="" quit
+		             set value=$get(^(node)) if value="" continue
+		             Set opt = ##class(%ZEN.Auxiliary.option).%New()
+		             set opt.value=node
+		             set opt.text=value
+		             if node=defaultValue set ctrl.selectedIndex=index set ctrl.value=node,ctrl.text=value
+		             set index=index+1
+		             Do ctrl.options.Insert(opt)
+		             Do %page.%AddComponent(opt)
+		             kill opt
+	              }
+              }
+              Set ctrl.id=controlName
+              Set ctrl.name=controlName
+              Set ctrl.listWidth=width
+              ;set ctrl.width="100%"
+              set ctrl.listHeight=200
+              if defaultValue'="" set ctrl.value=defaultValue
+ 	    	  do layoutV.%AddChild(ctrl)  
+	      }
+	      // Table  -------------------------------------
+	      if typeControl="Table"  
+	         {  
+			  set sql=$zstrip($listget(rec,9),"<>"," ")
+	    	  set flagMultiSelect=0  ;$tr($listget(rec,9)," ","") set flagMultiSelect=$select(flagMultiSelect'="":1,1:0)
+		
+	    	  set ctrl=##class(%ZEN.Component.tablePane).%New()
+	    	  set ctrl.id=controlName
+	    	  set ctrl.name=controlName
+	    	  ;set ctrl.width="100%" ;width
+	    	  set ctrl.bodyHeight=height
+	    	  set ctrl.pageSize=20 
+	    
+	    	  if sql'="" {
+		    	  set ctrl.sql=sql
+		    	  set ctrl.valueColumn="1"
+		    	  ;set ctrl.displayColumns="2"
+		    	  if '$data(@refParam@("par",controlName,"column")) {
+		    	     ;set colCount=ctrl.columns.Count() 
+		    	     ;for numcol=1:1:colCount {
+		    	     ;   set column=##class(%ZEN.Auxiliary.column).%New()
+	    	         ;   set column.colName=numcol
+	    	         ;   set column.width=width\colCount
+	    	         ;   set column.header=""
+	    	         ;   do ctrl.columns.Insert(column)
+	    	         ;   Do %page.%AddComponent(column)
+		    	     ;}
+		    	  }
+		    	  else {
+			    	 set numcol=""
+			    	 for {
+				        set numcol=$order(@refParam@("par",controlName,"column",numcol)) if numcol="" quit
+				        set rec=$get(^(numcol)),colName=$lg(rec,1),colwidth=$lg(rec,3) if colName="" continue
+				        set column=##class(%ZEN.Auxiliary.column).%New()
+	    	            set column.colName=colName
+	    	            if colwidth'=0 set column.width=colwidth
+	    	            set column.header=$listget(rec,2)
+	    	            do ctrl.columns.Insert(column)
+	    	            Do %page.%AddComponent(column)	 
+			    	 }    
+		    	  }
+		    	  set param=""
+	              for {
+		            set param=$order(@refParam@("par",controlName,"param",param)) if param="" quit
+		            set nameParam=^(param) 
+		            set objParam= ##class(%ZEN.Auxiliary.parameter).%New()
+                    Set objParam.id="param"_controlName_nameParam
+                    Do ctrl.parameters.Insert(objParam)
+                    Do %page.%AddComponent(objParam)
+	             } 
+	    	  }
+	    	  else  {
+	    	      set ctrl.queryClass="ReportZEN.genRpt"
+	    	      set ctrl.queryName="queryList"
+	    	      set ctrl.valueColumn="node"
+	    	      ;set countRows=+$tr($listget(rec,10)," ","")  ;??????
+	    	      ;set ctrl.pageSize=$select(countRows'=0:countRows,1:100000)
+	       	      for icol="node","value" {
+	    	         set column=##class(%ZEN.Auxiliary.column).%New()
+	    	         set column.colName=icol
+	    	         set recColumn=$get(@refParam@("par",controlName,"column",$select(icol="node":1,1:2)))
+	    	         set colWidth=$lg(recColumn,3),colHeader=$lg(recColumn,2)
+	    	         set column.width=$select(colWidth'="":colWidth,1:width)
+	    	         set column.header=" " if flagMultiSelect=1,icol="value" set column.header="Выбрать все"
+	    	         if colHeader'="" set column.header=colHeader
+	    	         do ctrl.columns.Insert(column)
+	    	         Do %page.%AddComponent(column)
+	    	      }
+	    	      set par = ##class(%ZEN.Auxiliary.parameter).%New()
+	    	      set par.value=$name(@refParam@("par",controlName))
+	    	      do ctrl.parameters.Insert(par)
+	    	      Do %page.%AddComponent(par)
+	    	  }    
+	    	  set ctrl.multiSelect=flagMultiSelect
+	    	  set ctrl.useSnapshot=1
+	    	  set ctrl.width="100%"
+	    	  if flagMultiSelect=1 {
+	    	    set ctrl.onselectrow="zenPage.rowSelected(zenThis);"
+                set ctrl.onmultiselect="zenPage.changeRowStyle(zenThis);"
+                set ctrl.onupdate="zenPage.updatePagingInfo(zenThis);"
+	    	  }
+	    	  ;set defaultValue=$tr($piece(rec,":",8)," ","")
+	    	  ;if defaultValue=1 set ctrl.disabled=false
+	    	  	    	  
+	    	  ;tableNavigator
+		      Set ctrlNavigator = ##class(%ZEN.Component.tableNavigatorBar).%New()
+              Set ctrlNavigator.msgFound="Всего:"
+              Set ctrlNavigator.msgOf="из"
+              Set ctrlNavigator.msgPage="Страница:"
+              Set ctrlNavigator.tablePaneId=controlName
+              set ctrlNavigator.width="100%" ;ctrl.width ;width
+	    	  do layoutV.%AddChild(ctrlNavigator)
+	    	   
+	    	  do layoutV.%AddChild(ctrl) 
+	       }
+	       // onchange
+	       // добавление обработчика onchange (данный элемент par является параметром для другого элемента)
+	       if $IsObject(ctrl),$data(@refParam@("param",controlName)) {
+		      set parChange="",stringCompChange=""
+		      s ^test(111,"ppp0",controlName)=stringCompChange
+		      for {
+			     set parChange=$order(@refParam@("param",controlName,parChange)) if parChange="" quit
+			     set stringCompChange=stringCompChange_$select(stringCompChange'="":",",1:"")_parChange
+		      }
+		      if stringCompChange'="" Set ctrl.onchange="zenPage.changeParam('"_ctrl.id_"','"_stringCompChange_"');" s ^test(111,"ppp",controlName)=stringCompChange
+	       }
+	       
+	      Set spacer = ##class(%ZEN.Component.spacer).%New()
+	      Set spacer.width=5
+          do layoutCol.%AddChild(spacer)    
+	  }
+    }
+	
+   } catch(exception) 
+   {
+	   set ok=exception.AsStatus()	
+   } 
+   quit ok
+]]></Implementation>
+</Method>
+
+<Method name="getDateText">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,rec:%String</FormalSpec>
+<ReturnType>%ZEN.Component.dateText</ReturnType>
+<Implementation><![CDATA[
+
+  set ctrl=##class(%ZEN.Component.dateText).%New()
+  set ctrl.id=controlName
+  set ctrl.name=controlName
+  set ctrl.format="DMY"
+  set ctrl.monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"
+  set defaultValue=$tr($listget(rec,8)," ","")
+  if defaultValue'="" set ctrl.value=..transDate(defaultValue)
+  quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getCheckBox">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,rec:%String</FormalSpec>
+<ReturnType>%ZEN.Component.checkbox</ReturnType>
+<Implementation><![CDATA[
+
+  set ctrl=##class(%ZEN.Component.checkbox).%New()
+  set ctrl.id=controlName
+  set ctrl.name=controlName
+  set ctrl.caption=$zstrip($listget(rec,9),"<>"," ")
+  set defaultValue=$tr($listget(rec,8)," ","") 
+  set ctrl.value=$select((defaultValue=1)!($zcvt(defaultValue,"U")="TRUE"):1,1:0) 
+  quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getradioSet">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,rec:%String</FormalSpec>
+<ReturnType>%ZEN.Component.radioSet</ReturnType>
+<Implementation><![CDATA[
+        set rs=##class(%ZEN.Component.radioSet).%New()
+	    	  set rs.id=controlName
+	    	  set rs.name=controlName
+	    	  ;set rs.queryClass="ReportZEN.genRpt"
+	    	  ;set rs.queryName="queryList"
+	    	  ;set ctrl.valueColumn="node"
+	    	  ;set par = ##class(%ZEN.Auxiliary.parameter).%New()
+	    	  ;set par.value=$name(@refParamOld@(controlName))
+	    	  ;do rs.parameters.Insert(par)
+	    	  ;Do %page.%AddComponent(par)
+	    	  ;do layoutV.%AddChild(rs)
+	    	  set defaultValue=$tr($listget(rec,8)," ","")
+	    	  /* radioSet не знаю как сделать вертикальным
+	    	  set valueList="",displayList=""
+	    	  set key=""
+	    	  for {
+		    	 set key=$order(@refParam@("par",controlName,key)) if key="" quit
+		    	 set text=$get(@refParam@("par",controlName,key))
+		         set valueList=valueList_$select(valueList'="":",",1:"")_key
+		         set displayList=displayList_$select(displayList'="":",",1:"")_text
+	    	  }
+	    	  set rs.valueList=valueList
+	    	  set rs.displayList=displayList
+	    	  set rs.value=defaultValue
+	    	  do layoutV.%AddChild(rs)
+	    	  */
+	    	  
+	       	  set key=""
+	    	  for {
+		    	 set key=$order(@refParam@("par",controlName,"data",key)) if key="" quit
+		    	 set text=$get(@refParam@("par",controlName,"data",key))
+		    	 set ctrl=##class(%ZEN.Component.radioButton).%New()  
+		    	 set ctrl.id=controlName_key
+		    	 set ctrl.name=controlName
+		    	 set ctrl.caption=$select(text'="":text,1:key)
+		    	 set ctrl.optionValue=key
+		    	 if key=defaultValue set ctrl.value=key,rs.value=key 
+		    	 do layoutV.%AddChild(ctrl)
+	    	  }
+]]></Implementation>
+</Method>
+
+<Method name="getComboBox">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,rec:%String</FormalSpec>
+<ReturnType>%ZEN.Component.dateText</ReturnType>
+<Implementation><![CDATA[
+      set rs=##class(%ZEN.Component.radioSet).%New()
+	    	  set rs.id=controlName
+	    	  set rs.name=controlName
+	    	  ;set rs.queryClass="ReportZEN.genRpt"
+	    	  ;set rs.queryName="queryList"
+	    	  ;set ctrl.valueColumn="node"
+	    	  ;set par = ##class(%ZEN.Auxiliary.parameter).%New()
+	    	  ;set par.value=$name(@refParamOld@(controlName))
+	    	  ;do rs.parameters.Insert(par)
+	    	  ;Do %page.%AddComponent(par)
+	    	  ;do layoutV.%AddChild(rs)
+	    	  set defaultValue=$tr($listget(rec,8)," ","")
+	    	  /* radioSet не знаю как сделать вертикальным
+	    	  set valueList="",displayList=""
+	    	  set key=""
+	    	  for {
+		    	 set key=$order(@refParam@("par",controlName,key)) if key="" quit
+		    	 set text=$get(@refParam@("par",controlName,key))
+		         set valueList=valueList_$select(valueList'="":",",1:"")_key
+		         set displayList=displayList_$select(displayList'="":",",1:"")_text
+	    	  }
+	    	  set rs.valueList=valueList
+	    	  set rs.displayList=displayList
+	    	  set rs.value=defaultValue
+	    	  do layoutV.%AddChild(rs)
+	    	  */
+	    	  
+	       	  set key=""
+	    	  for {
+		    	 set key=$order(@refParam@("par",controlName,"data",key)) if key="" quit
+		    	 set text=$get(@refParam@("par",controlName,"data",key))
+		    	 set ctrl=##class(%ZEN.Component.radioButton).%New()  
+		    	 set ctrl.id=controlName_key
+		    	 set ctrl.name=controlName
+		    	 set ctrl.caption=$select(text'="":text,1:key)
+		    	 set ctrl.optionValue=key
+		    	 if key=defaultValue set ctrl.value=key,rs.value=key 
+		    	 do layoutV.%AddChild(ctrl)
+	    	  }
+]]></Implementation>
+</Method>
+</Class>
+</Export>

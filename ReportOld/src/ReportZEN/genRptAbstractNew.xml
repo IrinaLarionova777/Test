@@ -1,0 +1,739 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="ReportZEN.genRptAbstractNew">
+<Description>
+Программа генерации окна запроса параметров для отчета
+предполагается %request user,reportRoutine
+Отчеты типа medium - для них сделаны свои мордочки - должны вызываться напрямую в getReportURL^TCLEx.ReportVB() (для этого в классификаторе Настройке отчетов - долженбыть указан класс zen- .cls 
+%ZEN.Component.page  WebER.UI.PageTemplate</Description>
+<Super>ReportZEN.reportJasperAbstract</Super>
+<TimeCreated>62409,57209.084477</TimeCreated>
+
+<XData name="Contents">
+<Description>
+Этот XML блок описывает содержимое этой страницы.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<page height="100%" id="page" xmlns="http://www.intersystems.com/zen" title="" >  
+<form id="mainFormForFaceReport" 
+	width="50%" 
+	layout="vertical"
+	labelPosition="top"
+	cellStyle="padding: 3px;" 
+	align="center"
+	>
+<html id="titleFormForFaceReport">Заголовок</html>
+<vgroup id="formGroupForFaceReport" align="center">
+<!--
+<spacer height="10" />
+<button align="center" caption="Печать" onclick="zenPage.startRptClient()" />
+<spacer height="10" />
+-->
+</vgroup>
+
+</form>
+</page>
+]]></Data>
+</XData>
+
+<Method name="%OnAfterCreatePage">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	 
+	$$$ThrowOnError(..initSessionData())	
+	
+    $$$ThrowOnError(..getGlobFormParams())
+    
+  } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  } 
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="initSessionData">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	 set user="" 
+	 if $data(%request.Data("user")) set user=%request.Get("user") 
+	 if user="" set user="demo"
+	 if $IsObject(%session) set %session.Data("curUser")=user
+	
+	 set fileJRXML=""
+	 if $data(%request.Data("fileJRXML")) set fileJRXML=%request.Get("fileJRXML") 
+	 if fileJRXML="" set fileJRXML="report7.jrxml"  
+	 if $IsObject(%session) set %session.Data("fileJRXML")=fileJRXML
+	 
+	 set refTempGlob=$name(^TMP($job))
+	 if $IsObject(%session) set %session.Data("refTempGlob")=refTempGlob
+	 
+	 set reportKey=""
+	 if $data(%request.Data("reportKey")) set reportKey=%request.Get("reportKey") 
+	 if $IsObject(%session) set %session.Data("reportKey")=fileJRXML
+	 
+	 set title=""
+	 if reportKey'="" set title=$piece($get(^TTAB("REPORT-GENERIC",reportKey)),"\",9)
+	 if $IsObject(%session) set %session.Data("title")=title
+	
+  } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  } 
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="getGlobFormParams">
+<ClassMethod>1</ClassMethod>
+<PublicList>ref</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK,refParam=""	
+  try
+  {	
+       set fileJRXML="",title="",refTempGlob=""
+       if $IsObject(%session) {
+	       if $data(%session.Data("fileJRXML")) set fileJRXML=%session.Data("fileJRXML")
+	       if $data(%session.Data("title")) set title=%session.Data("title")
+	       if $data(%session.Data("refTempGlob")) set refTempGlob=%session.Data("refTempGlob")   
+       }
+  
+	   kill params
+	   $$$ThrowOnError(..getParamsFromJasper(##class(Report.JasperReportTune).getPathFileJasper()_"\"_fileJRXML,.params))
+	   
+	   $$$ThrowOnError(..dopFormParamsJasper(.params,refTempGlob,fileJRXML,title))
+  
+  }
+  Catch exception
+  {		    
+      Set ok=exception.AsStatus()
+  }
+     
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="dopFormParamsJasper">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&params,refParamNew:%String,fileJRXML:%String,title:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ set ref=$name(^||vsp) k @ref 
+ try {
+	    
+	kill @refParamNew
+	set @refParamNew@("par")=$listbuild(title,fileJRXML)
+    ;m ^test(111,"ggg")=params
+   set i="" 
+   for  {
+	   set i=$order(params(i)) if i="" quit
+	   set rec=params(i)
+	   set par=$listget(rec,1)
+	   set typeControl=$listget(rec,2)
+       set @refParamNew@("layout",i)=$listbuild(par,$listget(rec,3))
+	   set recnew=$lb("")
+	   for k=2:1:$ll(rec) set $li(recnew,k-1)=$listget(rec,k)
+	   set @refParamNew@("par",par)=recnew
+	   if $data(params(i,"data")) merge @refParamNew@("par",par,"data")=params(i,"data")
+	   if $data(params(i,"param")) merge @refParamNew@("par",par,"param")=params(i,"param")
+	 
+   }
+  ;m ^test(111,"zzz")=@refParamNew
+      //удаляем несуществующие	и неправильные элементы
+   $$$ThrowOnError(..verifyParams(refParamNew)) 
+   
+   //параметры
+   set par="" kill @refParamNew@("param")
+   for {
+	  set par=$order(@refParamNew@("par",par)) if par="" quit
+      set numparam=""
+      for {
+			 set numparam=$order(@refParamNew@("par",par,"param",numparam)) if numparam="" quit
+			 set param=^(numparam)
+			 if '$data(@refParamNew@("par",param)) continue
+			 set @refParamNew@("param",param,par)=""
+      }
+   }   
+      
+   k @ref
+   ;m ^test(111,"@refParamNew")=@refParamNew
+  
+ } 
+ catch(exception)
+ {
+    	 set ok=exception.AsStatus()
+ }
+ kill @ref 
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="verifyParams">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>refParam:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+   //удаляем несуществующие	и неправильные элементы
+   ;m ^test(111,"111","@refParam")=@refParam  
+   set par="" 
+   for  {
+	   set par=$order(@refParam@("par",par)) if par="" quit
+	   set rec=$get(^(par))
+	   set type=$listget(rec,1)
+	   if '((type="Label")!(type="Text")!(type="DateText")!(type="CheckBox")!(type="ListBox")!(type="ComboBox")!(type="Table")!(type="RadioButton")) {
+		   kill @refParam@("par",par) 
+		   continue
+	   }
+	   if (type'="ListBox")&(type'="ComboBox")&(type'="Table")&($data(@refParam@("par",par,"param"))) kill @refParam@("par",par,"param")
+	   set sql=$listget(rec,4)
+	   if (sql="")!(sql'["?") kill @refParam@("par",par,"param")
+	   set numparam="" 
+	   for {
+			 set numparam=$order(@refParam@("par",par,"param",numparam)) if numparam="" quit
+			 set param=$get(^(numparam))
+			 if param="" kill @refParam@("par",par,"param",numparam) continue
+			 if '$data(@refParam@("par",param)) kill @refParam@("par",par,"param",numparam)
+	   }
+   }
+   ;m ^test(111,"222","@refParam")=@refParam 
+ } 
+ catch(exception)
+ {
+    	 set ok=exception.AsStatus()
+ }
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="getParamsFromJasper">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[fileJasper:%String,&params:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  if $get(fileJasper)="" Quit $$$ERROR($$$GeneralError,"Не указан файл jasper шаблона")	
+	
+ // gateway
+  set gateway=##class(Report.JasperReportTune).getNameGateway() 
+  if gateway="" Quit $$$ERROR($$$GeneralError,"Не указан gateway")
+  
+  set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
+  if '$IsObject(jvm) Quit $$$ERROR($$$GeneralError,"Incorrect Java GateWay configuration !")
+
+  ;m ^test(111,"params before")=params
+  Set result=$$$OK
+  Try
+	{
+		; запуск шлюза, если он не запущен
+		If $$$ISERR(##class(%Net.Remote.Service).PingGateway(jvm.Port,jvm.Server,jvm.InitializationTimeout)) {
+			$$$ThrowOnError(##class(%Net.Remote.Service).StartGateway(gateway))
+		}	
+	
+		Set jgw=##class(%Net.Remote.Gateway).%New()
+		; подключение к шлюзу
+		$$$ThrowOnError(jgw.%Connect(jvm.Server,jvm.Port))
+		Try
+		{
+			
+            set paramslist=##class(isc.jasper.JasperFacadeDop).getParameters(jgw, fileJasper)
+            
+            kill vsp
+            set c1=$char(1),c2=$char(2)
+            set len=paramslist.size()
+            set num=0
+            for i=0:1:len-1 {
+	            set rec=paramslist.get(i)
+	            set name=$piece(rec,c1,1) if name="" continue
+	            set let8=$extract(name,1,8)
+	            //данные для узелка "data" пока пропускаем
+	            if let8=("D"_c2_"a"_c2_"t"_c2_"a"_c2)||(let8="B"_c2_"i"_c2_"n"_c2_"d"_c2) continue
+	            set num=num+1
+	            set type=$piece(rec,c1,2)
+	            if '((type="Label")!(type="Text")!(type="DateText")!(type="CheckBox")!(type="ListBox")!(type="ComboBox")!(type="Table")!(type="RadioButton")) continue
+                set value=$listbuild(name)
+	            for j=2:1:$length(rec,c1) {
+	                set $li(value,j)=$piece(rec,c1,j)
+	            }
+	            set params(num)=value
+	            set vsp(name)=num
+            }
+            for i=0:1:len-1 {
+	            set rec=paramslist.get(i)
+	            set name=$piece(rec,c1,1) if name="" continue
+	            set let8=$extract(name,1,8)
+	            ;if let8'=("D"_c2_"a"_c2_"t"_c2_"a"_c2)&&(let8'="B"_c2_"i"_c2_"n"_c2_"d"_c2) {
+		        ;    set num=num+1
+		        ;    continue
+	            ;}
+	            //данные для узелка "data"
+	            if let8=("D"_c2_"a"_c2_"t"_c2_"a"_c2) {
+		           set name=$extract(name,9,$length(name))
+		           if $data(vsp(name)) {
+			           set num=vsp(name)
+			           set key=$piece(rec,c1,2)
+			           if key'="" set params(num,"data",key)=$piece(rec,c1,3)   
+		           }       
+	            }
+	            if let8=("B"_c2_"i"_c2_"n"_c2_"d"_c2) {
+		           set name=$extract(name,9,$length(name))
+		           if $data(vsp(name)) {
+		               set num=vsp(name) 
+			           set key=$piece(rec,c1,2)
+			           set key=+$extract(key,5,$length(key))
+			           if key'=0 set params(num,"param",key)=$piece(rec,c1,3)   
+		           }       
+	            }
+            }
+            ;m ^test(111,"params after")=params
+		}
+		Catch exception
+		{
+			If $ZERROR["<ZJGTW>" {
+		       Set result=$get(%objlasterror)
+            } 
+		    else {
+		       Set result=exception.AsStatus()
+		    }
+		}
+		; отключение от шлюза
+		Do jgw.%Disconnect()
+	}
+	Catch exception
+	{
+	    If $ZERROR["<ZJGTW>" {
+            Set result=$get(%objlasterror)
+            } 
+		else {
+		    Set result=exception.AsStatus()
+		}
+	}
+  quit result
+]]></Implementation>
+</Method>
+
+<Method name="getText">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String,width:%Integer</FormalSpec>
+<PublicList>size</PublicList>
+<ReturnType>%ZEN.Component.text</ReturnType>
+<Implementation><![CDATA[
+    set ctrl=##class(%ZEN.Component.text).%New()
+	set ctrl.id=controlName
+	set ctrl.name=controlName
+	set ctrl.value=initValue 
+	set ctrl.size=width
+	quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getDateText">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String</FormalSpec>
+<ReturnType>WebER.Zen.calendar</ReturnType>
+<Implementation><![CDATA[
+
+  ;set ctrl=##class(%ZEN.Component.dateText).%New()
+  set ctrl=##class(WebER.Zen.calendar).%New()
+  set ctrl.id=controlName
+  set ctrl.name=controlName
+  set ctrl.format="DMY"
+  set ctrl.monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"
+  if $get(initValue)'="" set ctrl.value=..transDate(initValue)
+  quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getCheckBox">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String</FormalSpec>
+<ReturnType>%ZEN.Component.checkbox</ReturnType>
+<Implementation><![CDATA[
+
+  set ctrl=##class(%ZEN.Component.checkbox).%New()
+  set ctrl.id=controlName
+  set ctrl.name=controlName
+  set ctrl.caption=""
+  set ctrl.value=$select((initValue=1)!($zcvt(initValue,"U")="TRUE"):1,1:0) 
+  quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getRadioButton">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String,refParam:%String</FormalSpec>
+<PublicList>layoutV</PublicList>
+<Implementation><![CDATA[
+ 	          ;set rs=##class(%ZEN.Component.radioSet).%New()
+	    	  ;set rs.id=controlName
+	    	  ;set rs.name=controlName
+	       	  set key=""
+	    	  for {
+		    	 set key=$order(@refParam@("par",controlName,"data",key)) if key="" quit
+		    	 set text=$get(@refParam@("par",controlName,"data",key))
+		    	 set ctrl=##class(%ZEN.Component.radioButton).%New()  
+		    	 set ctrl.id=controlName_key
+		    	 set ctrl.name=controlName
+		    	 set ctrl.caption=$select(text'="":text,1:key)
+		    	 set ctrl.optionValue=key
+		    	 if key=initValue set ctrl.value=key ;,rs.value=key 
+		    	 do layoutV.%AddChild(ctrl)
+	    	  }
+]]></Implementation>
+</Method>
+
+<Method name="getComboBox">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String,refParam:%String,width:%Integer</FormalSpec>
+<PublicList>%page,size</PublicList>
+<ReturnType>%ZEN.Component.abstractComboBox</ReturnType>
+<Implementation><![CDATA[
+	          set sql=$listget(rec,4)
+   		      // если задан sql 
+              if sql'="" {
+	             Set ctrl = ##class(%ZEN.Component.dataCombo).%New()
+                 Set ctrl.sql=sql
+	             Set ctrl.auxColumn=0
+	             Set ctrl.valueColumn=1 ;$select(val11'="":val11,1:1)
+                 Set ctrl.displayColumns=2  ;$select(val12'="":val12,1:2)
+	             ;set sqlLookup=$zstrip($listget(rec,10),"<>"," ")
+	             ;if sqlLookup'="" set ctrl.sqlLookup=sqlLookup set ctrl.searchKeyLen="10"
+	             ;set ctrl.value=defaultValue
+	             set param=""
+	             for {
+		            set param=$order(@refParam@("par",controlName,"param",param)) if param="" quit
+		            set nameParam=^(param) 
+		            set objParam= ##class(%ZEN.Auxiliary.parameter).%New()
+                    Set objParam.id="param"_controlName_nameParam
+                    Do ctrl.parameters.Insert(objParam)
+                    Do %page.%AddComponent(objParam)
+	             }
+              }
+              // если просто данные лежат в @refParam@("par",controlName,node) 
+              else {
+	              Set ctrl = ##class(%ZEN.Component.combobox).%New()
+                  do ctrl.options.Clear()
+                  set node="",index=1
+	              for {
+		             set node=$order(@refParam@("par",controlName,"data",node)) if node="" quit
+		             set value=$get(^(node)) if value="" continue
+		             Set opt = ##class(%ZEN.Auxiliary.option).%New()
+		             set opt.value=node
+		             set opt.text=value
+		             Do %page.%AddComponent(opt)
+		             Do ctrl.options.Insert(opt)
+		             if node=initValue set ctrl.selectedIndex=index set ctrl.value=value 
+		             set index=index+1
+		             kill opt
+	              }
+              }
+              Set ctrl.id=controlName
+              Set ctrl.name=controlName
+              Set ctrl.size=width
+              ;;Set ctrl.width=width
+              set ctrl.dropdownWidth=ctrl.width
+              Set ctrl.unrestricted=1
+              Set ctrl.editable=1
+              ;if initValue'="" set ctrl.value=initValue
+              quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getListBox">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String,refParam:%String,width:%Integer</FormalSpec>
+<PublicList>%page</PublicList>
+<ReturnType>%ZEN.Component.abstractListBox</ReturnType>
+<Implementation><![CDATA[
+	          set sql=$listget(rec,4)
+		      // если задан sql 
+              if sql'="" {
+	             Set ctrl = ##class(%ZEN.Component.dataListBox).%New()
+                 Set ctrl.sql=sql
+	             ;Set ctrl.valueColumn=1
+                 ;Set ctrl.displayColumns="2"
+                 set ctrl.maxRows=50000
+                 ;set ctrl.listHeight=$select(+height'=0:height,1:60)
+                 ;set ctrl.listWidth=width
+                 if initValue'="" set ctrl.value=initValue
+                 set param=""
+	             for {
+		            set param=$order(@refParam@("par",controlName,"param",param)) if param="" quit
+		            set nameParam=^(param)  
+		            set objParam= ##class(%ZEN.Auxiliary.parameter).%New()
+                    Set objParam.id="param"_controlName_nameParam
+                    Do ctrl.parameters.Insert(objParam)
+                    Do %page.%AddComponent(objParam)
+	             } 
+              }
+              // если просто данные лежат в @refParam@("par",controlName,node) 
+              else {
+	              ;Set ctrl = ##class(%ZEN.Component.listBox).%New()
+	              Set ctrl = ##class(WebER.Zen.listBox).%New()
+                  do ctrl.options.Clear()
+                  set node="",index=0
+	              for {
+		             set node=$order(@refParam@("par",controlName,"data",node)) if node="" quit
+		             set value=$get(^(node)) if value="" continue
+		             Set opt = ##class(%ZEN.Auxiliary.option).%New()
+		             set opt.value=node
+		             set opt.text=value
+		             if node=initValue set ctrl.selectedIndex=index set ctrl.value=node,ctrl.text=value
+		             set index=index+1
+		             Do ctrl.options.Insert(opt)
+		             Do %page.%AddComponent(opt)
+		             kill opt
+	              }
+              }
+              Set ctrl.id=controlName
+              Set ctrl.name=controlName
+              Set ctrl.listWidth=width
+              ;set ctrl.width="100%"
+              set ctrl.listHeight=200
+              quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getTable">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String,refParam:%String</FormalSpec>
+<PublicList>%page,layoutV</PublicList>
+<ReturnType>%ZEN.Component.tablePane</ReturnType>
+<Implementation><![CDATA[
+		      set sql=$listget(rec,4)
+	    	  set flagMultiSelect=0  ;$tr($listget(rec,9)," ","") set flagMultiSelect=$select(flagMultiSelect'="":1,1:0)
+		
+	    	  set ctrl=##class(%ZEN.Component.tablePane).%New()
+	    	  set ctrl.id=controlName
+	    	  set ctrl.name=controlName
+	    	  ;set ctrl.width="100%" ;width
+	    	  set ctrl.bodyHeight=height
+	    	  set ctrl.pageSize=20 
+	    
+	    	  if sql'="" {
+		    	  set ctrl.sql=sql
+		    	  set ctrl.valueColumn="1"
+		    	  ;set ctrl.displayColumns="2"
+		    	  if '$data(@refParam@("par",controlName,"column")) {
+		    	     ;set colCount=ctrl.columns.Count() 
+		    	     ;for numcol=1:1:colCount {
+		    	     ;   set column=##class(%ZEN.Auxiliary.column).%New()
+	    	         ;   set column.colName=numcol
+	    	         ;   set column.width=width\colCount
+	    	         ;   set column.header=""
+	    	         ;   do ctrl.columns.Insert(column)
+	    	         ;   Do %page.%AddComponent(column)
+		    	     ;}
+		    	  }
+		    	  else {
+			    	 set numcol=""
+			    	 for {
+				        set numcol=$order(@refParam@("par",controlName,"column",numcol)) if numcol="" quit
+				        set rec=$get(^(numcol)),colName=$lg(rec,1),colwidth=$lg(rec,3) if colName="" continue
+				        set column=##class(%ZEN.Auxiliary.column).%New()
+	    	            set column.colName=colName
+	    	            if colwidth'=0 set column.width=colwidth
+	    	            set column.header=$listget(rec,2)
+	    	            do ctrl.columns.Insert(column)
+	    	            Do %page.%AddComponent(column)	 
+			    	 }    
+		    	  }
+		    	  set param=""
+	              for {
+		            set param=$order(@refParam@("par",controlName,"param",param)) if param="" quit
+		            set nameParam=^(param) 
+		            set objParam= ##class(%ZEN.Auxiliary.parameter).%New()
+                    Set objParam.id="param"_controlName_nameParam
+                    Do ctrl.parameters.Insert(objParam)
+                    Do %page.%AddComponent(objParam)
+	             } 
+	    	  }
+	    	  else  {
+	    	      set ctrl.queryClass="ReportZEN.genRpt"
+	    	      set ctrl.queryName="queryList"
+	    	      set ctrl.valueColumn="node"
+	    	      ;set countRows=+$tr($listget(rec,10)," ","")  ;??????
+	    	      ;set ctrl.pageSize=$select(countRows'=0:countRows,1:100000)
+	       	      for icol="node","value" {
+	    	         set column=##class(%ZEN.Auxiliary.column).%New()
+	    	         set column.colName=icol
+	    	         set recColumn=$get(@refParam@("par",controlName,"column",$select(icol="node":1,1:2)))
+	    	         set colWidth=$lg(recColumn,3),colHeader=$lg(recColumn,2)
+	    	         set column.width=$select(colWidth'="":colWidth,1:width)
+	    	         set column.header=" " if flagMultiSelect=1,icol="value" set column.header="Выбрать все"
+	    	         if colHeader'="" set column.header=colHeader
+	    	         do ctrl.columns.Insert(column)
+	    	         Do %page.%AddComponent(column)
+	    	      }
+	    	      set par = ##class(%ZEN.Auxiliary.parameter).%New()
+	    	      set par.value=$name(@refParam@("par",controlName))
+	    	      do ctrl.parameters.Insert(par)
+	    	      Do %page.%AddComponent(par)
+	    	  }    
+	    	  set ctrl.multiSelect=flagMultiSelect
+	    	  set ctrl.useSnapshot=1
+	    	  set ctrl.width="100%"
+	    	  if flagMultiSelect=1 {
+	    	    set ctrl.onselectrow="zenPage.rowSelected(zenThis);"
+                set ctrl.onmultiselect="zenPage.changeRowStyle(zenThis);"
+                set ctrl.onupdate="zenPage.updatePagingInfo(zenThis);"
+	    	  }
+	    	  ;set defaultValue=$tr($piece(rec,":",8)," ","")
+	    	  ;if defaultValue=1 set ctrl.disabled=false
+	    	  	    	  
+	    	  ;tableNavigator
+		      Set ctrlNavigator = ##class(%ZEN.Component.tableNavigatorBar).%New()
+              Set ctrlNavigator.msgFound="Всего:"
+              Set ctrlNavigator.msgOf="из"
+              Set ctrlNavigator.msgPage="Страница:"
+              Set ctrlNavigator.tablePaneId=controlName
+              set ctrlNavigator.width="100%" ;ctrl.width ;width
+	    	  do layoutV.%AddChild(ctrlNavigator)
+	    	   
+	    	  quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="transDate">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>dateIn:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ if $get(dateIn)="" quit ""
+ if dateIn="t" quit $zdate(+$h,3)
+ set delta=+$piece(dateIn,"t-",2)
+ if delta'=0 quit $zdate($h-delta,3) 
+ set delta=+$piece(dateIn,"t+",2)
+ if delta'=0 quit $zdate($h+delta,3)
+ if +dateIn=dateIn quit $zdate(dateIn,3) 	
+ quit dateIn
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+//compParam - компонент, в котором меняется значение параметра
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+//compChange - компонент, в котором sql запрос с параметром
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+//имя параметра = 'param'+compChange+compParam
+
+]]></Content>
+</UDLText>
+
+<Method name="changeParam">
+<FormalSpec>compParam,compChange</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	//alert("compParam="+compParam+" compChange="+compChange);
+	param=this.getComponentById(compParam);
+	//alert(param.getValue());
+	this.getComponentById('param'+compChange+compParam).setProperty('value',param.getValue());
+    //this.getComponentById(compChange).refreshContents();
+    zenPage.getComponentById(compChange).executeQuery();
+]]></Implementation>
+</Method>
+
+<Method name="rowSelected">
+<FormalSpec>table</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	   //alert(table.findElement("tr_1").value);
+        table.selectRow(-1);
+]]></Implementation>
+</Method>
+
+<Method name="changeRowStyle">
+<FormalSpec>table</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+        var list = table.selectedRows.split(',');
+        var rowCount=(table.currPage)*table.pageSize;
+        var rowst=(table.currPage-1)*table.pageSize;
+       // alert("list="+list+ " rowCount="+rowCount);
+
+        for (var i = rowst; i < rowCount; i++) {
+                var tr = table.findElement("tr_" + (i-rowst));
+                if (tr==null) {break;}
+                if (list[i]!=null && list[i]!='') {tr.style.backgroundColor="#00FFFF";}
+                else {tr.style.backgroundColor="";}
+        }
+]]></Implementation>
+</Method>
+
+<Method name="updatePagingInfo">
+<FormalSpec>table</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[       this.changeRowStyle(table);
+]]></Implementation>
+</Method>
+
+<Query name="queryList">
+<Description>
+Query from refTmp all records node, value</Description>
+<Type>%Query</Type>
+<FormalSpec>refTmp:%String</FormalSpec>
+<SqlProc>1</SqlProc>
+<Parameter name="ROWSPEC" value="node:%String,value:%String"/>
+</Query>
+
+<Method name="queryListExecute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,refTmp:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set $li(qHandle,1)=""
+  	set $li(qHandle,2)=refTmp
+  	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="queryListFetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>queryListExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set refTmp=$listget(qHandle,2)
+	if refTmp="" set Row="",AtEnd=1 quit $$$OK
+	set item=$listget(qHandle,1)
+	set item=$order(@refTmp@("data",item)) 
+	if item="" set Row="",AtEnd=1 quit $$$OK
+	set $li(Row,1)=item
+	set $li(Row,2)=@refTmp@("data",item)
+	set $li(qHandle,1)=item
+	set AtEnd=0
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="queryListClose">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary]]></FormalSpec>
+<PlaceAfter>queryListExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	Quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+</Export>

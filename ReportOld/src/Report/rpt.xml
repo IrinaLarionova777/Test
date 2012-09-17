@@ -1,0 +1,419 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="Report.rpt">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62248,49149.486115</TimeCreated>
+
+<Method name="StartRpt">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[fileReport:%String,fileJasper:%String,&params:%String,nameReport:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+  //удаление файла отчета, если существует
+  if ##class(%File).Exists(fileReport)&&('##class(%File).Delete(fileReport)) {
+	  set str="Файл "_fileReport_" занят другим приложением"
+	  if nameReport'="" do ..Log(nameReport,str)
+	  quit "0^"_str
+  }
+	
+  set gateway=##class(Report.JasperReportTune).getNameGateway() if gateway="" quit "0^В настройках не указано имя Java gateway"
+  
+  set msg="1^Файл отчета "_fileReport_" успешно сформирован"
+  
+  // открываем gateway	
+  set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
+  if '$IsObject(jvm) Quit "0^Incorrect Java GateWay configuration !"
+  
+  try {
+	; запуск шлюза, если он не запущен
+	If $$$ISERR(##class(%Net.Remote.Service).PingGateway(jvm.Port,jvm.Server,jvm.InitializationTimeout)) {
+		set status=##class(%Net.Remote.Service).StartGateway(gateway)
+		if +status=0 {
+	    	set msg="0^Не удалось запустить JDBC gateway "_gateway
+		    if nameReport'="" do ..Log(nameReport,status )
+		    quit
+		}
+	} 
+	set jgw = ##class(%Net.Remote.Gateway).%New()
+	set status=jgw.%Connect(jvm.Server,jvm.Port) 
+	if +status=0 {
+		set msg="0^Не удалось открыть JDBC gateway "_gateway_". Возможно, он не запущен"
+		if nameReport'="" do ..Log(nameReport,status )
+		quit
+	}
+	//строка с параметрами
+	set paramsHashMap = ##class(java.util.HashMap).%New(jgw)
+	s node="" 
+	for {
+	   s node=$order(params(node)) if node="" quit
+	   s value=params(node)  
+	   do paramsHashMap.put(node,value)
+	}
+  } catch e { 
+      set msg="0^Не удалось открыть JDBC gateway "_gateway 
+      if nameReport'="" do ..Log(nameReport,"Exception connection JDBC gateway "_e.Name_" "_e.Location)
+  }
+    
+  //формирование отчета
+  if +msg=1 {
+     set connectURL = ##class(Report.JasperReportTune).getConnectURL()
+     if nameReport'="" do ..Log(nameReport,"connectURL = "_connectURL)
+     set typeFileReport=##class(Report.JasperReportTune).getTypeFileReport()
+     try {
+	     set debug="0"
+        do ##class(isc.jasper.JasperFacade).executeAndSave(jgw,connectURL,fileJasper, typeFileReport, paramsHashMap, fileReport, debug) 
+     } catch e { 
+         set textError="" 
+         If $ZERROR["<ZJGTW>" {
+	         if ##class(%SYSTEM.Status).IsError($get(%objlasterror)) {
+                Set textError=$System.Status.GetErrorText(%objlasterror)
+	         }
+         } 
+		 else {
+		    Set textError=$ZERROR
+		 }
+         
+         set msg="0^"_textError ;Не удалось сформировать файл с отчетом "
+         if nameReport'="" do ..Log(nameReport,textError)  ;"Exception working JasperFacade "_e.Name_" "_e.Location)
+     }
+     set status=jgw.%Disconnect() if +status=0 if nameReport'="" do ..Log(nameReport,status) 
+  }
+      
+  quit msg
+]]></Implementation>
+</Method>
+
+<Method name="startRptNew">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[nameClass:%String,nameMethod:%String,fileReport:%String,&params:%String,repFormat:%String="pdf",fileJasper:%String,flagCallFacade:%String,debug:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+   //удаление файла отчета, если существует
+  if ##class(%File).Exists(fileReport)&&('##class(%File).Delete(fileReport)) {
+	   Quit $$$ERROR($$$GeneralError,"Файл "_fileReport_" занят другим приложением")
+  }
+
+ // открываем gateway
+  set gateway=##class(Report.JasperReportTune).getNameGateway() 
+  if gateway="" Quit $$$ERROR($$$GeneralError,"Не указан gateway")
+  
+  set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
+  if '$IsObject(jvm) Quit $$$ERROR($$$GeneralError,"Incorrect Java GateWay configuration !")
+
+  Set result=$$$OK
+  Try
+	{
+		; запуск шлюза, если он не запущен
+		If $$$ISERR(##class(%Net.Remote.Service).PingGateway(jvm.Port,jvm.Server,jvm.InitializationTimeout)) {
+			$$$ThrowOnError(##class(%Net.Remote.Service).StartGateway(gateway))
+		}	
+	
+		Set jgw=##class(%Net.Remote.Gateway).%New()
+		; подключение к шлюзу
+		$$$ThrowOnError(jgw.%Connect(jvm.Server,jvm.Port))
+		Try
+		{
+			set paramsHashMap = ##class(java.util.HashMap).%New(jgw)
+			s node="" 
+			;m ^test(111,"ppp ppp")=params
+	        for {
+	            s node=$order(params(node)) if node="" quit
+	            s value=$piece(params(node),$char(1),1)
+	            set typeParam=$piece(params(node),$char(1),2)
+	            if typeParam="Date" {
+		            //set ^test(3,$i(^test(3)))=node_"="_value
+		            set valueDate=##class(java.util.Date).%New(jgw) do valueDate.setTime(value)  
+		            //set ^test(2,$i(^test(2)))=node_"="_$select(typeParam="Date":valueDate,1:value)
+	            }
+	            do paramsHashMap.put(node,$select(typeParam="Date":valueDate,1:value))
+	        }
+			//формирование отчета
+            set connectURL = ##class(Report.JasperReportTune).getConnectURL()
+            
+           if $get(flagCallFacade)=1 
+           {
+	           //set debugBool=##class(java.lang.Boolean).%New(jgw)
+	           //set debugBool=$select($get(debug)=1: "true",1:"false") 
+	           set debug=$select($get(debug)=1:"1",1:"0")
+	           do $classmethod(nameClass,nameMethod,jgw,connectURL,fileJasper,repFormat,paramsHashMap,fileReport,debug)
+           }
+           else  
+           {
+	           if $get(fileJasper)'="" do paramsHashMap.put("fileJasper",fileJasper)
+	           do $classmethod(nameClass,nameMethod,jgw,connectURL,fileReport,paramsHashMap,repFormat)
+           }
+           ;executeAndSave(String connString, String fileName, String repFormat, Map params, String targetFileName, "0")
+           // do ##class(isc.jasper.rptEpisodePCL).startReport(jgw,connectURL, fileReport, paramsHashMap, $na(@refTmp@("result")),repFormat) 
+            //do ##class(isc.jasper.rptEpisodePCL2).startReport(jgw, connectURL, fileReport, paramsHashMap, $na(@refTmp@("result")),repFormat) 
+  
+		}
+		Catch exception
+		{
+            If $ZERROR["<ZJGTW>" {
+		       set %objlasterror=$get(%objlasterror)
+		       if ##class(%SYSTEM.Status).IsError(%objlasterror) {
+			       set result=%objlasterror
+		       }  else {
+			       Set result=$$Error^%apiOBJ(5001,$ZERROR)  //$$Error^%apiOBJ(5001,$get(%objlasterror))
+		       }
+            } 
+		    else {
+		        Set result=exception.AsStatus()
+		     }
+		}
+		; отключение от шлюза
+		Do jgw.%Disconnect()
+	}
+	Catch exception
+	{
+            If $ZERROR["<ZJGTW>" {
+		       set %objlasterror=$get(%objlasterror)
+		       if ##class(%SYSTEM.Status).IsError(%objlasterror) {
+			       set result=%objlasterror
+		       }  else {
+			       Set result=$$Error^%apiOBJ(5001,$ZERROR)  //$$Error^%apiOBJ(5001,$get(%objlasterror))
+		       }
+            } 
+		    else {
+		        Set result=exception.AsStatus()
+		    }
+
+	}
+  quit result
+]]></Implementation>
+</Method>
+
+<Method name="startRptFacade">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[fileReport:%String,&params:%String,fileJasper:%String,repFormat:%String="pdf"]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[  quit ..startRptNew("isc.jasper.JasperFacade", "executeAndSave", fileReport, .params, repFormat, fileJasper, 1)
+]]></Implementation>
+</Method>
+
+<Method name="getPathFileReport">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDate</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ set ret=..getPathFileReport0() if '+ret quit ret
+ set path=$piece(ret,$c(1),2)
+ if $get(pDate)'="" set date=$zd(pDate,15) set path=path_"/"_$p(date,"/",3)_"_"_$p(date,"/",2)
+ if '##class(%File).Exists(path) if '##class(%File).CreateDirectoryChain(path) quit "0"_$c(1)_"Ошибка при создании директории "_path
+ quit "1"_$c(1)_path
+]]></Implementation>
+</Method>
+
+<Method name="getPathFileReport0">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set ret=1
+	try {
+		set path=$tr($$Path^REPORTSPB(),"\","/") if path=""||($extract(path,1)="*") s path="C:/JasperTest/reports"
+        if '##class(%File).Exists(path) do ##class(%File).CreateDirectoryChain(path)
+        set ret="1"_$c(1)_path
+   	} 
+	catch(exception) 
+	{
+	   set ret="0"_$c(1)_$System.Status.GetErrorText(exception.AsStatus())	
+	}
+	quit ret
+]]></Implementation>
+</Method>
+
+<Method name="getPathFileReport00">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&path:%String,dopPath:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ret=$$$OK,path=""
+	try {
+		set path=$$Path^REPORTSPB() if path=""||($extract(path,1)="*") s path="C:\JasperTest\reports"
+		if $get(dopPath)'="" set path=path_"\"_$tr(dopPath,"/","\")
+        if '##class(%File).Exists(path) do ##class(%File).CreateDirectoryChain(path) 
+    } 
+	catch(exception) 
+	{
+	   set ret=exception.AsStatus()	
+	}
+	quit ret
+]]></Implementation>
+</Method>
+
+<Method name="getPathFileReportGroup">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pathFileReport:%String,USER:%String=""]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	//quit ##class(Report.rpt).getPathFileReport00(.pathFileReport,USER)
+	set res=$$$OK,pathFileReport=""
+	try {
+	       set pathFileReport=##class(ReportZEN.settings).getNodeSettings("server","pathTempFile")   ;"//lissrv/lab/temp/reports" ;"C:\BION\lab\temp\Reports"
+	       if pathFileReport="" $$$ThrowOnError($$$ERROR($$$GeneralError,"В настройках не указан путь к временным файлам"))
+	       if $get(USER)'="" set pathFileReport=pathFileReport_"\"_USER
+	       if '##class(%File).Exists(pathFileReport) do ##class(%File).CreateDirectoryChain(pathFileReport)
+	} 
+	catch(exception)
+	{
+	      set res=exception.AsStatus()	
+	}
+	quit res
+]]></Implementation>
+</Method>
+
+<Method name="messageAboutSuccess">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>dateTo:%String,pathFileReport:%String=""</FormalSpec>
+<Implementation><![CDATA[
+   if $get(dateTo)'="" set pathFileReport=$piece(##class(Report.rpt).getPathFileReport(dateTo),$c(1),2)
+   set message="Файлы сформированы" if $get(pathFileReport)'="" set message=message_" в директории "_pathFileReport
+   quit message
+]]></Implementation>
+</Method>
+
+<Method name="manageErrors">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&errorsArray:%Integer]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set errorstring="" 
+	set i="" 
+	for {
+		 set i=$order(errorsArray(i)) if i="" quit
+		 s errorstring=errorstring_$s(errorstring'="":$c(13),1:"")_errorsArray(i) 
+		 if i>10 set:$o(errorsArray(i))'="" errorstring=errorstring_$c(13)_"и т.д." quit
+	}
+	quit errorstring
+]]></Implementation>
+</Method>
+
+<Method name="KillLog">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>nameReport:%String</FormalSpec>
+<Implementation><![CDATA[ kill ^logReport(nameReport)
+]]></Implementation>
+</Method>
+
+<Method name="Log">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>nameReport:%String,logString:%String,logStatus:%Status,addKey:%String</FormalSpec>
+<Implementation><![CDATA[
+	set stringWrite = $get(logString)
+ if $get(logStatus)'="" set stringWrite = logStatus  
+	
+ if $get(addKey)'="" set ^logReport(nameReport,addKey,$order(^logReport(nameReport,addKey,""),-1)+1)=stringWrite 
+ else  set ^logReport(nameReport,$order(^logReport(nameReport,""),-1)+1)=stringWrite
+]]></Implementation>
+</Method>
+
+<Method name="getFormatReportDefault">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[ quit "pdf"
+]]></Implementation>
+</Method>
+
+<Method name="startPdfBoxFacade">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>fileReport:%String,namePrinter:%String,flagSilence:%Integer</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  if $get(flagSilence)="" set flagSilence=1
+ // открываем gateway
+  set gateway=##class(Report.JasperReportTune).getNameGateway() 
+  if gateway="" Quit $$$ERROR($$$GeneralError,"Не указан gateway")
+  
+  set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
+  if '$IsObject(jvm) Quit $$$ERROR($$$GeneralError,"Incorrect Java GateWay configuration !")
+  
+  Set result=$$$OK
+  Try
+	{
+		; запуск шлюза, если он не запущен
+		If $$$ISERR(##class(%Net.Remote.Service).PingGateway(jvm.Port,jvm.Server,jvm.InitializationTimeout)) {
+			$$$ThrowOnError(##class(%Net.Remote.Service).StartGateway(gateway))
+		}	
+	
+		Set jgw=##class(%Net.Remote.Gateway).%New()
+		; подключение к шлюзу
+		$$$ThrowOnError(jgw.%Connect(jvm.Server,jvm.Port))
+		Try
+		{
+			if flagSilence=1 {
+				do ##class(isc.pdfbox.PdfboxFacade).printSilent(jgw, fileReport, namePrinter) 
+			}
+			else  {
+				do ##class(isc.pdfbox.PdfboxFacade).print(jgw, fileReport, namePrinter) 
+			}
+  
+		}
+		Catch exception
+		{
+		If $ZERROR["<ZJGTW>" {
+		    set %objlasterror=$get(%objlasterror)
+		    if ##class(%SYSTEM.Status).IsError(%objlasterror) {
+			    set result=%objlasterror
+		    }  else {
+			    Set result=$$Error^%apiOBJ(5001,$ZERROR)  //$$Error^%apiOBJ(5001,$get(%objlasterror))
+		    }
+            } 
+		else {
+		    Set result=exception.AsStatus()
+		}
+		}
+		; отключение от шлюза
+		Do jgw.%Disconnect()
+	}
+	Catch exception
+	{
+	    If $ZERROR["<ZJGTW>" {
+		    set %objlasterror=$get(%objlasterror)
+		    if ##class(%SYSTEM.Status).IsError(%objlasterror) {
+			    set result=%objlasterror
+		    }  else {
+			    Set result=$$Error^%apiOBJ(5001,$ZERROR)  //$$Error^%apiOBJ(5001,$get(%objlasterror))
+		    }
+            } 
+		else {
+		    Set result=exception.AsStatus()
+		}
+	}
+  quit result
+]]></Implementation>
+</Method>
+
+<Method name="getNamePrinterForReport">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[nodeReport:%String,user:%String,&namePrinter:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set namePrinter=""
+  if $get(nodeReport) Quit $$$ERROR($$$GeneralError,"Код отчета не определен")
+  if '$data(^TTAB("REPORT-GENERIC",nodeReport)) Quit $$$ERROR($$$GeneralError,"Отчет с кодом "_nodeReport_" не определен в Классификатор-Система-Отчет-настройка отчетов") 	 
+  set codePrinter=""
+  //принтер привян к группе отчетов
+  set key=$order(^TTAB("REPORT-GENERIC",nodeReport,"PAR",""))
+  if key'="" {
+       set codePrinter=$piece($get(^TTAB("REPORT-GENERIC",nodeReport,"PAR",key)),"\",2)
+  }
+  // принтер по умолчанию для пользователя
+  if codePrinter="",$get(user)'="" set codePrinter=$piece($get(^SSU("SSUSR",1,user)),"^",12)
+  // принтер по умолчанию для системы 
+  if codePrinter="" set codePrinter=$piece($get(^CF("SM",1)),"^",25)
+  if codePrinter="" Quit $$$ERROR($$$GeneralError,"Принтер по умолчанию задан некорректно")
+  
+  if key="" set key=$piece($get(^CF("SM",1)),"^",25)
+  
+  set codeDevice=$get(^TTAB("CTDS",codePrinter,1))
+  if codeDevice="" Quit $$$ERROR($$$GeneralError,"Принтер по умолчанию задан некорректно")
+  
+  set printer=$piece($get(^%IS(codeDevice,1)),"^",1)
+  if printer="" Quit $$$ERROR($$$GeneralError,"В cache не определено устройство "_codeDevice)
+  set namePrinter=printer
+  if $extract(printer,1,5)="|PRN|" set namePrinter=$extract(printer,6,$length(printer))
+  quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+</Export>

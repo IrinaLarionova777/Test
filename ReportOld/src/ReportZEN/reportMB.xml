@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="ReportZEN.reportMB">
+<Description>
+Created using the page template: Заголовок страницы
+</Description>
+<Super>%ZEN.Component.page</Super>
+<TimeCreated>62332,41958.69039</TimeCreated>
+
+<Parameter name="APPLICATION">
+<Description>
+Имя приложения, которому принадлежит эта страница.</Description>
+<Default>ReportZEN.ReportApplication</Default>
+</Parameter>
+
+<Parameter name="PAGENAME">
+<Description>
+Отображаемое имя для нового приложения.</Description>
+</Parameter>
+
+<Parameter name="DOMAIN">
+<Description>
+Домен, используемый для локализации.</Description>
+</Parameter>
+
+<XData name="Contents">
+<Description>
+Этот XML блок описывает содержимое этой страницы.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<page xmlns="http://www.intersystems.com/zen">
+<form id="myform" 
+	width="60%" 
+	layout="vertical"
+	labelPosition="top"
+	cellStyle="padding: 3px;" 
+	align="center"
+	>
+<locatorBar id="locator">
+<locatorLink caption="Меню" href="ReportZEN.menu.cls" />
+</locatorBar>
+<html id="title">Данные для отчета для отдела Микробиология</html>
+<vgroup id="formGroup">
+<spacer height="10"/>
+ <hgroup align="center"> 
+ <label value="Отчетный период c "/>
+ <spacer width="10"/>
+ <dateText id="dateFrom" 
+    format="DMY"
+    monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"
+    
+ />
+  <spacer width="10"/>
+ <label value=" по "/>
+  <spacer width="10"/>
+ <dateText id="dateTo" 
+   format="DMY" 
+   monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"
+ />
+</hgroup>
+<hgroup>
+<label value="Время с" />
+<text id="timeFrom" value="00:00"/>
+<label value="по " />
+<text id="timeTo" value="" />
+</hgroup> 
+<spacer height="10"/>
+<tablePane id="department" 
+ queryClass="Report.Department"
+ queryName="queryDepartments"
+ multiSelect="true" 
+ value="H"
+ valueColumn="codeDepartment"
+  showRowSelector="false" 
+  bodyHeight="400"
+  pageSize="5000"
+  >
+  <column colName="codeDepartment" header=" " />
+  <column colName="nameDepartment" header="Выберите отдел" />
+</tablePane>
+ 
+<spacer height="10"/>
+<button id="pr" caption="Печать" align="center"  onclick="zenPage.startRptClient()" /> 
+<spacer height="10"/>
+</vgroup>
+</form>
+</page>
+]]></Data>
+</XData>
+
+<Method name="%OnAfterCreatePage">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	do %page.%SetValueById("dateFrom",$zdate(+$h,3))
+	do %page.%SetValueById("dateTo",$zdate(+$h,3))
+	do %page.%SetValueById("timeTo",$ztime($p($h,",",2),2))
+	do %page.%SetValueById("department","H")
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="startRptServer">
+<PublicList>MSGERROR</PublicList>
+<ReturnType>%ZEN.proxyObject</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	set nameReport=##class(Report.EpisodeMB).getReportName()
+	do ##class(Report.rpt).KillLog(nameReport)
+	
+	;проверка входных параметров
+	set pDateFrom=%page.%GetValueById("dateFrom") if pDateFrom="" quit "Не определена дата начала отчетного периода"
+	set pDateTo=%page.%GetValueById("dateTo") if pDateFrom="" quit "Не определена дата окончания отчетного периода"
+	set pTimeFromPrint=$tr(%page.%GetValueById("timeFrom"),".",":") if pTimeFromPrint="" set pTimeFrom="00:00"
+	set pTimeFrom=pTimeFromPrint
+	set pTimeToPrint=$tr(%page.%GetValueById("timeTo"),".",":") if pTimeToPrint="" set pTimeToPrint=$ztime($p($h,",",2),2) 
+	set pTimeTo=pTimeToPrint
+	Set stringDepartments = %page.%GetComponentById("department").selectedRows if $tr(stringDepartments,",","")="" quit "Не выбрано ни одного отдела"
+	Set pDateFrom = $zdh($tr(pDateFrom,"-",""),8)
+    Set pDateTo = $zdh($tr(pDateTo,"-",""),8)
+    set pDepartment="" for i=1:1:$length(stringDepartments,",") {
+	    set pDepartment=$piece(stringDepartments,",",i) if pDepartment'="" quit
+    }
+    set params="PAR1"_$c(3)_pDateFrom
+    set params=params_$c(2)_"PAR2"_$c(3)_pDateTo
+    set params=params_$c(2)_"PAR4"_$c(3)_pDepartment
+    set params=params_$c(2)_"PAR5"_$c(3)_pTimeFrom
+    set params=params_$c(2)_"PAR6"_$c(3)_pTimeTo
+    set params=params_$c(2)_"PAR7"_$c(3)_"0" ;только печать все в один файл
+    ;
+    set MSGERROR=""
+    d START^PRTCLNRUS49($get(USER,""),params)
+    ;set %request.Set("file")=$piece(MSGERROR,"^",2)
+    ;set %response.Redirect="ex.csp.download1.CSP?file="_$piece(MSGERROR,"^",2)
+    ;set %response.ServerSideRedirect="/csp/data/ReportZEN.lookFile.cls?file="_$piece(MSGERROR,"^",2)
+    set proxy = ##class(%ZEN.proxyObject).%New()
+    set proxy.error=+$piece(MSGERROR,"^",1)
+    set fileReport=$piece(MSGERROR,"^",3)
+    set proxy.message=$piece(MSGERROR,"^",2)
+    set proxy.fileReport=fileReport
+    set proxy.url=##class(ReportZEN.downloadFile).getURL(fileReport)
+    quit proxy
+]]></Implementation>
+</Method>
+
+<Method name="startRptClient">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var proxy = zenPage.startRptServer();
+	var err = proxy.error
+	var message=proxy.message
+	var url=proxy.url
+	if ((message != null)&&(message != '')) alert(message.replace("^","\n"));
+	if (err == 0) zenPage.gotoPage(proxy.url);
+]]></Implementation>
+</Method>
+</Class>
+</Export>

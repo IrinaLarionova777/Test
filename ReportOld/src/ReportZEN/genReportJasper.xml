@@ -1,0 +1,697 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="ReportZEN.genReportJasper">
+<Description>
+Класс для системы связки cache с jasperreports
+Генерации окна запроса параметров для отчета - рисование мордочки 
+предполагается %request: 
+             user (пользователь),
+             reportKey (ключ в $get(^TTAB("REPORT-GENERIC",reportKey)) (Trak)) (не обязательный, нужен только для Заголовка отчета из настроек Trak),
+             fileJRXML - имя файла (без пути) с расширением .jrxml
+Отчеты типа medium - для них сделаны свои мордочки - должны вызываться напрямую в getReportURL^TCLEx.ReportVB() (для этого в классификаторе Настройке отчетов - долженбыть указан класс zen- .cls </Description>
+<Super>ReportZEN.genReportJasper0</Super>
+<TimeCreated>62410,57374.540064</TimeCreated>
+
+<Method name="%OnAfterCreatePage">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	 
+	$$$ThrowOnError(##super())
+	
+	set title="" 
+    if $IsObject(%session) {
+	       if $data(%session.Data("title")) set title=%session.Data("title")
+    }
+    // title
+    set ctrlTitle=%page.%GetComponentById("titleFormForFaceReport")
+    if title '= "",$IsObject(ctrlTitle) {
+       set ctrlTitle.content=$zcvt(title,"O","HTML")
+    }
+    elseif $IsObject(ctrlTitle) {
+	   set ctrlTitle.hidden=1 
+    }
+    
+    set form= %page.%GetComponentById("formGroupForFaceReport")
+    
+    // формирование элементов экрана по описанию
+    $$$ThrowOnError(..runCreatePage()) 
+    
+    // кнопка Печать
+    Set spacer = ##class(%ZEN.Component.spacer).%New()
+    Set spacer.height=10
+    do form.%AddChild(spacer)  
+    Set button = ##class(%ZEN.Component.button).%New()
+    Set button.align="center"
+    Set button.caption="Печать"
+    Set button.onclick="zenPage.startRptClient()"
+    Do form.%AddChild(button)
+    Set spacer = ##class(%ZEN.Component.spacer).%New()
+    Set spacer.height=10
+    Do form.%AddChild(spacer)
+ 
+  } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  } 
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="runCreatePage">
+<ClassMethod>1</ClassMethod>
+<PublicList>ctrl</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	set row="",maxWidthLabel=0 
+    for {
+	  set row=$order(%session.Data("params","layout",row)) if row="" quit 
+      set rec=$get(%session.Data("params","layout",row))
+      set description=$listget(rec,2),len=$length(description)    
+	  if len>maxWidthLabel set maxWidthLabel=len
+    } 
+    set maxWidthLabel=(maxWidthLabel*10)_"px"
+     	   
+    set form= %page.%GetComponentById("formGroupForFaceReport")
+    set layoutRow=##class(%ZEN.Component.vgroup).%New()
+    ;set layoutRow.cellSize="" ;"same" ;"stretch"
+    do form.%AddChild(layoutRow) 
+    set row="",width=(1000-maxWidthLabel)_"px",size=+width*0.15\1
+    for {
+	      set row=$order(%session.Data("params","layout",row)) if row="" quit 
+	      Set spacer = ##class(%ZEN.Component.spacer).%New()
+          Set spacer.height="1px"
+          do layoutRow.%AddChild(spacer) 
+	      set layoutCol=##class(%ZEN.Component.hgroup).%New()
+	      ;set layoutCol.cellSize="" ;"same" ;"stretch"
+	      do layoutRow.%AddChild(layoutCol) 
+	      set rec=$get(%session.Data("params","layout",row))
+ 	      set controlName=$listget(rec,1)
+ 	      set description=$listget(rec,2)
+ 	      //Label 
+ 	      set layoutV=##class(%ZEN.Component.vgroup).%New()
+	      set layoutV.width=maxWidthLabel
+	      set nameLayout="layoutV"_row
+	      set layoutV.id=nameLayout
+	      do layoutCol.%AddChild(layoutV)
+	      set ctrl=##class(%ZEN.Component.label).%New()
+	      set ctrl.id="Label"_row
+	      set ctrl.value=description
+	      set ctrl.width=maxWidthLabel
+	       
+	      do layoutV.%AddChild(ctrl) 
+	      // 
+	      set rec=%session.Data("params","par",controlName)
+	      set typeControl=$listget(rec,1)
+	      set initValue=$listget(rec,3)
+		  set layoutV=##class(%ZEN.Component.vgroup).%New()
+	      set layoutV.width=width
+	      do layoutCol.%AddChild(layoutV)
+	
+	      kill ctrl set ctrl=""
+	      // Text   ----------------------------------------
+	      if typeControl="text" {
+		      set ctrl=..getText(controlName, initValue, rec, size)
+	     	  do layoutV.%AddChild(ctrl)  
+	      }
+	      // DateText   ------------------------------------ 
+	      if typeControl="datetext" {
+	    	  set ctrl=..getDateText(controlName, initValue, rec)
+	    	  do layoutV.%AddChild(ctrl)  
+	      }
+	      // CheckBox  -------------------------------------
+	      if typeControl="checkbox" {
+		       set ctrl=..getCheckBox(controlName, initValue, rec)
+               do layoutV.%AddChild(ctrl)  
+	      }
+	      // RadioButton  ----------------------------------
+	      if typeControl="radiobutton" {
+		      do ..getRadioButton(controlName, initValue, rec, layoutV )
+	      } 
+	      // ComboBox  ----------------------------------
+	      if typeControl="combobox" {
+		      set ctrl=..getComboBox(controlName, initValue, rec, size )
+	   	      do layoutV.%AddChild(ctrl)
+	   	      ;Do %page.%SetValueById(controlName,initValue)
+
+	      }
+	       // ListBox  ----------------------------------
+	       if typeControl="listbox" {
+		      set ctrl=..getListBox(controlName, initValue, rec, width)
+	   	      do layoutV.%AddChild(ctrl)
+	      }
+	      // Table  -------------------------------------
+	      if typeControl="table"  
+	         {
+		      set ctrl=..getTable(controlName, initValue, rec, width , .ctrlNavigator)
+	   	      if $IsObject(ctrlNavigator) do layoutV.%AddChild(ctrlNavigator)
+	   	      do layoutV.%AddChild(ctrl)
+	   	      ;s ^test(111,"hhhfff")=ctrl
+	   	      ;do ctrl.executeQuery()
+		      ; 	      set key1=%session.SessionId,key2=ctrl.snapshotId,key3=ctrl.index 
+			  ;s ^test(111,"hhh222")=$data(^CacheTemp.zenData(key1,key2,key3,"data")) 
+	         }  
+		 
+          // onchange
+	       // добавление обработчика onchange (данный элемент par является параметром для другого элемента)
+	       if $IsObject(ctrl),$data(%session.Data("params","bindparam",controlName)) {
+		      set parChange="",stringCompChange=""
+		      for {
+			     set parChange=$order(%session.Data("params","bindparam",controlName,parChange)) if parChange="" quit
+			     set stringCompChange=stringCompChange_$select(stringCompChange'="":",",1:"")_parChange
+		      }
+		      if stringCompChange'="" Set ctrl.onchange="zenPage.changeParam('"_ctrl.id_"','"_stringCompChange_"');" 
+	       }
+	       
+	       //свойства , которые опредедлил пользователь
+	       if $IsObject(ctrl) {
+	          set prop=""
+	          for {
+		          set prop=$order(%session.Data("params","par",controlName,"property",prop)) if prop="" quit
+		          set value=$get(%session.Data("params","par",controlName,"property",prop)) if value="" continue
+		          set classname=$piece(ctrl,"@",2) if classname="" continue 
+		          if ##class(Report.Function.general).testIsProperty(classname, prop) {
+			          set $property(ctrl,prop)=value
+		          } 
+	          }
+	       }
+	       
+	       Set spacer = ##class(%ZEN.Component.spacer).%New()
+	       Set spacer.width=5
+           do layoutCol.%AddChild(spacer)    
+	  }
+   } catch(exception) 
+   {
+	   set ok=exception.AsStatus()	
+   } 
+   quit ok
+]]></Implementation>
+</Method>
+
+<Method name="getText">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String,width:%String</FormalSpec>
+<ReturnType>%ZEN.Component.text</ReturnType>
+<Implementation><![CDATA[
+    set ctrl=##class(%ZEN.Component.text).%New()
+	set ctrl.id=controlName
+	set ctrl.name=controlName
+	set ctrl.value=initValue 
+	set ctrl.size=width
+	quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getDateText">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String</FormalSpec>
+<ReturnType>%ZEN.Component.dateText</ReturnType>
+<Implementation><![CDATA[
+  set classname="WebER.Zen.calendar"
+  set classobj=##class(%Dictionary.CompiledClass).%OpenId(classname) 
+  if $IsObject(classobj) {
+       set ctrl=##class(WebER.Zen.calendar).%New()
+  } 
+  else {
+       set ctrl=##class(%ZEN.Component.dateText).%New()
+  }
+  set ctrl.id=controlName
+  set ctrl.name=controlName
+  set ctrl.format="DMY"
+  set ctrl.monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"
+  if $get(initValue)'="" set ctrl.value=..transDate(initValue) 
+  quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getCheckBox">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String</FormalSpec>
+<ReturnType>%ZEN.Component.checkbox</ReturnType>
+<Implementation><![CDATA[
+
+  set ctrl=##class(%ZEN.Component.checkbox).%New()
+  set ctrl.id=controlName
+  set ctrl.name=controlName
+  set ctrl.caption=""
+  set ctrl.value=$select((initValue=1)||($zcvt(initValue,"U")="TRUE"):1,1:0) 
+  quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getRadioButton">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[controlName:%String,initValue:%String,rec:%String,&layoutV:%ZEN.Component.vgroup]]></FormalSpec>
+<PublicList>%page</PublicList>
+<Implementation><![CDATA[
+ 	          ;set rs=##class(%ZEN.Component.radioSet).%New()
+	    	  ;set rs.id=controlName
+	    	  ;set rs.name=controlName
+	    	  if $IsObject(layoutV) {
+	         	  set key="",num=0
+	        	  for {
+		        	 set key=$order(%session.Data("params","par",controlName,"data",key)) if key="" quit
+		        	 set text=$get(%session.Data("params","par",controlName,"data",key))
+		        	 set ctrl=##class(%ZEN.Component.radioButton).%New()
+		        	 set num=num+1  
+		        	 set ctrl.id=controlName_num
+		        	 set ctrl.name=controlName
+		        	 set ctrl.caption=$select(text'="":text,1:key)
+		        	 set ctrl.optionValue=key
+		        	 if key=initValue set ctrl.value=key ;,rs.value=key 
+		        	 do layoutV.%AddChild(ctrl)
+	    	      }
+	    	      ;do %page.%AddChild(rs)
+	    	  }
+]]></Implementation>
+</Method>
+
+<Method name="getComboBox">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String,width:%String</FormalSpec>
+<PublicList>%page</PublicList>
+<ReturnType>%ZEN.Component.abstractComboBox</ReturnType>
+<Implementation><![CDATA[
+	          set sql=$get(%session.Data("params","par",controlName,"property","sql"))
+   		      // если задан sql 
+              if sql'="" {
+	             Set ctrl = ##class(%ZEN.Component.dataCombo).%New()
+                 Set ctrl.sql=sql
+	             ;set ctrl.auxColumn=1
+	             Set ctrl.valueColumn=1 
+                 Set ctrl.displayColumns=2
+                 set ctrl.editable=1  
+                 ;set ctrl.dataBinding="QUrlOperationId"
+	             if initValue'="" set ctrl.value=initValue
+	             ;set ctrl.cached=1
+	             set param=""
+	             for {
+		            set param=$order(%session.Data("params","par",controlName,"bind",param)) if param="" quit
+		            set nameParam=$get(%session.Data("params","par",controlName,"bind",param)) 
+		            set objParam= ##class(%ZEN.Auxiliary.parameter).%New()
+                    Set objParam.id="param"_controlName_nameParam
+                    Do ctrl.parameters.Insert(objParam)
+                    Do %page.%AddComponent(objParam)
+	             }
+              }
+              // если просто данные лежат в @refParam@("par",controlName,node) 
+              else {
+	              Set ctrl = ##class(%ZEN.Component.combobox).%New()
+                  do ctrl.options.Clear()
+                  set node="",index=1
+	              for {
+		             set node=$order(%session.Data("params","par",controlName,"data",node)) if node="" quit
+		             set value=$get(%session.Data("params","par",controlName,"data",node)) if value="" continue
+		             Set opt = ##class(%ZEN.Auxiliary.option).%New()
+		             set opt.value=node
+		             set opt.text=value
+		             Do %page.%AddComponent(opt)
+		             Do ctrl.options.Insert(opt)
+		             if node=initValue set ctrl.selectedIndex=index set ctrl.value=value 
+		             set index=index+1
+		             kill opt
+	              }
+              }
+              Set ctrl.id=controlName
+              Set ctrl.name=controlName
+              Set ctrl.size=width
+              set ctrl.dropdownWidth=ctrl.width
+              Set ctrl.unrestricted=1
+              Set ctrl.editable=1
+              quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getListBox">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>controlName:%String,initValue:%String,rec:%String,width:%String</FormalSpec>
+<PublicList>%page</PublicList>
+<ReturnType>%ZEN.Component.abstractListBox</ReturnType>
+<Implementation><![CDATA[
+	          set sql=$get(%session.Data("params","par",controlName,"property","sql"))
+		      // если задан sql 
+              if sql'="" {
+	             Set ctrl = ##class(%ZEN.Component.dataListBox).%New()
+                 Set ctrl.sql=sql
+	             ;Set ctrl.valueColumn=1
+                 ;Set ctrl.displayColumns="2"
+                 set ctrl.maxRows=50000
+                 ;set ctrl.listHeight=$select(+height'=0:height,1:60)
+                 ;set ctrl.listWidth=width
+                 if initValue'="" set ctrl.value=initValue
+                 set param=""
+	             for {
+		            set param=$order(%session.Data("params","par",controlName,"bind",param)) if param="" quit
+		            set nameParam=$get(%session.Data("params","par",controlName,"bind",param)) 
+		            set objParam= ##class(%ZEN.Auxiliary.parameter).%New()
+                    Set objParam.id="param"_controlName_nameParam
+                    Do ctrl.parameters.Insert(objParam)
+                    Do %page.%AddComponent(objParam)
+	             } 
+              }
+              // если просто данные лежат в @refParam@("par",controlName,node) 
+              else {
+	              ;Set ctrl = ##class(%ZEN.Component.listBox).%New()
+	              Set ctrl = ##class(WebER.Zen.listBox).%New()
+                  do ctrl.options.Clear()
+                  set node="",index=0
+	              for {
+		             set node=$order(%session.Data("params","par",controlName,"data",node)) if node="" quit
+		             set value=$get(%session.Data("params","par",controlName,"data",node)) if value="" continue
+		             Set opt = ##class(%ZEN.Auxiliary.option).%New()
+		             set opt.value=node
+		             set opt.text=value
+		             if node=initValue  set ctrl.value=node,ctrl.text=value set ctrl.selectedIndex=index ;s ^test(111,"sellb1")=initValue_" "_index_" "_node_" "_value
+		             set index=index+1
+		             Do ctrl.options.Insert(opt)
+		             Do %page.%AddComponent(opt)
+		             kill opt
+	              }
+              }
+              Set ctrl.id=controlName
+              Set ctrl.name=controlName
+              Set ctrl.listWidth=width
+              ;set ctrl.width="100%"
+              set ctrl.listHeight=200
+              quit ctrl
+]]></Implementation>
+</Method>
+
+<Method name="getTable">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[controlName:%String,initValue:%String,rec:%String,width:%String,&ctrlNavigator:%ZEN.Component.tableNavigatorBar]]></FormalSpec>
+<PublicList>%page</PublicList>
+<ReturnType>%ZEN.Component.tablePane</ReturnType>
+<Implementation><![CDATA[
+		      set sql=$get(%session.Data("params","par",controlName,"property","sql"))
+	    	  set flagMultiSelect=+$get(%session.Data("params","par",controlName,"property","multiSelect"))
+		
+	    	  set ctrl=##class(%ZEN.Component.tablePane).%New()
+	    	  set ctrl.id=controlName
+	    	  set ctrl.name=controlName
+	    	  ;set ctrl.width="100%" ;width
+	    	  ;set ctrl.bodyHeight=height
+	    	  set ctrl.pageSize=15 
+	    
+	    	  if sql'="" {
+		    	  set ctrl.sql=sql
+		    	  set param=""
+	              for {
+		            set param=$order(%session.Data("params","par",controlName,"bind",param)) if param="" quit
+		            set nameParam=$get(%session.Data("params","par",controlName,"bind",param))
+		            set objParam= ##class(%ZEN.Auxiliary.parameter).%New()
+                    Set objParam.id="param"_controlName_nameParam
+                    Do ctrl.parameters.Insert(objParam)
+                    Do %page.%AddComponent(objParam)
+	             } 
+	    	  }
+	    	  else  {
+	    	      set ctrl.queryClass="ReportZEN.genReportJasper"
+	    	      set ctrl.queryName="queryList"
+	    	      set ctrl.valueColumn="node"
+	    	      set par = ##class(%ZEN.Auxiliary.parameter).%New()
+	    	      set par.value=controlName
+	    	      do ctrl.parameters.Insert(par)
+	    	      Do %page.%AddComponent(par)
+	    	  }
+	    	
+	    	  set numcol=""
+			  for {
+				        set numcol=$order(%session.Data("params","par",controlName,"column",numcol)) if numcol="" quit
+				        set rec=$get(%session.Data("params","par",controlName,"column",numcol)),colName=$lg(rec,1) if colName="" continue
+				        set coldata=$lg(rec,2),colheader=$piece(coldata,"^",1)
+				        set colwidth=$piece(coldata,"^",2) if colwidth="" set colwidth=0
+				        set column=##class(%ZEN.Auxiliary.column).%New()
+	    	            set column.colName=colName
+	    	            if +colwidth'=0 set column.width=colwidth ;s ^test(111,"rrr",controlName,"column",numcol)=colwidth
+	    	            set column.header=colheader
+	    	            do ctrl.columns.Insert(column)
+	    	            Do %page.%AddComponent(column)	 
+			  }    
+	    	    
+	    	  set ctrl.multiSelect=flagMultiSelect
+	    	  set ctrl.useSnapshot=1
+	    	  Set ctrl.showRowSelector=0
+	    	  ;set ctrl.width=width ;"100%"
+	    	  ;set ctrl.controlStyle="table-layout: fixed; width: "_width_";"
+	    	  if flagMultiSelect=1 {
+	    	    set ctrl.onselectrow="zenPage.rowSelected(zenThis);"
+                set ctrl.onmultiselect="zenPage.changeRowStyle(zenThis);"
+                set ctrl.onupdate="zenPage.updatePagingInfo(zenThis);"
+	    	  }
+	          ;if $get(initValue)'="" {
+		          ;do ctrl.executeQuery(0)
+		          ;set key1=%session.SessionId,key2=ctrl.snapshotId,key3=ctrl.index 
+			      ;s ^test(111,"hhh0")=$data(^CacheTemp.zenData(key1,key2,key3,"data")) 
+		          set ctrl.value=initValue
+	          ;}
+	    	  	    	  
+	    	  ;tableNavigator
+	    	  set ctrlNavigator=""
+		      Set ctrlNavigator = ##class(%ZEN.Component.tableNavigatorBar).%New()
+              Set ctrlNavigator.msgFound="Всего:"
+              Set ctrlNavigator.msgOf="из"
+              Set ctrlNavigator.msgPage="Страница:"
+              Set ctrlNavigator.tablePaneId=controlName
+              set ctrlNavigator.width="100%" ;ctrl.width ;width
+	    	  	    	   
+	    	  quit ctrl
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// обработка initValue для даты
+
+]]></Content>
+</UDLText>
+
+<Method name="transDate">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>dateInit:%String</FormalSpec>
+<ProcedureBlock>1</ProcedureBlock>
+<PublicList>datevalue</PublicList>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	 // по умолчанию будет текущая дата 
+ if $get(dateInit)="" quit $zdate(+$h,3) // если не определено начальное значение даты, то текущая ??
+ 
+  // t- current date
+ if dateInit="t" quit $zdate(+$h,3)
+ // t-delta
+ set delta=+$piece(dateInit,"t-",2)
+ if delta'=0 quit $zdate($h-delta,3) 
+ // t+delta
+ set delta=+$piece(dateInit,"t+",2)
+ if delta'=0 quit $zdate($h+delta,3)
+ // если число, то считаем, что это дата
+ if +dateInit=dateInit quit $zdate(dateInit,3) 
+
+ new datevalue
+ set datevalue=""
+ if dateInit'="" {
+	 xecute "set datevalue="_dateInit
+ }
+ /*
+ // если начинается с $$ или ##, то считаем, что задана функция для инициализации даты и звпускаем ее
+ set pp=$extract(dateInit,1,2)
+ // вызов программы с проверкой существования программы и метки в ней
+ if $extract(pp,1)="$" {
+	 // не бубу проверять - все на совести пользователя, так как там может быть что-то типа w $$FirstDateOfMonthH^KSUTIL1($$PreviousMonth^KSUTIL1($$CurrentMonth^KSUTIL1()))
+	 set programname=$piece($piece($piece(dateInit,"$$",2),"(",1),"^",2)
+	 if programname'=""&&(##class(%Library.Routine).Exists(programname_".OBJ")) {
+		 set okExecute=1
+		 set labelname=$piece($piece(dateInit,"$$",2),"^",1)
+		 if labelname'="" {
+			 if ##class(%Library.Routine).Exists(programname_".MAC") {
+			    if ##class(%Library.Routine).%OpenId(programname_".MAC").FindAt(-1,labelname)=-1 set okExecute=0
+			 }
+			 elseif ##class(%Library.Routine).Exists(programname_".INT") {
+			    if ##class(%Library.Routine).%OpenId(programname_".INT").FindAt(-1,labelname)=-1 set okExecute=0
+			 }
+		 }
+		 if okExecute=1 {
+			 xecute "set datevalue="_dateInit
+		 }
+	 }
+ }
+ //вызов метода класса с проверкой, существует ли класс и методв нем
+ if (pp="##")||($extract(dateInit,12)="$classmethod") {
+     set classname=$select(pp="##":$piece($piece(dateInit,"class(",2),")",1),1:$piece($piece(dateInit,"$classmethod(",2),",",1))
+     if classname'="" {
+	     set classobj=##class(%Dictionary.CompiledClass).%OpenId(classname) 
+	     if $IsObject(classobj) {
+	         set methodname=$select(pp="##":$piece($piece(dateInit,").",2),"(",1),1:$piece($piece(dateInit,"$classmethod(",2),",",2))
+		     if methodname'=""&&(classobj.Methods.FindObjectId(classname_"||"_methodname)) {
+			         xecute "set datevalue="_dateInit
+		     }
+		 }
+     }
+ }
+ */
+ if datevalue'="" quit datevalue
+ quit $zdate(+$h,3)
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+//compParam - компонент, в котором меняется значение параметра
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+//compChange - компонент, в котором sql запрос с параметром
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+//имя параметра = 'param'+compChange+compParam
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+// для bind
+
+]]></Content>
+</UDLText>
+
+<Method name="changeParam">
+<FormalSpec>compParam,compChange</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	//alert"compParam="+compParam+" compChange="+compChange);
+	param=this.getComponentById(compParam);
+	//alert(param.getValue());
+	this.getComponentById('param'+compChange+compParam).setProperty('value',param.getValue());
+    //this.getComponentById(compChange).refreshContents();
+    zenPage.getComponentById(compChange).executeQuery();
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// для подсветки выбранных записей при multiselect=1
+
+]]></Content>
+</UDLText>
+
+<Method name="rowSelected">
+<FormalSpec>table</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	   //alert(table.findElement("tr_1").value);
+        table.selectRow(-1);
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// для подсветки выбранных записей при multiselect=1
+
+]]></Content>
+</UDLText>
+
+<Method name="changeRowStyle">
+<FormalSpec>table</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+        var list = table.selectedRows.split(',');
+        //alert("table="+table.name);
+        //alert("table.selectedRows="+table.selectedRows);
+        var rowCount=(table.currPage)*table.pageSize;
+        var rowst=(table.currPage-1)*table.pageSize;
+        //alert("list="+list+ " rowCount="+rowCount);
+
+        for (var i = rowst; i < rowCount; i++) {
+                var tr = table.findElement("tr_" + (i-rowst));
+                 if (tr==null) {break;}
+                 //alert("list[i]="+list[i]);
+                if (list[i]!=null && list[i]!='') 
+                {
+	                tr.style.backgroundColor="#00FFFF" //"yellow" //"#5050F0" //"#E0E0E0" //"#00FFFF"; 
+	                //alert("tr111="+list[i]);
+	            }
+                else {
+	                tr.style.backgroundColor="";
+	            }
+        }
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// для подсветки выбранных записей при multiselect=1
+
+]]></Content>
+</UDLText>
+
+<Method name="updatePagingInfo">
+<FormalSpec>table</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[       this.changeRowStyle(table);
+]]></Implementation>
+</Method>
+
+<Query name="queryList">
+<Description>
+Query для элементов с typeElement = comboox,listbox,table без sql</Description>
+<Type>%Query</Type>
+<FormalSpec>controlName:%String</FormalSpec>
+<SqlProc>1</SqlProc>
+<Parameter name="ROWSPEC" value="node:%String,value:%String"/>
+</Query>
+
+<Method name="queryListExecute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,controlName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set $li(qHandle,1)=""
+  	set $li(qHandle,2)=controlName
+  	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="queryListFetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>queryListExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set controlName=$listget(qHandle,2)
+	if controlName="" set Row="",AtEnd=1 quit $$$OK
+	set item=$listget(qHandle,1)
+	set item=$order(%session.Data("params","par",controlName,"data",item)) 
+	if item="" set Row="",AtEnd=1 quit $$$OK
+	set $li(Row,1)=item
+	set $li(Row,2)=$get(%session.Data("params","par",controlName,"data",item))
+	set $li(qHandle,1)=item
+	set AtEnd=0
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="queryListClose">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary]]></FormalSpec>
+<PlaceAfter>queryListExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	Quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+</Export>

@@ -1,0 +1,974 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="ReportZEN.genRptAbstract">
+<Description>
+Программа генерации окна запроса параметров для отчета
+предполагается %request user,reportRoutine
+Отчеты типа medium - для них сделаны свои мордочки - должны вызываться напрямую в getReportURL^TCLEx.ReportVB() (для этого в классификаторе Настройке отчетов - долженбыть указан класс zen- .cls </Description>
+<Super>%ZEN.Component.page</Super>
+<TimeCreated>62405,67012.274864</TimeCreated>
+
+<Parameter name="APPLICATION">
+<Description>
+Имя приложения, которому принадлежит эта страница.</Description>
+<Default>ReportZEN.ReportApplication</Default>
+</Parameter>
+
+<UDLText name="T">
+<Content><![CDATA[
+//APPLICATION = "WebER.Application"
+
+]]></Content>
+</UDLText>
+
+<Parameter name="PAGENAME">
+<Description>
+Отображаемое имя для нового приложения.</Description>
+</Parameter>
+
+<Parameter name="DOMAIN">
+<Description>
+Домен, используемый для локализации.</Description>
+</Parameter>
+
+<XData name="Contents">
+<Description>
+Этот XML блок описывает содержимое этой страницы.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<page height="100%" id="page" xmlns="http://www.intersystems.com/zen" title="" >  
+<form id="mainFormForFaceReport" 
+	width="50%" 
+	layout="vertical"
+	labelPosition="top"
+	cellStyle="padding: 3px;" 
+	align="center"
+	>
+<html id="titleFormForFaceReport">Заголовок</html>
+<vgroup id="formGroupForFaceReport" align="center">
+<!--
+<spacer height="10" />
+<button align="center" caption="Печать" onclick="zenPage.startRptClient()" />
+<spacer height="10" />
+-->
+</vgroup>
+<text id="startForOldAndMedium" hidden="true"/>
+<text id="typeStartForOldAndMedium" hidden="true"/>
+
+</form>
+</page>
+]]></Data>
+</XData>
+
+<Method name="%OnAfterCreatePage">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {	
+	set user=%request.Get("user") if user="" set user="demo"
+	if $IsObject(%session) set %session.Data("curUser")=user
+	
+	set reportRoutine=%request.Get("reportRoutine") 
+	if reportRoutine="" set reportRoutine="Test1"  ;"TestFormReport" ;"Test1"  ;"TestFormReport" ;"PRTCLNRUS51"
+	if $IsObject(%session) set %session.Data("reportRoutine")=reportRoutine
+	
+    set refParam=""
+    ;i $l(reportRoutine) s LineRoutine="FORM^"_reportRoutine s ^test(111,"LineRoutine")=LineRoutine i $l($t(@LineRoutine)) x "s refParamOld=$$FORM^"_reportRoutine_"("""_user_""")" s ^test(111,"refParamOld")=refParamOld
+    $$$ThrowOnError(..getGlobFormParams(reportRoutine,user,.refParam))
+
+    ;if refParam="" $$$ThrowOnError($$$ERROR($$$GeneralError,"ttt"))
+    
+    set form= %page.%GetComponentById("formGroupForFaceReport")
+    Set spacer = ##class(%ZEN.Component.spacer).%New()
+    Set spacer.height=10
+    do form.%AddChild(spacer)  
+    Set button = ##class(%ZEN.Component.button).%New()
+    Set button.align="center"
+    Set button.caption="Печать"
+    Set button.onclick="zenPage.startRptClient()"
+    Do form.%AddChild(button)
+    Set spacer = ##class(%ZEN.Component.spacer).%New()
+    Set spacer.height=10
+    Do form.%AddChild(spacer)
+    
+  } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  } 
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="startRptClient">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+    var proxy = zenPage.startRptServer();
+	var err = proxy.flagError
+	var message=proxy.message
+	var url=proxy.url
+	if ((message != '') && (message != null)) alert(message.replace("^","\n"));
+	if ((err==0)&&(url != null)&&(url != '')) {
+	   //zenPage.gotoPage(proxy.url);
+	   window.open(proxy.url);
+	}
+	if ((err==0)&&(url=='')) {
+	   alert("Нет данных")	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="startRptServer">
+<PublicList>MSGERROR</PublicList>
+<ReturnType>%ZEN.proxyObject</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	set typeStart=%page.%GetComponentById("typeStartForOldAndMedium")
+	
+	set proxy = ##class(%ZEN.proxyObject).%New()
+	set proxy.flagError=0
+    set proxy.message=""
+    set proxy.url=""
+
+	kill params
+	set ok=..getParams(.params)
+	if 'ok {
+	   set proxy.flagError=1
+	   set proxy.message = $System.Status.GetErrorText(ok)
+	   quit proxy	
+	}	 
+	
+	if typeStart.value="old" {
+		set startClass=%page.%GetComponentById("startForOldAndMedium").value
+		set MSGERROR=""
+		set PAR=""
+		set node=""
+		for {
+		   set node=$order(params(node)) if node="" quit
+		   set PAR=PAR_$select(PAR'="":$char(2),1:"")_node_$char(3)_$get(params(node))	
+		}
+		set curUser="" if $IsObject(%session) if $data(%session.Data("curUser")) set curUser=%session.Data("curUser")
+		x "START^"_startClass_"("_curUser_","_PAR_")"
+		if MSGERROR=""!(+MSGERROR=100) {
+		   	set proxy.flagError=1
+		   	set proxy.message = $piece(MSGERROR,"^",2)
+		   	if MSGERROR="" set proxy.message = "Произошла фатальная ошибка при получении отчета"
+		}
+		else  {
+		  	set proxy.flagError=0
+            set proxy.message=""
+            set fileReport=$piece(MSGERROR,"^",2)
+            set proxy.url=$select(fileReport'="":##class(ReportZEN.downloadFile).getURL(fileReport),1:"")   
+		} 
+		quit proxy 
+	}
+	
+	set repFormat="pdf" ;##class(Report.JasperReportTune).getTypeFileReport()
+	
+	set ok=..getFileReport(repFormat,.fileReport)
+	if 'ok {
+	   set proxy.flagError=1
+	   set proxy.message = $System.Status.GetErrorText(ok)
+	   quit proxy	
+	}	 
+ 
+ 	set ok=..getFileJasper(.fileJasper)
+	if 'ok {
+	   set proxy.flagError=1
+	   set proxy.message = $System.Status.GetErrorText(ok)
+	   quit proxy	
+	}	 
+    if '##class(%File).Exists(fileJasper) {
+	   set fileJRXML=$piece(fileJasper,".",1,$length(fileJasper,".")-1)_".jrxml"
+	   if '##class(%File).Exists(fileJRXML) {
+			s node="" kill params2
+	        for {
+	            s node=$order(params(node)) if node="" quit
+	            set typeParam=$piece(params(node),$char(1),2) if typeParam="" set typeParam="String"
+	            set params2(node)=typeParam
+            }
+            set ok = ##class(Report.rpt).startRptNew("isc.jasper.JasperFacadeDop", "setParametersReport", fileJRXML, .params2, "pdf","","") 
+	   }  
+    }
+ 
+    set ok = ##class(Report.rpt).startRptFacade(fileReport, .params, fileJasper, repFormat)  
+    
+	set proxy.flagError='+ok
+    set proxy.message=$select('ok:$System.Status.GetErrorText(ok),1:"")
+    set proxy.url=$select(ok=1:##class(ReportZEN.downloadFile).getURL(fileReport),1:"")    
+    quit proxy
+]]></Implementation>
+</Method>
+
+<Method name="getFileReport">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[repFormat:%String,&fileReport:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set fileReport="",ret=$$$OK
+	try {
+         set fileName=..getFileName()
+         set curUser="" if $IsObject(%session) if $data(%session.Data("curUser")) set curUser=%session.Data("curUser")
+         $$$ThrowOnError(##class(Report.rpt).getPathFileReportGroup(.pathFileReport,curUser))
+         if $get(repFormat)="" set repFormat=##class(Report.JasperReportTune).getTypeFileReport() 
+         set fileReport=pathFileReport_"\"_fileName_"."_repFormat
+	} catch(exception) 
+	{
+	   set ret=exception.AsStatus()	
+	} 
+	quit ret
+]]></Implementation>
+</Method>
+
+<Method name="getFileName">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set name=""
+	if $IsObject(%session) if $data(%session.Data("reportRoutine")) set name=%session.Data("reportRoutine")
+	quit name
+]]></Implementation>
+</Method>
+
+<Method name="getFileJasper">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&fileJasper:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set fileJasper="",ret=$$$OK
+	try {
+         set globParamsForm="" if $IsObject(%session) if $data(%session.Data("refParam")) set globParamsForm=%session.Data("refParam")
+         set fileName="" if globParamsForm'="" set fileName=$listget($get(@globParamsForm@("par")),2)
+         set filePath=##class(Report.JasperReportTune).getPathFileJasper()
+         if fileName'="",filePath'="" set fileJasper=filePath_"\"_fileName
+	} catch(exception) 
+	{
+	   set ret=exception.AsStatus()	
+	} 
+	quit ret
+]]></Implementation>
+</Method>
+
+<Method name="getParams">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&params:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	kill params set ret=$$$OK
+	try {
+         set globParamsForm="" if $IsObject(%session) if $data(%session.Data("refParam")) set globParamsForm=%session.Data("refParam")
+         if globParamsForm="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Нет указана глобаль с параметрами для стартовой формы"))
+         set par=""
+         for {
+	       set par=$order(@globParamsForm@("par",par)) if par="" quit
+	       set rec=$get(@globParamsForm@("par",par))
+	       set controlType=$tr($listget(rec,1)," ","")
+		   if (controlType="")!(controlType="Label")!(controlType="form") continue
+		   set ctrl=%page.%GetComponentByName(par) 
+		   if '$IsObject(ctrl) continue
+		   
+		   if (controlType="Text") {
+			   set value=ctrl.value  
+			   set params(par)=value  
+		   }
+		   elseif (controlType="DateText") {
+			    set value=ctrl.value 
+			    if value="" set value=$zdate($h)
+			    set params(par)=##class(Report.Function.general).getDateTimeLong($zdh($tr(value,"-",""),8))_$char(1)_"Date"
+		        ;set params(par_"Display")=$zd(value,4)
+		   }
+		   elseif (controlType="CheckBox") {
+			    set value=ctrl.value 
+			    set params(par)=value
+		   }
+		   elseif (controlType="RadioButton") {
+			    set value=ctrl.value 
+			    set params(par)=value
+		   }
+		   elseif (controlType="ComboBox") {
+			    set text="",value=""
+			    set class=ctrl.%ClassName()
+			    if class="combobox" {
+					set index=ctrl.selectedIndex
+			        if index'="",index'=-1 {
+				        set opt=ctrl.options.GetAt(index)
+				        set value=opt.value
+				        set text=opt.text
+			        }
+			    }
+			    if class="dataCombo" {
+     			      set value=ctrl.value
+				      set text=ctrl.text
+			    }        
+			    set params(par)=value
+		        set params(par_"Display")=text
+		   }
+		   elseif (controlType="ListBox") {
+			        ;set index=ctrl.selectedIndex
+			    	;set ^test(111,par,"index")=index
+			        ;set ^test(111,par,"ctrl.value")=ctrl.value
+			        ;set ^test(111,par,"ctrl.text")=ctrl.text
+			        ;set value="",text=""
+			        set value=ctrl.value
+			        ;if value'="" set text=ctrl.%GetDisplayValue(value)
+			        set text=ctrl.text
+			        ;set ^test(111,par,"ctrl.%GetDisplayValue(ctrl.value)")=ctrl.%GetDisplayValue(ctrl.value)
+			        set params(par)=value
+    		        set params(par_"Display")=text
+		   }
+		   elseif (controlType="Table") {
+			        set index=ctrl.selectedIndex
+			        if ctrl.sql'="" {
+				        set rec=$lb("")
+				        if index'=""&(index>0) set rec=$get(^CacheTemp.zenData(%session.SessionId,ctrl.snapshotId,ctrl.index,"data",index))
+				        set value=$listget(rec,1)
+				        set len=$listlength(rec)
+				        set text="" if len>1 set text=$listget(rec,2,len)
+				        ;if value'="" set text=$get(@globParamsForm@("par",par,value))
+				        ;^CacheTemp.zenData(%session.SessionId,..snapshotId
+				        ;set ^test(111,"%session.SessionId")=%session.SessionId
+				        ;set ^test(111,par,"ctrl.snapshotId")=ctrl.snapshotId
+				        ;m ^test(111,par,"data")=^CacheTemp.zenData(%session.SessionId,ctrl.snapshotId)
+			        }
+			        else {
+				        set value=ctrl.value
+				        set text="" if value'="" set text=$get(@globParamsForm@("par",par,value))
+				        ;m ^test(111,par,"data")=^CacheTemp.zenData(%session.SessionId,ctrl.snapshotId)
+			        }
+			    set params(par)=value
+		        set params(par_"Display")=text
+		   }
+	    }
+	  ;m ^test(111,"params")=params
+     
+	} catch(exception) 
+	{
+	   set ret=exception.AsStatus()	
+	} 
+	quit ret
+]]></Implementation>
+</Method>
+
+<Method name="getGlobFormParams">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[reportRoutine:%String,user:%String,&refParam:%String]]></FormalSpec>
+<PublicList>ref</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK,refParam=""	
+  try
+  {	
+    if $IsObject(%session) set %session.Data("refParam")=refParam
+  
+	set LineRoutine="",ref=""
+    if $l(reportRoutine) s LineRoutine="FORM^"_reportRoutine 
+    if LineRoutine'="" if $l($t(@LineRoutine)) x "s ref=$$FORM^"_reportRoutine_"("""_user_""")"
+    
+    if ref="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не удалось получить описание окна запроса параметров отчета"))
+   
+   //если мордочка отчета описана в файле jrxml or jasper ($$FORM^"_reportRoutine_"("""_user_""")" возвращает строку "jasper:JasperShablonForFaceReport:JasperShablonForReport")
+   if $piece(ref,"^",1)="jasper" {
+	   set fileJasperForFace=$piece(ref,"^",2) 
+	   ;set fileJasperForPrint=$piece(ref,"^",3) 
+	   ;set title=$piece(ref,"^",4)
+	   
+	   kill params
+	   $$$ThrowOnError(..getParamsFromJasper(##class(Report.JasperReportTune).getPathFileJasper()_"\"_fileJasperForFace,.params))
+	   
+	   set refParam=$name(^TMP($job))
+	   $$$ThrowOnError(..dopFormParamsJasper(.params,refParam,ref))
+   }
+   else {
+   
+    set startClass="",typeReport=""
+    if ref'="" {
+	    set rec=$get(@ref)
+	    set typeReport=$piece(rec,":",1)
+	    set startClass=$piece(rec,":",2)
+	    if typeReport="old" set startClass="START^"_reportRoutine
+	    if typeReport="medium" set typeReport="" 
+    }
+    set %page.%GetComponentById("startForOldAndMedium").value=startClass
+    set %page.%GetComponentById("typeStartForOldAndMedium").value=typeReport 
+   
+    if typeReport="old"  ;обработка данных СПАРМ
+    {
+       set refParam=$name(^||newParam)
+       //преобразование нужно для старых отчетов typeReport="old" 
+       $$$ThrowOnError(..transFormParamsOld(ref,refParam))
+    }
+    else
+    {
+	  set refParam=ref
+	  $$$ThrowOnError(..dopFormParams(refParam))
+    }
+   } 
+    if $IsObject(%session) set %session.Data("refParam")=refParam
+  }
+  Catch exception
+  {		    
+      Set ok=exception.AsStatus()
+  }
+     
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="dopFormParamsJasper">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&params,refParamNew:%String,descriptionReport:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ set ref=$name(^||vsp) k @ref 
+ try {
+	set fileJasperForPrint=$piece(descriptionReport,"^",3) 
+	set title=$piece(descriptionReport,"^",4)
+	    
+	kill @refParamNew
+	set @refParamNew@("par")=$listbuild(title,fileJasperForPrint)
+    
+   set par="" 
+   for  {
+	   set par=$order(params(par)) if par="" quit
+	   set rec=params(par)
+	   set typeControl=$tr($listget(rec,1)," ","")
+	   set cornerX=+$listget(rec,3)
+	   set cornerY=+$listget(rec,2)
+	   set width=+$listget(rec,4)
+	   set height=+$listget(rec,5)
+	   set @ref@("Y",cornerY,par)="" 
+	   set @ref@("X",cornerX,par)=width
+	   set recnew=$lb("")
+	   set @refParamNew@("par",par)=rec
+	   if $data(params(par,"data")) merge @refParamNew@("par",par,"data")=params(par,"data")
+	   if $data(params(par,"param")) merge @refParamNew@("par",par,"param")=params(par,"param")
+	 
+   }
+   set node=""
+   for {
+	  set node=$order(@ref@(node)) if node="" quit
+	  set coord="",npp=0
+	  for {
+		 set coord=$order(@ref@(node,coord)) if coord="" quit
+		 set npp=npp+1
+		 set par=""
+		 for {
+			 set par=$order(@ref@(node,coord,par)) if par="" quit
+		     if node="X" set $li(@ref@("par",par),2)=npp set @ref@("colWidth",npp,+$get(@ref@(node,coord,par)))="" 
+		     if node="Y" set $li(@ref@("par",par),1)=npp
+		 }
+	  }  
+   }
+   
+      //удаляем несуществующие	и неправильные элементы
+   $$$ThrowOnError(..verifyParams(refParamNew)) 
+   
+   set par="" kill @refParamNew@("layout"),@refParamNew@("param")
+   for {
+	  set par=$order(@ref@("par",par)) if par="" quit
+	  if par="form" continue
+	  set rec=@ref@("par",par),row=$li(rec,1),col=$li(rec,2)
+	  set widthMax=$order(@ref@("colWidth",col,""),-1)
+	  set @refParamNew@("layout",row,col)=$lb(par,widthMax) 
+   
+      //параметры
+      set numparam=""
+      for {
+			 set numparam=$order(@refParamNew@("par",par,"param",numparam)) if numparam="" quit
+			 set param=^(numparam)
+			 if '$data(@refParamNew@("par",param)) continue
+			 set @refParamNew@("param",param,par)=""
+      }
+   }   
+      
+   k @ref
+   ;m ^test(111,"@refParamNew")=@refParamNew
+  
+ } 
+ catch(exception)
+ {
+    	 set ok=exception.AsStatus()
+ }
+ kill @ref 
+ quit ok
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+//хотела использовать colspan , но в Zen этого не нашла свойства
+
+]]></Content>
+</UDLText>
+
+<Method name="dopFormParamsJasperNew">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&params,refParamNew:%String,fileJasperForPrint:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ set ref=$name(^||vsp) k @ref 
+ try {
+	kill @refParamNew
+	set @refParamNew@("par")=$listbuild("",fileJasperForPrint)
+    
+   set par="" 
+   for  {
+	   set par=$order(params(par)) if par="" quit
+	   set rec=params(par)
+	   set typeControl=$tr($listget(rec,1)," ","")
+	   set cornerX=$tr($listget(rec,3)," ","")
+	   set cornerY=$tr($listget(rec,2)," ","")
+	   set width=$tr($listget(rec,4)," ","")
+	   set height=$tr($listget(rec,5)," ","")
+	   set @ref@("Y",cornerY,par)="" 
+	   set @ref@("X",cornerX,par)=width
+	   set @ref@("X",cornerX+width,par)=""
+	   set recnew=$lb("")
+	   set @refParamNew@("par",par)=rec
+	   if $data(params(par,"data")) merge @refParamNew@("par",par,"data")=params(par,"data")
+	 
+   }
+   set node=""
+   for {
+	  set node=$order(@ref@(node)) if node="" quit
+	  set coord="",npp=0
+	  for {
+		 set coord=$order(@ref@(node,coord)) if coord="" quit
+		 set npp=npp+1
+		 set par=""
+		 for {
+			 set par=$order(@ref@(node,coord,par)) if par="" quit
+			 set width=+$get(^(par))
+		     if node="X" set $li(@ref@("par",par),2)=npp set:width'=0 @ref@("colWidth",npp,width)="" set @ref@("colNum",coord)=npp
+		     if node="Y" set $li(@ref@("par",par),1)=npp
+		 }
+	  }  
+   }
+   // colspan
+   set node="X"
+   set coord="",npp=0
+   for {
+		 set coord=$order(@ref@(node,coord)) if coord="" quit
+		 set colLeft=+@ref@("colNum",coord)
+		 set par=""
+		 for {
+			 set par=$order(@ref@(node,coord,par)) if par="" quit
+			 set width=+$get(^(par))  
+			 if width=0 continue  ;set colspan=0,$li(@ref@("par",par),3)=colspan continue
+			 set colspan=0
+             set xright=coord,colRight=0
+			 for {
+				   set xright=$order(@ref@(node,xright)) if xright=""!(colRight'=0) quit
+				   if '$data(@ref@(node,xright,par)) continue
+				   set colRight=+@ref@("colNum",xright)   
+			 }    	 
+		     if colRight>colLeft set colspan=colRight-colLeft 
+		     set $li(@ref@("par",par),3)=colspan set ^test(111,"colspan",$i(^test(111,"colspan")))=par_" "_colspan
+		 }
+	}  
+   
+   set par=""
+   for {
+	  set par=$order(@ref@("par",par)) if par="" quit
+	  set rec=@ref@("par",par),row=$li(rec,1),col=$li(rec,2),colspan=$listget(rec,3)
+	  set widthMax=$order(@ref@("colWidth",col,""),-1)
+	  set @refParamNew@("layout",row,col)=$lb(par,widthMax,colspan) 
+   }
+   ;m ^test(111,"vsp")=@ref
+   k @ref
+ } 
+ catch(exception)
+ {
+    	 set ok=exception.AsStatus()
+ }
+ kill @ref 
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="transFormParamsOld">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>refParamOld:%String,refParamNew:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ set ref=$name(^||vsp) k @ref 
+ try {
+	kill @refParamNew
+    
+   set par="" 
+   for  {
+	   set par=$order(@refParamOld@(par)) if par="" quit
+	   if par="zzflex" continue
+	   set rec=^(par)
+	   if par="form" set @refParamNew@("par")=$lb($piece(rec,":",1),$piece(rec,":",1),"old",refParamOld) continue
+	   set typeControl=$tr($piece(rec,":",1)," ","")
+	   set cornerX=$tr($piece(rec,":",3)," ","")
+	   set cornerY=$tr($piece(rec,":",2)," ","")
+	   set width=$tr($piece(rec,":",4)," ","")
+	   set height=$tr($piece(rec,":",5)," ","")
+	   set @ref@("Y",cornerY,par)="" 
+	   set @ref@("X",cornerX,par)=width
+	   set recnew=$lb("")
+	   if typeControl="Label" set recnew=$lb(typeControl,"","","","","","",$piece(rec,":",6))
+	   if typeControl="Text" set recnew=$lb(typeControl,"","","","","","",$piece(rec,":",6))
+	   if typeControl="DateText" set recnew=$lb(typeControl,"","","","","","",$tr($piece(rec,":",6)," ","")) 
+	   if typeControl="CheckBox" set recnew=$lb(typeControl,"","","","","","",$tr($piece(rec,":",8)," ",""))
+	   if typeControl="ListBox" set recnew=$lb(typeControl,"","","","","","","","","")
+	   if typeControl="ComboBox" set recnew=$lb(typeControl,"","","","","","","","","")
+	   if typeControl="Table" set recnew=$lb(typeControl,"","","","","","","","","") 
+	   if typeControl="RadioButton" set recnew=$lb(typeControl,"","","","","","",$tr($piece(rec,":",8)," ",""))
+	   set @refParamNew@("par",par)=recnew
+	   if $order(@refParamOld@(par,""))'="" {
+		   if (typeControl="RadioButton")!(typeControl="ListBox")!(typeControl="ComboBox")!(typeControl="Table") {
+			   merge @refParamNew@("par",par)=@refParamOld@(par)
+			   set @refParamNew@("par",par)=recnew 
+		   }
+	   }
+ }
+   set node=""
+   for {
+	  set node=$order(@ref@(node)) if node="" quit
+	  set coord="",npp=0
+	  for {
+		 set coord=$order(@ref@(node,coord)) if coord="" quit
+		 set npp=npp+1
+		 set par=""
+		 for {
+			 set par=$order(@ref@(node,coord,par)) if par="" quit
+		     if node="X" set $li(@ref@("par",par),2)=npp set @ref@("colWidth",npp,+$get(@ref@(node,coord,par)))="" 
+		     if node="Y" set $li(@ref@("par",par),1)=npp
+		 }
+	  }  
+   }
+   set par=""
+   for {
+	  set par=$order(@ref@("par",par)) if par="" quit
+	  if par="form" continue
+	  set rec=@ref@("par",par),row=$li(rec,1),col=$li(rec,2)
+	  set widthMax=$order(@ref@("colWidth",col,""),-1)
+	  set @refParamNew@("layout",row,col)=$lb(par,widthMax) 
+   }
+ } 
+ catch(exception)
+ {
+    	 set ok=exception.AsStatus()
+ }
+ kill @ref 
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="dopFormParams">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>refParam:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+   //удаляем несуществующие	и неправильные элементы
+   $$$ThrowOnError(..verifyParams(refParam))  
+
+   kill @refParam@("layout"),@refParam@("param")
+   set par="" 
+   for  {
+	   set par=$order(@refParam@("par",par)) if par="" quit
+	   set rec=^(par)
+	   set typeControl=$tr($listget(rec,1)," ","")
+	   set row=+$tr($listget(rec,2)," ","")
+	   set col=+$tr($listget(rec,3)," ","")
+	   set width=+$tr($listget(rec,4)," ","")
+	   set $li(@refParam@("layout",row,col),1)=par
+	   set widthPrev=+$listget(@refParam@("layout",row,col),2)
+	   if width>widthPrev set $li(@refParam@("layout",row,col),2)=width
+	   //параметры
+       set numparam=""
+	   for {
+			 set numparam=$order(@refParam@("par",par,"param",numparam)) if numparam="" quit
+			 set param=^(numparam)
+			 if '$data(@refParam@("par",param)) continue
+			 set @refParam@("param",param,par)=""
+	   }
+   }
+   ;m ^test(111,"refParam")=@refParam   
+
+ } 
+ catch(exception)
+ {
+    	 set ok=exception.AsStatus()
+ }
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="verifyParams">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>refParam:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+   //удаляем несуществующие	и неправильные элементы  
+   set par="" 
+   for  {
+	   set par=$order(@refParam@("par",par)) if par="" quit
+	   set rec=$get(^(par))
+	   set type=$listget(rec,1)
+	   if '((type="Label")!(type="Text")!(type="DateText")!(type="CheckBox")!(type="ListBox")!(type="ComboBox")!(type="Table")!(type="RadioButton")) {
+		   kill @refParam@("par",par) 
+		   continue
+	   }
+	   if (type'="ListBox")&(type'="ComboBox")&(type'="Table")&($data(@refParam@("par",par,"param"))) kill @refParam@("par",par,"param")
+	   set sql=$listget(rec,9)
+	   if (sql="")!(sql'["?") kill @refParam@("par",par,"param")
+	   set numparam="" 
+	   for {
+			 set numparam=$order(@refParam@("par",par,"param",numparam)) if numparam="" quit
+			 set param=$get(^(numparam))
+			 if param="" kill @refParam@("par",par,"param",numparam) continue
+			 if '$data(@refParam@("par",param)) kill @refParam@("par",par,"param",numparam)
+	   }
+   }
+ } 
+ catch(exception)
+ {
+    	 set ok=exception.AsStatus()
+ }
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="getParamsFromJasper">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[fileJasper:%String,&params:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  if $get(fileJasper)="" Quit $$$ERROR($$$GeneralError,"Не указан файл jasper шаблона")	
+	
+ // gateway
+  set gateway=##class(Report.JasperReportTune).getNameGateway() 
+  if gateway="" Quit $$$ERROR($$$GeneralError,"Не указан gateway")
+  
+  set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
+  if '$IsObject(jvm) Quit $$$ERROR($$$GeneralError,"Incorrect Java GateWay configuration !")
+
+  m ^test(111,"params before")=params
+  Set result=$$$OK
+  Try
+	{
+		; запуск шлюза, если он не запущен
+		If $$$ISERR(##class(%Net.Remote.Service).PingGateway(jvm.Port,jvm.Server,jvm.InitializationTimeout)) {
+			$$$ThrowOnError(##class(%Net.Remote.Service).StartGateway(gateway))
+		}	
+	
+		Set jgw=##class(%Net.Remote.Gateway).%New()
+		; подключение к шлюзу
+		$$$ThrowOnError(jgw.%Connect(jvm.Server,jvm.Port))
+		Try
+		{
+			
+            set paramslist=##class(isc.jasper.JasperFacadeDop).getParameters(jgw, fileJasper)
+            
+            set c1=$char(1),c2=$char(2)
+            set len=paramslist.size()
+            for i=0:1:len-1 {
+	            set rec=paramslist.get(i)
+	            set name=$piece(rec,c1,1) if name="" continue
+	            set let8=$extract(name,1,8)
+	            //данные для узелка "data" пока пропускаем
+	            if let8=("D"_c2_"a"_c2_"t"_c2_"a"_c2)||(let8="B"_c2_"i"_c2_"n"_c2_"d"_c2) continue
+	            set type=$piece(rec,c1,2)
+	            if '((type="Label")!(type="Text")!(type="DateText")!(type="CheckBox")!(type="ListBox")!(type="ComboBox")!(type="Table")!(type="RadioButton")) continue
+                set value=$listbuild("")
+	            for j=2:1:$length(rec,c1) {
+	                set $li(value,j-1)=$piece(rec,c1,j)
+	            }
+	            set params(name)=value
+            } 
+            for i=0:1:len-1 {
+	            set rec=paramslist.get(i)
+	            set name=$piece(rec,c1,1) if name="" continue
+	            set let8=$extract(name,1,8)
+	            //данные для узелка "data"
+	            if let8=("D"_c2_"a"_c2_"t"_c2_"a"_c2) {
+		           set name=$extract(name,9,$length(name))
+		           if $data(params(name)) {
+			           set key=$piece(rec,c1,2)
+			           if key'="" set params(name,"data",key)=$piece(rec,c1,3)   
+		           }       
+	            }
+	            if let8=("B"_c2_"i"_c2_"n"_c2_"d"_c2) {
+		           set name=$extract(name,9,$length(name))
+		           if $data(params(name)) {
+			           set key=$piece(rec,c1,2)
+			           set key=+$extract(key,5,$length(key))
+			           if key'=0 set params(name,"param",key)=$piece(rec,c1,3)   
+		           }       
+	            }
+            }
+            m ^test(111,"params after")=params
+		}
+		Catch exception
+		{
+			If $ZERROR["<ZJGTW>" {
+		       Set result=$get(%objlasterror)
+            } 
+		    else {
+		       Set result=exception.AsStatus()
+		    }
+		}
+		; отключение от шлюза
+		Do jgw.%Disconnect()
+	}
+	Catch exception
+	{
+	    If $ZERROR["<ZJGTW>" {
+            Set result=$get(%objlasterror)
+            } 
+		else {
+		    Set result=exception.AsStatus()
+		}
+	}
+  quit result
+]]></Implementation>
+</Method>
+
+<Method name="transDate">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>dateIn:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ if $get(dateIn)="" quit ""
+ if dateIn="t" quit $zdate(+$h,3)
+ set delta=+$piece(dateIn,"t-",2)
+ if delta'=0 quit $zdate($h-delta,3) 
+ set delta=+$piece(dateIn,"t+",2)
+ if delta'=0 quit $zdate($h+delta,3)
+ if +dateIn=dateIn quit $zdate(dateIn,3) 	
+ quit dateIn
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+//compParam - компонент, в котором меняется значение параметра
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+//compChange - компонент, в котором sql запрос с параметром
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+//имя параметра = 'param'+compChange+compParam
+
+]]></Content>
+</UDLText>
+
+<Method name="changeParam">
+<FormalSpec>compParam,compChange</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	//alert("compParam="+compParam+" compChange="+compChange);
+	param=this.getComponentById(compParam);
+	//alert(param.getValue());
+	this.getComponentById('param'+compChange+compParam).setProperty('value',param.getValue());
+    //this.getComponentById(compChange).refreshContents();
+    zenPage.getComponentById(compChange).executeQuery();
+]]></Implementation>
+</Method>
+
+<Method name="rowSelected">
+<FormalSpec>table</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	   //alert(table.findElement("tr_1").value);
+        table.selectRow(-1);
+]]></Implementation>
+</Method>
+
+<Method name="changeRowStyle">
+<FormalSpec>table</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+        var list = table.selectedRows.split(',');
+        var rowCount=(table.currPage)*table.pageSize;
+        var rowst=(table.currPage-1)*table.pageSize;
+       // alert("list="+list+ " rowCount="+rowCount);
+
+        for (var i = rowst; i < rowCount; i++) {
+                var tr = table.findElement("tr_" + (i-rowst));
+                if (tr==null) {break;}
+                if (list[i]!=null && list[i]!='') {tr.style.backgroundColor="#00FFFF";}
+                else {tr.style.backgroundColor="";}
+        }
+]]></Implementation>
+</Method>
+
+<Method name="updatePagingInfo">
+<FormalSpec>table</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[       this.changeRowStyle(table);
+]]></Implementation>
+</Method>
+
+<Query name="queryList">
+<Description>
+Query from refTmp all records node, value</Description>
+<Type>%Query</Type>
+<FormalSpec>refTmp:%String</FormalSpec>
+<SqlProc>1</SqlProc>
+<Parameter name="ROWSPEC" value="node:%String,value:%String"/>
+</Query>
+
+<Method name="queryListExecute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,refTmp:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set $li(qHandle,1)=""
+  	set $li(qHandle,2)=refTmp
+  	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="queryListFetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>queryListExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set refTmp=$listget(qHandle,2)
+	if refTmp="" set Row="",AtEnd=1 quit $$$OK
+	set item=$listget(qHandle,1)
+	set item=$order(@refTmp@("data",item)) 
+	if item="" set Row="",AtEnd=1 quit $$$OK
+	set $li(Row,1)=item
+	set $li(Row,2)=@refTmp@("data",item)
+	set $li(qHandle,1)=item
+	set AtEnd=0
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="queryListClose">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary]]></FormalSpec>
+<PlaceAfter>queryListExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	Quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+</Export>

@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="ReportZEN.report25">
+<Description>
+Created using the page template: Заголовок страницы</Description>
+<Super>%ZEN.Component.page</Super>
+<TimeCreated>62245,66749.751679</TimeCreated>
+
+<Parameter name="APPLICATION">
+<Description>
+Имя приложения, которому принадлежит эта страница.</Description>
+<Default>ReportZEN.ReportApplication</Default>
+</Parameter>
+
+<Parameter name="PAGENAME">
+<Description>
+Отображаемое имя для нового приложения.</Description>
+</Parameter>
+
+<Parameter name="DOMAIN">
+<Description>
+Домен, используемый для локализации.</Description>
+</Parameter>
+
+<XData name="Contents">
+<Description>
+Этот XML блок описывает содержимое этой страницы.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<page xmlns="http://www.intersystems.com/zen">
+
+<form id="myform" 
+	width="60%" 
+	layout="vertical"
+	labelPosition="top"
+	cellStyle="padding: 3px;" 
+	align="center"
+	>
+<locatorBar id="locator">
+<locatorLink caption="Меню" href="ReportZEN.menu.cls" />
+</locatorBar>
+<html id="title">Данные для счета</html>
+<vgroup id="formGroup">
+<spacer height="10"/>
+ <hgroup align="center"> 
+ <label value="Отчетный период c "/>
+ <spacer width="10"/>
+ <dateText id="dateFrom" format="DMY" originalValue="01-02-2011" monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"/>
+  <spacer width="10"/>
+ <label value=" по "/>
+  <spacer width="10"/>
+ <dateText id="dateTo" format="DMY" originalValue="01-05-2011" monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"/>
+</hgroup> 
+<spacer height="10"/>
+ <hgroup align="center" >
+  <label value="Счет от "/>
+  <spacer width="10"/>
+  <dateText id="dateInvoice" format="DMY" monthList="Январь,Февраль,Март,Апрель,Май,Июнь,Июль,Август,Сентябрь,Октябрь,Ноябрь,Декабрь"/>
+ </hgroup>
+ 
+<spacer width="10"/>
+<tablePane id="hospital" 
+  sql="select CTPC_Code,CTPC_Desc from SQLUser.CT_PaymentCode" 
+  multiSelect="true" valueColumn="CTPC_Code"
+  showRowSelector="false" 
+  bodyHeight="400"
+  pageSize="100000"
+  >
+  <column  colName="CTPC_Code" header=" " />
+  <column colName="CTPC_Desc" header="Выбрать все" />
+</tablePane>
+
+<spacer height="10"/>
+<button  caption="Печать" align="center" onclick="zenPage.startRptClient()" /> 
+<spacer height="10"/>
+</vgroup>
+</form>
+</page>
+]]></Data>
+</XData>
+
+<Method name="startRptServer">
+<PublicList>MSGERROR</PublicList>
+<ReturnType>%String</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+    set nameReport=##class(Report.rpt25).getReportName()
+	do ##class(Report.rpt).KillLog(nameReport)
+	
+	;проверка входных параметров
+	set pDateFrom=%page.%GetValueById("dateFrom") if pDateFrom="" quit "Не определена дата начала отчетного периода"
+	set pDateTo=%page.%GetValueById("dateTo") if pDateFrom="" quit "Не определена дата окончания отчетного периода"
+	set pInvoiceDate = %page.%GetValueById("dateInvoice") if pInvoiceDate="" quit "Не определена дата акта"
+	Set stringHospitals = %page.%GetComponentById("hospital").selectedRows if $tr(stringHospitals,",","")="" quit "Не выбрано ни одного заказчика"
+	Set pDateFrom = $zdh($tr(pDateFrom,"-",""),8)
+    Set pDateTo = $zdh($tr(pDateTo,"-",""),8)
+    set pInvoiceDate=$zdh($tr(pInvoiceDate,"-",""),8)
+    for i=1:1:$length(stringHospitals,",") {
+	    set pHospital=$piece(stringHospitals,",",i) if pHospital'="" quit
+    }
+    set pSortByDate = "0"
+    set params="PAR1"_$c(3)_pDateFrom
+    set params=params_$c(2)_"PAR2"_$c(3)_pDateTo
+    set params=params_$c(2)_"PAR3"_$c(3)_pInvoiceDate
+    set params=params_$c(2)_"PAR4"_$c(3)_pHospital
+    ;проверка параметров в программе PRTCLNRUS23
+    set MSGERROR="" d INIT^PRTCLNRUS25(params) if $g(MSGERROR)'="" quit $p(MSGERROR,"^",2)
+    
+    kill errormessage set ok=0
+    for i=1:1:$length(stringHospitals,",") {
+	    set pHospital=$piece(stringHospitals,",",i) 
+        if pHospital'="" {
+           set $piece(params,$c(2),4)="PAR3"_$c(3)_pHospital
+           set refTmp = $na(^TEMP($zname,$job)) 
+           d BODY^PRTCLNRUS25(pDateFrom,pDateTo,pHospital,pInvoiceDate,"",$name(@refTmp))
+           set ret=##class(Report.rpt25).StartRpt(pDateFrom, pDateTo, pInvoiceDate, pHospital, $name(@refTmp) )
+           ;do $zf(-2,""""_##class(Report.General).getPathAcrobat()_""""_" "_$p(##class(Report.rpt24).getFileReport(),$c(1),2))
+  	       k @refTmp
+  	       set message=$p(ret,"^",2)
+  	       if nameReport'="" do ##class(Report.rpt).Log(nameReport,message)
+  	       if +ret=1 set ok=1 
+  	       else  set errormessage(i)=message
+        }
+    }
+     s message=""
+    if ok=1 set message=##class(Report.rpt).messageAboutSuccess(pDateTo)  
+    if $data(errormessage)>1 set message=message_"^"_##class(Report.rpt).manageErrors(.errormessage)
+    quit message
+]]></Implementation>
+</Method>
+
+<Method name="startRptClient">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	var message = this.startRptServer();
+	if ((message != null)&&(message != '')) alert(message.replace("^","\n"));
+]]></Implementation>
+</Method>
+</Class>
+</Export>
