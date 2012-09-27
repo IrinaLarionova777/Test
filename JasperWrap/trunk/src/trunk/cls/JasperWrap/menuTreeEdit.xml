@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="JasperWrap.menuTreeEdit">
+<Description>
+page for edit item of menu or insert new item</Description>
+<Super>%ZEN.Component.page</Super>
+<TimeCreated>62725,55138.077128</TimeCreated>
+
+<Parameter name="APPLICATION">
+<Description>
+Имя приложения, которому принадлежит эта страница.</Description>
+</Parameter>
+
+<Parameter name="PAGENAME">
+<Description>
+Отображаемое имя для нового приложения.</Description>
+</Parameter>
+
+<Parameter name="DOMAIN">
+<Description>
+Домен, используемый для локализации.</Description>
+</Parameter>
+
+<XData name="Style">
+<Description>
+Этот блок Style содержит определение CSS стиля страницы.</Description>
+<Data><![CDATA[
+<style type="text/css">
+.form {
+	background: #DDDDFF;
+	color: black;
+}
+
+</style>
+]]></Data>
+</XData>
+
+<XData name="Contents">
+<Description>
+Этот XML блок описывает содержимое этой страницы.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<page xmlns="http://www.intersystems.com/zen" title="Редактирование элемента меню">
+<form id="MyForm" layout="vertical" width="100%" height="100%">
+<spacer height="10"/>
+<hidden id="glob" value="" />
+<hidden id="submenu" value="" />
+<hidden id="operation" value="" />
+<radioSet id="typeItem" 
+          displayList="Элемент меню,Субменю"
+          valueList="item,submenu"
+           value="item"
+/>
+<text id="nameItem" label="Наименование элемента меню/субменю:" labelClass="required" required="true" size="150"/>
+<text id="nameJRXML" label="Имя файла JRXML для отчета (без расширения jrxml, без пути ):" labelClass="required" required="true" size="150"/>
+<textarea id="descItem"  label="Описание"  rows="15" cols="100"/>
+<spacer height="5"/>
+<hgroup>
+<button caption="Сохранить" onclick='zenPage.SaveAndReturn();'/>
+<button caption="Удалить" onclick='zenPage.DeleteAndReturn();'/>
+<button caption="Возврат" onclick="zenPage.gotoPage('JasperWrap.menuTree.cls?typeuse=edit');"/>
+</hgroup>
+<spacer height="10"/>
+</form>
+</page>
+]]></Data>
+</XData>
+
+<Method name="%OnAfterCreatePage">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set operation=""
+    if $data(%request.Data("operation")) set operation=%request.Get("operation")
+    if operation'="" {
+	    Do ..%SetValueById("operation",operation)
+    }
+    
+	set glob=""
+    if $data(%request.Data("glob")) set glob=%request.Get("glob")
+    
+    if glob'="" {
+	    Do ..%SetValueById("glob",glob)
+	    if operation="edit" {
+		    set info=$get(@glob)
+	        Do ..%SetValueById("nameItem",$piece(info,$char(0),1))
+            Do ..%SetValueById("nameJRXML",$piece(info,$char(0),2))
+            Do ..%SetValueById("descItem",$piece(info,$char(0),3))
+            Do ..%SetValueById("typeItem",$piece(info,$char(0),4))
+	    }
+    }
+    
+    set submenu=""
+    if $data(%request.Data("submenu")) set submenu=%request.Get("submenu")
+    if submenu'="" {
+	    Do ..%SetValueById("submenu",submenu)
+    }
+    quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="SaveAndReturn">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+        var err=zenPage.Save();
+        if ((err != null)&&(err != '')) {
+	        alert(err);
+	        return;
+        }
+        window.close();
+]]></Implementation>
+</Method>
+
+<Method name="Save">
+<ReturnType>%String</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	set ok="",error=""
+	try {
+		set operation=%page.%GetValueById("operation")
+        set glob=%page.%GetValueById("glob")
+        set globsave=""
+        
+        if operation="new" {
+	       if glob="" set glob=##class(JasperWrap.menuTree).GetGlobalOfMenu()
+	       set typeItem=$piece($get(@glob),$char(0),4)
+	       // если кнопка Создать новый элемент нажата при стоянии на элементе меню, то вставляем новый элемент после этого элемента меню
+	       if typeItem="item" {
+		         set lastindex=+$piece($piece(glob,")",1),",",$length(glob,","))
+		         set newindex=lastindex+1 //..getNewIndex(lastindex, glob)
+		         do ..rebuildMenu(newindex,glob)
+		         set globsave=$select($length(glob,",")>1:$piece(glob,",",1,$length(glob,",")-1),1:$piece(glob,")",1))_","_newindex_")"  
+	       } 
+	       // если кнопка Создать новый элемент нажата при стоянии на субменю, то вставляем новый элемент последним в даннном субменю
+	       else {  
+		         set lastindex=+$order(@glob@(""),-1)
+			     set newindex=lastindex+1 //..getNewIndex(lastindex)
+			     do ..rebuildMenu(newindex,glob)
+			     set globsave=$piece(glob,")",1)_","_newindex_")" 
+	       }   
+        } else {
+	        set globsave=glob
+        }
+        //s ^test("111","globsave")=globsave
+		// validate
+		If (globsave="") {
+			set error=error_"Не указан узел глобала, куда сохранять данные. "
+		}
+		set typeItem=%page.%GetValueById("typeItem")
+		If (typeItem'="item")&&(typeItem'="submenu") {
+			set error=error_"Не указан тип элемента меню. "
+		}
+		set nameItem=%page.%GetValueById("nameItem")
+		If (nameItem="") {
+			set error=error_"Не указано наименование элемента меню. "
+		}
+		set nameJRXML=%page.%GetValueById("nameJRXML")
+		If (nameJRXML="")&&(typeItem="item") {
+			set error=error_"Не указано имя файла шаблона для отчета (JRXML). "
+		}
+		set descItem=%page.%GetValueById("descItem")
+		
+		#; save
+		if error="" {
+			set olddata=$get(@globsave)
+			set data=nameItem_$char(0)_nameJRXML_$char(0)_descItem_$char(0)_typeItem
+			if olddata '= data {
+				Set @globsave = data
+		        &js<alert("Данные сохранены успешно ");>
+			}
+		} else {
+			 //set ^test(3,$i(^test(3)))=error
+			 set ok=error
+		}
+		
+	} catch(exception) {
+	       //set ok=exception.AsStatus()	
+	       set ok=$zconvert(exception.DisplayString(),"O","JS")
+    }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="rebuildMenu">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>newindex:%Float,glob:%String</FormalSpec>
+<Implementation><![CDATA[
+	set glob=$get(glob)
+	set ^test(111,"glob")=glob
+	set prevglob=""
+	if glob'="" {
+		set len=$length(glob,",")
+		set prevglob=$select(len>1:$piece(glob,",",1,len-1)_")",1:$piece(glob,"(",1))
+		set ^test(111,"prevglob")=prevglob
+	}
+	if prevglob'=""&&('$data(@prevglob@(newindex))) quit
+	set index=""
+	for {
+		set index=$order(@prevglob@(index),-1) if index=""||(index<newindex) quit
+		set @prevglob@(index+1)=@prevglob@(index)
+		kill @prevglob@(index)
+	}
+	quit
+]]></Implementation>
+</Method>
+
+<Method name="DeleteAndReturn">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[
+	 var operation=zenPage.getComponentById("operation").value;
+	 var glob=zenPage.getComponentById("glob").value;
+	 var proxy=zenPage.getMessageAboutDelete(operation,glob);
+	 var error=proxy.Error+'';
+	 if (error != '') {
+		 alert(error);
+		 return;
+	 }
+	var message=proxy.Message+'';	 
+	 if ( (message==null) || (message+'' == '') ) message="Вы подтверждаете удаление элемента меню/субменю?"
+     if (confirm(message,"Да","Нет")) {
+            var message=zenPage.Delete(operation,glob);
+            alert(message+'');
+     }
+     window.close();
+]]></Implementation>
+</Method>
+
+<Method name="getMessageAboutDelete">
+<FormalSpec>operation:%String,glob:%String</FormalSpec>
+<ReturnType>%ZEN.proxyObject</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+    set proxy = ##class(%ZEN.proxyObject).%New()
+    set message="",error=""
+	try {
+		if operation="edit" {
+			if glob'="" {
+				set typeItem=$piece($get(@glob),$char(0),4)
+				set message="Вы подтверждаете удаление "_$select(typeItem="submenu":"субменю",1:"элемента меню")_"?"
+				if ($data(@glob)>10) set message="Элемент имеет потомков. "_message
+			}
+		}
+    } catch(exception) {
+	       //set ok=exception.AsStatus()	
+	       set error=$zconvert(exception.DisplayString(),"O","JS")
+    }
+    set proxy.Message=message
+    set proxy.Error=error
+    quit proxy
+]]></Implementation>
+</Method>
+
+<Method name="Delete">
+<FormalSpec>operation:%String,glob:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+    set ok="Удаление выполнено успешно"
+	try {
+		if operation="edit" {
+		    if glob'="" kill @glob	
+		}
+    } catch(exception) {
+	       set ok="Удаление не выполнено. "_$zconvert(exception.DisplayString(),"O","JS")
+    }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="getURLback">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[	return 'JasperWrap.menuTree.cls?typeuse=edit';
+]]></Implementation>
+</Method>
+</Class>
+</Export>
