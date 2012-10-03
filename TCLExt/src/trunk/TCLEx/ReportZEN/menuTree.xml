@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.ReportZEN.menuTree">
+<Description>
+Created using the page template: Title Page</Description>
+<Super>%ZEN.Component.page</Super>
+<TimeCreated>62717,54871.338002</TimeCreated>
+
+<Parameter name="APPLICATION">
+<Description>
+Class name of application this page belongs to.</Description>
+<Default>JasperWrap.Application</Default>
+</Parameter>
+
+<Parameter name="PAGENAME">
+<Description>
+Displayed name of this page.</Description>
+</Parameter>
+
+<Parameter name="DOMAIN">
+<Description>
+Domain used for localization.</Description>
+</Parameter>
+
+<Property name="typeUse">
+<Description>
+type of use : view menu or edit menu</Description>
+<Type>%String</Type>
+</Property>
+
+<XData name="Style">
+<Description>
+This Style block contains page-specific CSS style definitions.</Description>
+<Data><![CDATA[
+<style type="text/css">
+/* style for title bar */
+#title {
+	background: #C5D6D6;
+	color: black;
+	font-family: Verdana;
+	font-size: 1.5em;
+	font-weight: bold;
+	padding: 5px;
+	border-bottom: 1px solid black;
+	text-align: center;
+}
+</style>
+]]></Data>
+</XData>
+
+<XData name="Contents">
+<Description>
+This XML block defines the contents of this page.</Description>
+<XMLNamespace>http://www.intersystems.com/zen</XMLNamespace>
+<Data><![CDATA[
+<page xmlns="http://www.intersystems.com/zen" title="">
+<html id="title">Меню отчетов</html>
+<button id="newItem" caption="Новый пункт меню"  onclick="zenPage.createnNewItem(zenThis)" />
+<vgroup width="100%">
+<expando id="%forInnerUseMenuMain" caption="Меню отчетов" childIndent="25px" >
+<button caption="=refresh" onclick="zenPage.findElementOnFocus()" />
+</expando>
+<dynaTree dataGlobal="^menu" />
+</vgroup>
+</page>
+]]></Data>
+</XData>
+
+<Method name="%OnAfterCreatePage">
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	 // type of use menu : view or edit
+	 set typeuse="view"
+	 if $data(%request.Data("typeuse")) set typeuse=%request.Get("typeuse") 
+	 if (typeuse="")||((typeuse'="view")&&(typeuse'="edit")) set typeuse="view"
+	 set ..typeUse=typeuse
+	 
+	 $$$ThrowOnError(..refresh(typeuse))
+     } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="refresh">
+<FormalSpec>typeuse:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	 set typeuse=$get(typeuse,"view")
+    set ref=$na(^menu) //^test("menu"))
+    set len=$length(ref) if $extract(ref,len)=")" set len=len-1
+	set pattern=$extract(ref,1,len)
+    set id=$query(@ref@("")) 
+    if id'=""&&($extract(id,1,len)=pattern) {
+	    set qnodes=$length(id,",")
+        do ..createItem(id,len,typeuse)
+	        for {
+		        set id=$query(@id) if id=""||($extract(id,1,len)'=pattern) quit
+		        s ^test(5,$i(^test(5)))=id   
+		        set qnodescur=$length(id,",")
+                do ..createItem(id,len,typeuse)
+            }
+     }
+  } catch(exception) 
+  {
+	   set ok=exception.AsStatus()	
+  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="createItem">
+<FormalSpec>ref:%String,len:%Integer,typeuse:%String</FormalSpec>
+<ZenMethod>1</ZenMethod>
+<Implementation><![CDATA[
+	// name of parent
+	set nameparent=$piece($extract(ref,len+2,$length(ref)),")",1)
+	set nameparent=$piece(nameparent,",",1,$length(nameparent,",")-1)
+	set nameparent="%forInnerUseMenuMain"_"*"_$translate(nameparent,"*"," ")
+	s ^test(1,$i(^test(1)))=nameparent
+	set parent=%page.%GetComponentById(nameparent)
+	if '$IsObject(parent) {
+		set parent=%page.%GetComponentById("%forInnerUseMenuMain")
+		set nameparent="%forInnerUseMenuMain"
+	}
+	// name of item
+	set nameItem=$piece($piece(ref,")",1),"(",2)
+	set nameItem=$piece(nameItem,",",$length(nameItem,","))
+	set nameItem=nameparent_"*"_$translate(nameItem,"*"," ")
+	s ^test(1,$i(^test(1)))=ref_"/"_nameparent_"/"_nameItem
+	// test exist item
+	set itemobj=%page.%GetComponentById(nameItem)
+	if $IsObject(itemobj) quit
+
+    set data=$get(@ref)
+    set titleItem=$piece(data,$char(0),1)
+    set href=$piece(data,$char(0),2)
+	if parent'=""&&($IsObject(parent)) {
+		// если есть потомки, то expando
+		if $data(@ref)'<10	{
+			Set item = ##class(%ZEN.Component.expando).%New()
+			set item.caption=titleItem
+			set item.childIndent="35px"
+		}
+		// если нет потомков, то link (typeuse="view") или text (typeuse="edit")
+		else {
+			 if typeuse="view" {
+				 Set item = ##class(%ZEN.Component.link).%New()
+				 set item.caption=titleItem
+			 } else {
+				 Set item = ##class(%ZEN.Component.link).%New()
+				 set item.caption=titleItem
+				 //set item.href=href
+			 }
+		}
+		s ^test(3,$i(^test(3)))=ref_"/"_parent_"/"_nameparent_"/"_nameItem_"/"_len
+		set item.id=nameItem
+		//Set group = ##class(%ZEN.Component.hgroup).%New()
+		//do group.%AddChild(item)
+		//Set buttonEdit = ##class(%ZEN.Component.button).%New()
+		//set buttonEdit.caption="Редактировать"
+		//set buttonEdit.onclick="zenPage.editItem(zenThis)"
+		do parent.%AddChild(item)
+		//do group.%AddChild(buttonEdit)
+		Set spacer = ##class(%ZEN.Component.spacer).%New()
+        Set spacer.height=1
+        do parent.%AddChild(spacer)	
+        //do parent.%AddChild(group)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="createnNewItem">
+<FormalSpec>item</FormalSpec>
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[   	alert(item+"-"+item.tagName);
+]]></Implementation>
+</Method>
+
+<Method name="findElementOnFocus">
+<Language>javascript</Language>
+<ClientMethod>1</ClientMethod>
+<Implementation><![CDATA[   	alert(document.activeElement);
+]]></Implementation>
+</Method>
+
+<Method name="testQuery">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>ref:%String</FormalSpec>
+<Implementation><![CDATA[
+	w !,ref
+    set id=$query(@ref@("")) if id="" w !,"Нет узлов" quit
+    set len=$length(ref)-1,pattern=$extract(ref,1,len)
+    set qnodes=$length(ref,","),delta=0
+    w !,id,!,@id 
+    for {
+	    set id=$query(@id) if id=""||($extract(id,1,len)'=pattern) quit
+	    //if $length(id,",")
+	    w !,id,!,@id r aaa
+    }
+]]></Implementation>
+</Method>
+</Class>
+</Export>
