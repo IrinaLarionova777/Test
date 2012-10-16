@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LBACKGR15" type="INT" languagemode="0" generated="1"><![CDATA[
+LBACKGR15	; BackGround Job - 15 - Email SMS
+	q
+	;
+DOIT(zn,job,DATE,TIME)	s zn=$g(zn),job=$g(job),DATE=$g(DATE),TIME=$g(TIME)
+	l +^TMP(zn,job,"DOIT15"):0 e  q
+	s zt=$zt,$zt="ERROR^"_$zn
+	s $p(^TMP(zn,job,"DOIT15",DATE,TIME),"^",1)="START : "_$h
+	i $$open^LVBCTVQ()
+	s SMSQueue="" f  q:$$fetch^LVBCTVQ()  i PLIST(7)="S" s SMSQueue=PLIST(2) q
+	i $$close^LVBCTVQ()
+	i $l(SMSQueue) d
+	.s epis="" f  s epis=$o(^TEPIi("QUEUE","RQ",SMSQueue,epis)) q:epis=""  d
+	..k sms
+	..s doc=$$seldata^LVBEPVIS(epis,15) i $l(doc) s mPhone=$$seldata^LVBCTDR(doc,7) i $l(mPhone) s sms(mPhone)=""
+    ..s cnt="" f  s cnt=$o(^TEPI(epis,5,cnt)) q:cnt=""  d
+	...s doc=$p(^(cnt),"\") i $l(doc) s mPhone=$$seldata^LVBCTDR(doc,7) i $l(mPhone) s sms(mPhone)=""
+	..s ts="" f  s ts=$o(^TEPIi("QUEUE","RQ",SMSQueue,epis,ts)) q:ts=""  d
+	...k ti i $$getall1^LVBCTTC(ts,,,,"Y")
+	...s cnt="" f  s cnt=$o(PLIST(cnt)) q:cnt=""  d
+	....s tc=$p(PLIST(cnt),$c(2),1) i '$l(tc) q
+	....i $$seldata^LVBCTTC(tc,20)="Y" s ti(tc)=""
+	...s tscnt="" f  s tscnt=$o(^TEPIi("QUEUE","RQ",SMSQueue,epis,ts,tscnt)) q:tscnt=""  d
+	....s vts=epis_"||"_ts_"||"_tscnt
+	....s seq="" f  s seq=$o(^TEPIi("QUEUE","RQ",SMSQueue,epis,ts,tscnt,seq)) q:seq=""  d
+	..... ; remove unauthorised TS
+	.....i $$status^LVBVIS1(vts)'="A" s err=$$delete^LVBVISTQ(vts_"||RQ||"_seq) q
+	..... ; remove TS without mPhones
+	.....i '$d(sms) s err=$$delete^LVBVISTQ(vts_"||RQ||"_seq) q
+	..... ; remove TS without items enabled to SMS
+	.....i '$d(ti) s err=$$delete^LVBVISTQ(vts_"||RQ||"_seq) q
+	..... ; email results to ALL mPhones
+	.....d sms(vts,vts_"||RQ||"_seq)
+ 	s $p(^TMP(zn,job,"DOIT15",DATE,TIME),"^",2)="FINISH : "_$h
+	l -^TMP(zn,job,"DOIT15")
+	s $zt=zt
+	q
+sms(vts,vq)	s vts=$g(vts),vq=$g(vq),ts=$p(vts,"||",2)
+	s (sms,mp)="" s mp=$o(sms(mp)) q:mp=""  s sms=sms_$s($l(sms):",",1:"")_mp
+	s %routine=$p($g(^TTAB("REPORT-GENERIC","SMS")),"\",1)
+	i $l(%routine) s LineRoutine="sms^"_%routine i $l($t(@LineRoutine)) x "d sms^"_%routine d
+	.d events^LVBCOM01(epis,"SMS","Result for "_$$seldata^LVBCTTS(ts,4)_" sent to: "_sms)
+	.i '$$select^LVBVISTQ(vq,"Y") s PLIST(7)=+$h,PLIST(8)=$p($h,",",2),PLIST(9)="trak",err=$$update^LVBVISTQ(vq)
+	q
+ERROR d BACK^%ETN
+ s $zt=$g(zt)
+ q
+]]></Routine>
+</Export>

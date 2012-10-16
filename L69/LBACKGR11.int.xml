@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LBACKGR11" type="INT" languagemode="0" generated="1"><![CDATA[
+LBACKGR11 ; BackGround Job - 11 - Receive movements between DB's
+ q
+ ;
+DOIT(zn,job,DATE,TIME) s zn=$g(zn),job=$g(job),DATE=$g(DATE),TIME=$g(TIME) k ^TMP($zn,$j)
+ l +^TMP(zn,job,"DOIT11"):0 e  q
+ s zt=$zt,$zt="ERROR^"_$zn
+ s $p(^TMP(zn,job,"DOIT11",DATE,TIME),"^",1)="START : "_$h
+ s xCurrent=$p($g(^CF("SM",1,"SITE")),"^",2)
+ ; process waiting entries in queue
+ d Process
+ ; process queue
+ k CTUSL,^TMP($zn,$j,"Site")
+ i '$$select^LVBCTUSL(xCurrent) m CTUSL=PLIST i $l(CTUSL(6)) d
+ .s site="" f  s site=$o(^TTAB("USLOC",site)) q:site=""  i site'=xCurrent s x=$p(^(site),"\",4) i $l(x) s ^TMP($zn,$j,"Site",site)=""
+Site s site=$o(^TMP($zn,$j,"Site","")) i $l(site) d
+ .s dir=$tr(CTUSL(6),$c(16,17,18),"^\|") f j="/","\" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ .s dir=dir_"in"_$s(dir["\":"\",1:"/")_site_"_*.move"
+ . ; import files
+ .d FileImp
+ . ; process new entries in queue
+ .d Process
+ s $p(^TMP(zn,job,"DOIT11",DATE,TIME),"^",2)="FINISH : "_$h
+ l -^TMP(zn,job,"DOIT11")
+ s $zt=zt
+ q
+ ; find files to be processed
+FileImp i $zf(-1,"DIR "_dir_" /B > ""move.txt""")
+ s file="move.txt"
+ o file:"WAS" u file w "End_Of_File",! c file
+ o file:("RS"::$c(10,13))
+ f  u file r x q:x="End_Of_File"  s xfile=$p(x," ",$l(x," ")) i xfile[".",$l(xfile) s ^TMP($zn,$j,"FileName",xfile)=""
+ c file
+ ; extract file content
+Start s $zt="Error^"_$zn
+ s file=$o(^TMP($zn,$j,"FileName","")) i $l(file) d
+ .s dir=$tr(CTUSL(6),$c(16,17,18),"^\|") f j="/","\" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ .s fullname=dir_"in"_$s(dir["\":"\",1:"/")_file
+ .o fullname:("RS"::$c(10,13)):1 e  q
+ .k ^TMOVE("IN-PROCESS",file)
+ .u fullname s line="" f  r line:10 s cnt=$o(^TMOVE("IN-PROCESS",file,""),-1)+1,^TMOVE("IN-PROCESS",file,cnt)=line
+ k ^TMP($zn,$j,"Site",site)
+ g Site
+ ; process inbound processing queue
+Process 
+ s file="" f  s file=$o(^TMOVE("IN-PROCESS",file)) q:file=""  d
+ .s cnt="" f  s cnt=$o(^TMOVE("IN-PROCESS",file,cnt)) q:cnt=""  d
+ ..s line=$tr(^TMOVE("IN-PROCESS",file,cnt),$c(0))
+ .. ; extract subscript levels
+ ..s sub=$p(line,$c(26)) f i=1:1:5 s @("sub"_i)=$p(sub,",",i)
+ ..i $l(sub1),$l(sub2),$l(sub3),$l(sub4) d
+ ...s sub4=$o(^TMOVE("IN",sub1,sub2,sub3,""),-1)+1
+ ...l +^TMOVE("IN",sub1,sub2,sub3,sub4)
+ ...s ^TMOVE("IN",sub1,sub2,sub3,sub4)=sub5
+ ...f i=2:1:$l(line,$c(26)) s str=$p(line,$c(26),i) d
+ ....k sub s sub=$p(str,$c(27)),data=$p(str,$c(27),2)
+ ....f j=1:1:$l(sub,$c(30)) s sub(j)=$p(sub,$c(30),j)
+ ....i j=1 s ^TMOVE("IN",sub1,sub2,sub3,sub4,sub(1))=$tr(data,$c(21,22),$c(10,13))
+ ....e  i j=2 s ^TMOVE("IN",sub1,sub2,sub3,sub4,sub(1),sub(2))=$tr(data,$c(21,22),$c(10,13))
+ ....e  i j=3 s ^TMOVE("IN",sub1,sub2,sub3,sub4,sub(1),sub(2),sub(3))=$tr(data,$c(21,22),$c(10,13))
+ ....e  i j=4 s ^TMOVE("IN",sub1,sub2,sub3,sub4,sub(1),sub(2),sub(3),sub(4))=$tr(data,$c(21,22),$c(10,13))
+ ....e  i j=5 s ^TMOVE("IN",sub1,sub2,sub3,sub4,sub(1),sub(2),sub(3),sub(4),sub(5))=$tr(data,$c(21,22),$c(10,13))
+ ....e  s x=$o(^TMOVE("IN-Error",""),-1)+1,^TMOVE("IN-Error",x)=str
+ ...l -^TMOVE("IN",sub1,sub2,sub3,sub4)
+ ..k ^TMOVE("IN-PROCESS",file,cnt)
+ q
+ ; error log
+Error i $ze'["ENDOFFILE" d BACK^%ETN q
+ c fullname
+ ; del the file
+ k ^TMP($zn,$j,"FileName",file)
+ i '$zf(-1,"del "_fullname)
+ g Start
+ERROR d BACK^%ETN
+ s $zt=$g(zt)
+ q
+]]></Routine>
+</Export>

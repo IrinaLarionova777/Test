@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCCA01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTCCA01	; BJ 8/2/07 ; Capture Clinical Audit  ; Compiled July 15, 2008 11:12:42 for Cache for Windows  ; Compiled July 21, 2008 15:49:23 for Cache for Windows  ; Compiled July 25, 2008 16:29:42 for Cache for Windows  ; Compiled July 28, 2008 14:36:18 for Cache for Windows
+	q
+	; Parameters :  1. Date From
+	;               2. Date To
+	;               3. Doctor Code
+	;               4. Doctor Group
+	;               5. Create file
+	;
+CREATE(REPID,PAR,USER,%msql)	; create report
+	n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+	k xHEADER d INIT
+	s line=1,xHEADER(line)="Capture Clinical Audit"
+	s line=2,xHEADER(line)=""
+	i $l(PAR3) d
+	.s line=line+1,xHEADER(line)="For Doctor "_dn
+	.s line=line+1,xHEADER(line)=""
+	i $l(PAR4) d
+	.s line=line+1,xHEADER(line)="For Doctor Group "_$$seldata^LVBCTDG(PAR4,3)
+	.s line=line+1,xHEADER(line)=""
+	d HEADER^PRTREP00(.xHEADER,PAR1,PAR2),BODY,PRINT i PAR5="Y" d FILE
+	k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+	q
+INIT	; initialise parameters
+	f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+	k xSORT d H^PRTREP00(PAR10,$zn)
+	s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+	i $l(PAR3) s dn="" i '$$select^LVBCTDR(PAR3,"Y") s dn=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51)) 
+	q
+	; ISDIABETIC goes all the way back      
+ISDIABETIC(mrn,ti)	n (mrn,ti) s mrn=$g(mrn),ti=$g(ti),result="N"
+	s date="" f  s date=$o(^TDEB(mrn,date)) q:date=""  d  q:result="Y"
+	.s ep="" f  s ep=$o(^TDEB(mrn,date,0,ep)) q:ep=""  d  q:result="Y"
+	..s ts="" f  s ts=$o(^TEPI(ep,1,ts)) q:ts=""  d  q:result="Y"
+	...s tscnt="" f  s tscnt=$o(^TEPI(ep,1,ts,tscnt)) q:tscnt=""  s res=$p($g(^TEPI(ep,1,ts,tscnt,"DATA",ti)),"\") i res'<6 s result="Y" q
+	q result
+BODY	; create temporary printing file
+	s date=$$extdate2^SSUTIL4($p($h,",")),day=$p(date,"/",1),month=$p(date,"/",2),year=$p(date,"/",3)
+	s sixm=""
+	i month>6 s sixm=$$intdate^SSUTIL4(month-6_"/"_day_"/"_year)
+	i month'>6 s sixm=$$intdate^SSUTIL4(month+6_"/"_day_"/"_year-1)
+	s docs=PAR3 i $l(PAR4) i '$$fetchall^LVBCTDGD(PAR4) f i=1:1:PLIST s docs=docs_$s($l(docs):",",1:"")_$p($p(PLIST(i),$c(28),1),"||",2)
+	; buffer : HbA1C\Cat1\TC\HDL\Cat5\TG\LDL\Lipid Test Sets
+	s buffer="" i '$$GET^PRTREP00("CCA") s buffer=PLIST(1)
+	s hb1ac=$p(buffer,"\",1),cat1=$$UPPER^SSUTIL4($p(buffer,"\",2)),tc=$p(buffer,"\",3),hdl=$p(buffer,"\",4),cat5=$$UPPER^SSUTIL4($p(buffer,"\",5))
+	s tg=$p(buffer,"\",6),ldl=$p(buffer,"\",7),lipid=$p(buffer,"\",8)
+	f i=1:1:$l(docs,",") s doc=$p(docs,",",i) i $l(doc) d
+	.s date="" f  s date=$o(^TIND(3,doc,date),-1) q:date=""  q:$l(PAR1)&(date<PAR1)  d
+	..s epis="" f  s epis=$o(^TIND(3,doc,date,epis)) s tslist="" q:epis=""  d
+	...s mrn=$$seldata^LVBEPVIS(epis,20) q:mrn=""  i '$d(^TMP($zn,$j,"DIABETIC",doc,mrn)) s ^TMP($zn,$j,"DIABETIC",doc,mrn)="N"
+	...i '$d(^TMP($zn,$j,"LIPID",doc,mrn)) s ^TMP($zn,$j,"LIPID",doc,mrn)="N"
+	...k PLIST,VISTS i '$$getall^LVBVISTS(epis,,,,,,,,"ALL")
+	...m VISTS=PLIST
+	...f jj=1:1:VISTS s vtsRID=$p($p(VISTS(jj),$c(2)),$c(1)) d
+	....s ts=$p(vtsRID,"||",2)
+	....i (","_lipid_",")[(","_ts_","),date>sixm s ^TMP($zn,$j,"LIPID",doc,mrn)="Y"
+	....i $l(PAR2),date>PAR2 q
+	....k PLIST,RESULTS i '$$results^LVBVISTS(vtsRID) d
+	.....m RESULTS=PLIST k PLIST
+	.....s (incl,hb1acres,tcres,hdlres,tgres,ldlres)="" f k=1:1:RESULTS d
+	......s tic=$p(RESULTS(k),$c(1),2),res=$p(RESULTS(k),$c(1),3)
+	......i tic=hb1ac s hb1acres=res,incl="Y" d
+	.......i hb1acres'<6 s ^TMP($zn,$j,"DIABETIC",doc,mrn)="Y"
+	......i tic=tc s tcres=res,incl="Y"
+	......i tic=hdl s hdlres=res,incl="Y"
+	......i tic=tg s tgres=res,incl="Y"
+	......i tic=ldl s ldlres=res,incl="Y"
+	......s clin=$$UPPER^SSUTIL4($$seldata^LVBEPVIS(epis,53))
+	......s clin2="" i '$$select^LVBDEB(mrn,"Y") s clin2=$$UPPER^SSUTIL4(PLIST(7))
+	......s clin3="" i '$$select^LVBDEBDH(mrn_"||"_$e(ts)) s clin3=$$UPPER^SSUTIL4(PLIST(3))
+	......i (clin[cat1)!(clin2[cat1)!(clin3[cat1),$p($g(^TMP($zn,$j,"DATA",doc,mrn,"CAT1HIST")),$c(1),1)'="Y" s ^TMP($zn,$j,"DATA",doc,mrn,"CAT1HIST")="Y"_$c(1)_vtsRID,incl="Y"
+	......i (clin[cat5)!(clin2[cat5)!(clin3[cat5),$p($g(^TMP($zn,$j,"DATA",doc,mrn,"CAT5HIST")),$c(1),1)'="Y" s ^TMP($zn,$j,"DATA",doc,mrn,"CAT5HIST")="Y"_$c(1)_vtsRID,incl="Y"
+	.....i '$d(^TMP($zn,$j,"DATA",doc,mrn,"LATESTC3")),$l(tcres) s ^TMP($zn,$j,"DATA",doc,mrn,"LATESTC3")=tcres_$c(1)_vtsRID
+	.....i '$d(^TMP($zn,$j,"DATA",doc,mrn,"LATESTC4")),$l(hdlres),$l(tcres) s ^TMP($zn,$j,"DATA",doc,mrn,"LATESTC4")=hdlres_$c(1)_tcres_$c(1)_vtsRID
+	.....i '$d(^TMP($zn,$j,"DATA",doc,mrn,"LATESTC67")),$l(tcres),$l(tgres) s ^TMP($zn,$j,"DATA",doc,mrn,"LATESTC67")=tcres_$c(1)_tgres_$c(1)_vtsRID
+	.....i '$d(^TMP($zn,$j,"DATA",doc,mrn,"LATESTC8")),$l(tcres),$l(tgres) s ^TMP($zn,$j,"DATA",doc,mrn,"LATESTC8")=tcres_$c(1)_tgres_$c(1)_vtsRID
+	.....i incl="Y" s tslist=tslist_$s($l(tslist):",",1:"")_vtsRID_$c(1)_hb1acres_$c(1)_tcres_$c(1)_hdlres_$c(1)_tgres_$c(1)_ldlres_$c(1)
+	......; i $g(incl)="N" s tslist=tslist_$s($l(tslist):",",1:"")_vtsRID_$c(1)_"ND"
+	...i $l(tslist) s ^TMP($zn,$j,"DATA",doc,mrn,date,epis)=tslist
+	s counter=0
+	s doc="" f  s doc=$o(^TMP($zn,$j,"DATA",doc)) q:doc=""  d
+	.s mrn="" f  s mrn=$o(^TMP($zn,$j,"DATA",doc,mrn)) q:mrn=""  d
+	..s date="" f  s date=$o(^TMP($zn,$j,"DATA",doc,mrn,date),-1) q:date=""  d
+	...s visit="" f  s visit=$o(^TMP($zn,$j,"DATA",doc,mrn,date,visit)) q:visit=""  d
+	....k VISIT i '$$select^LVBEPVIS(visit) m VISIT=PLIST d
+	..... ; KNOWN DIABETIC
+	.....   
+	.....i $g(^TMP($zn,$j,"DIABETIC",doc,mrn))="Y" d
+	...... ; Cat 1,2,3
+	......i $g(^TMP($zn,$j,"LIPID",doc,mrn))="N" d
+	....... ; Cat1
+	.......s tsList=^TMP($zn,$j,"DATA",doc,mrn,date,visit)
+	.......i '$d(^TMP($zn,$j,"PROCESSED",doc,mrn)) d
+	........ ; i $$UPPER^SSUTIL4(VISIT(53))[cat1 s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 1"
+	........i $p($g(^TMP($zn,$j,"DATA",doc,mrn,"CAT1HIST")),$c(1))="Y" s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 1"_$c(1)_$p($g(^TMP($zn,$j,"DATA",doc,mrn,"CAT1HIST")),$c(1),2)
+	........ ; Cat 2
+	........i VISIT(26)'<60 s ok=1,^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 2"_$c(1)_$p($p(^TMP($zn,$j,"DATA",doc,mrn,date,visit),",",1),$c(1),1)
+	........ ; Cat 3
+	........i $d(^TMP($zn,$j,"DATA",doc,mrn,"LATESTC3")) d
+	.........s data=^TMP($zn,$j,"DATA",doc,mrn,"LATESTC3")
+	.........i $p(data,$c(1))'<5.5 d
+	..........s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 3"_$c(1)_$p(data,$c(1),2)
+	........i $g(^TMP($zn,$j,"PROCESSED",doc,mrn))'="Y" k ^TMP($zn,$j,"DATA",doc,mrn) s ^TMP($zn,$j,"PROCESSED",doc,mrn)="N"
+	......i $g(^TMP($zn,$j,"LIPID",doc,mrn))="Y" d
+	.......k ^TMP($zn,$j,"DATA",doc,mrn) s ^TMP($zn,$j,"PROCESSED",doc,mrn)="N"
+	.....
+	..... ; NOT KNOWN DIABETIC
+	.....i $g(^TMP($zn,$j,"DIABETIC",doc,mrn))="N" d
+	...... ; Cat 4,5,6,7,8
+	......i $g(^TMP($zn,$j,"LIPID",doc,mrn))="N" d
+	.......; s tsList=^TMP($zn,$j,"DATA",doc,mrn,date,visit)
+	.......i '$d(^TMP($zn,$j,"PROCESSED",doc,mrn)) d
+	........; Cat 4
+	........i $d(^TMP($zn,$j,"DATA",doc,mrn,"LATESTC4")) d
+	.........s data=^TMP($zn,$j,"DATA",doc,mrn,"LATESTC4")
+	.........i $p(data,$c(1))'>1,$p(data,$c(1),2)'<6.5 d
+	..........s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 4"_$c(1)_$p(data,$c(1),3)
+	........ ; Cat 5
+	........s tsList=^TMP($zn,$j,"DATA",doc,mrn,date,visit)
+	........i $p($g(^TMP($zn,$j,"DATA",doc,mrn,"CAT5HIST")),$c(1))="Y" s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 5"_$c(1)_$p($g(^TMP($zn,$j,"DATA",doc,mrn,"CAT5HIST")),$c(1),2)
+	........i '$$select^LVBDEB(mrn,"Y"),$$UPPER^SSUTIL4(PLIST(7))[cat5 s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 5"_$p($g(^TMP($zn,$j,"DATA",doc,mrn,"CAT5HIST")),$c(1),2)
+	........f i=1:1:$l(tsList,",") s ts=$p($p($p(tsList,",",i),$c(1)),"||",2) i $l(ts) d
+	.........i '$$select^LVBDEBDH(mrn_"||"_$e(ts)),$$UPPER^SSUTIL4(PLIST(3))[cat5 s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 5"_$p($g(^TMP($zn,$j,"DATA",doc,mrn,"CAT5HIST")),$c(1),2)
+	........ ; Cat 6 & 7
+	........i $d(^TMP($zn,$j,"DATA",doc,mrn,"LATESTC67")) d
+	.........i $$getall^LVBCTSP() 
+	.........s fspe="",mspe="" f i=1:1:PLIST d
+	..........i $p($p(PLIST(i),$c(2),4),$c(28),4)'="Y" s mspe=mspe_$s($l(mspe):",",1:"")_$p(PLIST(i),$c(2),1)
+	..........i $p($p(PLIST(i),$c(2),4),$c(28),4)="Y" s fspe=fspe_$s($l(fspe):",",1:"")_$p(PLIST(i),$c(2),1)
+	.........s data=^TMP($zn,$j,"DATA",doc,mrn,"LATESTC67")
+	.........i ($p(data,$c(1))'<7.5)!(($p(data,$c(1),2)'<4)) d 
+	..........i VISIT(26)'<35,(","_mspe_",")[(","_$p(VISIT(5),$c(1))) s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 6"_$c(1)_$p(data,$c(1),3)
+	..........i VISIT(26)'<50,(","_fspe_",")[(","_$p(VISIT(5),$c(1))) s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 7"_$c(1)_$p(data,$c(1),3)
+	........ ; Cat 8
+	........i $d(^TMP($zn,$j,"DATA",doc,mrn,"LATESTC8")) d
+	.........s data=^TMP($zn,$j,"DATA",doc,mrn,"LATESTC8")
+	.........i ($p(data,$c(1))'<9)!($p(data,$c(1),2)'<8) d
+	..........s ^TMP($zn,$j,"PROCESSED",doc,mrn)="Y",^TMP($zn,$j,"DATA",doc,mrn)="Cat 8"_$c(1)_$p(data,$c(1),3)
+	........i $g(^TMP($zn,$j,"PROCESSED",doc,mrn))'="Y" k ^TMP($zn,$j,"DATA",doc,mrn) s ^TMP($zn,$j,"PROCESSED",doc,mrn)="N"
+	......i $g(^TMP($zn,$j,"LIPID",doc,mrn))="Y" d
+	.......k ^TMP($zn,$j,"DATA",doc,mrn) s ^TMP($zn,$j,"PROCESSED",doc,mrn)="N"
+	q
+PRINT	; print report
+	; vtsRID_$c(1)_hb1acres_$c(1)_tcres_$c(1)_hdlres_$c(1)_tgres_$c(1)_ldlres
+	i $d(^TMP($zn,$j,"DATA")) d
+	.s doc="" s next=0 f  s doc=$o(^TMP($zn,$j,"DATA",doc)) q:doc=""  d
+	..i next d ADDLINE^PRTREP00(REPID,"PRT","#")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..s next=1
+	..i '$$select^LVBCTDR(doc,"Y") d 
+	...s dn=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51)) 
+	...d ADDLINE^PRTREP00(REPID,"PRT","For doctor ("_doc_") "_dn)
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..s mrn="" s mrnnext=0 f  s mrn=$o(^TMP($zn,$j,"DATA",doc,mrn)) q:mrn=""  d
+	...i mrnnext d 
+	....k PLIST f j=2:1:6,12,20,32:1:35 s PLIST(j)=""
+	....f j=1:1:6 s xxx(j)="" 
+	....d PRINT^PRTREP00(.PLIST,.N) 
+	...k xxx,PLIST s mrnnext=1
+	...s ^TMP($zn,$j,"PRINTED",mrn)="N"
+	...s date="" f  s date=$o(^TMP($zn,$j,"DATA",doc,mrn,date),-1) q:date=""  d
+	....s epis="" f  s epis=$o(^TMP($zn,$j,"DATA",doc,mrn,date,epis)) q:epis=""  d
+	.....s tsdata=^TMP($zn,$j,"DATA",doc,mrn,date,epis)
+	.....i '$l(tsdata) q
+	.....s count=0 f cnt=1:1:$l(tsdata,",") d
+	......s vtsRID=$p($p(tsdata,",",cnt),$c(1))
+	......k xxx f j=2:1:6,12,20,32:1:35 s PLIST(j)=$$seldata^LVBEPVIS($p(vtsRID,"||",1),j)
+	......s xxx(1)=$p($p(tsdata,",",cnt),$c(1),3)
+	......s xxx(2)=$p($p(tsdata,",",cnt),$c(1),6)
+	......s xxx(3)=$p($p(tsdata,",",cnt),$c(1),4)
+	......s xxx(4)=$p($p(tsdata,",",cnt),$c(1),5)
+	......s xxx(5)=$p($p(tsdata,",",cnt),$c(1),2)
+	......s xxx(6)=""
+	......i (^TMP($zn,$j,"PRINTED",mrn)="N"),(vtsRID=$p($g(^TMP($zn,$j,"DATA",doc,mrn)),$c(1),2)) d
+	.......s xxx(6)=$p(^TMP($zn,$j,"DATA",doc,mrn),$c(1),1)
+	.......s ^TMP($zn,$j,"PRINTED",mrn)="Y"
+	......s ok=0 f j=1:1:6 i $l(xxx(j)) s ok=1
+	......i ok d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","KEY    :   Chol - Total Cholesterol, LDL = Low Density Lipoprotein Choleserol, HDL = High Density Lipoprotein Choleserol, Trig = Triglycerides")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","Cat 1  :   Diabetes Mellitus & known micro-albuminuria")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","Cat 2  :   Diabetes Mellitus & aged >= 60 years")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","Cat 3  :   Diabetes Mellitus & TC >= 5.5 mmol/L")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","Cat 4  :   HDL <= 1 mmol/L & TC >= 6.5 mmol/L")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","Cat 5  :   Familial Hypercholestoralaemia")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","Cat 6  :   Male aged >= 35 & TC >= 7.5 mmol/L OR TG >= 4 mmol/L")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","Cat 7  :   Female aged >= 50 & TC >= 7.5 mmol/L OR TG >= 4 mmol/L")
+	..d ADDLINE^PRTREP00(REPID,"PRT","!")
+	..d ADDLINE^PRTREP00(REPID,"PRT","Cat 8  :   Anyone with either TC >= 9 mmol/L OR TG >= 8 mmol/L")
+	s report="CCA",EndLine=""
+ 	s EndLine=$$seldata^LVBCTCLR(report,9)
+	i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+	q
+FILE	; print report
+	; vtsRID_$c(1)_hb1acres_$c(1)_tcres_$c(1)_hdlres_$c(1)_tgres_$c(1)_ldlres
+	i $d(^TMP($zn,$j,"DATA")) d
+	.s doc="" f  s doc=$o(^TMP($zn,$j,"DATA",doc)) q:doc=""  d
+	..i $$select^MVBCFSM(1) q
+	..s dir=PLIST(35)
+	..f j="\","/" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+	..s date=$$extdate2^SSUTIL4($p($h,",")) s file=dir_doc_"_"_$p(date,"/",3)_$p(date,"/",2)_$p(date,"/",1)_".csv"
+	..o file:"WNS":2 e  q
+	..s mrn="" f  s mrn=$o(^TMP($zn,$j,"DATA",doc,mrn)) q:mrn=""  d
+	...s ^TMP($zn,$j,"PRINTED",mrn)="N"
+	...s date="" f  s date=$o(^TMP($zn,$j,"DATA",doc,mrn,date),-1) q:date=""  d
+	....s epis="" f  s epis=$o(^TMP($zn,$j,"DATA",doc,mrn,date,epis)) q:epis=""  d
+	.....s tsdata=^TMP($zn,$j,"DATA",doc,mrn,date,epis)
+	.....s count=0 f cnt=1:1:$l(tsdata,",") d
+	......s vtsRID=$p($p(tsdata,",",cnt),$c(1))
+	......k xxx f j=2:1:6,12,20,32:1:35 s PLIST(j)=$$seldata^LVBEPVIS($p(vtsRID,"||",1),j)
+	......s xxx(1)=$p($p(tsdata,",",cnt),$c(1),3)
+	......s xxx(2)=$p($p(tsdata,",",cnt),$c(1),6)
+	......s xxx(3)=$p($p(tsdata,",",cnt),$c(1),4)
+	......s xxx(4)=$p($p(tsdata,",",cnt),$c(1),5)
+	......s xxx(5)=$p($p(tsdata,",",cnt),$c(1),2)
+	......s xxx(6)=""
+	......i (^TMP($zn,$j,"PRINTED",mrn)="N"),(vtsRID=$p($g(^TMP($zn,$j,"DATA",doc,mrn)),$c(1),2)) d
+	.......s xxx(6)=$p(^TMP($zn,$j,"DATA",doc,mrn),$c(1),1)
+	.......s ^TMP($zn,$j,"PRINTED",mrn)="Y"
+	......s ok=0 f j=1:1:6 i $l(xxx(j)) s ok=1
+	......i ok u file w PLIST(3)_","_PLIST(4)_","_PLIST(20)_","_PLIST(2)_","_PLIST(5)_","_$$extdate2^SSUTIL4(PLIST(6))_","_PLIST(32)_" "_PLIST(33)_" "_PLIST(34)_" "_PLIST(35)_","_$$extdate2^SSUTIL4(PLIST(12))_","_xxx(1)_","_xxx(2)_","_xxx(3)_","_xxx(4)_","_xxx(5)_","_xxx(6),!
+	......s count=count+1
+	..c file
+	q
+]]></Routine>
+</Export>

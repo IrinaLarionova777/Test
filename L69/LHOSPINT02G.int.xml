@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LHOSPINT02G" type="INT" languagemode="0" generated="1"><![CDATA[
+LHOSPINT02G ; Hospital Interface - SJOG
+ q
+START(HOSP) 
+ n (HOSP) k ^TMP($zn,$j)
+ s msgn="" f jRecord=1:1:50 s msgn=$o(^THOS(HOSP,"IN",msgn)) q:msgn=""  d
+ .s xx=^(msgn)
+ .S XX=$O(^THOS(HOSP,"DONE",""),-1)+1
+ .s ^THOS(HOSP,"DONE",XX)=^THOS(HOSP,"IN",msgn) k ^THOS(HOSP,"IN",msgn)
+ .k msg f j=1:1:$l(xx,$c(13)) s line=$p(xx,$c(13),j),type=$p(line,"|") i $l(type) s msg(type)=line
+ .s msgtype=$p($g(msg("MSH")),"|",9)
+ .i $p(msgtype,"^")'="ADT" d log("ERROR: No ADT message ("_msgn_") type "_msgtype) q
+ .s msgtype=$p(msgtype,"^",2)
+ .i $l($t(@msgtype)) d init,@msgtype q
+ .d log("ERROR: Unknow message ("_msgn_") type "_msgtype)
+ q
+init n (msg,msgn,msgtype,HOSP,xxx,oldmrn,exist,DATA)
+ d getdata
+ d log("Processing message "_msgn_" "_msgtype)
+ d log("mrn="_xxx(2)_" epi="_xxx(3))
+ ; check if admission already exists
+ k DATA
+ s exist="" i $l(xxx(2)),$l(xxx(3)) s exist="N" i '$$select^LVBHOSP(HOSP_"||"_xxx(2)_"||"_xxx(3)) s exist="Y" m DATA=PLIST
+ q
+update d log("Update "_msgtype_" "_HOSP_"||"_xxx(2)_"||"_xxx(3))
+ k PLIST m PLIST=DATA f j=1:1 q:'$d(xxx(j))  i $l(xxx(j)) s PLIST(j)=xxx(j)
+ s PLIST=$o(PLIST(""),-1)
+ s err=$$update^LVBHOSP(HOSP_"||"_xxx(2)_"||"_xxx(3)) i err d log("ERROR: Return "_err) q
+ d tepi(HOSP_"||"_xxx(2)_"||"_xxx(3))
+ q
+insert k PLIST f j=1:1 q:'$d(xxx(j))  i $l(xxx(j)) s PLIST(j)=xxx(j)
+ s PLIST=$o(PLIST(""),-1)
+ d log("Insert "_msgtype_" "_HOSP_"||"_xxx(2)_"||"_xxx(3))
+ s err=$$insert^LVBHOSP(HOSP) i err d log("ERROR: Return "_err) q
+ d tepi(HOSP_"||"_xxx(2)_"||"_xxx(3))
+ ; delete all previous addmissions
+ s new=xxx(3)
+ s fx="" f  s fx=$o(^THOS(HOSP,"PATIENT",xxx(2),fx)) q:fx=""  i fx'=new s xxx(3)=fx d delete
+ q
+delete d log("Delete "_msgtype_" "_HOSP_"||"_xxx(2)_"||"_xxx(3))
+ s err=$$delete^LVBHOSP(HOSP_"||"_xxx(2)_"||"_xxx(3)) i err d log("ERROR: Return "_err)
+ q
+A01 ; Inpatient Admission
+A28 ; PMI Add
+ n (msgtype,HOSP,xxx,exist,DATA)
+ i exist="Y" d update
+ i exist="N" d insert
+ q
+A03 ; Inpatient Discharge/Attend a Clinic
+ n (msgtype,HOSP,xxx,exist,DATA)
+ i exist="Y" d delete
+ i " I E "[(" "_$g(xxx(14))_" "),$$DDS^LVBVIS21(,,$g(xxx(2)),$g(xxx(21)),$g(xxx(121)),,,"Y")
+ q
+A11 ; Inpatient Admission Delete
+ n (msgtype,HOSP,xxx,exist,DATA)
+ i exist="Y" d delete
+ q
+A02 ; Ward Transfer/Bed Swap
+A08 ; Inpatient Admission Modify/Inpatient Discharge Modify
+A45 ; Episode Move
+A31 ; Alias Add/Modify/Delete/Alternate Address/Next of Kin Add/Modify/Delete/Medical Alerts/Allergies/PMI Modify
+ n (msgtype,HOSP,xxx,exist,DATA)
+ i $l(xxx(2)) s epis="" f  s epis=$o(^THOS(HOSP,"PATIENT",xxx(2),epis)) q:epis=""  d
+ .d log("Select "_HOSP_"||"_xxx(2)_"||"_epis)
+ .k PLIST s err=$$select^LVBHOSP(HOSP_"||"_xxx(2)_"||"_epis) i err d log("ERROR: Return "_err) q
+ .m DATA=PLIST s xxx(3)=epis d update
+ i exist="N" d insert
+ q
+A12 ; Ward Transfer Delete
+A13 ; Inpatient Admission Delete/Inpatient Discharge Delete/Cancel Attendance
+A16 ; Pending Discharge Add/Pending Discharge Modify
+A21 ; Discharge to Leave/Cancel Return from Leave
+A22 ; Cancel Discharge to Leave/Return from Leave
+A25 ; Pending Discharge Delete
+ q
+A30 ; Patient Merge
+A40 ;
+ n (msgtype,HOSP,xxx,exist,oldmrn)
+ i $l(oldmrn) d
+ .i $d(^THOS(HOSP,"PATIENT",oldmrn)) d  q
+ ..s epis="" f  s epis=$o(^THOS(HOSP,"PATIENT",oldmrn,epis)) q:epis=""  d
+ ... ; check if admission already exists
+ ...s exist="" i $l(xxx(2)),$l(epis) s exist="N" i '$$select^LVBHOSP(HOSP_"||"_xxx(2)_"||"_epis) s exist="Y"
+ ...d log("Select "_HOSP_"||"_oldmrn_"||"_epis)
+ ...k PLIST s err=$$select^LVBHOSP(HOSP_"||"_oldmrn_"||"_epis) i err d log("ERROR: Return "_err) q
+ ...i exist="Y" m DATA=PLIST k DATA(1) s xxx(3)=epis d update s xxx(2)=oldmrn,xxx(3)=epis d delete
+ ...i exist="N" k DATA d insert s xxx(2)=oldmrn,xxx(3)=epis d delete
+ .i '$d(^THOS(HOSP,"PATIENT",oldmrn)) d  q
+ ..s epis="PMI"  d
+ ... ; check if admission already exists
+ ...s exist="" i $l(xxx(2)),$l(epis) s exist="N" i '$$select^LVBHOSP(HOSP_"||"_xxx(2)_"||"_epis) s exist="Y"
+ ...d log("Select "_HOSP_"||"_xxx(2)_"||"_epis)
+ ...k PLIST s err=$$select^LVBHOSP(HOSP_"||"_xxx(2)_"||"_epis) i err d log("ERROR: Return "_err) q
+ ...i exist="Y" m DATA=PLIST k DATA(1) s xxx(3)=epis d update
+ ...i exist="N" k DATA d insert
+ q
+log(txt) n (txt,HOSP)
+ s d=$p($h,","),n=$o(^THOS(HOSP,"log",d,""),-1)+1
+ s ^THOS(HOSP,"log",d,n)=$zt($p($h,",",2))_" "_txt
+ q
+getdata k xxx f j=1:1:40 s xxx(j)=""
+ s xx=$g(msg("PID"))
+ s xxx(4)=$p($p(xx,"|",6),"^",2)                                         ; given name
+ i $l($p($p(xx,"|",6),"^",3)) s xxx(4)=xxx(4)_" "_$p($p(xx,"|",6),"^",3) ; given name
+ s xxx(5)=$p($p(xx,"|",6),"^")                                           ; surname
+ s xxx(6)=$p($p(xx,"|",6),"^",5)                         ; title
+ s x=$e($p(xx,"|",8),1,8) i $l(x) s xxx(7)=$zdh(x,8)     ; dob
+ s xxx(8)=$p(xx,"|",9)                                   ; sex
+ i $l(xxx(8)) d
+ .n (HOSP,xxx)
+ .s X="" i '$$select^LVBHOSCS(HOSP_"||"_xxx(8)) s X=PLIST(3)
+ .s xxx(8)=X
+ s xxx(9)=$p($p(xx,"|",12),"^")                          ; address 1
+ s xxx(10)=$p($p(xx,"|",12),"^",2)                       ; address 2
+ s xxx(11)=$p($p(xx,"|",12),"^",3)                       ; suburb
+ s xxx(12)=$p($p(xx,"|",12),"^",5)                       ; post code
+ s xxx(13)=$p($p(xx,"|",14),"^")                         ; home phone
+ s xxx(25)=HOSP
+ s xxx(32)=$p($p(xx,"|",15),"^")                         ; work phone
+ s x1=$p(xx,"|",4) f j=1:1:$l(x1,"~") s x2=$p(x1,"~",j) d
+ .i $p(x2,"^",5)="MR" s xxx(2)=HOSP_$p(x2,"^")           ; hospital MRN
+ .i $p(x2,"^",5)="MC" d
+ ..s xxx(24)=$e($tr($p(x2,"^")," "),1,10)                ; medicare
+ ..s $p(xxx(23),"|",108)=$e($tr($p(x2,"^")," "),11)      ; medicare ref
+ .i $p(x2,"^",5)="DVA" s xxx(36)=$p(x2,"^")              ; dva
+ .i $p(x2,"^",5)="PEN" s xxx(37)=$p(x2,"^")              ; pensioner
+ s xx=$g(msg("PV1"))
+ s xxx(3)=$p(xx,"|",20),xxx(3)=$s($l(xxx(3)):+xxx(3),1:"PMI") ; hospital episode
+ s xxx(14)=$p($p(xx,"|",3),"^")                          ; class
+ s xxx(15)=$p($p(xx,"|",4),"^")                          ; ward
+ i $l(xxx(15)) d
+ .n (HOSP,xxx)
+ .s X="" i '$$select^LVBHOSCL(HOSP_"||"_xxx(15)) s X=PLIST(3)
+ .s xxx(15)=X
+ s xxx(16)=$p(xx,"|",5)                                  ; episode type
+ s xxx(17)=$p($p(xx,"|",8),"^")                          ; reffering doctor
+ i $l(xxx(17)) d
+ .n (HOSP,xxx)
+ .s X="" i '$$select^LVBHOSCD(HOSP_"||"_xxx(17)) s X=PLIST(3)
+ .s xxx(17)=X
+ s xxx(18)=$p($p(xx,"|",10),"^")                         ; consulting doctor
+ i $l(xxx(18)) d
+ .n (HOSP,xxx)
+ .s X="" i '$$select^LVBHOSCD(HOSP_"||"_xxx(18)) s X=PLIST(3)
+ .s xxx(18)=X
+ s xxx(19)=$p(xx,"|",11)                                 ; service
+ s xxx(20)=$p($p(xx,"|",18),"^")                         ; admitting doctor
+ i $l(xxx(20)) d
+ .n (HOSP,xxx)
+ .s X="" i '$$select^LVBHOSCD(HOSP_"||"_xxx(20)) s X=PLIST(3)
+ .s xxx(20)=X
+ s x=$e($p(xx,"|",45),1,8) i $l(x) s xxx(21)=$zdh(x,8)   ; admission date
+ s x=$e($p(xx,"|",45),9,10)_":"_$e($p(xx,"|",45),11,12)
+ i $l(x) s xxx(22)=$zth(x)                               ; admission time
+ s x=$e($p(xx,"|",46),1,8) i $l(x) s xxx(121)=$zdh(x,8)  ; discharge date
+ s oldmrn=$p($p($g(msg("MRG")),"|",2),"^") i $l(oldmrn) s oldmrn=+oldmrn
+ f j=1:1:40 s xxx(j)=$tr(xxx(j),"""")
+ q
+tepi(hROWID) n (hROWID) s hROWID=$g(hROWID)
+ i '$$select^LVBHOSP(hROWID) d
+ .k HOSP m HOSP=PLIST i '$l(HOSP(15)) q
+ .f j=1:1:HOSP s HOSP(j)=$p($g(HOSP(j)),$c(1))
+ .s hospMRN=$p(hROWID,"||",2)
+ .s ep1="" f  s ep1=$o(^TIND(5,hospMRN,ep1)) q:ep1=""  d
+ ..s epis="" f  s epis=$o(^TIND(5,hospMRN,ep1,epis)) q:epis=""  d
+ ...i $e(epis)="X" q
+ ...s loc=$p(^TEPI(epis),"\",20) i '$l(loc)!(loc=HOSP(15)) q
+ ...s ok=0
+ ... ; check pending TS
+ ...s ts1="" f  s ts1=$o(^TEPI(epis,1,ts1)) q:ts1=""  d  q:ok
+ ....s ts2="" f  s ts2=$o(^TEPI(epis,1,ts1,ts2)) q:ts2=""  d  q:ok
+ .....i $p(^(ts2),"\",31)'="A" s ok=1
+ ... ; check printing TS
+ ...s x1="" f  s x1=$o(^TRPT("DR",x1)) q:x1=""  d  q:ok
+ ....i $d(^TRPT("DR",x1,"H",loc,epis)) s ok=1
+ ...i ok,'$$select^LVBEPVIS(epis,"Y") d
+ ....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s PLIST(22)=HOSP(15) i '$$update^LVBEPVIS(epis) d
+ .....s x1="" f  s x1=$o(^TRPT("DR",x1)) q:x1=""  d
+ ......i $d(^TRPT("DR",x1,"H",loc,epis)) d
+ .......m ^TRPT("DR",x1,"H",HOSP(15),epis)=^TRPT("DR",x1,"H",loc,epis)
+ .......k ^TRPT("DR",x1,"H",loc,epis)
+ q
+]]></Routine>
+</Export>

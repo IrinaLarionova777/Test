@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBBIMP" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBBIMP ; IG 1/5/98 ; LVB Control data access for BIMP BI_ManualPricing
+ ;
+ ; supported calls:
+ ;
+ ; $$update^LVBBIMP(ROWID)
+ ; $$delete^LVBBIMP(ROWID,Comments)
+ ; $$select^LVBBIMP(ROWID,skip)
+ ; $$open^LVBBIMP(skip,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBBIMP(skip,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBBIMP(skip,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBBIMP(skip,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBBIMP()
+ ; $$compute^LVBBIMP(Master)
+ ; $$post^LVBBIMP()
+ ;
+  ;---&sql(DECLARE BIMP CURSOR FOR SELECT * FROM BI_ManualPricing)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ ; Insert the data
+insert(par) d pre("N") s PLIST(0)=$g(par) K PLIST(1)
+  ;---&SQL(insert INTO BI_ManualPricing VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Co
+ I 'SQLCODE Q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; Update the data
+update(ROWID) d pre("Y") s ROWID=$g(ROWID)
+  ;---&SQL(UPDATE BI_ManualPricing VALUES :PLIST() WHERE BIMP_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Eo
+ I 'SQLCODE Q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; compute amounts based on billing items
+compute(Master) n (Master,PLIST)
+  ;---s pc="" &sql(SELECT EPVIS_PaymentCode_DR INTO :pc FROM EP_VisitNumber WHERE EPVIS_RowID=:Master)
+   ;--- ** SQL PUBLIC Variables: Master, SQLCODE, pc
+ s pc="" Do %0Go
+ i $l($p(pc,$c(1))),'$$select^LVBCTPC(pc,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p($g(PLIST(j)),$c(1))
+ .k PAYCODE m PAYCODE=PLIST
+ .i $$open^LVBBIMPI(Master,"Y")
+ .f  q:$$fetch^LVBBIMPI(Master,"Y")  s Items(PLIST(2))=PLIST(3)_"\"_PLIST(5)_"\"_PLIST(4)
+ .i $$close^LVBBIMPI()
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","PRICING")),"\",1) i $l(%routine) d
+ ..x "d ItmCalc^"_%routine_"("""_PAYCODE(2)_""")"
+ .k ^TBIL(8,Master,"AM")
+ .s item="" f  s item=$o(Result(item)) q:item=""  s ^TBIL(8,Master,"AM",item)=Result(item)
+ q 0
+ ; set up patient to be invoiced
+post() n (PLIST) k ^TMP($zn,$j) m ^TMP($zn,$j)=PLIST
+ s xx1="" f  s xx1=$o(^TMP($zn,$j,xx1)) q:xx1=""  s Master=^(xx1) i $l(Master) d
+ . ; flag for Prompt billing
+ .s MasterFlag=$p($g(^TBIL(8,Master)),"\",1)
+ . ;---s pc="" &sql(SELECT EPVIS_PaymentCode_DR INTO :pc FROM EP_VisitNumber WHERE EPVIS_RowID=:Master)
+  . ;--- ** SQL PUBLIC Variables: Master, SQLCODE, pc
+ .s pc="" Do %0Io
+ .i $l($p(pc,$c(1))),'$$select^LVBCTPC(pc,"Y") d
+ ..f j=1:1:PLIST s PLIST(j)=$p($g(PLIST(j)),$c(1))
+ ..k PAYCODE m PAYCODE=PLIST
+ ..s Company=$$epcomp^LVBVIS1(Master)
+ ..s EpisodeList=""
+ ..i $$open^LVBBIMPE(Master,"Y")
+ ..f  q:$$fetch^LVBBIMPE(Master,"Y")  d
+ ...s epis=$p(PLIST(2),$c(1))
+ ...i '$$select^LVBEPVIS(epis,"Y") d
+ ....i $$LOCK^SSLOCK("Patient",epis,,,,1)
+ ....s EpisodeList=EpisodeList_$s($l(EpisodeList):",",1:"")_epis
+ ....s PLIST(54)="",PLIST(21)=+$h i $$update^LVBEPVIS(epis)
+ ....i $$LOCKCLR^SSLOCK("Patient",epis)
+ ....d SetBill^LVBBILL0(epis,)
+ ....d events^LVBCOM01(epis,"AP",PLIST(68)_" on "_Master)
+ ....s ^TBIL(2,Company,PAYCODE(2),epis)="\\"_MasterFlag k ^TBIL(9,epis)
+ ..i $$close^LVBBIMPE()
+ .. ; update Master record
+ ..i '$$select^LVBEPVIS(Master,"Y") d
+ ...i $$LOCK^SSLOCK("Patient",Master,,,,1)
+ ...k VISIT m VISIT=PLIST
+ ...k Result
+ ...i $$open^LVBBIMPA(Master)
+ ...s (InitItem,InitAmount,Total)="" f  q:$$fetch^LVBBIMPA(Master)  d
+ ....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s Total=Total+PLIST(3)
+ ....s Result(PLIST(2))=PLIST(3)_"\"_PLIST(5)_"\\"_PLIST(6)
+ ....i PLIST(4)="Y" s InitItem=PLIST(2)
+ ...i $$close^LVBBIMPA()
+ ...d SetBill^LVBBILL0(Master,.Result)
+ ...k PLIST m PLIST=VISIT s PLIST(54)=InitItem,PLIST(21)=+$h i $$update^LVBEPVIS(Master)
+ ...i $$LOCKCLR^SSLOCK("Patient",Master)
+ ...d events^LVBCOM01(Master,"AP",PLIST(68)_$s($l(EpisodeList):" incl "_EpisodeList,1:""))
+ ...s ^TBIL(2,Company,PAYCODE(2),Master)=Total_"\"_EpisodeList_"\"_MasterFlag k ^TBIL(9,Master)
+ ..i $$delete(Master)
+ q 0
+open(skip,p1,p2,p3,p4,p5,p6,p7,p8,p9) s skip=$g(skip)
+  ;---&SQL(OPEN BIMP)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %BIMP0o
+ q 0
+ ;
+fetch(skip,p1,p2,p3,p4,p5,p6,p7,p8,p9) k PLIST s skip=$g(skip)
+  ;---&SQL(FETCH BIMP INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Lo
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(skip,p1,p2,p3,p4,p5,p6,p7,p8,p9) s skip=$g(skip) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(skip) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(skip,p1,p2,p3,p4,p5,p6,p7,p8,p9) N (par,skip,PLIST) s skip=$g(skip) K ^TMP($zn,$j)
+ i $$open(skip)
+ f cnt=1:1 Q:$$fetch(skip)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+close()  ;---&SQL(CLOSE BIMP)
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %BIMP0c
+ q 0
+ ;
+select(RowID,skip) s RowID=$g(RowID),skip=$g(skip) k PLIST
+  ;---&sql( SELECT * INTO :PLIST() FROM BI_ManualPricing WHERE BIMP_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ Do %0No
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; Delete the data
+delete(ROWID,Comments) s ROWID=$g(ROWID),^TMP("Comments",$j)=$g(Comments)
+  ;---&sql(DELETE FROM BI_ManualPricing WHERE BIMP_RowID = :ROWID)
+   ;--- ** SQL PUBLIC Variables: ROWID, SQLCODE
+ Do %0Po
+ k ^TMP("Comments",$j)
+ q SQLCODE
+ ; Adjust certain fields
+pre(xUpdate) d PreSQL^SSUTIL4()
+ q
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("")
+ i $g(skip)="Y" q
+ i $g(PLIST(2))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$select^LVBEPVIS(plist(2),"Y")
+ .s X="" i 'SQLCODE d
+ ..s X=PLIST(2)_$c(1)_$$NameFormat^LVBCOM03("PT",$p(PLIST(7),$c(1),2),PLIST(4),PLIST(3),PLIST(99),PLIST(100),PLIST(101))_$c(1)_$p(PLIST(5),$c(1),1)_$c(1)_PLIST(6)_$c(1)_PLIST(26)_$c(1)_$p(PLIST(15),$c(1))
+ ..i PLIST(86) s $p(X,$c(1),2)="PRE-ENTRY"
+ .k PLIST m PLIST=plist s PLIST(2)=X k plist
+ q
+%BIMP0o s $zt="%BIMP0E" s SQLCODE=$s($g(%BIMP0c):-101,1:0) q:SQLCODE'=0  s %BIMP0d(5)=0 s %BIMP0d(6)=0,%BIMP0d(7)=""
+ s %BIMP0c=1 q
+%BIMP0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %BIMP0c,%BIMP0d,%BIMP0E,%BIMP0l,%BIMP0n,%BIMP0R,%BIMP0Z q
+%0Afirst 
+ ; asl MOD# 2
+ s %BIMP0d(1)=""
+%0ABk1 s %BIMP0d(1)=$o(^TBIL(8,%BIMP0d(1)))
+ i %BIMP0d(1)="" g %0ABdun
+ s %BIMP0d(12)=$g(^TBIL(8,%BIMP0d(1)))
+ s %BIMP0d(2)=$p(%BIMP0d(12),"\",1)
+ s %BIMP0d(3)=$$CT004^at328($g(%BIMP0d(1)))
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TBIL(8,$p(%BIMP0d(1),"||",1))#"S":$zu(115,4) i $t { s %BIMP0d(6)=1,%BIMP0d(7)=$name(^TBIL(8,$p(%BIMP0d(1),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.BI_ManualPricing for RowID value: "_%BIMP0d(1) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %BIMP0d(1)'="",$d(^TBIL(8,%BIMP0d(1)))
+ e  g %0ACdun
+ s %BIMP0d(17)=$g(^TBIL(8,%BIMP0d(1)))
+ s %BIMP0d(2)=$p(%BIMP0d(17),"\",1)
+ s %BIMP0d(3)=$$CT004^at328($g(%BIMP0d(1)))
+%0ABuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %BIMP0d(5)=%BIMP0d(5)+1,%ROWCOUNT=%BIMP0d(5),%ROWID=%BIMP0d(1),%BIMP0c=10 q
+%BIMP0f i '$g(%BIMP0c) { s SQLCODE=-102 q  } i %BIMP0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%BIMP0d(5))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%BIMP0d(5),%BIMP0c=100 q  } g %0Afirst:%BIMP0c=1
+%0ACdun i $zu(115,2)=1,$g(%BIMP0d(6))=1 { l -@%BIMP0d(7) s %BIMP0d(6)=0 }
+ g %0ABk1
+%0ABdun 
+%0AAdun 
+ s %ROWCOUNT=%BIMP0d(5),SQLCODE=100,%BIMP0c=100 q
+%BIMP0c i '$g(%BIMP0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%BIMP0d(5)),1:0)
+ i $zu(115,2)=1,$g(%BIMP0d(6))=1 { l -@%BIMP0d(7) } k %BIMP0c,%BIMP0d,%BIMP0E,%BIMP0l,%BIMP0n,%BIMP0R,%BIMP0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %BIMP0c=100 q
+%0Co n %i,icol,ir
+ f icol=0:1:4 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.BIManualPricing.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Co
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Eerr" s %mmmsqld(4)=0 s %mmmsqld(5)=""
+ s %mmmsqld(3)=$g(ROWID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ i %mmmsqld(2)'="",$d(^TBIL(8,%mmmsqld(2)))
+ e  g %0EBdun
+ s %mmmsqld(10)=$$%getlock^User.BIManualPricing.T1(%mmmsqld(2)) i '%mmmsqld(10) s SQLCODE=-110 g %0Ec
+ ; asl MOD# 3
+ i %mmmsqld(2)'="",$d(^TBIL(8,%mmmsqld(2)))
+ e  g %0ECdun
+ k %data
+ f icol=0:1:4 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.BIManualPricing.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(4))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(10)=1 %ReleaseLock^User.BIManualPricing.T1(%mmmsqld(2)) g %0Ec
+%0ECdun 
+ d:%mmmsqld(10)=1 %ReleaseLock^User.BIManualPricing.T1(%mmmsqld(2)) g:SQLCODE<0 %0Ec
+%0EBdun 
+%0EAdun 
+%0Ec s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(4)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Eerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(10))=1 %ReleaseLock^User.BIManualPricing.T1(%mmmsqld(2)) g %0Ec
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Gerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(Master)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0GBdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3)))
+ s pc=$p(%mmmsqld(10),"\",7)
+ g:$zu(115,2)=0 %0GBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0GCdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3)))
+ s pc=$p(%mmmsqld(13),"\",7)
+%0GBuncommitted ;
+ s SQLCODE=0 g %0Gc
+%0GCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0GBdun 
+%0GAdun 
+%0Gc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Gerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Gc
+%0Io n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Ierr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(Master)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0IBdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3)))
+ s pc=$p(%mmmsqld(10),"\",7)
+ g:$zu(115,2)=0 %0IBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ICdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3)))
+ s pc=$p(%mmmsqld(13),"\",7)
+%0IBuncommitted ;
+ s SQLCODE=0 g %0Ic
+%0ICdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0IBdun 
+%0IAdun 
+%0Ic s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Ierr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ic
+%0Lo d %BIMP0f q:SQLCODE'=0
+ s PLIST(1)=%BIMP0d(1),PLIST(2)=%BIMP0d(1),PLIST(3)=%BIMP0d(2),PLIST(4)=%BIMP0d(3)
+ q
+%0No n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Nerr" s %mmmsqld(7)=0,%mmmsqld(8)=""
+ s %mmmsqld(5)=$g(RowID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(2)=%mmmsqld(5)
+ i PLIST(2)'="",$d(^TBIL(8,PLIST(2)))
+ e  g %0NBdun
+ s %mmmsqld(13)=$g(^TBIL(8,PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(13),"\",1)
+ s PLIST(4)=$$CT004^at328($g(PLIST(2)))
+ g:$zu(115,2)=0 %0NBuncommitted i $zu(115,2)=1 l +^TBIL(8,$p(PLIST(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(7)=1,%mmmsqld(8)=$name(^TBIL(8,$p(PLIST(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.BI_ManualPricing for RowID value: "_PLIST(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i PLIST(2)'="",$d(^TBIL(8,PLIST(2)))
+ e  g %0NCdun
+ s %mmmsqld(18)=$g(^TBIL(8,PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(18),"\",1)
+ s PLIST(4)=$$CT004^at328($g(PLIST(2)))
+%0NBuncommitted ;
+ s PLIST(1)=PLIST(2)
+ s SQLCODE=0 g %0Nc
+%0NCdun i $zu(115,2)=1,$g(%mmmsqld(7))=1 { l -@%mmmsqld(8) s %mmmsqld(7)=0 }
+%0NBdun 
+%0NAdun 
+%0Nc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(7))=1 { l -@%mmmsqld(8) } q
+%0Nerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Nc
+%0Po n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Perr" s %mmmsqld(3)=0 s %mmmsqld(4)=""
+ s %mmmsqld(2)=$g(ROWID)
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(1)=%mmmsqld(2)
+ i %mmmsqld(1)'="",$d(^TBIL(8,%mmmsqld(1)))
+ e  g %0PBdun
+ s %mmmsqld(9)=$$%getlock^User.BIManualPricing.T1(%mmmsqld(1)) i '%mmmsqld(9) s SQLCODE=-110 g %0Pc
+ ; asl MOD# 3
+ i %mmmsqld(1)'="",$d(^TBIL(8,%mmmsqld(1)))
+ e  g %0PCdun
+ d %delete^User.BIManualPricing.T1(%mmmsqld(1),$c(0,2,0,0),'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(3))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(9)=1 %ReleaseLock^User.BIManualPricing.T1(%mmmsqld(1)) g %0Pc
+%0PCdun 
+ d:%mmmsqld(9)=1 %ReleaseLock^User.BIManualPricing.T1(%mmmsqld(1)) g:SQLCODE<0 %0Pc
+%0PBdun 
+%0PAdun 
+%0Pc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(3)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Perr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(9))=1 %ReleaseLock^User.BIManualPricing.T1(%mmmsqld(1)) g %0Pc
+]]></Routine>
+</Export>

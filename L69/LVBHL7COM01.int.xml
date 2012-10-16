@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBHL7COM01" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBHL7COM01 ; ML 13/9/2000 ; CREATE HL7 FORMAT FILE - TRAK
+ ;
+ ; supported calls:
+ ;
+ ; create^LVBHL7COM01
+ ;
+create n
+ i $$select^MVBCFSM(1) q 100
+ i $l(PLIST(35)) s dir=PLIST(35) d
+ .f j="\","/" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ .s type="HL7"
+ .l +^TEDI("OUT-DATA",type)
+ .s client="" f  s client=$o(^TEDI("OUT-DATA",type,client)) q:client=""  d
+ ..s email="" i '$$select^LVBCTCLN(client) s email=PLIST(4)
+ ..s fileno="" f  s fileno=$o(^TEDI("OUT-DATA",type,client,fileno)) q:fileno=""  d
+ ... ; check if the file has already been sent
+ ...i $p($g(^(fileno)),"\",1)'="" q
+ ...i '$d(^TEDI("OUT-DATA",type,client,fileno,"SEQ")) k ^TEDI("OUT-DATA",type,client,fileno) q
+ ...s file=dir_$tr(client,"/\ ","___")_$e(fileno+1000,$l(fileno+1000)-2,$l(fileno+1000))_".HL7"
+ ...o file:"WNS":5 e  s stop=1 q
+ ...u file
+ ...s seq="" f  s seq=$o(^TEDI("OUT-DATA",type,client,fileno,"SEQ",seq)) q:seq=""  d
+ ....s line=^(seq) w line,$c(13,10)
+ ...s ^TEDI("OUT-DATA",type,client,fileno)=$h
+ ...c file
+ ... ; create history on episodes for sent tests
+ ...s epis="" f  s epis=$o(^TEDI("OUT-DATA",type,client,fileno,"EPIS",epis)) q:epis=""  d
+ ....s (ListSent,ts)="" f  s ts=$o(^TEDI("OUT-DATA",type,client,fileno,"EPIS",epis,ts)) q:ts=""  d
+ .....  ;---&SQL(SELECT CTTS_Synonym INTO :PLIST() FROM CT_TestSet WHERE CTTS_RowID=:ts)
+  .....  ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE, ts
+ ..... Do %0Ao
+ .....s ListSent=ListSent_$s($l(ListSent):",",1:"")_PLIST(4)
+ ....i $l(ListSent) d events^LVBCOM01(epis,"ER","Electronic Report <"_$s(file["/":$p(file,"/",$l(file,"/")),file["\":$p(file,"\",$l(file,"\")),1:"")_"> "_ListSent)
+ ...m ^TEDI("SENT-DATA",type,client,fileno)=^TEDI("OUT-DATA",type,client,fileno)
+ ...k ^TEDI("OUT-DATA",type,client,fileno)
+ ...i $l(email),$l(file) d email^LVBEDI00(file,email)
+ .l -^TEDI("OUT-DATA",type)
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(ts)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(12)=$g(^TTAB("TS",%mmmsqld(3)))
+ s PLIST(4)=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("TS",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(17)=$g(^TTAB("TS",%mmmsqld(3)))
+ s PLIST(4)=$p(%mmmsqld(17),"\",2)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+]]></Routine>
+</Export>

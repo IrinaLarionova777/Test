@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBHL7COM02G" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBHL7COM02G ; ML 13/9/2000 ; HL7 COMMUNICATIONS - Labtrak to BOSS
+ ;
+ ; Parameters : 1. System - BOSS1 = inpatient
+ ;                          BOSS2 = community
+ ;
+ q
+create n  f system="BOSS1","BOSS2" d INIT(system)
+ q
+ ; loop thru and find unsent episodes
+INIT(system) 
+ s $zt="error^"_$zn k ^TMP($zn,$j) s system=$g(system)
+ q:$$select^MVBCFLIP("1||"_system)  s tcp=$p(PLIST(4),$c(1)),ip=$p(PLIST(5),$c(1)) k PLIST
+ q:$$opcl(0,system,tcp,ip)  s opcl=1
+ ; check for new packets to send
+ s epis="" f  s epis=$o(^TEDI("OUT-DATA","HL7",system,epis)) q:epis=""  d  q:$g(norespcnt)=10
+ .s (ListSent,vtsRID)="" f  s vtsRID=$o(^TEDI("OUT-DATA","HL7",system,epis,vtsRID)) q:vtsRID=""  d  q:$g(norespcnt)=10
+ ..s uniseq="" f  s uniseq=$o(^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq)) q:uniseq=""  d  q:$g(norespcnt)=10
+ ...d TRANS i $g(norespcnt)=10 q
+ ...i nak="" d
+ .... ; create history on episodes for sent tests
+ ....s ts=$p(vtsRID,"||",2),syn=$$seldata^LVBCTTS(ts,4)
+ ....i (","_ListSent_",")'[(","_syn_",") s ListSent=ListSent_$s($l(ListSent):",",1:"")_syn
+ ....s ^TEDI("SENT-DATA","HL7",system,uniseq)=+$h
+ ....m ^TEDI("SENT-DATA","HL7",system,uniseq,epis,vtsRID)=^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq)
+ ....k ^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq)
+ .i $l(ListSent) d events^LVBCOM01(epis,"ER","Electronic Report to "_system_" of "_ListSent)
+ ; print rejected episodes
+ i $d(^TEDI("REJECTIONS",system,+$h)) w $$START^PRTREP00("demo","",+$h_"\"_system_"\"_$zn,"LCR","")
+ c tcp d trace("Device closed *****","*********")
+ q
+str(string) n (string,str) s string=$g(string)
+ f  q:$l(string)'>256  s strcnt=$o(str(""),-1)+1,str(strcnt)=$e(string,1,256),string=$e(string,257,$l(string))
+ q string
+ ; transmit packets to caresys
+TRANS s (pass,nak,norespcnt)="" f  d  q:pass=1  q:nak=1  q:norespcnt=10
+ .s epis=$p(vtsRID,"||",1),ts=$p(vtsRID,"||",2)
+ .s string=$c(11) k str
+ . ; trace, compile into packets 256 chars or less and send
+ .s x="" f  s x=$o(^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq,x)) q:x=""  d
+ ..s packet=^(x),string=string_packet_$c(13) d trace(packet,"L-->"_system)
+ ..i $l(string)>10000 s string=$$str(string)
+ .s string=string_$c(28,13)
+ .s string=$$str(string) i $l(string) s strcnt=$o(str(""),-1)+1,str(strcnt)=string       
+ .s strcnt=$o(str(""),-1) f i=1:1:strcnt w str(i),*-3
+ .k str d trace("Test set "_ts_" on episode "_epis_" sent to "_system_" *****","*********")
+ .r *r:30 e  d  q
+ ..s norespcnt=norespcnt+1
+ ..d trace("No response from "_system_" for test set "_ts_" on episode "_epis_" *****","*********")
+ .i r'=11 d  q
+ ..s norespcnt=norespcnt+1
+ ..d trace("No response from "_system_" for test set "_ts_" on episode "_epis_" *****","*********")
+ . ; read in 'ack/nak' from BOSS
+ .s ack="" f  r *r:0 q:r=28  s ack=ack_$c(r)
+ . ; extract remaining carriage return from buffer
+ .r *r:10 d trace($tr(ack,$c(13)," "),"L<--"_system)
+ .i $p(ack,$c(13),2)'["|AA|",$g(fail)=3 d nak e  s fail=$g(fail)+1 q
+ .q:nak
+ .i $p(ack,$c(13),2)["|AA|" s pass=1,norespcnt=""
+ .d trace("Test set "_ts_" on episode "_epis_" accepted by "_system_" *****","*********") i system="BOSS1" h 2
+ i norespcnt=10 d
+ . ; close port on maximum 'no response' limit
+ .c tcp d trace("No response limit of 10 reached - device closed *****","*********")
+ . ; generate 'no response' file
+ .i $$select^MVBCFSM(1) q
+ .i '$l(PLIST(35)) q
+ .s dir=PLIST(35) f j="\","/" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ .s file=dir_"BOSS1_BOSS2_NORESP.txt"
+ .s datetime=$h,date=$zd(+datetime,4),time=$p(datetime,",",2)\60,time=time\60_":"_$e(100+(time#60),2,3)
+ .o file:"WAS":5 e  q
+ .u file w date," ",time," : "_system_" : No response limit reached for test set "_ts_" on episode "_epis,!
+ .c file
+ q
+ ; message rejection
+nak s nak=1 s rejdate=+$h
+ d trace("Test set "_ts_" on episode "_epis_" rejected by "_system_" *****","*********")
+ s nakcnt=$g(^TEDI("REJECTIONS",$zn,system,rejdate))+1,^TEDI("REJECTIONS",$zn,system,rejdate)=nakcnt
+ s ^TEDI("REJECTIONS",$zn,system,rejdate,nakcnt)=$h_"\"_epis_"\"_ts_"\"_nnx
+ q
+ ; way : L-->BOSSx - Labtrak to BOSS
+ ;       L<--BOSSx - BOSS to Labtrak
+ ;       ********* - packet sent/ack/nak, device opened/closed
+ ;       ERROR - error occurred
+trace(record,way) ; trace file
+ s z="" s z=$o(^TEDI("TRACE",system,z)) i z,z<($h-2) k ^TEDI("TRACE",system,z)
+ s z=$g(^TEDI("TRACE",system,+$h))+1 s @$zr=z
+ s time=$p($h,",",2)\60,time=time\60_":"_$e(100+(time#60),2,3)
+ s ^TEDI("TRACE",system,+$h,z)=way_" : "_time_" "_record
+ q
+ ; open and close device
+opcl(opclx,system,tcp,ip) s tcp=$g(tcp),ip=$g(ip)
+ i opclx c tcp d trace("Device closed *****","*********") s norespcnt=""
+ o tcp:(ip::"PSTE"::32767:32767):30 e  d trace("Unable to open device *****","*********") q 100
+ d trace("Device opened *****","*********")
+ u tcp
+ q 0
+ ; trap any 'write' errors which may occur due to JADE/CCIS side closing down
+error d trace($ze,"ERROR")
+ i $ze["WRITE" c tcp d trace("Device closed *****","*********") q
+ i $ze["READ" c tcp d trace("Device closed *****","*********") q
+ i $ze["COMMAND" c tcp d trace("Device closed *****","*********") q
+ d BACK^%ETN
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBTHS" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBTHS ; ML 12/3/99 ; RESULTS INTERFACE - LABTRAK TO CARDINAL JADE HL7 (DARWIN)
+ q
+ ; loop thru and find unsent episodes
+START k (error) s $zt="error^"_$zn
+ i '$$select^MVBCFLAB(1) m sysdet=PLIST k PLIST
+ s:'$g(sysdet(18)) sysdet(18)="*"
+ s:'$g(sysdet(19)) sysdet(19)="*"
+ k ^TMP($zn,$j)
+ s opcl=$s($g(error)=1:1,1:0) f  q:'$$opcl(opcl)  s opcl=1
+ f  h 300 d
+ . ; check for new pending tests
+ .s (epis,ts,nnx)=""
+ .f  s epis=$o(^TTRQi(epis)) q:epis=""  d
+ ..d DETpat
+ ..f  s ts=$o(^TTRQi(epis,ts)) q:ts=""  d
+ ...s nnx="" f  s nnx=$o(^TTRQi(epis,ts,nnx)) q:nnx=""  q:$p(^(nnx),"\",2)="Y"  d
+ ....d DETts
+ ....d BUILD("")
+ ....d TRANS
+ ....i nak="" s $p(^TTRQi(epis,ts,nnx),"\",2)="Y"
+ ....k ^TMP($zn,$j)
+ . ; check for new authorised results
+ .s (date,epis,ts,nnx)=""
+ .f  s date=$o(^TEPIi("AUTHORISED",date),-1) q:date=""  q:date<(+$h-3)  d
+ ..f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ ...d DETpat
+ ...f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  d
+ ....s nnx="" f  s nnx=$o(^TEPIi("AUTHORISED",date,epis,ts,nnx)) q:nnx=""  q:^(nnx)'=""  d
+ .....d DETts
+ .....d BUILD("A")
+ .....d TRANS
+ .....i nak="" s ^TEPIi("AUTHORISED",date,epis,ts,nnx)="Y"
+ .....k ^TMP($zn,$j)
+ ..i $d(^TMP($zn,"NAK",date)) d
+ ...w $$START^PRTREP00("demo","",date,"LJR","")
+ ...k ^TMP($zn,"NAK",date-3)
+ g START
+ ; extract details - patient
+DETpat k PLIST,visdet,caredet,mrn,caremrn,name,dob,sex,add,homeph
+ s (mrn,caremrn,name,dob,sex,add,homeph)=""
+ q:$$select^LVBEPVIS(epis,"Y")  m visdet=PLIST k PLIST
+ s title=$p(visdet(7),$c(1)),colldate=$p(visdet(12),$c(1)),colltime=$p(visdet(13),$c(1)),loc=$p(visdet(66),$c(1))
+ s mrn=$p(visdet(20),$c(1)),carepis=$p(visdet(65),",",1),caremrn=$p(visdet(65),",",2)
+ s name=$p(visdet(3),$c(1))_"^"_$p(visdet(4),$c(1))_"^^^"_title
+ i visdet(6)'=-1,(visdet(6)'="") s dob=$tr($zd($p(visdet(6),$c(1))),"-","")
+ s sex=$p(visdet(6),$c(1))
+ s add=$p(visdet(32),$c(1))_"^"_$p(visdet(33),$c(1))_"^"_$p(visdet(34),$c(1))_"^^"_$p(visdet(36),$c(1))
+ s homeph=$p(visdet(43),$c(1))
+ ; extract details - doctor
+ k drdet,drcode,drcumul,drprov,drname
+ s (drcode,drcumul,drprov,drname)=""
+ s drcode=$p(visdet(15),$c(1)) i '$$select^LVBCTDR(drcode,"Y") m drdet=PLIST k PLIST
+ s drname=$p(drdet(26),$c(1))_" "_$p(drdet(3),$c(1))_" "_$p(drdet(4),$c(1))
+ s drprov=$p(drdet(18),$c(1)),drcumul=$p(drdet(34),$c(1))
+ ; extract details - caresys
+ ; s careRID="H||"_caremrn_"||"_carepis q:$$select^LVBHOSP(careRID)  m caredet=PLIST k PLIST
+ ; s name=$p(caredet(5),$c(1))_"^"_$p(caredet(4),$c(1))_"^^^"_$s($p(caredet(6),$c(1))'="":$p(caredet(6),$c(1)),1:title)
+ ; i caredet(7)'=-1,(caredet(7)'="") s dob=$tr($zd($p(caredet(7),$c(1)),3),"-","")
+ ; s sex=$p(caredet(8),$c(1))
+ ; s add=$p(caredet(9),$c(1))_"^"_$p(caredet(10),$c(1))_"^"_$p(caredet(11),$c(1))_"^^"_$p(caredet(12),$c(1))
+ ; s homeph=$p(caredet(13),$c(1))
+ q
+ ; extract details - test set
+DETts k PLIST,vtsRID,tsdet,cumul,disptype,secur,tssyn,tsname
+ s vtsRID=epis_"||"_ts_"||"_nnx
+ q:$$select^LVBCTTS(ts,"Y")  m tsdet=PLIST k PLIST
+ s cumul=$p(tsdet(7),$c(1))
+ s:cumul'="D" format=$s(cumul="F":"C",cumul="Y":"C",1:"")
+ s:cumul="D" format=$s(drcumul="Y":"C",1:"")
+ s secur=$p(tsdet(22),$c(1)),tssyn=$p(tsdet(4),$c(1)),tsname=$p(tsdet(3),$c(1))
+ q
+ ; PendAuth =   : Pending Test
+ ;          = A : Authorised Test
+ ;          = D : Deleted Test (Pending/Resulted)
+ ;
+BUILD(PendAuth) ; build packet strings
+ k PLIST,visres,^TMP($zn,$j) s uniseq=$$new()
+ s currdate=$tr($zd(+$h,3),"-",""),currtime=$tr($$exttime^SSUTIL4($p($h,",",2)),":","")
+ s ^TMP($zn,$j,"MSH")="MSH|^~\&|LABTRAK||PATH_RESULTS||"_currdate_currtime_"||ORU^R01|"_uniseq_"|P|2.3|||AL|NE"
+ s ^TMP($zn,$j,"PID")="PID||"_caremrn_"^^^^^"_loc_"|"_mrn_"|"_caremrn_"|"_name_"||"_dob_"|"_sex_"|||"_add_"||"_homeph_"|"
+ s ^TMP($zn,$j,"PV1")="PV1||*|",$p(^TMP($zn,$j,"PV1"),"|",20)=carepis
+ s colltimex=$tr($$exttime^SSUTIL4(colltime),":","") s:colltimex="-1" colltimex="0000"
+ s colldatex=$tr($zd(colldate,3),"-","")
+ ; build pending packet
+ i PendAuth="" d  q
+ .s (obrseq,^TMP($zn,$j,"OBR"))=$g(^TMP($zn,$j,"OBR"))+1
+ .s ^TMP($zn,$j,"OBR","A",obrseq)="OBR|"_obrseq_"||"_$tr(vtsRID,"||"," ")_"^PLS|"_tssyn_"^"_tsname_"|||"_colldatex_colltimex_"|||||"_secur_"||||"_drprov_"^"_drcode_"^"_drname_"||||ATOMIC|||||P"
+ ; build deleted test packet
+ i PendAuth="D" d  q
+ .s (obrseq,^TMP($zn,$j,"OBR"))=$g(^TMP($zn,$j,"OBR"))+1
+ .s ^TMP($zn,$j,"OBR","A",obrseq)="OBR|"_obrseq_"||"_$tr(vtsRID,"||"," ")_"^PLS|"_tssyn_"^"_tsname_"|||"_colldatex_colltimex_"|||||"_secur_"||||"+drprov_"^"_drcode_"^"_drname_"||||ATOMIC|||||D"
+ ; build authorised result packet
+ q:$$results^LVBVISTS(vtsRID)  m visres=PLIST k PLIST d
+ .s (obrseq,^TMP($zn,$j,"OBR"))=$g(^TMP($zn,$j,"OBR"))+1
+ .s ^TMP($zn,$j,"OBR","A",obrseq)="OBR|"_obrseq_"||"_$tr(vtsRID,"||"," ")_"^PLS|"_tssyn_"^"_tsname_"|||"_colldatex_colltimex_"|||||"_secur_"||||"_drprov_"^"_drcode_"^"_drname_"||||ATOMIC|||||A"
+ .s rescnt=$o(visres(""),-1) f i=1:1:rescnt d
+ ..k tcdet
+ ..s tc=$p(visres(i),$c(1),2) q:$$select^LVBCTTC(tc)  m tcdet=PLIST k PLIST
+ ..s res=$p(visres(i),$c(1),3),units=tcdet(4)
+ ..s tcdet(14)=$s(tcdet(14)'="":tcdet(14),1:tcdet(3))
+ ..i $e(tcdet(5),1)="N" d
+ ...s range=$$ranges^LVBVIS1(tc,visdet(26),$p(visdet(5),$c(1)),,"0")
+ ...s range1=$p(range,$c(1)),range2=$p(range,$c(1),2),range=range1_"-"_range2 s:range="-" range=""
+ ...s (obxaseq,^TMP($zn,$j,"OBX","A",obrseq))=$g(^TMP($zn,$j,"OBX","A",obrseq))+1
+ ...s ^TMP($zn,$j,"OBX","A",obrseq,obxaseq)="OBX|"_obxaseq_"|NM|"_tcdet(14)_"^"_tcdet(3)_"^L||"_res_"|"_units_"|"_range_"|"_$s($tr(res," ")<range1:sysdet(18),$tr(res," ")>range2:sysdet(19),1:"")
+ ..i $e(tcdet(5),1)="S" d
+ ...q:$$select^LVBCTTCT(tc_"||"_res)
+ ...s res=$tr(XX,"|","~")
+ ...s (obxaseq,^TMP($zn,$j,"OBX","A",obrseq))=$g(^TMP($zn,$j,"OBX","A",obrseq))+1
+ ...s ^TMP($zn,$j,"OBX","A",obrseq,obxaseq)="OBX|"_obxaseq_"|TX|"_tcdet(14)_"^"_tcdet(3)_"^L||"_res_"|||"
+ ..i $p(visres(i),$c(1),4)'="" d
+ ...s res=$p(visres(i),$c(1),4),res=$tr(res,"|","~")
+ ...s (obxaseq,^TMP($zn,$j,"OBX","A",obrseq))=$g(^TMP($zn,$j,"OBX","A",obrseq))+1
+ ...s ^TMP($zn,$j,"OBX","A",obrseq,obxaseq)="OBX|"_obxaseq_"|TX|"_tcdet(14)_"^"_tcdet(3)_"^L||"_res_"|||"
+ s (obrseq,^TMP($zn,$j,"OBR"))=$g(^TMP($zn,$j,"OBR"))+1
+ s ^TMP($zn,$j,"OBR","I",obrseq)="OBR|"_obrseq_"||"_$tr(vtsRID,"||"," ")_"^PLS|"_tssyn_"^"_tsname_"|||"_colldatex_colltimex_"|||||"_secur_"||||"_drprov_"^"_drcode_"^"_drname_"||||IMAGE|||||A"
+ ; always compile non cumulative formatted result
+ ; k extres i $$SINGLE^PRTDR00(vtsRID,"V","")
+ ; i $d(PLIST) m extres=PLIST
+ s oldate=date
+ i $$ext^TCMB($p(vtsRID,"||"),$p(vtsRID,"||",2),$p(vtsRID,"||",3))
+ k extres m extres=^TMP("PRT",$j,"PRT") k ^TMP("PRT",$j)
+ s cnt=$o(extres(""),-1) i extres(cnt)="!#" d
+ .s extres(cnt)="!",extres(cnt+1)="!"
+ ; compile cumulative format
+ i format="C" i $$ext^LVBTHSa($p(vtsRID,"||"),$p(vtsRID,"||",2))
+ s line="" f  s line=$o(^TMP("PRT",$j,"PRT",line)) q:line=""  d
+ .s cnt=$o(extres(""),-1),cnt=cnt+1,extres(cnt)=^(line)
+ s date=oldate
+ s ^TMP($zn,$j,"OBX","I",obrseq)=$g(^TMP($zn,$j,"OBX","I",obrseq))+1,obxiseq=1
+ s ^TMP($zn,$j,"OBX","I",obrseq,obxiseq)="OBX|"_obxiseq_"|FT|||"
+ s string="~",cnt=$o(extres(""),-1) f i=1:1:cnt d
+ .s text=extres(i)
+ .i text="~NORMAL"!(text="~BOLD") s text="!"
+ .i text["~NORMAL" s text=$tr(text,"~NORMAL","")
+ .i text["~BOLD" s text=$tr(text,"~BOLD","")
+ .i $e(text)="!"!($e(text)="#") s string=string_"~"
+ .s text=$tr(text,"~","^")
+ .s string=string_$e(text,2,999)
+ s string=$e(string,1,$l(string)-1)
+ s str="" f i=1:1:$l(string,"^") s str=str_$p(string,"^",i)_"\S\"
+ s string=$p(str,"\S\",1,$l(str,"\S\")-1)
+ s ^TMP($zn,$j,"OBX","I",obrseq,obxiseq)=^TMP($zn,$j,"OBX","I",obrseq,obxiseq)_string
+ i '$$select^LVBVISTS(vtsRID) s PLIST(38)=uniseq i $$update^LVBVISTS(vtsRID)
+ k PLIST,visres,tcdet,tsdet,^XW($j),^TMP("PRT",$j)
+ q
+ ; transmit packets to caresys
+TRANS k str,string
+ s (noresp,pass,nak,norespcnt)="" f  d  q:pass=1  q:nak=1
+ .i noresp=1,$g(norespcnt)=3 q:$$opcl(1)
+ .s string="",string=$c(11)
+ .f type="MSH","PID","PV1" s str=^TMP($zn,$j,type),string=string_str_$c(13) d trace(str,"L-->J")
+ .f xx="A","I" d
+ ..s j="" f  s j=$o(^TMP($zn,$j,"OBR",xx,j)) q:j=""  s str=^TMP($zn,$j,"OBR",xx,j),string=string_str_$c(13) d
+ ...d trace(str,"L-->J")
+ ...s k="" f  s k=$o(^TMP($zn,$j,"OBX",xx,j,k)) q:k=""  s str=^TMP($zn,$j,"OBX",xx,j,k),string=string_str_$c(13) d trace(str,"L-->J")
+ .s string=string_$c(28)_$c(13)
+ .s strcnt="" f  s strcnt=$g(strcnt)+1 d  q:'$l(string)
+ ..i $l(string)>256 s str(strcnt)=$e(string,1,256),string=$e(string,257,99999) q
+ ..i $l(string)<256 s str(strcnt)=string,string="" q
+ ..i $l(string)=256 s str(strcnt)=string,string=""
+ .f i=1:1:strcnt w str(i),*-3
+ .k str d trace("Test set "_ts_" on episode "_epis_" sent to Jade *****","*****")
+ .s noresp="" r *r:30 e  d  q
+ ..s noresp=1,norespcnt=$g(norespcnt)+1
+ ..d trace("No response from Jade for test set "_ts_" on episode "_epis_" *****","*****")
+ .i r'=11 d  q
+ ..s noresp=1,norespcnt=$g(norespcnt)+1
+ ..d trace("No response from Jade for test set "_ts_" on episode "_epis_" *****","*****")
+ .; read in 'ack/nak' from JADE
+ .s ack="" f  r *r:0 q:r=28  d
+ ..s ack=ack_$c(r)
+ .r *r:10 ; extract remaining carriage return from buffer
+ .d trace($tr(ack,$c(13)," "),"L<--J")
+ .i $p(ack,$c(13),2)'["|AA|",$g(fail)=3 d nak e  s fail=$g(fail)+1 q
+ .q:nak
+ .i $p(ack,$c(13),2)["|AA|" s pass=1,(noresp,norespcnt)=""
+ .d trace("Test set "_ts_" on episode "_epis_" accepted by Jade *****","*****")
+ q
+ ; create new sequence number for MSH record
+new() s num=$$next("^CF(""HOSP-SEQ"")")
+ q num
+next(glo) n a
+ l +@glo
+ s a=$g(@glo)+1,@glo=a
+ l -@glo
+ q a
+ ; message rejection
+nak s nak=1 s rejdate=+$h s:$d(date) rejdate=date
+ d trace("Test set "_ts_" on episode "_epis_" rejected by Jade *****","*****")
+ s nakcnt=$g(^TMP($zn,"NAK",rejdate))+1,^TMP($zn,"NAK",rejdate)=nakcnt
+ s ^TMP($zn,"NAK",rejdate,nakcnt)=$h_"\"_epis_"\"_ts_"\"_nn
+ q
+ ; way : L-->J - Labtrak to Jade
+ ;       L<--J - Jade to Labtrak
+ ;       ***** - packet sent/ack/nak, device opened/closed
+ ;       ERROR - error occurred
+trace(record,way) ; trace file
+ s z="" s z=$o(^zmatt($zn,z)) i z,z<($h-2) k ^zmatt($zn,z)
+ s z=$g(^zmatt($zn,+$h))+1 s @$zr=z
+ s time=$p($h,",",2)\60,time=time\60_":"_$e(100+(time#60),2,3)
+ s ^zmatt($zn,+$h,z)=way_" : "_time_" "_record
+ q
+ ; open and close device
+opcl(opclx) s ip=$p(^MEDLINC,"|",5),tcp=$p(^MEDLINC,"|",6),tcp=$tr(tcp,"\","|")
+ i opclx c tcp d trace("Device closed *****","*****") h 120 s norespcnt=""
+ o tcp:(ip::"C"):20 e  d trace("Unable to open device *****","*****") q 100
+ d trace("Device opened *****","*****")
+ u tcp
+ q 0
+ ; trap any 'write' errors which may occur due to JADE side closing down
+error d trace($ze,"ERROR")
+ i $ze["WRITE" s error=1 g START
+ i $ze["READ" s error=1 g START
+ i $ze["COMMAND" s error=1 g START
+ d BACK^%ETN
+ g START
+]]></Routine>
+</Export>

@@ -1,0 +1,270 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCOM01" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCOM01 ; IG 29/4/98 ; Common routines
+ ;
+ ; supported calls:
+ ;
+ ; $$remarks^LVBCOM01(TYPE,DATA)
+ ; $$comments^LVBCOM01(vtsRID,test,print,Type,nocum,header)
+ ; $$COMMENTS^LVBCOM01(vtsRID,test,print,Type,nocum,header)
+ ; $$VBevent^LVBCOM01(epis,type,text)
+ ; events^LVBCOM01(epis,type,text)
+ ; $$SQLclear^LVBCOM01()
+ ; $$color^LVBCOM01(lColor)
+ ; $$translate^LVBCOM01(string,from,to)
+ ; $$pcl2pdf^LVBCOM01(exe,inbound,outbound)
+ ; $$viewResult^LVBCOM01(epis,user,dh1,type)
+ ;
+pcl2pdf(exe,inbound,outbound) n (exe,inbound,outbound) s exe=$g(exe),inbound=$g(inbound),outbound=$g(outbound)
+ f j="/","\" i outbound[j s:$e(outbound,$l(outbound))'=j outbound=outbound_j
+ s outbound=outbound_$i(^CF("pcl2pdf"))_".pdf"
+ i $zf(-1,""""_exe_""" -i"_inbound_" -o"_outbound)
+ q outbound
+viewResult(epis,user,dh1,type) n (epis,user,dh1,type,PLIST) s epis=$g(epis),user=$g(user),dh1=$g(dh1),type=$g(type)
+ s:'$l(dh1) dh1="D" s dh2=$$seldata^LVBEPVIS(epis,$s(dh1="D":15,1:22))
+ i dh2="",dh1="D" s dh1="H",dh2=$$seldata^LVBEPVIS(epis,22)
+ i dh2="",dh1="H" s dh1="D",dh2=$$seldata^LVBEPVIS(epis,15)
+ f j=1:1:PLIST s test=$p(PLIST(j),"||",2),cnt=$p(PLIST(j),"||",3) i $l(test),$l(cnt) s ^TRPT("V",type_"-"_$j_"-"_epis,dh1,dh2,epis,test,cnt)="\\\\"_user
+ s repid=$$START^PRTREP00("","","V\"_type_"-"_$j_"-"_epis_"\"_epis,"DRP")
+ q $$get^LVBPRINT(repid,"VIEW")
+translate(string,from,to) n (string,from,to) s string=$g(string),from=$g(from),to=$g(to)
+ s x=0 f  s x=$f(string,from,x) q:'x  s string=$e(string,1,x-$l(from)-1)_to_$e(string,x,$l(string)),x=x-$l(from)+$l(to)
+ q string
+color(lColor) n (lColor) s lColor=$g(lColor)
+ s iRed=$zhex(lColor#256) s:$l(iRed)<2 iRed="0"_iRed
+ s lColor=lColor\256
+ s iGreen=$zhex(lColor#256) s:$l(iGreen)<2 iGreen="0"_iGreen
+ s lColor=lColor\256
+ s iBlue=$zhex(lColor#256) s:$l(iBlue)<2 iBlue="0"_iBlue
+ q "#"_iRed_iGreen_iBlue
+SQLclear() s max=$g(^mcq("NextRtn"))
+ k ^mcq f j=1:1:max s x="CacheSql"_j x "zr  zs @x" k ^ROUTINE(x),^rMAC(x),^rMACSAVE(x)
+ q 0
+ ; convert multiline fields
+ ; TYPE : "IE"-IntExt
+ ;        "EI"-ExtInt
+ ; FLAG : 1-MIDDLE EMPTY LINES
+ ;        2-START SPACES
+ ;        3-END SPACES
+remarks(TYPE,DATA,FLAG) N X,J S TYPE=$G(TYPE),FLAG=$G(FLAG)
+ I TYPE="IE",$l($g(DATA)) S DATA=$LTS(DATA,"|")
+ I TYPE="EI",$l($g(DATA)) D
+ .F J=1:1:$L(DATA,"|") I $TR($P(DATA,"|",J)," ")="" S $P(DATA,"|",J)=""
+ .I '$E(FLAG,1) F  Q:DATA'["||"  S DATA=$P(DATA,"||",1)_"|"_$P(DATA,"||",2,$L(DATA,"||"))
+ .I '$E(FLAG,2) F  Q:$L(DATA,"|")=1  Q:$P(DATA,"|",1)'=""  S DATA=$P(DATA,"|",2,$L(DATA,"|"))
+ .I '$E(FLAG,3) F  Q:$L(DATA,"|")=1  Q:$P(DATA,"|",$L(DATA,"|"))'=""  S DATA=$P(DATA,"|",1,$L(DATA,"|")-1)
+ .I $E(FLAG,3) F  Q:$L(DATA,"|")'>$E(FLAG,3)  Q:$P(DATA,"|",$L(DATA,"|"))'=""  Q:$P(DATA,"|",$L(DATA,"|")-$E(FLAG,3))'=""  S DATA=$P(DATA,"|",1,$L(DATA,"|")-1)
+ .F J=1:1:$L(DATA,"|") D
+ ..S X=$P(DATA,"|",J)
+ ..F  Q:$L(X)=0  Q:$E(X,$L(X))'=" "  S X=$E(X,1,$L(X)-1)
+ ..S $P(DATA,"|",J)=X
+ .S DATA=$LFS(DATA,"|")
+ Q 0
+VBevent(epis,type,text) n (epis,type,text) s epis=$g(epis),type=$g(type),text=$g(text)
+ d events(epis,type,text)
+ q 0
+ ; set events log for episode
+events(epis,type,text) n (epis,type,text) s epis=$g(epis),type=$g(type),text=$g(text)
+ k PLIST s PLIST(3)=type,PLIST(4)=text,PLIST(5)=+$h,PLIST(6)=$p($h,",",2)
+ i $$insert^LVBVISEV(epis)
+ d SetAll^LVBCOM50(epis,51_"I",.PLIST)
+ q
+ ; find T/S left margin and width
+tsLM(type) n (type,epis,test,dep,tsLM,tsWD)
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="tsLM^"_%routine i $l($t(@LineRoutine)) x "d tsLM^"_%routine_"("""_type_""")" q
+ s tsLM=0 i '$$select^LVBCTTS(test,"Y"),PLIST(41) s tsLM=PLIST(41)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ s tsWD=80 i '$$select^MVBCFLAB(1) d
+ .i PLIST(42) s tsWD=PLIST(42)
+ .i PLIST(43),'tsLM s tsLM=PLIST(43)
+ q
+comments(vtsRID,test,print,Type,nocum,header,cum,ExcludeList,lan) n (vtsRID,test,print,Type,nocum,header,cum,ExcludeList,lan,PLIST,dh1,dh2)
+ s vtsRID=$g(vtsRID),test=$g(test),print=$g(print),Type=$g(Type),nocum=$g(nocum),header=$g(header),cum=$g(cum),ExcludeList=$g(ExcludeList),lan=$g(lan)
+ i $$COMMENTS(vtsRID,test,"Entry",Type,nocum,header,cum,.ExcludeList,lan)
+ f j=1:1:PLIST s PLIST(j)=$tr(PLIST(j),"^\|{}[]",$c(16,17,18,5,6,11,12))
+ q 0
+ ; print - P - print
+ ;         V - view from Enquiry
+ ;           - view from Entry
+ ;     Entry - Result Entry
+ ; Type  - V - V-fields
+ ;         N - nonV-fields
+ ;           - all fields
+ ; nocum - C - ignore non-cumulative test codes
+ ;           - process all test codes
+ ; header  N - do not print
+COMMENTS(vtsRID,test,print,Type,nocum,header,cum,ExcludeList,lan,mismpl) n (vtsRID,test,print,Type,nocum,header,cum,ExcludeList,lan,mismpl,PLIST,dh1,dh2) k ^TMP($zn,$j)
+ s vtsRID=$g(vtsRID),test=$g(test),print=$g(print),Type=$g(Type),nocum=$g(nocum),header=$g(header),cum=$g(cum),ExcludeList=$g(ExcludeList),lan=$g(lan),mismpl=$g(mismpl)
+ s dh1=$g(dh1),dh2=$g(dh2),TestCode=$p(test,$c(1),2),test=$p(test,$c(1))
+ i $l(vtsRID) s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2)
+ s dep=$e(test),extraLine=$$seldata^MVBCFLAB(1,23)
+ s l=$i(^TMPlog("log")) m ^TMPlog("log",l)=PLIST
+ s ^TMPlog("log",l)=$h_" : "_$j_" : $$COMMENTS^"_$zn_" : "_$g(vtsRID)_"^"_$g(test)_"^"_$g(print)_"^"_$g(Type)_"^"_$g(nocum)_"^"_$g(header)_"^"_$g(cum)_"^"_$g(ExcludeList)_"^"_$g(lan)_"^"_$g(mismpl)
+ ; pass comments in a buffer
+ i $d(PLIST) f j=1:1:PLIST d
+ .s order=$p(PLIST(j),$c(1),1),tc=$p(PLIST(j),$c(1),2),com=$p(PLIST(j),$c(1),3)
+ .s type=$p($g(^TTAB("TC",tc)),"\",3)
+ .s ^TMP($zn,$j,"COM-0",order)=tc_"\"_type
+ .f j1=1:1:$l(com,"|") s cnt=$o(^TMP($zn,$j,"COM-0",order,""),-1)+1,^TMP($zn,$j,"COM-0",order,cnt)=$p(com,"|",j1)
+ s rowid=test_"||"_$g(dh1)_"||"_$g(dh2),layout=""
+  ;---i print="P" &sql(SELECT CTTSP_LayoutType INTO :layout FROM CT_TestSetLayouts WHERE CTTSP_RowID=:rowid)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, layout, rowid
+ i print="P" Do %0Ao
+ s layout=$p(layout,$c(1)) i '$l(layout) s layout=0
+ i '$l(lan),dh1="D" s lan=$$seldata^LVBCTDR(dh2,46)
+ ; pass visit/test RowID
+ i $l(vtsRID) d
+ .i $$results^LVBVISTS(vtsRID,mismpl,,,"Y")
+ .k RESULT m RESULT=PLIST
+ .f xx1=1:1:RESULT s tc=$p(RESULT(xx1),$c(1),2),com=$p(RESULT(xx1),$c(1),4),sr=$p(RESULT(xx1),$c(1),22) i $l(tc),$l(com) d
+ ..i $l(TestCode),(","_TestCode_",")'[(","_tc_",") q
+ ..i nocum="C",$p(^TTAB("TC",tc),"\",7)'="Y" q
+ .. ; check cumulative print
+ ..i cum="Y" d  i '$l(com) q
+ ...f xx2=1:1:$l(com,"|") d
+ ....s rowid=tc_"||"_$p($tr(com,"{}[]"),"|",xx2),CumPrint=""
+ ....  ;---&sql(SELECT CTTCT_CumPrint INTO :CumPrint FROM CT_TestCodeStandardComm WHERE CTTCT_RowID=:rowid)
+  ....  ;--- ** SQL PUBLIC Variables: CumPrint, SQLCODE, rowid
+ .... Do %0Co
+ ....s CumPrint=$p(CumPrint,$c(1))
+ ....i CumPrint="N" s $p(com,"|",xx2)="" q
+ ....i CumPrint="O",(","_ExcludeList_",")[(","_rowid_",") s $p(com,"|",xx2)="" q
+ ....s ExcludeList=ExcludeList_$s($l(ExcludeList):",",1:"")_rowid
+ ..s ok=0 f xx2=1:1:$l(com,"|") i $l($p(com,"|",xx2)) s ok=1 q
+ ..i ok,'$$select^LVBCTTC(tc,"Y") d
+ ...f xx2=1:1:PLIST s PLIST(xx2)=$p($g(PLIST(xx2)),$c(1))
+ ...s order="" f  s order=$o(^TTAB("TS",test,layout,order)) q:order=""  i $p(^(order),"\",8)=tc d  q
+ .... ; non reportable
+ ....i (print="P")!(print="V"),($p($g(^TTAB("TS",test,layout,order)),"\",13)'="Y")!(sr="Y") q
+ ....s ^TMP($zn,$j,"COM-0",order)=tc_"\"_PLIST(5)_"\"_sr
+ ....f xx2=1:1:$l(com,"|") s cnt=$o(^TMP($zn,$j,"COM-0",order,""),-1)+1,^TMP($zn,$j,"COM-0",order,cnt)=$p(com,"|",xx2)
+ ; check tc headings
+ i header'="N" s order="" f  s order=$o(^TMP($zn,$j,"COM-0",order)) q:order=""  d
+ .s tchead=$p($g(^TTAB("TS",test,layout,order)),"\",7)
+ .i $l(tchead) d
+ ..i $l(lan),$l($g(^TTAB("TS",test,"LAN",lan,tchead))) s tchead=^(tchead)
+ ..s ^TMP($zn,$j,"COM-0",order,.1)=tchead
+ d tsLM(print) s width=tsWD-tsLM
+ ; format comments from ^TMP($zn,$j,"COM-0")
+ s st1="{",st2="}",read="COM-0",write="COM-1" d  s st1="[",st2="]",read="COM-1",write="COM-2" d
+ .s order="" f  s order=$o(^TMP($zn,$j,read,order)) q:order=""  s tc=$p(^(order),"\",1),type=$p(^(order),"\",2) d
+ .. ; only V fields
+ ..i Type="V",type'="V" q
+ .. ; only non V fields
+ ..i Type="N",type="V" q
+ ..s cnt="" f  s cnt=$o(^TMP($zn,$j,read,order,cnt)) q:cnt=""  s line=^(cnt) d
+ ... ; retrieve standard comments
+ ...s start=1
+ ...f  d  s line=l2 i '$l(line) q
+ ....i line'[st1 d  s l2="" q
+ .....s ^TMP($zn,$j,write,order)=tc_"\"_type
+ .....s xcnt=$o(^TMP($zn,$j,write,order,""),-1)+start
+ .....s ^TMP($zn,$j,write,order,xcnt)=$g(^TMP($zn,$j,write,order,xcnt))_line
+ .....s start=0
+ ....i line'[st2 d  s l2="" q
+ .....s ^TMP($zn,$j,write,order)=tc_"\"_type
+ .....s xcnt=$o(^TMP($zn,$j,write,order,""),-1)+start
+ .....s ^TMP($zn,$j,write,order,xcnt)=$g(^TMP($zn,$j,write,order,xcnt))_line
+ .....s start=0
+ ....s l1=$p(line,st1,1),sc=$p($p(line,st1,2,999),st2,1),l2=$p($p(line,st1,2,999),st2,2,999)
+ ....f  q:sc'[st1  s l1=l1_st1_$p(sc,st1,1),sc=$p(sc,st1,2,999)
+ ....s ^TMP($zn,$j,write,order)=tc_"\"_type
+ ....s xcnt=$o(^TMP($zn,$j,write,order,""),-1)+start
+ ....s ^TMP($zn,$j,write,order,xcnt)=$g(^TMP($zn,$j,write,order,xcnt))_l1
+ ....s start=0
+ .... ; standard comment does exist
+ ....i $l(sc),type'="V",'$$select^LVBCTTCT(tc_"||"_sc,"Y") d  q
+ .....k CTTCT M CTTCT=PLIST i $l(lan),$$select^LVBCTTCE(tc_"||"_sc_"||"_lan) m PLIST=CTTCT
+ .....s Flag=$p(PLIST(5),$c(1),1)
+ .....s ^TMP($zn,$j,write,order,xcnt)=$g(^TMP($zn,$j,write,order,xcnt))
+ .....i print'="Entry",Flag="A" d
+ ......i ^(xcnt)[("^"_"~RES-ABNORMAL"_"^") q
+ ......i $p(PLIST(3),"|",1)[("^"_"~RES-ABNORMAL"_"^") q
+ ......s ^(xcnt)=^(xcnt)_"^"_"~RES-ABNORMAL"_"^"
+ .....s ^(xcnt)=^(xcnt)_$p(PLIST(3),"|",1)
+ .....f xx2=2:1:$l(PLIST(3),"|") d
+ ......s xcnt=$o(^TMP($zn,$j,write,order,""),-1)+1,^TMP($zn,$j,write,order,xcnt)=$p(PLIST(3),"|",xx2)
+ .....s ^TMP($zn,$j,write,order,xcnt)=$g(^TMP($zn,$j,write,order,xcnt))
+ .....i print'="Entry",Flag="A",^(xcnt)'[("^"_"~NORMAL"_"^") s ^(xcnt)=^(xcnt)_"^"_"~NORMAL"_"^"
+ ....i $l(sc),type="V",'$$select^LVBCTANC(sc,"Y") d  q
+ .....n descr s descr=PLIST(3)
+ .....i $l(lan),'$$select^LVBCTANB(sc_"||"_lan,"Y"),$l(PLIST(3)) s descr=PLIST(3)
+ .....s PLIST(3)=descr
+ .....s ^TMP($zn,$j,write,order,xcnt)=^TMP($zn,$j,write,order,xcnt)_$p(PLIST(3),"|",1)
+ .....f xx2=2:1:$l(PLIST(3),"|") d
+ ......s xcnt=$o(^TMP($zn,$j,write,order,""),-1)+1,^TMP($zn,$j,write,order,xcnt)=$p(PLIST(3),"|",xx2)
+ .... ; standard comment does not exist
+ ....s ^TMP($zn,$j,write,order,xcnt)=$g(^TMP($zn,$j,write,order,xcnt))_st1_sc_st2
+ s order="" f  s order=$o(^TMP($zn,$j,"COM-2",order)) q:order=""  d
+ .s sr=$p(^(order),"\",3)
+ .s inv="" i print="",($p($g(^TTAB("TS",test,layout,order)),"\",13)'="Y")!(sr="Y") s inv="Y"
+ .i inv="Y" s cnt="" f  s cnt=$o(^TMP($zn,$j,"COM-2",order,cnt)) q:cnt=""  d
+ ..s ^(cnt)=("^"_"~INVISIBLE"_"^")_^(cnt)_("^"_"~VISIBLE"_"^")
+ s order="" f tiCnt=0:1 s order=$o(^TMP($zn,$j,"COM-2",order)) q:order=""  d
+ .i tiCnt s xcnt=$o(^TMP($zn,$j,"RESULT",""),-1)+1,^TMP($zn,$j,"RESULT",xcnt)=""
+ .s cnt="" f  s cnt=$o(^TMP($zn,$j,"COM-2",order,cnt)) q:cnt=""  s line=^(cnt) d
+ ..f  q:$$xx(line)'>width  d
+ ...f xx1=1:1 i $$xx($p(line," ",1,xx1))>width s l1=$p(line," ",1,xx1-1),line=$p(line," ",xx1,$l(line," ")) q
+ ...i l1="" s l1=$e(line,1,width),line=$e(width+1,$l(line))
+ ...s xcnt=$o(^TMP($zn,$j,"RESULT",""),-1)+1,^TMP($zn,$j,"RESULT",xcnt)=l1
+ ..s xcnt=$o(^TMP($zn,$j,"RESULT",""),-1)+1,^TMP($zn,$j,"RESULT",xcnt)=line
+ k PLIST m PLIST=^TMP($zn,$j,"RESULT") k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+xx(xx) s xx=$g(xx)
+ s pos=0 f  s pos=$f(xx,"^~",pos) q:'pos  d
+ .s code="~"_$p($e(xx,pos,$l(xx)),"^")
+ .i $d(^SS("PRINT","VAR",code)) s xx=$p(xx,code,1)_$p(xx,code,2,999),pos=pos-$l(code)
+ q $l($tr(xx,"^"))
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(9)=0,%mmmsqld(10)=""
+ s %mmmsqld(4)=$g(rowid)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2),%mmmsqld(8)=$p(%mmmsqld(3),"||",3)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",$d(^TTAB("TS",%mmmsqld(6),8,%mmmsqld(7),%mmmsqld(8)))
+ e  g %0ABdun
+ s %mmmsqld(19)=$g(^TTAB("TS",%mmmsqld(6),8,%mmmsqld(7),%mmmsqld(8)))
+ s layout=$p(%mmmsqld(19),"\",1)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%mmmsqld(3),"||",1),8,$p(%mmmsqld(3),"||",2),$p(%mmmsqld(3),"||",3))#"S":$zu(115,4) i $t { s %mmmsqld(9)=1,%mmmsqld(10)=$name(^TTAB("TS",$p(%mmmsqld(3),"||",1),8,$p(%mmmsqld(3),"||",2),$p(%mmmsqld(3),"||",3)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSetLayouts for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2),%mmmsqld(8)=$p(%mmmsqld(3),"||",3)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",$d(^TTAB("TS",%mmmsqld(6),8,%mmmsqld(7),%mmmsqld(8)))
+ e  g %0ACdun
+ s %mmmsqld(28)=$g(^TTAB("TS",%mmmsqld(6),8,%mmmsqld(7),%mmmsqld(8)))
+ s layout=$p(%mmmsqld(28),"\",1)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(9))=1 { l -@%mmmsqld(10) s %mmmsqld(9)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(9))=1 { l -@%mmmsqld(10) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(8)=0,%mmmsqld(9)=""
+ s %mmmsqld(4)=$g(rowid)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",$d(^TTAB("TC",%mmmsqld(6),2,%mmmsqld(7)))
+ e  g %0CBdun
+ s %mmmsqld(17)=$g(^TTAB("TC",%mmmsqld(6),2,%mmmsqld(7)))
+ s CumPrint=$p(%mmmsqld(17),"\",5)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TTAB("TC",$p(%mmmsqld(3),"||",1),2,$p(%mmmsqld(3),"||",2))#"S":$zu(115,4) i $t { s %mmmsqld(8)=1,%mmmsqld(9)=$name(^TTAB("TC",$p(%mmmsqld(3),"||",1),2,$p(%mmmsqld(3),"||",2)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestCodeStandardComm for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",$d(^TTAB("TC",%mmmsqld(6),2,%mmmsqld(7)))
+ e  g %0CCdun
+ s %mmmsqld(25)=$g(^TTAB("TC",%mmmsqld(6),2,%mmmsqld(7)))
+ s CumPrint=$p(%mmmsqld(25),"\",5)
+%0CBuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) s %mmmsqld(8)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+]]></Routine>
+</Export>

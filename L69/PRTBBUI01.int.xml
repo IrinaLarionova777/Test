@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTBBUI01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTBBUI01 ; ML 08/11/2000 ; Blood Unit Inventory
+ q
+ ; Parameters :  1. Site
+ ;               2. Product
+ ;               3. Date to    (future expire)
+ ;               4. Date from  (past OUT)
+ ;               5. Date to    (past OUT)
+ ;               6. Product group
+ ;               7. Expand - Y/N
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Blood Unit Inventory and Status Display"
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="Site : "_$s('$l(PAR1):"All Sites",1:CTUSL(3))
+ s line=4,xHEADER(line)=""
+ i $l(PAR2) d
+ .s line=line+1,xHEADER(line)="Product : "_BBP(3)
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR6) d
+ .s line=line+1,xHEADER(line)="Product group : "_BPG(3)
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR3) d
+ .s line=line+1,xHEADER(line)="Future Expiry Date : "_$$extdate2^SSUTIL4(PAR3)
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR4),$l(PAR5) d
+ .s line=line+1,xHEADER(line)="Accumulative stock From : "_$$extdate2^SSUTIL4(PAR4)_"   To : "_$$extdate2^SSUTIL4(PAR5)
+ .s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ i $l(PAR1),'$$select^LVBCTUSL(PAR1,"Y") m CTUSL=PLIST
+ i $l(PAR2),'$$select^LVBBBBP(PAR2,"Y") m BBP=PLIST
+ i $l(PAR6),'$$select^LVBBBPG(PAR6,"Y") m BPG=PLIST
+ s status="" f  s status=$o(^TBBPi("STATUS",status)) q:status=""  d
+ .f inout="IN-1","IN-0" d
+ ..s PackID="" f  s PackID=$o(^TBBPi("STATUS",status,inout,PackID)) q:PackID=""  d
+ ...s SecondID="" f  s SecondID=$o(^TBBPi("STATUS",status,inout,PackID,SecondID)) q:SecondID=""  d
+ ....q:$$select^LVBBBP(PackID_"||"_SecondID)  m PackDet=PLIST k PLIST
+ ....s product=$p(PackDet(8),$c(1)),site=$p(PackDet(11),$c(1),4)
+ ....i $l(PAR1),PAR1'=site q
+ ....i $l(PAR2),PAR2'=product q
+ ....i $l(PAR6),PAR6'=$p(PackDet(8),$c(1),4) q
+ ....s ^TMP($zn,$j,"status",status)=""
+ .i $l(PAR4),$l(PAR5) f inout="OUT" d
+ ..s PackID="" f  s PackID=$o(^TBBPi("STATUS",status,inout,PackID)) q:PackID=""  d
+ ...s SecondID="" f  s SecondID=$o(^TBBPi("STATUS",status,inout,PackID,SecondID)) q:SecondID=""  d
+ ....q:$$select^LVBBBP(PackID_"||"_SecondID)  m PackDet=PLIST k PLIST
+ ....s product=$p(PackDet(8),$c(1)),site=$p(PackDet(11),$c(1),4)
+ ....i $l(PAR1),PAR1'=site q
+ ....i $l(PAR2),PAR2'=product q
+ ....i $l(PAR6),PAR6'=$p(PackDet(8),$c(1),4) q
+ ....i '$$sellast^LVBBBPT(PackID_"||"_SecondID),PLIST(4)'<PAR4,PLIST(4)'>PAR5 s ^TMP($zn,$j,"status",status)=""
+ ; extract status descriptions
+ s cnt=0 f jj=0,1 d  i 'jj s LAST=cnt
+ .i $$open^LVBBBST()
+ .f  q:$$fetch^LVBBBST()  d
+ ..i 'jj,PLIST(4)="OUT" q
+ ..i jj,PLIST(4)'="OUT" q
+ ..i '$d(^TMP($zn,$j,"status",$p(PLIST(2),$c(1)))) q
+ ..s cnt=cnt+1,xx1=PLIST(2),xx2=$s(PLIST(4)="OUT":"*****",1:"")
+ ..s Caption(cnt)=xx1_$c(2)_xx2_$c(2)_PLIST(2)_$c(2)_$s($l(xx1)>5:$l(xx1),1:5),Caption=cnt
+ .i $$close^LVBBBST()
+ .i 'jj s cnt=cnt+1,Caption(cnt)=$c(2,2,2),Caption=cnt
+ s xLINE(2)="|  Site   | Product | Blood | Total  ||"
+ f j=1:1:Caption s xLINE(2)=xLINE(2)_$$PART^PRTREP00($p(Caption(j),$c(2),1),$p(Caption(j),$c(2),4))_"|"
+ s xLINE(3)="|         |         | Group |in Stock||"
+ f j=1:1:Caption s xLINE(3)=xLINE(3)_$$PART^PRTREP00($p(Caption(j),$c(2),2),$p(Caption(j),$c(2),4))_"|"
+ s width=$l(xLINE(2))-2,xLINE(4)="|" f j=1:1:width s xLINE(4)=xLINE(4)_"-"
+ s xLINE(4)=$e(xLINE(4),1,$l(xLINE(4)))_"|"
+ s length=$l(xLINE(2)),$p(xLINE(1),"-",length)=""
+ s xLINE(1)=" "_$e(xLINE(1),1,$l(xLINE(1))-1)
+ s cnt=1,N(cnt,1)="xxx",N(cnt,2)=cnt f j=3:1:7 s N(cnt,j)=""
+ s cnt=2,N(cnt,1)="xxx",N(cnt,2)=cnt f j=3:1:7 s N(cnt,j)=""
+ s cnt=3,N(cnt,1)="xxx",N(cnt,2)=cnt f j=3:1:7 s N(cnt,j)=""
+ s cnt=4,N(cnt,1)="xxx",N(cnt,2)=cnt f j=3:1:7 s N(cnt,j)=""
+ s cnt=5,N(cnt,1)="xxx",N(cnt,2)=cnt f j=3:1:7 s N(cnt,j)=""
+ f j1=1:1:Caption f j2=1:1:$l($p(Caption(j1),$c(2),2),$c(28)) d
+ .s cnt=cnt+1,N(cnt,1)="xxx",N(cnt,2)=cnt f j3=3:1:7 s N(cnt,j3)=""
+ .s N(cnt,"Status")=$p(Caption(j1),$c(2),3)
+ s X=xLINE(2)
+ s N(1,"Z")=1 f j=2:1 q:'$F(X,"|",N(j-1,"Z")+1)  s N(j,"Z")=$f(X,"|",N(j-1,"Z")+1)-1
+ f j=1:1 q:'$d(N(j+1,"Z"))  s N(j,"L")=N(j+1,"Z")-N(j,"Z")-1
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+BODY ; create temporary printing file
+ s status="" f  s status=$o(^TBBPi("STATUS",status)) q:status=""  d
+ .s cnt=5 f  s cnt=$o(N(cnt)) q:cnt=""  q:$g(N(cnt,"Status"))=status
+ .i cnt d
+ ..f inout="IN-1","IN-0" d
+ ...s PackID="" f  s PackID=$o(^TBBPi("STATUS",status,inout,PackID)) q:PackID=""  d
+ ....s SecondID="" f  s SecondID=$o(^TBBPi("STATUS",status,inout,PackID,SecondID)) q:SecondID=""  d
+ .....q:$$select^LVBBBP(PackID_"||"_SecondID)  m PackDet=PLIST k PLIST
+ .....s product=$p(PackDet(8),$c(1)),group=$p(PackDet(8),$c(1),4),BloodGrp=$p(PackDet(9),$c(1)),site=$p(PackDet(11),$c(1),4)
+ .....i $l(PAR1),PAR1'=site q
+ .....i $l(PAR2),PAR2'=product q
+ .....i $l(PAR6),PAR6'=group q
+ .....s:site="" site=" " s:product="" product=" " s:group="" group=" " s:BloodGrp="" BloodGrp=" "
+ .....i PAR7="Y" d
+ ......s $p(^TMP($zn,$j,"REPORT",site,group,product,BloodGrp),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site,group,product,BloodGrp)),"\",cnt)+1
+ ......s $p(^TMP($zn,$j,"REPORT",site,group,product),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site,group,product)),"\",cnt)+1
+ .....i PAR7'="Y" d
+ ......s $p(^TMP($zn,$j,"REPORT",site,group,BloodGrp),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site,group,BloodGrp)),"\",cnt)+1
+ .....s $p(^TMP($zn,$j,"REPORT",site,group),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site,group)),"\",cnt)+1
+ .....s $p(^TMP($zn,$j,"REPORT",site),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site)),"\",cnt)+1
+ .....i PAR3,PackDet(13)'>PAR3 d
+ ......i PAR7="Y" d
+ .......s $p(^TMP($zn,$j," ",site,group,product,BloodGrp),"\",cnt)=$p($g(^TMP($zn,$j," ",site,group,product,BloodGrp)),"\",cnt)+1
+ .......s $p(^TMP($zn,$j," ",site,group,product),"\",cnt)=$p($g(^TMP($zn,$j," ",site,group,product)),"\",cnt)+1
+ ......i PAR7'="Y" d
+ .......s $p(^TMP($zn,$j," ",site,group,BloodGrp),"\",cnt)=$p($g(^TMP($zn,$j," ",site,group,BloodGrp)),"\",cnt)+1
+ ......s $p(^TMP($zn,$j," ",site,group),"\",cnt)=$p($g(^TMP($zn,$j," ",site,group)),"\",cnt)+1
+ ......s $p(^TMP($zn,$j," ",site),"\",cnt)=$p($g(^TMP($zn,$j," ",site)),"\",cnt)+1
+ ..i $l(PAR4),$l(PAR5) f inout="OUT" d
+ ...s PackID="" f  s PackID=$o(^TBBPi("STATUS",status,inout,PackID)) q:PackID=""  d
+ ....s SecondID="" f  s SecondID=$o(^TBBPi("STATUS",status,inout,PackID,SecondID)) q:SecondID=""  d
+ .....q:$$select^LVBBBP(PackID_"||"_SecondID)  m PackDet=PLIST k PLIST
+ .....s product=$p(PackDet(8),$c(1)),group=$p(PackDet(8),$c(1),4),BloodGrp=$p(PackDet(9),$c(1)),site=$p(PackDet(11),$c(1),4)
+ .....i $l(PAR1),PAR1'=site q
+ .....i $l(PAR2),PAR2'=product q
+ .....i $l(PAR6),PAR6'=group q
+ .....s:site="" site=" " s:product="" product=" " s:group="" group=" " s:BloodGrp="" BloodGrp=" "
+ .....i '$$sellast^LVBBBPT(PackID_"||"_SecondID),PLIST(4)'<PAR4,PLIST(4)'>PAR5 d
+ ......i PAR7="Y" d
+ .......s $p(^TMP($zn,$j,"REPORT",site,group,product,BloodGrp),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site,group,product,BloodGrp)),"\",cnt)+1
+ .......s $p(^TMP($zn,$j,"REPORT",site,group,product),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site,group,product)),"\",cnt)+1
+ ......i PAR7'="Y" d
+ .......s $p(^TMP($zn,$j,"REPORT",site,group,BloodGrp),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site,group,BloodGrp)),"\",cnt)+1
+ ......s $p(^TMP($zn,$j,"REPORT",site,group),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site,group)),"\",cnt)+1
+ ......s $p(^TMP($zn,$j,"REPORT",site),"\",cnt)=$p($g(^TMP($zn,$j,"REPORT",site)),"\",cnt)+1
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s site="" f  s site=$o(^TMP($zn,$j,"REPORT",site)) q:site=""  d
+ ..s xxx(1)=site i '$$select^LVBCTUSL(site,"Y") s xxx(1)=PLIST(2)_$c(1)_PLIST(3)
+ ..s SITE=xxx(1)
+ ..s group="" f  s group=$o(^TMP($zn,$j,"REPORT",site,group)) q:group=""  d
+ ...i '$$select^LVBBBPG(group) d
+ ....d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ....d ADDLINE^PRTREP00(REPID,"PRT","?10 Product group : "_group_" "_PLIST(3))
+ ....d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...i PAR7="Y" s product="" f  s product=$o(^TMP($zn,$j,"REPORT",site,group,product)) q:product=""  d
+ ....s xxx(2)=product i '$$select^LVBBBBP(product,"Y") s xxx(2)=PLIST(2)_$c(1)_PLIST(3)
+ ....s BloodGrp="" f  s BloodGrp=$o(^TMP($zn,$j,"REPORT",site,group,product,BloodGrp)) q:BloodGrp=""  d
+ .....s xxx(3)=BloodGrp i '$$select^LVBBBBG(BloodGrp,"Y") s xxx(3)=PLIST(2)_$c(1)_PLIST(3)
+ .....f j=5:1:(LAST+5) s xxx(4)=$g(xxx(4))+$p(^TMP($zn,$j,"REPORT",site,group,product,BloodGrp),"\",j)
+ .....f j=5:1:$l(^TMP($zn,$j,"REPORT",site,group,product,BloodGrp),"\") d
+ ......i $l($p(^TMP($zn,$j,"REPORT",site,group,product,BloodGrp),"\",j)) s xxx(j)=$p(^(BloodGrp),"\",j) d
+ .......i $l($p($g(^TMP($zn,$j," ",site,group,product,BloodGrp)),"\",j)) s xxx(j)=xxx(j)_"/"_$p(^(BloodGrp),"\",j)
+ .....d PRINT^PRTREP00(,.N) k xxx
+ ....s xxx(2)="Total:"
+ ....f j=5:1:(LAST+5) s xxx(4)=$g(xxx(4))+$p(^TMP($zn,$j,"REPORT",site,group,product),"\",j)
+ ....f j=5:1:$l(^TMP($zn,$j,"REPORT",site,group,product),"\") d
+ .....i $l($p(^TMP($zn,$j,"REPORT",site,group,product),"\",j)) s xxx(j)=$p(^(product),"\",j) d
+ ......i $l($p($g(^TMP($zn,$j," ",site,group,product)),"\",j)) s xxx(j)=xxx(j)_"/"_$p(^(product),"\",j)
+ ....d PRINT^PRTREP00(,.N) k xxx
+ ....d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ....d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ ....d PRINT^PRTREP00(,.N) k xxx
+ ...i PAR7'="Y" d
+ ....s BloodGrp="" f  s BloodGrp=$o(^TMP($zn,$j,"REPORT",site,group,BloodGrp)) q:BloodGrp=""  d
+ .....s xxx(3)=BloodGrp i '$$select^LVBBBBG(BloodGrp,"Y") s xxx(3)=PLIST(2)_$c(1)_PLIST(3)
+ .....f j=5:1:(LAST+5) s xxx(4)=$g(xxx(4))+$p(^TMP($zn,$j,"REPORT",site,group,BloodGrp),"\",j)
+ .....f j=5:1:$l(^TMP($zn,$j,"REPORT",site,group,BloodGrp),"\") d
+ ......i $l($p(^TMP($zn,$j,"REPORT",site,group,BloodGrp),"\",j)) s xxx(j)=$p(^(BloodGrp),"\",j) d
+ .......i $l($p($g(^TMP($zn,$j," ",site,group,BloodGrp)),"\",j)) s xxx(j)=xxx(j)_"/"_$p(^(BloodGrp),"\",j)
+ .....d PRINT^PRTREP00(,.N) k xxx
+ ...s xxx(1)="Total:"
+ ...f j=5:1:(LAST+5) s xxx(4)=$g(xxx(4))+$p(^TMP($zn,$j,"REPORT",site,group),"\",j)
+ ...f j=5:1:$l(^TMP($zn,$j,"REPORT",site,group),"\") d
+ ....i $l($p(^TMP($zn,$j,"REPORT",site,group),"\",j)) s xxx(j)=$p(^(group),"\",j) d
+ .....i $l($p($g(^TMP($zn,$j," ",site,group)),"\",j)) s xxx(j)=xxx(j)_"/"_$p(^(group),"\",j)
+ ...d PRINT^PRTREP00(,.N) k xxx
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ ...d PRINT^PRTREP00(,.N) k xxx
+ ...s xxx(1)=SITE
+ ..s xxx(1)="Total:"
+ ..f j=5:1:(LAST+5) s xxx(4)=$g(xxx(4))+$p(^TMP($zn,$j,"REPORT",site),"\",j)
+ ..f j=5:1:$l(^TMP($zn,$j,"REPORT",site),"\") d
+ ...i $l($p(^TMP($zn,$j,"REPORT",site),"\",j)) s xxx(j)=$p(^(site),"\",j) d
+ ....i $l($p($g(^TMP($zn,$j," ",site)),"\",j)) s xxx(j)=xxx(j)_"/"_$p(^(site),"\",j)
+ ..d PRINT^PRTREP00(,.N) k xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ ..d PRINT^PRTREP00(,.N) k xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .i $$open^LVBBBST()
+ .f cnt=1:1 q:$$fetch^LVBBBST()  d
+ ..d ADDLINE^PRTREP00(REPID,"PRT","   "_$e(PLIST(2)_$j("",15),1,15)_PLIST(3))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .i $$close^LVBBBST()
+ s report="BBUI"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

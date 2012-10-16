@@ -1,0 +1,440 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCTPC" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCTPC ; IG 30/4/98 ;MVB Control code access for CT_PaymentCode
+ ;
+ ; supported calls:
+ ;
+ ; $$select^LVBCTPC(ROWID,skip)
+ ; $$open^LVBCTPC(invoice,skip,active,desc,edi,bl,pl,code,p8,p9)
+ ; $$fetch^LVBCTPC(invoice,skip,active,desc,edi,bl,pl,code,p8,p9)
+ ; $$fetchbuffer^LVBCTPC(invoice,skip,active,desc,edi,bl,pl,code,p8,p9)
+ ; $$fetchall^LVBCTPC(invoice,skip,active,desc,edi,bl,pl,code,p8,p9)
+ ; $$close^LVBCTPC()
+ ; $$insert^LVBCTPC()
+ ; $$update^LVBCTPC(ROWID)
+ ; $$delete^LVBCTPC(ROWID)
+ ; $$getall^LVBCTPC(invoice,NC,schedule,active,desc,edi,Continue,bl,pl,code)
+ ; $$bill^LVBCTPC(code)
+ ; FIX^LVBCTPC
+ ;
+  ;---&SQL(DECLARE CTPC CURSOR FOR SELECT * FROM CT_PaymentCode
+   ;---         WHERE ((%ALPHAUP(CTPC_CODE) [ :code) OR (:code IS NULL))
+   ;---         AND ((:invoice [ %INTERNAL(CTPC_Type)) OR (:invoice IS NULL))
+   ;---         AND ((CTPC_ActiveFlag = :active) OR (:active is NULL))
+   ;---         AND ((%ALPHAUP(CTPC_Desc) %STARTSWITH %ALPHAUP(:desc)) OR (:desc IS NULL))
+   ;---         AND ((CTPC_PaymentCodeType_DR = :edi) OR (:edi IS NULL))
+   ;---         ORDER BY CTPC_DisplaySequence)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, active, code, desc, edi, invoice
+ ;
+FIX k ^TTABi("BI") s a="" f  s a=$o(^TTAB("BI",a)) q:a=""  d
+ .i '$$select(a,"Y") s PLIST(30)="Y",PLIST(31)=99999,err=$$update(a) i err w !,a," ",err
+ d ##class(User.CTPaymentCode).%BuildIndices()
+ q
+ ;
+ ; insert the data
+insert() d pre("N") k PLIST(1)
+  ;---&SQL(insert INTO CT_PaymentCode VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Do
+ i 'SQLCODE q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; update the data
+update(ROWID) d pre("Y") s ROWID=$g(ROWID)
+  ;---&SQL(UPDATE CT_PaymentCode VALUES :PLIST() WHERE CTPC_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Fo
+ i 'SQLCODE q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; delete the data
+delete(ROWID,Comments) s ROWID=$g(ROWID),^TMP("Comments",$j)=$g(Comments)
+  ;---&SQL(DELETE FROM CT_PaymentCode WHERE CTPC_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: ROWID, SQLCODE
+ Do %0Ho
+ k ^TMP("Comments",$j)
+ q SQLCODE
+ ; open the cursor
+open(invoice,skip,active,desc,edi,bl,pl,code,p8,p9) 
+ s invoice=$g(invoice),skip=$g(skip),active=$g(active),desc=$g(desc),edi=$g(edi),bl=$g(bl),pl=$g(pl),code=$g(code)
+  ;---&SQL(OPEN CTPC)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %CTPC0o
+ q 0
+ ; fetch the data
+fetch(invoice,skip,active,desc,edi,bl,pl,code,p8,p9) s invoice=$g(invoice),skip=$g(skip),active=$g(active),desc=$g(desc),edi=$g(edi),bl=$g(bl),pl=$g(pl),code=$g(code) k PLIST
+  ;---&SQL(FETCH CTPC INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Ko
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE,$l(bl),$d(^TTAB("BILL-LOC",bl,"PC")),'$d(^TTAB("BILL-LOC",bl,"PC",PLIST(2))) g fetch+1
+ i 'SQLCODE,$l(pl),$l($p($g(^TTAB("BI",PLIST(2))),"\",76)),(","_$p($g(^TTAB("BI",PLIST(2))),"\",76)_",")'[(","_pl_",") g fetch+1
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(invoice,skip,active,desc,edi,bl,pl,code,p8,p9) s invoice=$g(invoice),skip=$g(skip),active=$g(active),desc=$g(desc),edi=$g(edi),bl=$g(bl),pl=$g(pl),code=$g(code) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(invoice,skip,active,desc,edi,bl,pl,code) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(invoice,skip,active,desc,edi,bl,pl,code,p8,p9) N (invoice,skip,active,desc,edi,bl,pl,code,PLIST) s invoice=$g(invoice),skip=$g(skip),active=$g(active),desc=$g(desc),edi=$g(edi),bl=$g(bl),pl=$g(pl),code=$g(code) k ^TMP($zn,$j)
+ i $$open(invoice,skip,active,desc,edi,bl,pl,code)
+ f cnt=1:1 q:$$fetch(invoice,skip,active,desc,edi,bl,pl,code)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ; close the cursor 
+close()  ;---&SQL(CLOSE CTPC) 
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %CTPC0c 
+ q 0
+ ;
+ ; select data by code
+select(ROWID,skip) k PLIST s ROWID=$g(ROWID),skip=$g(skip)
+  ;---&SQL(SELECT * INTO :PLIST() FROM CT_PaymentCode WHERE CTPC_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Mo
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; select data by code and field No
+seldata(ROWID,data) n (ROWID,data) s ROWID=$g(ROWID),data=$g(data),result=""
+ i $l(ROWID) d  q result
+ .i data=3 s result=$p($g(^TTAB("BI",ROWID)),"\",1) q
+ .i data=14 s result=$p($g(^TTAB("BI",ROWID)),"\",12) q
+ .i data=22 s result=$p($g(^TTAB("BI",ROWID)),"\",20)
+ .i data=23 s result=$p($g(^TTAB("BI",ROWID)),"\",21) q
+ .i data=28 s result=$p($g(^TTAB("BI",ROWID)),"\",26) q
+ .i data=32 s result=$p($g(^TTAB("BI",ROWID)),"\",29) q
+ .i data=38 s result=$p($g(^TTAB("BI",ROWID)),"\",35) q
+ .i data=40 s result=$p($g(^TTAB("BI",ROWID)),"\",37) q
+ .i data=81 s result=$p($g(^TTAB("BI",ROWID)),"\",77) q
+ .i data=82 s result=$p($g(^TTAB("BI",ROWID)),"\",78) q
+ .i data=83 s result=$p($g(^TTAB("BI",ROWID)),"\",79) q
+ .i data=84 s result=$p($g(^TTAB("BI",ROWID)),"\",80) q
+ .i '$$select(ROWID,"Y") s result=$g(PLIST(data))
+ q result
+ ; Pre-filing adjustments
+pre(xUpdate) d PreSQL^SSUTIL4("45","111")
+ s (PLIST(1),PLIST(2))=$$ALPHAUP^SSUTIL4(PLIST(2))
+ i '$g(PLIST(31)) s PLIST(31)=99999
+ q
+ ; post-filing adjustments
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("45")
+ i $g(skip)="Y" q
+ ;
+ F J=16 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTJO(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ F J=19 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTVA(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ F J=23 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTSH(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ F J=25 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTIT(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ F J=38 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTPCT(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ F J=79 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTCLN(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ F J=84 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTPC(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ ;
+ Q
+ ;
+getall(invoice,NC,schedule,active,desc,edi,Continue,bl,pl,code) N (invoice,NC,schedule,active,desc,edi,Continue,bl,pl,code,PLIST)
+ s invoice=$g(invoice),NC=$g(NC),schedule=$g(schedule),active=$g(active),desc=$g(desc),edi=$g(edi),Continue=$g(Continue),bl=$g(bl),pl=$g(pl),code=$g(code)
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("getall^"_$zn_$p(^CF("SM",1),"^",28)))) k %quit d @("getall^"_$zn_$p(^CF("SM",1),"^",28)) q:$d(%quit) %quit  
+ i Continue="" k ^TMP($zn,$j) d
+ .i $$open(invoice,"Y",active,desc,edi,bl,pl,code)
+ .s cnt=0 f  q:$$fetch(invoice,"Y",active,desc,edi,bl,pl,code)  d
+ ..i $l(schedule),schedule'=$p(PLIST(23),$c(1)) q
+ ..s ok=1 i NC="Y" s ok=0 i PLIST(4)="C",'PLIST(5) s ok=1
+ ..i ok d
+ ...s str=""
+ ...s $p(str,$c(1),1)=$p(PLIST(6),$c(1))
+ ...s $p(str,$c(1),2)=$p(PLIST(7),$c(1))
+ ...s $p(str,$c(1),3)=$p(PLIST(14),$c(1))
+ ...s $p(str,$c(1),4)=$p(PLIST(8),$c(1))
+ ...s $p(str,$c(1),5)=$P(PLIST(24),$c(1))
+ ...s $p(str,$c(1),6)=$p($g(PLIST(22)),$c(1))
+ ...s $p(str,$c(1),7)=$p($g(PLIST(30)),$c(1))
+ ...s $p(str,$c(1),8)=$p($g(PLIST(34)),$c(1))
+ ...s $p(str,$c(1),9)=$p($g(PLIST(35)),$c(1))
+ ...s $p(str,$c(1),10)=$p($g(PLIST(36)),$c(1))
+ ...s $p(str,$c(1),11)=$p($g(PLIST(41)),$c(1))
+ ...s $p(str,$c(1),12)=$p($g(PLIST(42)),$c(1))
+ ...s $p(str,$c(1),13)=$p($g(PLIST(43)),$c(1))
+ ...s $p(str,$c(1),14)=$p($g(PLIST(44)),$c(1))
+ ...s cnt=cnt+1,^TMP($zn,$j,cnt)=$p(PLIST(1),$c(1))_$c(2)_$p(PLIST(3),$c(1))_$c(2)_$p(PLIST(2),$c(1))_$c(2)_str
+ .i $$close()
+ k PLIST
+ s (x,sum)="" f cnt=1:1 s x=$o(^TMP($zn,$j,x)) q:x=""  q:(sum+$l(^(x)))>15000  s PLIST(cnt)=^(x),sum=sum+$l(^(x)) k ^(x)
+ s PLIST=$o(PLIST(""),-1)
+ q $s($d(^TMP($zn,$j)):0,1:100)
+ ; count pending patients
+bill(code,Continue) n (code,Continue,PLIST) s code=$g(code),Continue=$g(Continue),(cnt1,cnt2)=""
+ i $l(code) d  q cnt1_"\"_cnt2
+ .s x="" f  s x=$o(^TBIL(2,x)) q:x=""  d
+ ..s epis="" f  s epis=$o(^TBIL(2,x,code,epis)) q:epis=""  i ^(epis) d
+ ...s cnt1=cnt1+1
+ ... ;---s prompt="" &sql(SELECT EPVIS_PromptBilling INTO :prompt FROM EP_VisitNumber WHERE EPVIS_RowID = :epis)
+  ... ;--- ** SQL PUBLIC Variables: SQLCODE, epis, prompt
+ ...s prompt="" Do %0Po
+ ...i $p(prompt,$c(1))="Y" s cnt2=cnt2+1
+ i '$l(code) d  q $s($d(^TMP($zn,$j)):0,1:100)
+ .i Continue'="Y" d
+ ..k ^TMP($zn,$j),pc s cnt=0
+ ..s x1="" f  s x1=$o(^TBIL(2,x1)) q:x1=""  d
+ ...s x2="" f  s x2=$o(^TBIL(2,x1,x2)) q:x2=""  d
+ ....s (cnt1,cnt2,epis)="" f  s epis=$o(^TBIL(2,x1,x2,epis)) q:epis=""  i ^(epis) d
+ .....s cnt1=cnt1+1
+ ..... ;---s prompt="" &sql(SELECT EPVIS_PromptBilling INTO :prompt FROM EP_VisitNumber WHERE EPVIS_RowID = :epis)
+  ..... ;--- ** SQL PUBLIC Variables: SQLCODE, epis, prompt
+ .....s prompt="" Do %0Ro
+ .....i $p(prompt,$c(1))="Y" s cnt2=cnt2+1
+ ....i cnt1!cnt2 d
+ .....s str="" i '$$select(x2) f j=1:1:PLIST s $p(str,$c(28),j)=$g(PLIST(j))
+ .....i '$d(pc(x2)) s cnt=cnt+1,pc(x2)=cnt
+ .....s cntX=pc(x2),x3=$p($g(^TMP($zn,$j,cntX)),$c(2),2)
+ .....i $p(x3,"/",1)+cnt1 s $p(x3,"/",1)=$p(x3,"/",1)+cnt1
+ .....i $p(x3,"/",2)+cnt2 s $p(x3,"/",2)=$p(x3,"/",2)+cnt2
+ .....s ^TMP($zn,$j,cntX)=x2_$c(2)_x3_$c(2,2)_str
+ .k PLIST
+ .s (x,sum)="" f cnt=1:1 s x=$o(^TMP($zn,$j,x)) q:x=""  q:(sum+$l(^(x)))>15000  s PLIST(cnt)=^(x),sum=sum+$l(^(x)) k ^(x)
+ .s PLIST=$o(PLIST(""),-1)
+ q
+%0ABr1 n cnt s cnt=0
+ s %CTPC0d(26)=""
+ i $g(%CTPC0d(10))'="" s cnt=cnt+1,$p(%CTPC0d(26),"|",cnt)=$g(%CTPC0d(10))
+ i $g(%CTPC0d(11))'="" s cnt=cnt+1,$p(%CTPC0d(26),"|",cnt)=$g(%CTPC0d(11))
+ i $g(%CTPC0d(12))'="" s cnt=cnt+1,$p(%CTPC0d(26),"|",cnt)=$g(%CTPC0d(12))
+ k cnt q
+%CTPC0o s $zt="%CTPC0E" s SQLCODE=$s($g(%CTPC0c):-101,1:0) q:SQLCODE'=0  s %CTPC0d(102)=0 s %CTPC0d(103)=0,%CTPC0d(104)=""
+ s %CTPC0d(86)=$g(code),%CTPC0d(87)=$g(code),%CTPC0d(88)=$g(invoice),%CTPC0d(90)=$g(invoice),%CTPC0d(91)=$g(active),%CTPC0d(92)=$g(active),%CTPC0d(94)=$g(desc),%CTPC0d(96)=$g(desc),%CTPC0d(97)=$g(edi),%CTPC0d(98)=$g(edi)
+ s %CTPC0t(1)=$i(^||%sql.temp)
+ s %CTPC0d(95)=$zu(28,%CTPC0d(94),6)
+ s %CTPC0d(101)=$zu(28,%CTPC0d(91),7)
+ s %CTPC0c=1 q
+%CTPC0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %CTPC0c,%CTPC0d,%CTPC0E,%CTPC0l,%CTPC0n,%CTPC0R,%CTPC0s,%CTPC0t,%CTPC0Z q
+%0Afirst 
+ k ^||%sql.temp(%CTPC0t(1),0) s ^||%sql.temp(%CTPC0t(1),0)=$H_"^"_$J_"^"_$zu(67,11,$j)_"^"_$zu(67,12,$j)_"^"_$zu(67,15,$j)_"^"_$ZN_"^"_$zu(67,6,$j)
+ i $sortbegin(^||%sql.temp(%CTPC0t(1),0))
+ ; asl MOD# 3
+ d %0ABMod
+ i $sortend(^||%sql.temp(%CTPC0t(1),0))
+ s %CTPC0s(30)=""
+%0ACk1 s %CTPC0s(30)=$o(^||%sql.temp(%CTPC0t(1),0,%CTPC0s(30)))
+ i %CTPC0s(30)="" g %0ACdun
+ s %CTPC0d(30)=$s(%CTPC0s(30)=-1E14:"",1:%CTPC0s(30))
+ s %CTPC0s(1)=""
+%0ACk2 s %CTPC0s(1)=$o(^||%sql.temp(%CTPC0t(1),0,%CTPC0s(30),%CTPC0s(1)))
+ i %CTPC0s(1)="" g %0ACk1
+ s %CTPC0d(1)=$s(%CTPC0s(1)=-1E14:"",1:%CTPC0s(1))
+ i %CTPC0d(1)'="",$d(^TTAB("BI",%CTPC0d(1)))
+ e  g %0ACk2
+ s %CTPC0d(115)=$g(^TTAB("BI",%CTPC0d(1)))
+ s %CTPC0d(2)=$p(%CTPC0d(115),"\",1) s %CTPC0d(3)=$p(%CTPC0d(115),"\",2) s %CTPC0d(4)=$p(%CTPC0d(115),"\",3) s %CTPC0d(5)=$p(%CTPC0d(115),"\",4) s %CTPC0d(6)=$p(%CTPC0d(115),"\",5) s %CTPC0d(7)=$p(%CTPC0d(115),"\",6) s %CTPC0d(8)=$p(%CTPC0d(115),"\",7) s %CTPC0d(9)=$p(%CTPC0d(115),"\",8) s %CTPC0d(10)=$p(%CTPC0d(115),"\",9) s %CTPC0d(11)=$p(%CTPC0d(115),"\",10) s %CTPC0d(12)=$p(%CTPC0d(115),"\",11) s %CTPC0d(13)=$p(%CTPC0d(115),"\",12) s %CTPC0d(14)=$p(%CTPC0d(115),"\",13) s %CTPC0d(15)=$p(%CTPC0d(115),"\",14) s %CTPC0d(16)=$p(%CTPC0d(115),"\",15) s %CTPC0d(17)=$p(%CTPC0d(115),"\",16) s %CTPC0d(18)=$p(%CTPC0d(115),"\",17) s %CTPC0d(19)=$p(%CTPC0d(115),"\",18) s %CTPC0d(20)=$p(%CTPC0d(115),"\",19) s %CTPC0d(21)=$p(%CTPC0d(115),"\",20) s %CTPC0d(22)=$p(%CTPC0d(115),"\",21) s %CTPC0d(23)=$p(%CTPC0d(115),"\",22) s %CTPC0d(24)=$p(%CTPC0d(115),"\",23) s %CTPC0d(25)=$p(%CTPC0d(115),"\",24) s %CTPC0d(27)=$p(%CTPC0d(115),"\",26) s %CTPC0d(28)=$p(%CTPC0d(115),"\",25) s %CTPC0d(29)=$p(%CTPC0d(115),"\",27) s %CTPC0d(31)=$p(%CTPC0d(115),"\",29) s %CTPC0d(32)=$p(%CTPC0d(115),"\",30) s %CTPC0d(33)=$p(%CTPC0d(115),"\",31) s %CTPC0d(34)=$p(%CTPC0d(115),"\",32) s %CTPC0d(35)=$p(%CTPC0d(115),"\",33) s %CTPC0d(36)=$p(%CTPC0d(115),"\",34) s %CTPC0d(37)=$p(%CTPC0d(115),"\",35) s %CTPC0d(38)=$p(%CTPC0d(115),"\",36) s %CTPC0d(39)=$p(%CTPC0d(115),"\",37) s %CTPC0d(40)=$p(%CTPC0d(115),"\",38) s %CTPC0d(41)=$p(%CTPC0d(115),"\",39) s %CTPC0d(42)=$p(%CTPC0d(115),"\",40) s %CTPC0d(43)=$p(%CTPC0d(115),"\",41) s %CTPC0d(45)=$p(%CTPC0d(115),"\",42) s %CTPC0d(46)=$p(%CTPC0d(115),"\",44) s %CTPC0d(47)=$p(%CTPC0d(115),"\",43) s %CTPC0d(48)=$p(%CTPC0d(115),"\",45) s %CTPC0d(49)=$p(%CTPC0d(115),"\",46) s %CTPC0d(50)=$p(%CTPC0d(115),"\",47) s %CTPC0d(51)=$p(%CTPC0d(115),"\",48) s %CTPC0d(52)=$p(%CTPC0d(115),"\",49) s %CTPC0d(53)=$p(%CTPC0d(115),"\",50) s %CTPC0d(54)=$p(%CTPC0d(115),"\",51) s %CTPC0d(55)=$p(%CTPC0d(115),"\",52) s %CTPC0d(56)=$p(%CTPC0d(115),"\",53) s %CTPC0d(57)=$p(%CTPC0d(115),"\",54) s %CTPC0d(58)=$p(%CTPC0d(115),"\",55) s %CTPC0d(59)=$p(%CTPC0d(115),"\",56) s %CTPC0d(60)=$p(%CTPC0d(115),"\",57) s %CTPC0d(61)=$p(%CTPC0d(115),"\",58) s %CTPC0d(62)=$p(%CTPC0d(115),"\",59) s %CTPC0d(63)=$p(%CTPC0d(115),"\",60) s %CTPC0d(64)=$p(%CTPC0d(115),"\",61) s %CTPC0d(65)=$p(%CTPC0d(115),"\",62) s %CTPC0d(66)=$p(%CTPC0d(115),"\",63) s %CTPC0d(67)=$p(%CTPC0d(115),"\",64) s %CTPC0d(68)=$p(%CTPC0d(115),"\",65) s %CTPC0d(69)=$p(%CTPC0d(115),"\",66) s %CTPC0d(70)=$p(%CTPC0d(115),"\",67) s %CTPC0d(71)=$p(%CTPC0d(115),"\",68) s %CTPC0d(72)=$p(%CTPC0d(115),"\",69) s %CTPC0d(73)=$p(%CTPC0d(115),"\",70) s %CTPC0d(74)=$p(%CTPC0d(115),"\",71) s %CTPC0d(75)=$p(%CTPC0d(115),"\",72) s %CTPC0d(76)=$p(%CTPC0d(115),"\",73) s %CTPC0d(77)=$p(%CTPC0d(115),"\",74) s %CTPC0d(78)=$p(%CTPC0d(115),"\",75) s %CTPC0d(79)=$p(%CTPC0d(115),"\",76) s %CTPC0d(80)=$p(%CTPC0d(115),"\",77) s %CTPC0d(81)=$p(%CTPC0d(115),"\",78) s %CTPC0d(82)=$p(%CTPC0d(115),"\",79) s %CTPC0d(83)=$p(%CTPC0d(115),"\",80) s %CTPC0d(84)=$p(%CTPC0d(115),"\",81)
+ s %CTPC0d(44)="" f %irep=1:1:$g(^TTAB("BI",%CTPC0d(1),"REM",0)) s $li(%CTPC0d(44),%irep)=$g(^(%irep))
+ d %0ABr1 s %CTPC0d(100)=$zu(28,%CTPC0d(29),7) s %CTPC0d(85)=$zu(28,%CTPC0d(1),6) s %CTPC0d(93)=$zu(28,%CTPC0d(2),6)
+ g:$zu(115,2)=0 %0ACuncommitted i $zu(115,2)=1 l +^TTAB("BI",$p(%CTPC0d(1),"||",1))#"S":$zu(115,4) i $t { s %CTPC0d(103)=1,%CTPC0d(104)=$name(^TTAB("BI",$p(%CTPC0d(1),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_PaymentCode for RowID value: "_%CTPC0d(1) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %CTPC0d(1)'="",$d(^TTAB("BI",%CTPC0d(1)))
+ e  g %0ADdun
+ s %CTPC0d(120)=$g(^TTAB("BI",%CTPC0d(1)))
+ s %CTPC0d(27)=$p(%CTPC0d(120),"\",26)
+ g:'(((%CTPC0d(27)'="")&&((%CTPC0d(88)'="")&&(%CTPC0d(88)[%CTPC0d(27))))||(%CTPC0d(90)="")) %0ADdun
+ s %CTPC0d(37)=$p(%CTPC0d(120),"\",35)
+ g:'(((%CTPC0d(37)'="")&&(%CTPC0d(37)=%CTPC0d(97)))||(%CTPC0d(98)="")) %0ADdun
+ s %CTPC0d(2)=$p(%CTPC0d(120),"\",1) s %CTPC0d(3)=$p(%CTPC0d(120),"\",2) s %CTPC0d(4)=$p(%CTPC0d(120),"\",3) s %CTPC0d(5)=$p(%CTPC0d(120),"\",4) s %CTPC0d(6)=$p(%CTPC0d(120),"\",5) s %CTPC0d(7)=$p(%CTPC0d(120),"\",6) s %CTPC0d(8)=$p(%CTPC0d(120),"\",7) s %CTPC0d(9)=$p(%CTPC0d(120),"\",8) s %CTPC0d(10)=$p(%CTPC0d(120),"\",9) s %CTPC0d(11)=$p(%CTPC0d(120),"\",10) s %CTPC0d(12)=$p(%CTPC0d(120),"\",11) s %CTPC0d(13)=$p(%CTPC0d(120),"\",12) s %CTPC0d(14)=$p(%CTPC0d(120),"\",13) s %CTPC0d(15)=$p(%CTPC0d(120),"\",14) s %CTPC0d(16)=$p(%CTPC0d(120),"\",15) s %CTPC0d(17)=$p(%CTPC0d(120),"\",16) s %CTPC0d(18)=$p(%CTPC0d(120),"\",17) s %CTPC0d(19)=$p(%CTPC0d(120),"\",18) s %CTPC0d(20)=$p(%CTPC0d(120),"\",19) s %CTPC0d(21)=$p(%CTPC0d(120),"\",20) s %CTPC0d(22)=$p(%CTPC0d(120),"\",21) s %CTPC0d(23)=$p(%CTPC0d(120),"\",22) s %CTPC0d(24)=$p(%CTPC0d(120),"\",23) s %CTPC0d(25)=$p(%CTPC0d(120),"\",24) s %CTPC0d(28)=$p(%CTPC0d(120),"\",25) s %CTPC0d(29)=$p(%CTPC0d(120),"\",27) s %CTPC0d(30)=$p(%CTPC0d(120),"\",28) s %CTPC0d(31)=$p(%CTPC0d(120),"\",29) s %CTPC0d(32)=$p(%CTPC0d(120),"\",30) s %CTPC0d(33)=$p(%CTPC0d(120),"\",31) s %CTPC0d(34)=$p(%CTPC0d(120),"\",32) s %CTPC0d(35)=$p(%CTPC0d(120),"\",33) s %CTPC0d(36)=$p(%CTPC0d(120),"\",34) s %CTPC0d(38)=$p(%CTPC0d(120),"\",36) s %CTPC0d(39)=$p(%CTPC0d(120),"\",37) s %CTPC0d(40)=$p(%CTPC0d(120),"\",38) s %CTPC0d(41)=$p(%CTPC0d(120),"\",39) s %CTPC0d(42)=$p(%CTPC0d(120),"\",40) s %CTPC0d(43)=$p(%CTPC0d(120),"\",41) s %CTPC0d(45)=$p(%CTPC0d(120),"\",42) s %CTPC0d(46)=$p(%CTPC0d(120),"\",44) s %CTPC0d(47)=$p(%CTPC0d(120),"\",43) s %CTPC0d(48)=$p(%CTPC0d(120),"\",45) s %CTPC0d(49)=$p(%CTPC0d(120),"\",46) s %CTPC0d(50)=$p(%CTPC0d(120),"\",47) s %CTPC0d(51)=$p(%CTPC0d(120),"\",48) s %CTPC0d(52)=$p(%CTPC0d(120),"\",49) s %CTPC0d(53)=$p(%CTPC0d(120),"\",50) s %CTPC0d(54)=$p(%CTPC0d(120),"\",51) s %CTPC0d(55)=$p(%CTPC0d(120),"\",52) s %CTPC0d(56)=$p(%CTPC0d(120),"\",53) s %CTPC0d(57)=$p(%CTPC0d(120),"\",54) s %CTPC0d(58)=$p(%CTPC0d(120),"\",55) s %CTPC0d(59)=$p(%CTPC0d(120),"\",56) s %CTPC0d(60)=$p(%CTPC0d(120),"\",57) s %CTPC0d(61)=$p(%CTPC0d(120),"\",58) s %CTPC0d(62)=$p(%CTPC0d(120),"\",59) s %CTPC0d(63)=$p(%CTPC0d(120),"\",60) s %CTPC0d(64)=$p(%CTPC0d(120),"\",61) s %CTPC0d(65)=$p(%CTPC0d(120),"\",62) s %CTPC0d(66)=$p(%CTPC0d(120),"\",63) s %CTPC0d(67)=$p(%CTPC0d(120),"\",64) s %CTPC0d(68)=$p(%CTPC0d(120),"\",65) s %CTPC0d(69)=$p(%CTPC0d(120),"\",66) s %CTPC0d(70)=$p(%CTPC0d(120),"\",67) s %CTPC0d(71)=$p(%CTPC0d(120),"\",68) s %CTPC0d(72)=$p(%CTPC0d(120),"\",69) s %CTPC0d(73)=$p(%CTPC0d(120),"\",70) s %CTPC0d(74)=$p(%CTPC0d(120),"\",71) s %CTPC0d(75)=$p(%CTPC0d(120),"\",72) s %CTPC0d(76)=$p(%CTPC0d(120),"\",73) s %CTPC0d(77)=$p(%CTPC0d(120),"\",74) s %CTPC0d(78)=$p(%CTPC0d(120),"\",75) s %CTPC0d(79)=$p(%CTPC0d(120),"\",76) s %CTPC0d(80)=$p(%CTPC0d(120),"\",77) s %CTPC0d(81)=$p(%CTPC0d(120),"\",78) s %CTPC0d(82)=$p(%CTPC0d(120),"\",79) s %CTPC0d(83)=$p(%CTPC0d(120),"\",80) s %CTPC0d(84)=$p(%CTPC0d(120),"\",81)
+ s %CTPC0d(44)="" f %irep=1:1:$g(^TTAB("BI",%CTPC0d(1),"REM",0)) s $li(%CTPC0d(44),%irep)=$g(^(%irep))
+ d %0ABr1 s %CTPC0d(100)=$zu(28,%CTPC0d(29),7) s %CTPC0d(85)=$zu(28,%CTPC0d(1),6) s %CTPC0d(93)=$zu(28,%CTPC0d(2),6)
+ g:'(((%CTPC0d(86)'="")&&(%CTPC0d(85)[%CTPC0d(86)))||(%CTPC0d(87)="")) %0ADdun
+ g:'(((%CTPC0d(100)'=" ")&&(%CTPC0d(100)=%CTPC0d(101)))||(%CTPC0d(92)="")) %0ADdun
+ g:'(((%CTPC0d(93)'="")&&(($c(0)[%CTPC0d(95))||(%CTPC0d(95)=$c(32,0)&&($e(%CTPC0d(93))=$c(32)))||(%CTPC0d(95)=$e(%CTPC0d(93),1,$l(%CTPC0d(95))))))||(%CTPC0d(96)="")) %0ADdun
+%0ACuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %CTPC0d(102)=%CTPC0d(102)+1,%ROWCOUNT=%CTPC0d(102),%ROWID=%CTPC0d(1),%CTPC0c=10 q
+%CTPC0f i '$g(%CTPC0c) { s SQLCODE=-102 q  } i %CTPC0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%CTPC0d(102))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%CTPC0d(102),%CTPC0c=100 q  } g %0Afirst:%CTPC0c=1
+%0ADdun i $zu(115,2)=1,$g(%CTPC0d(103))=1 { l -@%CTPC0d(104) s %CTPC0d(103)=0 }
+ g %0ACk2
+%0ACdun 
+%0AAdun 
+ s %ROWCOUNT=%CTPC0d(102),SQLCODE=100,%CTPC0c=100 q
+%CTPC0c i '$g(%CTPC0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%CTPC0d(102)),1:0) f %CTPC0d(105)=1 { i $sortend(^||%sql.temp(%CTPC0t(%CTPC0d(105)),0),0) } k ^||%sql.temp(%CTPC0t(1))
+ i $zu(115,2)=1,$g(%CTPC0d(103))=1 { l -@%CTPC0d(104) } k %CTPC0c,%CTPC0d,%CTPC0E,%CTPC0l,%CTPC0n,%CTPC0R,%CTPC0s,%CTPC0t,%CTPC0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %CTPC0c=100
+ f %CTPC0d(105)=1 i $sortend(^||%sql.temp(%CTPC0t(%CTPC0d(105)),0),0)
+ q
+%0ABMod ; asl MOD# 2
+ s %CTPC0d(1)=""
+%0ABk1 s %CTPC0d(1)=$o(^TTAB("BI",%CTPC0d(1)))
+ i %CTPC0d(1)="" g %0ABdun
+ s %CTPC0d(110)=$g(^TTAB("BI",%CTPC0d(1)))
+ s %CTPC0d(27)=$p(%CTPC0d(110),"\",26)
+ g:'(((%CTPC0d(27)'="")&&((%CTPC0d(88)'="")&&(%CTPC0d(88)[%CTPC0d(27))))||(%CTPC0d(90)="")) %0ABk1
+ s %CTPC0d(37)=$p(%CTPC0d(110),"\",35)
+ g:'(((%CTPC0d(37)'="")&&(%CTPC0d(37)=%CTPC0d(97)))||(%CTPC0d(98)="")) %0ABk1
+ s %CTPC0d(2)=$p(%CTPC0d(110),"\",1) s %CTPC0d(3)=$p(%CTPC0d(110),"\",2) s %CTPC0d(4)=$p(%CTPC0d(110),"\",3) s %CTPC0d(5)=$p(%CTPC0d(110),"\",4) s %CTPC0d(6)=$p(%CTPC0d(110),"\",5) s %CTPC0d(7)=$p(%CTPC0d(110),"\",6) s %CTPC0d(8)=$p(%CTPC0d(110),"\",7) s %CTPC0d(9)=$p(%CTPC0d(110),"\",8) s %CTPC0d(10)=$p(%CTPC0d(110),"\",9) s %CTPC0d(11)=$p(%CTPC0d(110),"\",10) s %CTPC0d(12)=$p(%CTPC0d(110),"\",11) s %CTPC0d(13)=$p(%CTPC0d(110),"\",12) s %CTPC0d(14)=$p(%CTPC0d(110),"\",13) s %CTPC0d(15)=$p(%CTPC0d(110),"\",14) s %CTPC0d(16)=$p(%CTPC0d(110),"\",15) s %CTPC0d(17)=$p(%CTPC0d(110),"\",16) s %CTPC0d(18)=$p(%CTPC0d(110),"\",17) s %CTPC0d(19)=$p(%CTPC0d(110),"\",18) s %CTPC0d(20)=$p(%CTPC0d(110),"\",19) s %CTPC0d(21)=$p(%CTPC0d(110),"\",20) s %CTPC0d(22)=$p(%CTPC0d(110),"\",21) s %CTPC0d(23)=$p(%CTPC0d(110),"\",22) s %CTPC0d(24)=$p(%CTPC0d(110),"\",23) s %CTPC0d(25)=$p(%CTPC0d(110),"\",24) s %CTPC0d(28)=$p(%CTPC0d(110),"\",25) s %CTPC0d(29)=$p(%CTPC0d(110),"\",27) s %CTPC0d(30)=$p(%CTPC0d(110),"\",28) s %CTPC0d(31)=$p(%CTPC0d(110),"\",29) s %CTPC0d(32)=$p(%CTPC0d(110),"\",30) s %CTPC0d(33)=$p(%CTPC0d(110),"\",31) s %CTPC0d(34)=$p(%CTPC0d(110),"\",32) s %CTPC0d(35)=$p(%CTPC0d(110),"\",33) s %CTPC0d(36)=$p(%CTPC0d(110),"\",34) s %CTPC0d(38)=$p(%CTPC0d(110),"\",36) s %CTPC0d(39)=$p(%CTPC0d(110),"\",37) s %CTPC0d(40)=$p(%CTPC0d(110),"\",38) s %CTPC0d(41)=$p(%CTPC0d(110),"\",39) s %CTPC0d(42)=$p(%CTPC0d(110),"\",40) s %CTPC0d(43)=$p(%CTPC0d(110),"\",41) s %CTPC0d(45)=$p(%CTPC0d(110),"\",42) s %CTPC0d(46)=$p(%CTPC0d(110),"\",44) s %CTPC0d(47)=$p(%CTPC0d(110),"\",43) s %CTPC0d(48)=$p(%CTPC0d(110),"\",45) s %CTPC0d(49)=$p(%CTPC0d(110),"\",46) s %CTPC0d(50)=$p(%CTPC0d(110),"\",47) s %CTPC0d(51)=$p(%CTPC0d(110),"\",48) s %CTPC0d(52)=$p(%CTPC0d(110),"\",49) s %CTPC0d(53)=$p(%CTPC0d(110),"\",50) s %CTPC0d(54)=$p(%CTPC0d(110),"\",51) s %CTPC0d(55)=$p(%CTPC0d(110),"\",52) s %CTPC0d(56)=$p(%CTPC0d(110),"\",53) s %CTPC0d(57)=$p(%CTPC0d(110),"\",54) s %CTPC0d(58)=$p(%CTPC0d(110),"\",55) s %CTPC0d(59)=$p(%CTPC0d(110),"\",56) s %CTPC0d(60)=$p(%CTPC0d(110),"\",57) s %CTPC0d(61)=$p(%CTPC0d(110),"\",58) s %CTPC0d(62)=$p(%CTPC0d(110),"\",59) s %CTPC0d(63)=$p(%CTPC0d(110),"\",60) s %CTPC0d(64)=$p(%CTPC0d(110),"\",61) s %CTPC0d(65)=$p(%CTPC0d(110),"\",62) s %CTPC0d(66)=$p(%CTPC0d(110),"\",63) s %CTPC0d(67)=$p(%CTPC0d(110),"\",64) s %CTPC0d(68)=$p(%CTPC0d(110),"\",65) s %CTPC0d(69)=$p(%CTPC0d(110),"\",66) s %CTPC0d(70)=$p(%CTPC0d(110),"\",67) s %CTPC0d(71)=$p(%CTPC0d(110),"\",68) s %CTPC0d(72)=$p(%CTPC0d(110),"\",69) s %CTPC0d(73)=$p(%CTPC0d(110),"\",70) s %CTPC0d(74)=$p(%CTPC0d(110),"\",71) s %CTPC0d(75)=$p(%CTPC0d(110),"\",72) s %CTPC0d(76)=$p(%CTPC0d(110),"\",73) s %CTPC0d(77)=$p(%CTPC0d(110),"\",74) s %CTPC0d(78)=$p(%CTPC0d(110),"\",75) s %CTPC0d(79)=$p(%CTPC0d(110),"\",76) s %CTPC0d(80)=$p(%CTPC0d(110),"\",77) s %CTPC0d(81)=$p(%CTPC0d(110),"\",78) s %CTPC0d(82)=$p(%CTPC0d(110),"\",79) s %CTPC0d(83)=$p(%CTPC0d(110),"\",80) s %CTPC0d(84)=$p(%CTPC0d(110),"\",81)
+ s %CTPC0d(44)="" f %irep=1:1:$g(^TTAB("BI",%CTPC0d(1),"REM",0)) s $li(%CTPC0d(44),%irep)=$g(^(%irep))
+ d %0ABr1 s %CTPC0d(100)=$zu(28,%CTPC0d(29),7) s %CTPC0d(85)=$zu(28,%CTPC0d(1),6) s %CTPC0d(93)=$zu(28,%CTPC0d(2),6)
+ g:'(((%CTPC0d(86)'="")&&(%CTPC0d(85)[%CTPC0d(86)))||(%CTPC0d(87)="")) %0ABk1
+ g:'(((%CTPC0d(100)'=" ")&&(%CTPC0d(100)=%CTPC0d(101)))||(%CTPC0d(92)="")) %0ABk1
+ g:'(((%CTPC0d(93)'="")&&(($c(0)[%CTPC0d(95))||(%CTPC0d(95)=$c(32,0)&&($e(%CTPC0d(93))=$c(32)))||(%CTPC0d(95)=$e(%CTPC0d(93),1,$l(%CTPC0d(95))))))||(%CTPC0d(96)="")) %0ABk1
+ s %CTPC0s(30)=$s(%CTPC0d(30)'="":%CTPC0d(30),1:-1E14),%CTPC0s(1)=$s(%CTPC0d(1)'="":%CTPC0d(1),1:-1E14),^||%sql.temp(%CTPC0t(1),0,%CTPC0s(30),%CTPC0s(1))=""
+ g %0ABk1
+%0ABdun 
+ q
+%0Do n %i,icol,ir
+ f icol=0:1:85 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.CTPaymentCode.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Do
+%0Fo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Ferr" s %mmmsqld(4)=0 s %mmmsqld(5)=""
+ s %mmmsqld(3)=$g(ROWID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ i %mmmsqld(2)'="",$d(^TTAB("BI",%mmmsqld(2)))
+ e  g %0FBdun
+ s %mmmsqld(10)=$$%getlock^User.CTPaymentCode.T1(%mmmsqld(2)) i '%mmmsqld(10) s SQLCODE=-110 g %0Fc
+ ; asl MOD# 3
+ i %mmmsqld(2)'="",$d(^TTAB("BI",%mmmsqld(2)))
+ e  g %0FCdun
+ k %data
+ f icol=0:1:85 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.CTPaymentCode.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(4))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(10)=1 %ReleaseLock^User.CTPaymentCode.T1(%mmmsqld(2)) g %0Fc
+%0FCdun 
+ d:%mmmsqld(10)=1 %ReleaseLock^User.CTPaymentCode.T1(%mmmsqld(2)) g:SQLCODE<0 %0Fc
+%0FBdun 
+%0FAdun 
+%0Fc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(4)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Ferr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(10))=1 %ReleaseLock^User.CTPaymentCode.T1(%mmmsqld(2)) g %0Fc
+%0Ho n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Herr" s %mmmsqld(3)=0 s %mmmsqld(4)=""
+ s %mmmsqld(2)=$g(ROWID)
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(1)=%mmmsqld(2)
+ i %mmmsqld(1)'="",$d(^TTAB("BI",%mmmsqld(1)))
+ e  g %0HBdun
+ s %mmmsqld(9)=$$%getlock^User.CTPaymentCode.T1(%mmmsqld(1)) i '%mmmsqld(9) s SQLCODE=-110 g %0Hc
+ ; asl MOD# 3
+ i %mmmsqld(1)'="",$d(^TTAB("BI",%mmmsqld(1)))
+ e  g %0HCdun
+ d %delete^User.CTPaymentCode.T1(%mmmsqld(1),$c(0,2,0,0),'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(3))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(9)=1 %ReleaseLock^User.CTPaymentCode.T1(%mmmsqld(1)) g %0Hc
+%0HCdun 
+ d:%mmmsqld(9)=1 %ReleaseLock^User.CTPaymentCode.T1(%mmmsqld(1)) g:SQLCODE<0 %0Hc
+%0HBdun 
+%0HAdun 
+%0Hc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(3)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Herr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(9))=1 %ReleaseLock^User.CTPaymentCode.T1(%mmmsqld(1)) g %0Hc
+%0Ko d %CTPC0f q:SQLCODE'=0
+ s PLIST(1)=%CTPC0d(1),PLIST(2)=%CTPC0d(1),PLIST(3)=%CTPC0d(2),PLIST(4)=%CTPC0d(3),PLIST(5)=%CTPC0d(4),PLIST(6)=%CTPC0d(5),PLIST(7)=%CTPC0d(6),PLIST(8)=%CTPC0d(7),PLIST(9)=%CTPC0d(8),PLIST(10)=%CTPC0d(9),PLIST(11)=%CTPC0d(10),PLIST(12)=%CTPC0d(11),PLIST(13)=%CTPC0d(12),PLIST(14)=%CTPC0d(13),PLIST(15)=%CTPC0d(14),PLIST(16)=%CTPC0d(15),PLIST(17)=%CTPC0d(16),PLIST(18)=%CTPC0d(17),PLIST(19)=%CTPC0d(18),PLIST(20)=%CTPC0d(19),PLIST(21)=%CTPC0d(20),PLIST(22)=%CTPC0d(21),PLIST(23)=%CTPC0d(22),PLIST(24)=%CTPC0d(23),PLIST(25)=%CTPC0d(24),PLIST(26)=%CTPC0d(25),PLIST(27)=%CTPC0d(26),PLIST(28)=%CTPC0d(27),PLIST(29)=%CTPC0d(28),PLIST(30)=%CTPC0d(29),PLIST(31)=%CTPC0d(30),PLIST(32)=%CTPC0d(31),PLIST(33)=%CTPC0d(32),PLIST(34)=%CTPC0d(33),PLIST(35)=%CTPC0d(34),PLIST(36)=%CTPC0d(35),PLIST(37)=%CTPC0d(36),PLIST(38)=%CTPC0d(37),PLIST(39)=%CTPC0d(38),PLIST(40)=%CTPC0d(39),PLIST(41)=%CTPC0d(40),PLIST(42)=%CTPC0d(41),PLIST(43)=%CTPC0d(42),PLIST(44)=%CTPC0d(43),PLIST(45)=%CTPC0d(44),PLIST(46)=%CTPC0d(45),PLIST(47)=%CTPC0d(46),PLIST(48)=%CTPC0d(47),PLIST(49)=%CTPC0d(48),PLIST(50)=%CTPC0d(49),PLIST(51)=%CTPC0d(50),PLIST(52)=%CTPC0d(51),PLIST(53)=%CTPC0d(52),PLIST(54)=%CTPC0d(53),PLIST(55)=%CTPC0d(54),PLIST(56)=%CTPC0d(55),PLIST(57)=%CTPC0d(56),PLIST(58)=%CTPC0d(57),PLIST(59)=%CTPC0d(58),PLIST(60)=%CTPC0d(59),PLIST(61)=%CTPC0d(60),PLIST(62)=%CTPC0d(61),PLIST(63)=%CTPC0d(62),PLIST(64)=%CTPC0d(63),PLIST(65)=%CTPC0d(64),PLIST(66)=%CTPC0d(65),PLIST(67)=%CTPC0d(66),PLIST(68)=%CTPC0d(67),PLIST(69)=%CTPC0d(68),PLIST(70)=%CTPC0d(69),PLIST(71)=%CTPC0d(70),PLIST(72)=%CTPC0d(71),PLIST(73)=%CTPC0d(72),PLIST(74)=%CTPC0d(73),PLIST(75)=%CTPC0d(74),PLIST(76)=%CTPC0d(75),PLIST(77)=%CTPC0d(76),PLIST(78)=%CTPC0d(77),PLIST(79)=%CTPC0d(78),PLIST(80)=%CTPC0d(79),PLIST(81)=%CTPC0d(80),PLIST(82)=%CTPC0d(81),PLIST(83)=%CTPC0d(82),PLIST(84)=%CTPC0d(83),PLIST(85)=%CTPC0d(84)
+ q
+%0MBr1 n cnt s cnt=0
+ s PLIST(27)=""
+ i $g(PLIST(11))'="" s cnt=cnt+1,$p(PLIST(27),"|",cnt)=$g(PLIST(11))
+ i $g(PLIST(12))'="" s cnt=cnt+1,$p(PLIST(27),"|",cnt)=$g(PLIST(12))
+ i $g(PLIST(13))'="" s cnt=cnt+1,$p(PLIST(27),"|",cnt)=$g(PLIST(13))
+ k cnt q
+%0Mo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Merr" s %mmmsqld(88)=0,%mmmsqld(89)=""
+ s %mmmsqld(86)=$g(ROWID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(2)=%mmmsqld(86)
+ i PLIST(2)'="",$d(^TTAB("BI",PLIST(2)))
+ e  g %0MBdun
+ s %mmmsqld(94)=$g(^TTAB("BI",PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(94),"\",1) s PLIST(4)=$p(%mmmsqld(94),"\",2) s PLIST(5)=$p(%mmmsqld(94),"\",3) s PLIST(6)=$p(%mmmsqld(94),"\",4) s PLIST(7)=$p(%mmmsqld(94),"\",5) s PLIST(8)=$p(%mmmsqld(94),"\",6) s PLIST(9)=$p(%mmmsqld(94),"\",7) s PLIST(10)=$p(%mmmsqld(94),"\",8) s PLIST(11)=$p(%mmmsqld(94),"\",9) s PLIST(12)=$p(%mmmsqld(94),"\",10) s PLIST(13)=$p(%mmmsqld(94),"\",11) s PLIST(14)=$p(%mmmsqld(94),"\",12) s PLIST(15)=$p(%mmmsqld(94),"\",13) s PLIST(16)=$p(%mmmsqld(94),"\",14) s PLIST(17)=$p(%mmmsqld(94),"\",15) s PLIST(18)=$p(%mmmsqld(94),"\",16) s PLIST(19)=$p(%mmmsqld(94),"\",17) s PLIST(20)=$p(%mmmsqld(94),"\",18) s PLIST(21)=$p(%mmmsqld(94),"\",19) s PLIST(22)=$p(%mmmsqld(94),"\",20) s PLIST(23)=$p(%mmmsqld(94),"\",21) s PLIST(24)=$p(%mmmsqld(94),"\",22) s PLIST(25)=$p(%mmmsqld(94),"\",23) s PLIST(26)=$p(%mmmsqld(94),"\",24) s PLIST(28)=$p(%mmmsqld(94),"\",26) s PLIST(29)=$p(%mmmsqld(94),"\",25) s PLIST(30)=$p(%mmmsqld(94),"\",27) s PLIST(31)=$p(%mmmsqld(94),"\",28) s PLIST(32)=$p(%mmmsqld(94),"\",29) s PLIST(33)=$p(%mmmsqld(94),"\",30) s PLIST(34)=$p(%mmmsqld(94),"\",31) s PLIST(35)=$p(%mmmsqld(94),"\",32) s PLIST(36)=$p(%mmmsqld(94),"\",33) s PLIST(37)=$p(%mmmsqld(94),"\",34) s PLIST(38)=$p(%mmmsqld(94),"\",35) s PLIST(39)=$p(%mmmsqld(94),"\",36) s PLIST(40)=$p(%mmmsqld(94),"\",37) s PLIST(41)=$p(%mmmsqld(94),"\",38) s PLIST(42)=$p(%mmmsqld(94),"\",39) s PLIST(43)=$p(%mmmsqld(94),"\",40) s PLIST(44)=$p(%mmmsqld(94),"\",41) s PLIST(46)=$p(%mmmsqld(94),"\",42) s PLIST(47)=$p(%mmmsqld(94),"\",44) s PLIST(48)=$p(%mmmsqld(94),"\",43) s PLIST(49)=$p(%mmmsqld(94),"\",45) s PLIST(50)=$p(%mmmsqld(94),"\",46) s PLIST(51)=$p(%mmmsqld(94),"\",47) s PLIST(52)=$p(%mmmsqld(94),"\",48) s PLIST(53)=$p(%mmmsqld(94),"\",49) s PLIST(54)=$p(%mmmsqld(94),"\",50) s PLIST(55)=$p(%mmmsqld(94),"\",51) s PLIST(56)=$p(%mmmsqld(94),"\",52) s PLIST(57)=$p(%mmmsqld(94),"\",53) s PLIST(58)=$p(%mmmsqld(94),"\",54) s PLIST(59)=$p(%mmmsqld(94),"\",55) s PLIST(60)=$p(%mmmsqld(94),"\",56) s PLIST(61)=$p(%mmmsqld(94),"\",57) s PLIST(62)=$p(%mmmsqld(94),"\",58) s PLIST(63)=$p(%mmmsqld(94),"\",59) s PLIST(64)=$p(%mmmsqld(94),"\",60) s PLIST(65)=$p(%mmmsqld(94),"\",61) s PLIST(66)=$p(%mmmsqld(94),"\",62) s PLIST(67)=$p(%mmmsqld(94),"\",63) s PLIST(68)=$p(%mmmsqld(94),"\",64) s PLIST(69)=$p(%mmmsqld(94),"\",65) s PLIST(70)=$p(%mmmsqld(94),"\",66) s PLIST(71)=$p(%mmmsqld(94),"\",67) s PLIST(72)=$p(%mmmsqld(94),"\",68) s PLIST(73)=$p(%mmmsqld(94),"\",69) s PLIST(74)=$p(%mmmsqld(94),"\",70) s PLIST(75)=$p(%mmmsqld(94),"\",71) s PLIST(76)=$p(%mmmsqld(94),"\",72) s PLIST(77)=$p(%mmmsqld(94),"\",73) s PLIST(78)=$p(%mmmsqld(94),"\",74) s PLIST(79)=$p(%mmmsqld(94),"\",75) s PLIST(80)=$p(%mmmsqld(94),"\",76) s PLIST(81)=$p(%mmmsqld(94),"\",77) s PLIST(82)=$p(%mmmsqld(94),"\",78) s PLIST(83)=$p(%mmmsqld(94),"\",79) s PLIST(84)=$p(%mmmsqld(94),"\",80) s PLIST(85)=$p(%mmmsqld(94),"\",81)
+ s PLIST(45)="" f %irep=1:1:$g(^TTAB("BI",PLIST(2),"REM",0)) s $li(PLIST(45),%irep)=$g(^(%irep))
+ d %0MBr1
+ g:$zu(115,2)=0 %0MBuncommitted i $zu(115,2)=1 l +^TTAB("BI",$p(PLIST(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(88)=1,%mmmsqld(89)=$name(^TTAB("BI",$p(PLIST(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_PaymentCode for RowID value: "_PLIST(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i PLIST(2)'="",$d(^TTAB("BI",PLIST(2)))
+ e  g %0MCdun
+ s %mmmsqld(99)=$g(^TTAB("BI",PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(99),"\",1) s PLIST(4)=$p(%mmmsqld(99),"\",2) s PLIST(5)=$p(%mmmsqld(99),"\",3) s PLIST(6)=$p(%mmmsqld(99),"\",4) s PLIST(7)=$p(%mmmsqld(99),"\",5) s PLIST(8)=$p(%mmmsqld(99),"\",6) s PLIST(9)=$p(%mmmsqld(99),"\",7) s PLIST(10)=$p(%mmmsqld(99),"\",8) s PLIST(11)=$p(%mmmsqld(99),"\",9) s PLIST(12)=$p(%mmmsqld(99),"\",10) s PLIST(13)=$p(%mmmsqld(99),"\",11) s PLIST(14)=$p(%mmmsqld(99),"\",12) s PLIST(15)=$p(%mmmsqld(99),"\",13) s PLIST(16)=$p(%mmmsqld(99),"\",14) s PLIST(17)=$p(%mmmsqld(99),"\",15) s PLIST(18)=$p(%mmmsqld(99),"\",16) s PLIST(19)=$p(%mmmsqld(99),"\",17) s PLIST(20)=$p(%mmmsqld(99),"\",18) s PLIST(21)=$p(%mmmsqld(99),"\",19) s PLIST(22)=$p(%mmmsqld(99),"\",20) s PLIST(23)=$p(%mmmsqld(99),"\",21) s PLIST(24)=$p(%mmmsqld(99),"\",22) s PLIST(25)=$p(%mmmsqld(99),"\",23) s PLIST(26)=$p(%mmmsqld(99),"\",24) s PLIST(28)=$p(%mmmsqld(99),"\",26) s PLIST(29)=$p(%mmmsqld(99),"\",25) s PLIST(30)=$p(%mmmsqld(99),"\",27) s PLIST(31)=$p(%mmmsqld(99),"\",28) s PLIST(32)=$p(%mmmsqld(99),"\",29) s PLIST(33)=$p(%mmmsqld(99),"\",30) s PLIST(34)=$p(%mmmsqld(99),"\",31) s PLIST(35)=$p(%mmmsqld(99),"\",32) s PLIST(36)=$p(%mmmsqld(99),"\",33) s PLIST(37)=$p(%mmmsqld(99),"\",34) s PLIST(38)=$p(%mmmsqld(99),"\",35) s PLIST(39)=$p(%mmmsqld(99),"\",36) s PLIST(40)=$p(%mmmsqld(99),"\",37) s PLIST(41)=$p(%mmmsqld(99),"\",38) s PLIST(42)=$p(%mmmsqld(99),"\",39) s PLIST(43)=$p(%mmmsqld(99),"\",40) s PLIST(44)=$p(%mmmsqld(99),"\",41) s PLIST(46)=$p(%mmmsqld(99),"\",42) s PLIST(47)=$p(%mmmsqld(99),"\",44) s PLIST(48)=$p(%mmmsqld(99),"\",43) s PLIST(49)=$p(%mmmsqld(99),"\",45) s PLIST(50)=$p(%mmmsqld(99),"\",46) s PLIST(51)=$p(%mmmsqld(99),"\",47) s PLIST(52)=$p(%mmmsqld(99),"\",48) s PLIST(53)=$p(%mmmsqld(99),"\",49) s PLIST(54)=$p(%mmmsqld(99),"\",50) s PLIST(55)=$p(%mmmsqld(99),"\",51) s PLIST(56)=$p(%mmmsqld(99),"\",52) s PLIST(57)=$p(%mmmsqld(99),"\",53) s PLIST(58)=$p(%mmmsqld(99),"\",54) s PLIST(59)=$p(%mmmsqld(99),"\",55) s PLIST(60)=$p(%mmmsqld(99),"\",56) s PLIST(61)=$p(%mmmsqld(99),"\",57) s PLIST(62)=$p(%mmmsqld(99),"\",58) s PLIST(63)=$p(%mmmsqld(99),"\",59) s PLIST(64)=$p(%mmmsqld(99),"\",60) s PLIST(65)=$p(%mmmsqld(99),"\",61) s PLIST(66)=$p(%mmmsqld(99),"\",62) s PLIST(67)=$p(%mmmsqld(99),"\",63) s PLIST(68)=$p(%mmmsqld(99),"\",64) s PLIST(69)=$p(%mmmsqld(99),"\",65) s PLIST(70)=$p(%mmmsqld(99),"\",66) s PLIST(71)=$p(%mmmsqld(99),"\",67) s PLIST(72)=$p(%mmmsqld(99),"\",68) s PLIST(73)=$p(%mmmsqld(99),"\",69) s PLIST(74)=$p(%mmmsqld(99),"\",70) s PLIST(75)=$p(%mmmsqld(99),"\",71) s PLIST(76)=$p(%mmmsqld(99),"\",72) s PLIST(77)=$p(%mmmsqld(99),"\",73) s PLIST(78)=$p(%mmmsqld(99),"\",74) s PLIST(79)=$p(%mmmsqld(99),"\",75) s PLIST(80)=$p(%mmmsqld(99),"\",76) s PLIST(81)=$p(%mmmsqld(99),"\",77) s PLIST(82)=$p(%mmmsqld(99),"\",78) s PLIST(83)=$p(%mmmsqld(99),"\",79) s PLIST(84)=$p(%mmmsqld(99),"\",80) s PLIST(85)=$p(%mmmsqld(99),"\",81)
+ s PLIST(45)="" f %irep=1:1:$g(^TTAB("BI",PLIST(2),"REM",0)) s $li(PLIST(45),%irep)=$g(^(%irep))
+ d %0MBr1
+%0MBuncommitted ;
+ s PLIST(1)=PLIST(2)
+ s SQLCODE=0 g %0Mc
+%0MCdun i $zu(115,2)=1,$g(%mmmsqld(88))=1 { l -@%mmmsqld(89) s %mmmsqld(88)=0 }
+%0MBdun 
+%0MAdun 
+%0Mc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(88))=1 { l -@%mmmsqld(89) } q
+%0Merr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Mc
+%0Po n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Perr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0PBdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3),0))
+ s prompt=$p(%mmmsqld(10),"\",32)
+ g:$zu(115,2)=0 %0PBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0PCdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3),0))
+ s prompt=$p(%mmmsqld(13),"\",32)
+%0PBuncommitted ;
+ s SQLCODE=0 g %0Pc
+%0PCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0PBdun 
+%0PAdun 
+%0Pc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Perr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Pc
+%0Ro n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Rerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0RBdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3),0))
+ s prompt=$p(%mmmsqld(10),"\",32)
+ g:$zu(115,2)=0 %0RBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0RCdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3),0))
+ s prompt=$p(%mmmsqld(13),"\",32)
+%0RBuncommitted ;
+ s SQLCODE=0 g %0Rc
+%0RCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0RBdun 
+%0RAdun 
+%0Rc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Rerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Rc
+]]></Routine>
+</Export>

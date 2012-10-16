@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF143ESP01" type="INT" languagemode="0"><![CDATA[
+MIF143ESP01(mi) ; MIC 22/8/02 ; Shimadzu CL-7300 (Bi-Directional)  ; Compiled October 14, 2002 18:30:49 for Cache for Windows
+ s mi=$g(mi) i '$l(mi) q
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s soh=$c(1),cr=$c(13),stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(15),eot=$c(4),enq=$c(5)
+ s start=0,hh=$p($h,",",2),dy=+$h-1
+ s (sample,epis,surname,result,date,time,QC)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main ;
+ r *x:10 i $c(x)=enq d Rcv q
+ s ^TMIF(mi,35,"CO")=0
+ i " L "[(" "_par9_" ") d loadlist^MIF000(mi)
+ d URG(mi)
+ q
+Rcv ;
+ d trace^MIF000(mi,"ENQ","H<--M")
+ D ACK
+ s record=$$read^MIF000(stx,etx)
+ d trace^MIF000(mi,record,"H<--M")
+ D ACK
+k s type=$e(record,1)
+ i type="D" d RcvRes q
+ i type="d" d RcvResCont q
+ q
+RcvRes ; Receive Results
+ s (sample,epis,surname,result,date,time,QC)=""
+ s date=$zdh($e($zd($h,8),1,4)_$tr($e(record,2,3)," ","0")_$tr($e(record,4,5)," ","0"),8)
+ s time=($e(record,6,7)*3600)+($e(record,8,9)*60)
+ S epis=$tr($e(record,14,29)," ")
+ ;S QC=$e(record,30)
+ s reqnum=$e(record,10,13)
+ S test=$E(record,34,35)
+ s record=$e(record,36,$l(record))
+ s test=$l(record)\16
+RcvRes2 ; Get Detail of tests
+ f i=1:1:test d
+ . s tc=$tr($e(record,((i-1)*16)+1,((i-1)*16)+3)," ")
+ . s flag=$tr($e(record,((i-1)*16)+4,((i-1)*16)+7)," ")
+ . s res=$tr($e(record,((i-1)*16)+8,((i-1)*16)+16)," ")
+ . i res["*" S res="RME"               ;Filtering scrap from the machine
+ . s result=result_tc_$c(par10)_res_$c(par11)
+ i $l(epis),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ i $d(^TEPI(epis)) d
+ .s tsgrp="" f  s tsgrp=$o(^TMIF(mi,"TG",tsgrp)) q:tsgrp=""  d
+ ..s ts="" f  s ts=$o(^TMIF(mi,"TG",tsgrp,"TS",ts)) q:ts=""  i $e(ts)="U" d
+ ...s tscnt=$$getnats^LVBVIS4(epis,ts) i tscnt d
+ ....k PLIST
+ ....s ti="" f j=1:1 s ti=$o(^TMIF(mi,1,epis_" ",ti)) q:ti=""  d
+ .....s x=$o(^TMIF(mi,1,epis_" ",ti,""),-1)  
+ .....s PLIST(j)=ti_"\"_$p($g(^TMIF(mi,1,epis_" ",ti,x)),"\",1)
+ ....s PLIST=$o(PLIST(""),-1)
+ ....i $$machsave^LVBVIS4(par2,epis,"E","",ts,tsgrp,"G")
+ q
+RcvResCont ; receive Results continuation
+ i $e(record,2,5)'=reqnum d  q
+ . d trace^MIF000(mi,"Received Results Continuation out of sequence","H<--M")
+ s test=$e(record,6,7)
+ s record=$e(record,8,$l(record))
+ s test=$l(record)\16
+ g RcvRes2
+SAVE(mi) ; create loadlist records
+ n (mi)
+ s soh=$c(1),cr=$c(13),stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(15),eot=$c(4),enq=$c(5)
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+ s tray=^TMP("MIF000",$j,"LL","TRAY")
+ k test s tc="" f  s tc=$o(^TMP("MIF000",$j,"LL","TEST",tc)) q:tc=""  s test(tc)=""
+ s ^TMIF(mi,15,epis)=+$h
+ s pos=(^TMIF(mi,35,"CO")+tray),pos=$j(pos,4),^TMIF(mi,35,"CO")=^TMIF(mi,35,"CO")+1
+SAVE2 ;
+ s reg="W"_pos_$j(epis,16)_"000000"
+ s test=0,tc="" f  s tc=$o(test(tc)) q:tc=""  s test=test+1,reg=reg_$j(tc,3)
+ s $e(reg,26,27)=$j(test,2)
+ d SEND(reg)     
+ q       
+SEND(msg) ; send string to instrument
+ w enq,*-3
+ d trace^MIF000(mi,"ENQ","H-->M")
+ r *z:10 d trace^MIF000(mi,$s(z=$a(ack):"ACK",z=$a(nak):"NACK",1:$c(z)),"H<--M") q:z'=$a(ack)
+ s rep=3
+rep q:'rep
+ s rep=rep-1
+ w stx,msg,etx,*-3
+ d trace^MIF000(mi,stx_msg_etx,"H-->M")
+ r *z:10 d trace^MIF000(mi,$s(z=$a(ack):"ACK",z=$a(nak):"NACK",1:$c(z)),"H<--M") g:z'=$a(ack) rep
+ w eot,*-3
+ d trace^MIF000(mi,"EOT","H-->M")
+ q       
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+URG(mi) ;
+ n (mi)
+ s soh=$c(1),cr=$c(13),stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(15),eot=$c(4),enq=$c(5)
+ s ts="U"
+ f  s ts=$o(^TMIF(mi,0,ts)) q:$e(ts,1)'="U"  d
+ . s epis=""
+ . f  s epis=$o(^TTRQ(ts,epis)) q:epis=""  d
+ .. d SENDURG(epis)
+ q
+SENDURG(epis) ;
+ n ts
+ k ^TMP("MIF-SCAN",$j,mi,epis)
+ s ts="U" f  s ts=$o(^TMIF(mi,0,ts)) q:$e(ts)'="U"  d
+ . i $d(^TMIF(mi,15,epis,ts)) q
+ . d scanone^MIF000(mi,epis,,ts)
+ . i $d(^TMP("MIF-SINGLE",$j,mi,epis)) d
+ .. s ^TMIF(mi,15,epis,ts)=+$h,^TMIF(mi,16,epis,ts)=$h m ^TMIF(mi,16,epis,ts,"DATA")=^TMP("MIF-SINGLE",$j,mi,epis)
+ . m ^TMP("MIF-SCAN",$j,mi,epis)=^TMP("MIF-SINGLE",$j,mi,epis)
+ . k ^TMP("MIF-SINGLE",$j)
+ q:'$d(^TMP("MIF-SCAN",$j,mi,epis))
+ m test=^TMP("MIF-SCAN",$j,mi,epis)
+ s (^TMIF(mi,35,"COUNT"),pos)=($G(^TMIF(mi,35,"COUNT"))#218)+550
+ s pos=$j(pos,4)
+ g SAVE2
+NEXTTRAY(tray) ;
+ q tray
+]]></Routine>
+</Export>

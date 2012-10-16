@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF999ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF999ESP01(mi) ; HL7 protocol - RapidLink ; QC = No
+ ; ----------------------------------------------------------------------
+ ;  History:
+ ;  Sep 26, 2006 14:07:27 Created by mcfTemplateASTM.csp v 2.0 24AUG2006
+ ;                        Customized by Mc_Fly
+ ; ----------------------------------------------------------------------
+ s io="|TCP|1"
+ s serverport=10900
+ d trace("Starting master job="_$j,"DEBUG")
+ i $$select^LVBMIMP(mi) d trace("Error select^LVBMIMP(mi)","DEBUG") q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s err=$$start^MIF000()
+ o io:(:serverport:"MA"):200 e  q
+ d trace("Started master","DEBUG")
+loop 
+ u io r *x:60 ;  Read for accept
+ i x=-1,$$stop^MIF000() d trace("Exit master job="_$j,"DEBUG") q
+ i x=-1 g loop
+ j child(mi):(:5:io:io) ;Concurrent server bit is on
+ g loop
+child(mi) ;Entry for each server process
+ s $zt="err"
+ d trace("Started child "_$j,"DEBUG")
+ s mi=$g(mi) i '$l(mi) q
+ s vt=$c(11),cr=$c(13),fs=$c(28)
+ s sendcnt=0
+ d trace("*** Starting child ***","DEBUG")
+ i $$select^LVBMIMP(mi) d trace("Error select^LVBMIMP(mi)","DEBUG") q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s:'$l(par10) par10=$a("|") s:'$l(par11) par11=$a("\")
+ ;i $$start^MIF000() d trace("Cannot open device "_par4,"DEBUG") q
+ d trace("Started child $j="_$j,"DEBUG")
+ s ^TMP("USER",$j)="al"
+ ; Neutral State
+ f  d  i $$stop^MIF000() q
+ . d receive
+ . i $g(^TMIF(mi,16))'=+$h d purge
+ c par4
+ d trace("Finished","DEBUG")
+ q
+receive ; Ready to receive
+ f  q:'$$read(vt,fs_cr)  d receiving
+ q
+receiving 
+ s record=$e(record,2,$l(record)-3) ; Remove <VT>.....<CR><FS><CR>
+ s type=$p($p(record,cr,1),"|",9) ; Message type
+ s acceptack=$p($p(record,cr,1),"|",15)
+ d trace("type="_type,"DEBUG")
+ s mcid=$p($p(record,cr,1),"|",10) ; Message control ID
+ i acceptack="AL" d sendack(mcid,type)
+ i $p(type,"^")="QRY" d query q
+ i $p(type,"^")="ORU" d result q
+ q
+query 
+ s mrnepis=$p($p(record,cr,2),"|",9)
+ d trace("Ask for "_mrnepis,"DEBUG")
+ s (epis,ape1,ape2,nom,dob,sex)=""
+ i $l(mrnepis)=9 s epis=mrnepis
+ i $l(mrnepis)'=9 d
+ . s date=$o(^TDEB(mrnepis,99999),-1) i '$l(date) q
+ . s stat=$o(^TDEB(mrnepis,date,""),-1) i '$l(stat) q
+ . s epis=$o(^TDEB(mrnepis,date,stat,""),-1)
+ d trace("Using demographics from episode="_epis)
+ i $l(epis) d
+ . s (r,r0)=""
+ . s r=$g(^TEPI(epis))
+ . s ape1=$p(r,"\",1),nom=$p(r,"\",2),sex=$p(r,"\",3)
+ . i $l(sex) s female=$p($g(^TTAB("SP",sex)),"\",2),sex=$s(female="Y":"F",1:"M")
+ . s dob=$p(r,"\",4)
+ . s r0=$g(^TEPI(epis,0))
+ . s ape2=$p(r0,"\",23)
+ i '$l(epis) d askhis(mrnepis)
+ i $l(dob) s dob=$zd(dob,8,,,,,,,"")
+ s ape=$s($l(ape1)&$l(ape2):ape1_" "_ape2,$l(ape2):ape2,1:ape1)
+ s mess=$$getheader("ADR^"_$p(type,"^",2),mcid)
+ s mess=mess_"PID|||"_mrnepis_"||"_ape_"^"_nom_"||"_dob_"|"_sex_cr_fs_cr
+ d trace(mess,"H-->M")
+ w mess,*-3
+ q
+askhis(mrn) 
+ n (mrn,PLIST)
+ d trace("Asking for mrn="_mrn,"DEBUG")
+ k PLIST
+ s ns=$zu(5)
+ i $zu(5,"USER")
+ s err=$$Get^HIS(mrn)
+ i $zu(5,ns)
+ i err=100 d trace("Error","DEBUG") q 0
+ s sex=$g(PLIST(8))
+ s nom=$g(PLIST(4))
+ s ape1=$g(PLIST(5))
+ s ape2=$g(PLIST(39))
+ s dob=$g(PLIST(7))
+ q 1
+getheader(type,mcid) 
+ i '$d(mcid) s sendcnt=sendcnt+1 s mcid=sendcnt
+ s h=$h,dt=$zd(h,8)_$tr($zt($p(h,",",2)),":")
+ q vt_"MSH|^~\&|HIS|Hospital|Rapidcomm|Hospital|"_dt_"||"_type_"|"_mcid_"|P|2.4|||NE|NE|"_cr
+result 
+ ; I'm using miresult because result is usend inside LVBVISTS ¿?
+ s (sample,epis,surname,miresult,date,time,QC,mrnepis,code,machine)=""
+ f n=1:1:$l(record,cr) d
+ . s r=$p(record,cr,n)
+ . i $p(r,"|",1)="OBX" d  q
+ .. i $p(r,"|",12)'="F" q
+ .. s ch=$p(r,"|",4),res=$tr($p(r,"|",6),",","."),flag=$p(r,"|",9)
+ .. s miresult=miresult_ch_$c(par10)_res_$c(par10)_flag_$c(par11)
+ .. i $p(r,"|",2)=1 d
+ ... s machine=$p($p(r,"|",19),"^",3)
+ ... s dt=$p(r,"|",15),date=$zd($e(dt,1,8),8,,,,,,,"")
+ ... s time=$zth($e(dt,9,10)_":"_$e(dt,11,12)_":"_$e(dt,13,14),1,"")
+ . i $p(r,"|",1)="PID"  s mrnepis=$p(r,"|",4)
+ . i $p(r,"|",1)="MSH" s code=$p(r,"|",10)
+ i '$l(miresult) q
+ i '$l(mrnepis) q
+ i '$l(code) q
+ s code=$p(code,"I",1)_"S"_$p(code,"S",2)
+ d trace("mrnepis="_mrnepis_" code="_code_" machine="_machine,"DEBUG")
+ i $l(mrnepis)=9 s epis=mrnepis ; mrnepis is an episode number
+ i '$l(epis),$d(^TMIF(mi,16,code)) s epis=^TMIF(mi,16,code) ; mrnepis is a mrn
+ i '$l(epis) d create
+ d trace("File epis="_epis_" miresult="_miresult,"DEBUG")
+ d file^MIF000(mi,sample,epis,surname,miresult,date,time,QC)
+ q
+create 
+ i '$$askhis(mrnepis) q
+ k plist m plist=PLIST k PLIST
+ l +^RapidLink(0)
+ s num=^RapidLink(0)
+ s ^RapidLink(0)=num+1
+ l -^RapidLink(0)
+ s epis="00"_num
+ s ^TMIF(mi,16,code)=epis
+ d trace("Creating request "_epis,"DEBUG")
+ i $$vtsLock^SSLOCK("PEI",epis,"",^TMP("USER",$j),"OPTICALREADER")'=-1 d  q
+ . d trace("Peticion bloqueada "_epis,"DEBUG")
+ f i=1:1:113 s PLIST(i)=""
+ s PLIST(2)=epis ;Episodio
+ s PLIST(3)=plist(5) ;Apellido1
+ s PLIST(4)=plist(4) ;Nombre
+ s PLIST(5)=plist(8) ;Sexo
+ i plist(7)=+plist(7) d
+ . s PLIST(6)=plist(7) ;Fecha Nacimiento
+ . s PLIST(26)=$$age(PLIST(6)) ; Edad
+ s PLIST(10)=$p($h,",",1) ;Fecha entrada
+ s PLIST(11)=$p($h,",",2) ;Hora Entrada
+ s PLIST(14)=$p($h,",",1) ;Fecha Peticion
+ s PLIST(15)=0
+ s PLIST(20)=plist(1) ;Numero Historia
+ s PLIST(22)="POCT" ;GFH Destino
+ s PLIST(29)="I" ;Status Impresion
+ s PLIST(31)=^TMP("USER",$j) ;Usuario
+ s PLIST(32)=$e(plist(9),1,30) ;Domicilio
+ s PLIST(43)=plist(13) ;Telefono
+ s PLIST(62)=$p($h,",",2) ;Hora 
+ s PLIST(65)=","_plist(2) ;Numero TIS
+ s PLIST(66)="HULP"
+ s PLIST(75)="N" ;Fax
+ s PLIST(86)=1
+ s PLIST(86)=0
+ i $l(PLIST(22)) s PLIST(93)=$p($g(^TTAB("RH",PLIST(22))),"\",16) ; Patient Type
+ s PLIST(94)=$$getGFH(machine) ; Category DR
+ s PLIST(99)=plist(39) ;Apellido 2
+ s PLIST(105)="N"
+ s PLIST(111)=$p($h,",",2) ;Hora Entrada
+ s ok=$$save^LVBEPVIS(epis)
+ i +ok d
+ . d trace("ERROR CREANDO EPISODIO "_epis_" err="_ok,"DEBUG")
+ . s ok=$$vtsLockClr^SSLOCK("PEI",epis,"")
+ s spe=$p($p(miresult,"Tipo Muest."_$c(par10),2),$c(par10),1)
+ s ts=$s(spe="BLDA":"U032",spe="BLDC":"U032",spe="BLMV":"U032",1:"U017")
+ d trace("Specimen="_spe_" ts="_ts)
+ i $d(^TEPI(epis,1,ts)) s ok=$$vtsLockClr^SSLOCK("PEI",epis,"") q 
+ k PLIST
+ f i=1:1:57 s PLIST(i)=""
+ s PLIST(0)=epis
+ s PLIST(1)=epis_"||"_ts
+ s PLIST(3)=ts
+ s PLIST(13)="R"
+ s ok=$$insert^LVBVISTS(epis,"Patient PreEntry : Patient Pre-Entry","")
+ i ok d trace("ERROR al añadir la prueba="_ts_" episodio="_epis,"DEBUG")
+ s ok=$$vtsLockClr^SSLOCK("PEI",epis,"")
+ q
+getGFH(code) 
+ i code="12951" q "ZX00"
+ q "VX00"
+age(date)       n h,tod,dob,tody,todmd,doby,dobmd,age
+ s h=$p($h,",",1)
+ s tod=$zd(h,4,,4)
+ s dob=$zd(date,4,,4)
+ s tody=$p(tod,"/",3)
+ s todmd=+$p(tod,"/",2)_$p(tod,"/",1)
+ s doby=$p(dob,"/",3)
+ s dobmd=+$p(dob,"/",2)_$p(dob,"/",1)
+ ; <1 year, return days
+ i tody=doby q (h-date)/1000
+ s age=tody-doby
+ i todmd<dobmd s age=age-1
+ i age=0 q (h-date)/1000
+ q age
+sendack(mcid,type) 
+ s mess=$$getheader("ACK^"_$p(type,"^",2))
+ s mess=mess_"MSA|AA|"_mcid_"|OK"_cr_fs_cr
+ d trace(mess,"H-->M")
+ w mess,*-3
+ q       
+read(start,stop,term,timeout)   n (mi,record,start,stop,term,timeout)
+ ; start: string of start charactes i.e. stx
+ ; stop : string of stop characters i.e. etb_etb
+ ; term: string of terminator characters i.e. eot
+ ; Returns: 0 - Failed
+ ;          1 - Done
+ s start=$g(start),stop=$g(stop),term=$g(term),timeout=$g(timeout),ok=0
+ i '$l(start) s ok=1
+ i '$l(timeout) s timeout=30
+ s record=""
+ f  r *x:timeout q:x=-1  q:$l(term)&$f(term,$c(x))  d  q:$l(stop)&($e(record,$l(record)-$l(stop)+1,$l(record))=stop)
+ . i 'ok,$f(start,$c(x)) s ok=1
+ . i 'ok d trace("Wait for "_start_" but received "_$c(x)) q
+ . s record=record_$c(x)
+ i $l(term),$f(term,$c(x)) d trace("Received terminate char "_$c(x)) q 0
+ i x=-1 d  q 0
+ . s mess="Timeout ocurred"
+ . i $l(record) d trace(mess_" Record="_record) q
+ . s last=$o(^TMPmif(mi,99,""),-1)
+ . i $l(last),$e($g(^TMPmif(mi,99,last)),31,999)=mess k ^TMPmif(mi,99,last)
+ . d trace(mess)
+ d trace(record)
+ q 1
+err 
+ s $zt=""
+ d trace($ze,"ERROR")
+ d trace("Finished child","DEBUG")
+ q
+trace(mes,dir) n dt,date
+ s mes=$g(mes),dir=$g(dir,"M-->H")
+ i '$l($g(mi)) q
+ s dt=$zu(188)
+ s date=$zd(dt,4)_" "_$zt($p(dt,",",2))_"."_$e($p(dt,".",2)_"000",1,3)
+ s n=$o(^TMPmif(mi,99,""),-1)+1
+ s ^TMPmif(mi,99,n)=dir_" "_date_" "_$$trans(mes)
+ q
+trans(txt) n new,n,a
+ s new="" f n=1:1:$l(txt) s a=$a(txt,n) d
+ . i a>31 s new=new_$c(a) q
+ . i a=11 s new=new_"<VT>" q
+ . i a=13 s new=new_"<CR>" q
+ . i a=28 s new=new_"<FS>" q
+ . s new=new_"<"_a_">"
+ q new
+purge 
+ s code="",stop=0
+ f  s code=$o(^TMIF(mi,16,code)) q:code=""  d  q:stop
+ . s date=$zdh($p(code,"T",1),3,,,,,,,"")
+ . i $h-date>15 k ^TMIF(mi,16,code) q
+ . s stop=1
+ s ^TMIF(mi,16)=+$h
+ q
+]]></Routine>
+</Export>

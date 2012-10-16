@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTGRB10" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTGRB10 ; ML 22/04/2004 ; GROUP BILLING INVOICES - Moaven+partners
+ q
+ ; Parameters :  1.Payment Code
+ ;               2.Batch Number
+ ;               3.Reminder
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ d INIT,BODY,PRINT
+CREND i 'PAR3,'$$select^LVBPRPR(REPID) s PLIST(12)=PAR1_"-"_PAR2 i $$update^LVBPRPR(REPID)
+ i PAR3,'$$select^LVBPRPR(REPID) s PLIST(12)="REM-"_PAR3 i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialize parameters
+INIT f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ i '$$select^LVBCTPC(PAR1) m DOC=PLIST k PLIST
+ q
+ ; create temporary printing file
+BODY i $l(PAR1),$l(PAR2) d
+ .s epis="" f  s epis=$o(^TMCB(PAR1,PAR2,epis)) q:epis=""  d
+ ..k INVOICE i '$$select^LVBINVB(PAR1_"||"_PAR2) m INVOICE=PLIST
+ ..k COMP i '$$select^LVBCTCO(INVOICE(6)) m COMP=PLIST
+ ..i $$CT007^at345(epis,PAR1_"||"_PAR2)="Y" q
+ ..q:$$select^LVBEPVIS(epis)
+ ..m VISIT=PLIST k PLIST
+ ..s ^TMP($ZN,$J,"EPIS",epis)=COMP(10)
+ ..s ^TMP($zn,$j,"EPIS",epis,"COMP")=$g(COMP(4))_"\"_$g(COMP(5))_"\"_$g(COMP(10))_"\"_$g(COMP(12))
+ ..d ITEM
+ ..i '$l(PAR3) d events^LVBCOM01(epis,"ACC","Original invoice "_PAR1_"-"_PAR2_$s($l(USER):" printed by "_USER,1:"")) q
+ ..i 'PAR3 d events^LVBCOM01(epis,"ACC","Duplicate invoice "_PAR1_"-"_PAR2_$s($l(USER):" printed by "_USER,1:"")) q
+ ..d events^LVBCOM01(epis,"ACC","Reminder "_PAR3_$s($l(USER):" printed by "_USER,1:""))
+ ; check credits
+ s (credit,epis)="" f cnt=1:1 s epis=$o(^TMP($zn,$j,"EPIS",epis)) q:epis=""  d
+ ..s deb=$$seldata^LVBEPVIS(epis,20),date=$$seldata^LVBEPVIS(epis,12),list=$$seldata^LVBEPVIS(list,55)
+ .s list=epis_","_list f jMaster=1:1:$l(list,",") s ep=$p(list,",",jMaster) i $l(ep) d
+ ..s rowid=deb_"||"_date_"||"_ep
+ ..i $$open^LVBDEBVT(rowid)
+ ..f  q:$$fetch^LVBDEBVT(rowid)  d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...k TRAN m TRAN=PLIST
+ ...i TRAN(5)="JOURNAL",'$$select^LVBJOU(TRAN(2)) d
+ ....s credit=credit-PLIST(14)
+ ...i TRAN(5)="CREDIT",$l(TRAN(2),"||")=2,'$$select^LVBCRBL(TRAN(2)) d
+ ....s credit=credit-PLIST(16)
+ ...i TRAN(5)="CREDIT",$l(TRAN(2),"||")=3,'$$select^LVBCRBLB(TRAN(2)) d
+ ....s credit=credit-PLIST(9)
+ ..i $$close^LVBDEBVT()
+ .i credit s ^TMP($zn,$j,"EPIS",epis,"CREDIT")=credit,credit=""
+ ; check total payable
+ s (epis,payable)="" f  s epis=$o(^TMP($zn,$j,"EPIS",epis)) q:epis=""  d
+ .s payable=payable+$g(^TMP($zn,$j,"EPIS",epis,"TOT"))-$g(^TMP($zn,$j,"EPIS",epis,"CREDIT"))
+ q
+ ; print report
+PRINT d QDR("MAP-GRB")
+ s max=27,page="" k PAYC i '$$select^LVBCTPC(PAR1) m PAYC=PLIST k PLIST
+ s (nextpg,line,BatchTot,PatTot,GSTTot,GSTExcTot,ServDesc,AccFeeTot,credit)=""
+ s epis=$o(^TMP($zn,$j,"EPIS","")) q:epis=""
+ d COMP,PHEAD
+ s epis="" f  s epis=$o(^TMP($zn,$j,"EPIS",epis))  q:epis=""  d
+ .k VISIT q:$$select^LVBEPVIS(epis,"Y")  m VISIT=PLIST k PLIST
+ .s name=$p(VISIT(7),$c(1),2)_" "_$$ALPHAUP^SSUTIL4(VISIT(3))_" "_VISIT(4)
+ .f  q:$e(name)'=" "  s name=$e(name,2,99)
+ .s (nextpg,item)=""
+ .s date="" i VISIT(12)'="" s date=$$extdate2^SSUTIL4(VISIT(12))
+ .d ADD^PRTREP00(REPID,"PRT","?2  "_date)
+ .d ADD^PRTREP00(REPID,"PRT","?13 "_$e(VISIT(3)_", "_VISIT(4),1,21))
+ .d ADD^PRTREP00(REPID,"PRT","?37 "_epis)
+ .k ServDesc s (PatTot,ServDesc,AccFee,item)="" f  s item=$o(^TMP($zn,$j,"EPIS",epis,"ITEM",item)) q:item=""  d
+ ..i item=PAYC(20) s AccFee=$p(^(item),"\",1),AccFeeTot=AccFeeTot+AccFee q
+ ..i $p(^(item),"\",4)="GST" s GSTTot=GSTTot+$p(^(item),"\",1) q
+ ..s PatTot=PatTot+$p(^(item),"\",1),ServDesc=ServDesc_$s(ServDesc="":"",1:" ")_$p(^(item),"\",2)
+ .s ServDesc=$tr(ServDesc,";",",")
+ . ; split service description over multiple lines
+ .s x="" i $l(ServDesc)<30 s ServDesc(1)=ServDesc
+ .e  f j=1:1:$l(ServDesc," ") i $l($p(ServDesc," ",1,j))>29 s x=x+1,ServDesc(x)=$p(ServDesc," ",1,j-1),(ServDesc,ServDesc(x+1))=$p(ServDesc," ",j,999) q:$l(ServDesc)'>27
+ .f j=1:1 q:'$d(ServDesc(j))  f  q:$e(ServDesc(j),$l(ServDesc(j)))'=" "  s ServDesc(j)=$e(ServDesc(j),1,$l(ServDesc(j))-1)
+ .d ADD^PRTREP00(REPID,"PRT","?50 "_ServDesc(1))
+ .d ADD^PRTREP00(REPID,"PRT","?82 "_$j(PatTot,7,2)),LN s line=line+1
+ .i '$d(ServDesc(2)) d NewPage
+ .f i=2:1 q:'$d(ServDesc(i))  d
+ ..d ADD^PRTREP00(REPID,"PRT","?50 "_ServDesc(i)),LN s line=line+1
+ ..d NewPage
+ .s BatchTot=BatchTot+PatTot,credit=credit+$g(^TMP($zn,$j,"EPIS",epis,"CREDIT"))
+ s GSTExcTot=BatchTot+AccFeeTot
+ f i=1:1:27-line d LN
+ i $l(PAYC(10)) d
+ .d ADD^PRTREP00(REPID,"PRT","?3  ")
+ .d ADD^PRTREP00(REPID,"PRT","~BOLD"),ADD^PRTREP00(REPID,"PRT","~ITALIC")
+ .d ADD^PRTREP00(REPID,"PRT",PAYC(10))
+ ..d ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ ..d ADD^PRTREP00(REPID,"PRT",$c(13))
+ ; print overall totals
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b4148T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a3500h5630VSubtotals for Month")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a3500h5870VSubtotal (GST Excl.)")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a3500h6120VGST Payable")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a3500h6350VAmount Paid")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a3500h6590VTotal Amount Payable  $")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0p12h0s0b5T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a0h5510V")
+ d LN
+ d ADD^PRTREP00(REPID,"PRT","?82 "_$j(BatchTot,7,2)) f i=1:1:2 d LN
+ d ADD^PRTREP00(REPID,"PRT","?82 "_$j(GSTExcTot,7,2)) f i=1:1:2 d LN
+ d ADD^PRTREP00(REPID,"PRT","?82 "_$j(GSTTot,7,2)) f i=1:1:2 d LN
+ d ADD^PRTREP00(REPID,"PRT","?82 "_$j(credit,7,2)_" CR")
+ d ADD^PRTREP00(REPID,"PRT","~BOLD") f i=1:1:2 d LN
+ d ADD^PRTREP00(REPID,"PRT","?82 "_$j(payable,7,2))
+ d ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ ; remittance slip
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p11v0s2b4148T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h6800V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f0S......................................................................................................................................................")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f1S")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p12v0s2b4148T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h7000V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f0SRETURN THIS SECTION WITH YOUR PAYMENT")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f1S")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s2b4148T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h7200V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f0SMail to:")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f1S")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b4148T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a550h7200V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f0SMoaven+Partners Pathology Pty Ltd")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f1S")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h7300V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f0SPO Box 670, Seven Hills, NSW 1730")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f1S")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b4148T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4000h7200V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f0SInvoice No:")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f1S")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4000h7450V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f0SAmount: $")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&f1S")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0p12h0s0b5T")
+ d ADD^PRTREP00(REPID,"PRT","~BOLD")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4650h7200V"_PAR1_" "_PAR2)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4650h7450V"_$j(payable,0,2))
+ d ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ q
+ ; print patient details
+PHEAD s page=page+1
+ d ADD^PRTREP00(REPID,"PRT","#")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a0h0V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p15v0s0b4148T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h-100V"_pathname)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b4148T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h0VProvider No : "_pathprov)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b4148T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a3200h260V"_compabn)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p16v0s3b4148T")
+ s (InvMsg,InvPos)="" d
+ .i '$l(PAR3) s InvMsg="TAX INVOICE",InvPos="400h550V" q
+ .i 'PAR3 s InvMsg="TAX INVOICE~COPY",InvPos="400h500V~680h650V" q
+ .i PAR3=1!(PAR5=3) s InvMsg="TAX INVOICE~REMINDER",InvPos="400h500V~500h650V" q
+ .s InvMsg="TAX INVOICE~FINAL NOTICE",InvPos="400h500V~370h650V"
+ f i=1:1:$l(InvMsg,"~") d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a"_$p(InvPos,"~",i)_$p(InvMsg,"~",i))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(3@")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0p12h0s0b5T")
+ d ADD^PRTREP00(REPID,"PRT","~BOLD")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a300h1200V"_DOC(3))
+ d ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ f i=1:1:$l(DOC(27),"|") i $l($p(DOC(27),"|",i)) d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a300h"_(1200+(i*120))_"V"_$p(DOC(27),"|",i))
+ d ADD^PRTREP00(REPID,"PRT","~BOLD")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a3670h1070V"_PAR1_" "_PAR2)
+ d ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a3670h1350V"_$$DateTrans(+$h))
+ d ADD^PRTREP00(REPID,"PRT","~BOLD")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4530h1630V"_$$DateTrans(+$h+30))
+ d ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a0h2000V"),LN
+ q
+ ; extract billing items for episode
+ITEM s (item,amt,amount,det)=""
+ f  s item=$o(^TEPI(epis,7,item)) q:item=""  d
+ .s det=^(item),amount=amount+$p(det,"\")
+ .s ^TMP($zn,$j,"EPIS",epis,"ITEM",item)=det
+ s ^TMP($zn,$j,"EPIS",epis,"TOT")=amount
+ q
+ ; extract company details
+COMP s company=$g(^TMP($zn,$j,"EPIS",epis,"COMP"))
+ s pathname=$p($p(company,"\"),$c(1),2),pathprov=$p(company,"\",2),compabn=$p(company,"\",3),comphone=$p(company,"\",4)
+ q
+ ; change date to dd Month Name yyyy
+DateTrans(date) s date=$$extdate2^SSUTIL4(date) s day=$p(date,"/",1),mth=$p(date,"/",2),year=$p(date,"/",3)
+ s date=day_" "_$s(mth="01":"January",mth="02":"February",mth="03":"March",mth="04":"April",mth="05":"May",mth="06":"June",mth="07":"July",mth="08":"August",mth="09":"September",mth="10":"October",mth="11":"November",1:"December")_" "_year
+ q date
+ ; check if new page is required
+NewPage i line>max,($o(^TMP($zn,$j,"EPIS",epis,"ITEM",item))'=""!($o(^TMP($zn,$j,"EPIS",epis))'="")) d
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4650h7650VCont. Over..")
+ .s nextpg=1 d PHEAD s (line,nextpg)=""
+ q
+ ; add line to report
+LN d ADD^PRTREP00(REPID,"PRT","!")
+ q
+ ; set header
+QDR(QDR) s QDR=$g(QDR),x="" f  s x=$o(^SS("QDR",QDR,x)) q:x=""  d
+ .i $p(^SS("QDR",QDR,x),"-",1)="BITMAP" d  q
+ ..s bitmap=$tr($p(^SS("QDR",QDR,x),"-",2,99)," ")
+ ..s bit="" f  s bit=$o(^SS("QDR",bitmap,bit)) q:bit=""  d ADD^PRTREP00(REPID,"HDR",^SS("QDR",bitmap,bit))
+ .d ADD^PRTREP00(REPID,"HDR",^SS("QDR",QDR,x))
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,1140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR0ESP04" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDR0ESP04 ; IG 23/03/99 ; Doctor's Report HEADER - Echevarne
+ q
+ ; supported calls
+ ;
+ ; INIT^PRTDR001
+ ; QDR^PRTDR001
+ ; Header^PRTDR001(page,par1,par2)
+ ; Footer^PRTDR001(page,par1,par2)
+ ; ABScreen^PRTDR001()
+ ;
+ABScreen() q "X0015"
+ ; client specific parameters
+INIT s MaxLine=35 s (depant,sectant)=""
+ q
+CR(CR) n (CR) s xCR=CR,result="A4" i xCR["-FAX-" s xCR=$p(CR,"-FAX-",1)
+ i '$$select^LVBCTCR(xCR),$e($p(PLIST(4),$c(1)),1,2)="A5" s result="A5" 
+ q result
+PrintSection(SectionType) ;
+ ; check for margin changes
+ s margin="",%routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Margin^"_%routine i $l($t(@LineRoutine)) x "s margin=$$Margin^"_%routine_"()"
+ i PrintSection(SectionType) d  s PrintSection(SectionType)=0
+ .i SectionType="H" i dep'="Z" q:depant=dep
+ .;comprobacion que haterminado las pruebas del departamento para imprimir el resposable en el footer
+ .i SectionType="F" S sigord=$o(^TMP("PRTDR00",$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq)) I sigord'="" q
+ .n (sect,dep,page,PageLine,tsLM,margin,SectionType)
+ .s name="",print=""
+ .i '$$select^LVBCTDEP(dep,"Y") s print=PLIST(7),name=$s(SectionType="H":PLIST(3),1:"Responsable: "_PLIST(4))
+ .I SectionType="F" I $d(dep),(dep="R") q
+ .i $l(name) d
+ ..s page=$o(^TMP("REPORT",$j,""),-1) i '$l(page) q
+ ..I SectionType'="H" D
+ ...s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)
+ ...I x="" q
+ ...Q:^TMP("REPORT",$j,page,"TEXT",x)="!"
+ ...s ^TMP("REPORT",$j,page,"TEXT",x+1)="~SectionFooter"
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ..I $d(^TMP("REPORT",$j,page,"TEST")) s ^TMP("REPORT",$j,page,"TEXT",x)="!",x=x+1,PageLine=PageLine+1
+ ..S ^TMP("REPORT",$j,page,"TEXT",x)="?3",x=x+1
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)=$s(SectionType="H":"~UNDERLINE",1:"~BOLD")
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+1)=$S(SectionType="H":"",1:$c(13))
+ ..f j=1:1:$l(name,"|") d
+ ...s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ...s ^TMP("REPORT",$j,page,"TEXT",x)=$S(SectionType="H":$p(name,"|",j),1:$j("",(88-$L($p(name,"|",j))))_$p(name,"|",j))
+ ...i $l(name,"|")>1,j<$l(name,"|") s ^TMP("REPORT",$j,page,"TEXT",x+1)="!"
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)="~NORMAL"
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+1)="!"
+ ..s PageLine=PageLine+1
+ s depant=dep
+ s sectant=sect
+ q
+ ; print header
+Header(page,par1,par2) n (page,par1,par2,VISIT,DOC,HOSP,REPID,Master,Master1)
+ d ADD^PRTREP00(REPID,"PRT","#")
+ s (copyto,copyfrom,specimen)="",epis=$p(VISIT(2),$c(1))
+ S language=$p($g(^TEPI(epis)),"\",61)
+ i language="",$d(DOC),$p(VISIT(15),$c(1))=$p(DOC(2),$c(1)) s:$p(VISIT(15),$c(1))'="" language=$p($g(^TTAB("DR",$p(VISIT(15),$c(1)))),"\",25)
+ i language="",$d(HOSP),$p(VISIT(22),$c(1))=$p(HOSP(2),$c(1)) d
+ .i $P(VISIT(74),$C(1))'="" s language=$P($G(^TTAB("BILL-LOC",$P(VISIT(74),$C(1)))),"\",15)
+ .i language="" i $P(VISIT(22),$C(1))'="" s language=$P($G(^TTAB("RH",$P(VISIT(22),$C(1)))),"\",31)
+ i language="" s language=8
+ ; find copy-to
+ i $d(DOC),$p(VISIT(15),$c(1))=$p(DOC(2),$c(1)) d
+ .i $$open^LVBVISDC(epis)
+ .f  q:$$fetch^LVBVISDC(epis)  s copyto=copyto_$s($l(copyto):", ",1:"")_$p(PLIST(4),$c(1))
+ .i $$close^LVBVISDC()
+ ; find copy-to
+ i $d(HOSP),$p(VISIT(22),$c(1))=$p(HOSP(2),$c(1)) d
+ .i $$open^LVBVISDC(epis)
+ .f  q:$$fetch^LVBVISDC(epis)  s copyto=copyto_$s($l(copyto):", ",1:"")_$p(PLIST(4),$c(1))
+ .i $$close^LVBVISDC()
+ ; find copy-from
+ i $d(DOC),$p(VISIT(15),$c(1))'=$p(DOC(2),$c(1)) d
+ .i '$$select^LVBCTDR($p(VISIT(15),$c(1)),"Y") s copyfrom=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51))
+ i $d(HOSP),$p(VISIT(22),$c(1))'=$p(HOSP(2),$c(1)) d
+ .i '$$select^LVBCTDR($p(VISIT(15),$c(1)),"Y") s copyfrom=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51))
+ ; format Doctor's address
+ i $d(DOC) d Address(DOC(9),DOC(10),DOC(11),DOC(12),DOC(13),.dAddress)
+ i $d(HOSP) d Address(HOSP(4),HOSP(5),HOSP(6),HOSP(7),HOSP(8),.hAddress)
+ ; format Patient's address
+ d Address(VISIT(32),VISIT(33),VISIT(34),VISIT(35),VISIT(36),.pAddress)
+ s dob="Unknown" i $l(VISIT(6)) s dob=$$extdate2^SSUTIL4(VISIT(6))
+ s sex="Unknown" i $l(VISIT(5)) s sex=$p(VISIT(5),$c(1),2)
+ s age="Unknown" i $l(VISIT(26)) s age=$p(VISIT(26),$c(1))
+ s cl1=$p(VISIT(53),"|",1),cl2=$p(VISIT(53),"|",2)
+ i $l(cl1)>60 s N=$l($e(cl1,1,60)," ")-1,cl1=$p(cl1," ",1,N),cl2=$p($p(VISIT(53),"|",1)," ",N+1,99)_$s($l(cl2):" "_cl2,1:"")
+ i $l(cl2)>60 s N=$l($e(cl2,1,60)," ")-1,cl2=$p(cl2," ",1,N)
+ s xCR=$$CR(par2)
+ ;CABECERA INICIO
+ d DATA(epis)
+ i page=1 d ADD^PRTREP00(REPID,"PRT",$c(27)_"E") ; reset
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s16901T") ; select font type times New Roman
+ i page=1 s CAB=$g(CAB,1) d HeaderMic
+ i page'=1 d CAB(6,language)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s4099T") ; select font type
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s12H") ; character x inch size
+ d ADD^PRTREP00(REPID,"PRT",$c(13)) ;
+ q
+buscartext(language,codtext) ;Buscar codigo texto
+ n (language,codtext,mitext)
+ s:language="" language=8
+ s mitext="" i language=8 s mitext=$o(^SS("VBMESS",0,"Code",codtext,"")) I mitext'="" S mitext=$p($g(^SS("VBMESS",mitext)),"^",2)
+ i language'=8 s mitext=$o(^SSLAN("TRANS",0,"Code",language,codtext,"")) i mitext'="" s mitext=$p($g(^SSLAN("TRANS",mitext)),"^",3)
+ q mitext
+HeaderMic ; cabecera tipo 1 privado-1
+ n pro,top
+ d  ;fer split
+ . n pag
+ . s pag=$o(^TMP("REPORT",$j,""),-1)
+ . i pag'="" d SplitPage(epis,pag)
+ s top=14
+ i fil(0)=4 d  ;cabecera izquierda de Estudios clinicos
+ . s mitext=$$buscartext(language,"ESP04CAB01") i mitext="" s mitext="Datos personales"
+ . d box(6,2,8,35,mitext) ; character wide proportional      
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s3b16901T") ; 12x inch bold times new roman
+ . d CUP(7,3)
+ . s mitext=$$buscartext(language,"ESP04CAB22") i mitext="" s mitext="Nº Petición "
+ . d ADD^PRTREP00(REPID,"PRT",mitext_" "_epis)
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(7,19)
+ . d ADD^PRTREP00(REPID,"PRT","Iniciales: "_fil(1))
+ . d CUP(8,3)
+ . d ADD^PRTREP00(REPID,"PRT","Fecha Nac.: "_fil(2))
+ . d CUP(8,19)
+ . d ADD^PRTREP00(REPID,"PRT","Sexo: "_fil(3))
+ . d CUP(9,3)
+ . d ADD^PRTREP00(REPID,"PRT","Nombre Estudio: "_fil(4))
+ . d CUP(10,3)
+ . d ADD^PRTREP00(REPID,"PRT","Nº Visita: "_fil(5))
+ . d CUP(10,19)
+ . d ADD^PRTREP00(REPID,"PRT","Nº Tratamiento: "_fil(5))
+ . d CUP(11,3)
+ . d ADD^PRTREP00(REPID,"PRT","Nº Randomización: "_fil(7))
+ . d CUP(11,19)
+ . d ADD^PRTREP00(REPID,"PRT","Nº Selección: "_fil(7))
+ . d CUP(12,3)
+ . d ADD^PRTREP00(REPID,"PRT","Investigador: "_fil(9))
+ i fil(0)'=5&(fil(0)'=4) D
+ . s mitext=$$buscartext(language,"ESP04CAB01") i mitext="" s mitext="Datos personales"
+ . d box(6,2,8,35,mitext) ; character wide proportional      
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s3b16901T") ; 12x inch bold times new roman
+ . d CUP(7,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(1))
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(8,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(2,1))
+ . d CUP(9,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(2,2))
+ . d CUP(10,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(2,3))
+ . d CUP(11,3)
+ . s mitext=$$buscartext(language,"ESP04CAB03") i mitext="" s mitext="I.P.F.:"
+ . d ADD^PRTREP00(REPID,"PRT",$S(fil(3)="":"",1:mitext_fil(3)))
+ . i $l(fil(27)) d
+ .. d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s3b16901T") ; 12x inch bold times new roman
+ .. d CUP(12,3)
+ .. s mitext=$$buscartext(language,"ESP04CAB04") i mitext="" s mitext="Ref. : "
+ .. d ADD^PRTREP00(REPID,"PRT",mitext_fil(27))
+ .. d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . i '$l(fil(27)) d
+ .. d CUP(12,3)
+ .. i (fil(4)'="")!(fil(5)'="") d
+ ... s mitext=$$buscartext(language,"ESP04CAB05") i mitext="" s mitext="Tel.:"
+ ... s telefonos=mitext_fil(4)_$s(fil(5)'="":" / "_fil(5),1:"") 
+ ... d ADD^PRTREP00(REPID,"PRT",telefonos)
+ i fil(0)=5 D   ;... INDUSTRIA
+ . s mitext=$$buscartext(language,"ESP04CAB02") i mitext="" s mitext="Datos de la muestra"
+ . d box(6,2,16,35,mitext) ; character wide proportional
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . s mitext=$$buscartext(language,"ESP04IND14") i mitext="" s mitext="Muestra remitida: "
+ . i $p(VISIT(101),$C(1),1)="N" s mitext=mitext_"No"
+ . i $p(VISIT(101),$C(1),1)="S" s mitext=mitext_"Sí"
+ . d CUP(7,3)
+ . d ADD^PRTREP00(REPID,"PRT",mitext)
+ . s mitext=$$buscartext(language,"ESP04CAB04") i mitext="" s mitext="Ref: "
+ . d CUP(8,3)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(99)="":"",1:mitext_VISIT(99)))
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s3b16901T") ; 12x inch bold times new roman
+ . d CUP(9,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(1))
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . s mitext=$$buscartext(language,"ESP04IND13") i mitext="" s mitext="Lote: "
+ . d CUP(10,3)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(82)="":"",1:mitext_VISIT(82)))
+ . s mitext=$$buscartext(language,"ESP04IND12") i mitext="" s mitext="Envase: "
+ . d CUP(11,3)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(80)="":"",1:mitext_VISIT(80)))
+ . s mitext=$$buscartext(language,"ESP04IND11") i mitext="" s mitext="Cantidad: "
+ . d CUP(12,3)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(81)="":"",1:mitext_VISIT(81)))
+ . s mitext=$$buscartext(language,"ESP04CAB20") i mitext="" s mitext="Empresa: "
+ . d CUP(13,3)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(42)="":"",1:mitext_VISIT(42)))
+ . s mitext=$$buscartext(language,"ESP04IND17") i mitext="" s mitext="Lugar muestreo: "
+ . d CUP(14,3)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(77)="":"",1:mitext_VISIT(77)))
+ . s mitext=$$buscartext(language,"ESP04IND68") i mitext="" s mitext="Operario: "
+ . d CUP(15,3)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(4)="":"",1:mitext_VISIT(4)))
+ . s mitext=$$buscartext(language,"ESP04CAB03") i mitext="" s mitext="I.P.F.:"
+ . d CUP(16,3)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(126)="":"",1:mitext_VISIT(126)))
+ . s mitext=$$buscartext(language,"ESP04IND69") i mitext="" s mitext="Caudal(L/min): "
+ . d CUP(17,3) i $L(VISIT(79))'=0 s VISIT(79)=$tr(VISIT(79),".",",") s:$e(VISIT(79),1)="," VISIT(79)="0"_VISIT(79)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(79)="":"",1:mitext_VISIT(79)))
+ . s mitext=$$buscartext(language,"ESP04IND70") i mitext="" s mitext="Tiempo(min): "
+ . d CUP(18,3) i $L(VISIT(114))'=0 s VISIT(114)=$tr(VISIT(114),".",",") s:$e(VISIT(114),1)="," VISIT(114)="0"_VISIT(114)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(114)="":"",1:mitext_VISIT(114)))
+ . s mitext=$$buscartext(language,"ESP04IND71") i mitext="" s mitext="Volumen(L): "
+ . d CUP(19,3) i $L(VISIT(115))'=0 s VISIT(115)=$tr(VISIT(115),".",",") s:$e(VISIT(115),1)="," VISIT(115)="0"_VISIT(115)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(115)="":"",1:mitext_VISIT(115)))
+ . s mitext=""
+ . d CUP(20,3)
+ . d ADD^PRTREP00(REPID,"PRT",$s(VISIT(100)="":"",1:mitext_VISIT(100)))
+ ;segundo cuadro
+ i CAB=1!(CAB=2)!(CAB=3) d
+ . I $P(VISIT(27),$C(1),1)'="SM" D
+ .. i $d(DOC) d
+ ... s pro=$p($g(DOC(2)),$c(1)),(fil(16),fil(17))="" q:$l(pro)=0
+ ... s ok=$$select^LVBCTDR(pro)
+ ... i ok=0 d
+ .... s fil(16)=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51))
+ .... s fil(17)=PLIST(18)
+ .. i $d(HOSP) d
+ ... s fil(14)=HOSP(3)
+ ... s fil(15,1)=HOSP(4)
+ ... s fil(15,2)=HOSP(8)_" "_HOSP(6)
+ ... s fil(15,3)=$$state(HOSP(7))
+ .. i Master'=Master1 d
+ ... s fil(14)=VISIT(118)
+ ... s fil(15,1)=VISIT(37)
+ ... s fil(15,2)=VISIT(41)_" "_VISIT(39)
+ ... s fil(15,3)=$$state(VISIT(40))
+ .s mitext=$$buscartext(language,"ESP04CAB09") i mitext="" s mitext="Datos de envío"
+ .d box(6,40,8,35,mitext)
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(7,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(14))
+ . d CUP(8,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(15,1))
+ . d CUP(9,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(15,2))
+ . d CUP(10,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(15,3))
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s3b16901T") ; 12x inch bold times new roman
+ . d CUP(11,65)
+ . I '($D(^ESP04ACT)) d ADD^PRTREP00(REPID,"PRT",VISIT(101))
+ . I $D(^ESP04ACT) d ADD^PRTREP00(REPID,"PRT",epis)
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . i $P(VISIT(74),$C(1),1)="287"!($P(VISIT(74),$C(1),1)="63501") d
+ .. d CUP(12,41)
+ .. s mitext=$$buscartext(language,"ESP04CAB10") i mitext="" s mitext="Sector: "
+ .. d ADD^PRTREP00(REPID,"PRT",mitext_fil(23,1))
+ . i '($P(VISIT(74),$C(1),1)="287"!($P(VISIT(74),$C(1),1)="63501")) d
+ .. d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s3b16901T") ; 12x inch bold times new roman
+ .. d CUP(12,41)
+ .. I $P(VISIT(27),$C(1),1)'="SM",$P(VISIT(125),$C(1),1)'=6 d ADD^PRTREP00(REPID,"PRT",fil(23,1))
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ ;Segunda caja si es hospitaciliacion
+ i CAB=4 d
+ .d box(6,40,8,35,"")
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ .d CUP(7,41)
+ .d ADD^PRTREP00(REPID,"PRT",fil(14))
+ .d CUP(8,41)
+ .s mitext=$$buscartext(language,"ESP04CAB11") i mitext="" s mitext="Servicio : "
+ .d ADD^PRTREP00(REPID,"PRT",mitext_fil(28))
+ .d CUP(9,41)
+ .s mitext=$$buscartext(language,"ESP04CAB12") i mitext="" s mitext="Habitación : "
+ .d ADD^PRTREP00(REPID,"PRT",mitext_fil(25))
+ .d CUP(9,60)
+ .s mitext=$$buscartext(language,"ESP04CAB13") i mitext="" s mitext="Cama : "
+ .d ADD^PRTREP00(REPID,"PRT",mitext_fil(26))
+ .d CUP(10,41)
+ .d ADD^PRTREP00(REPID,"PRT",fil(1))
+ .d CUP(11,41)
+ .s mitext=$$buscartext(language,"ESP04CAB14") i mitext="" s mitext="NHC Hospital : "
+ .d ADD^PRTREP00(REPID,"PRT",mitext_fil(30))
+ .I ($P(fil(29),$c(1),1)=1)!($P(fil(29),$c(1),1)=3) d
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s3b16901T") ; 12x inch bold times new roman
+ ..d CUP(12,41)
+ ..d ADD^PRTREP00(REPID,"PRT",$p(fil(29),$c(1),2))
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s3b16901T") ; 12x inch bold times new roman
+ .d CUP(11,65)
+ .i '($D(^ESP04ACT)) d ADD^PRTREP00(REPID,"PRT",VISIT(101))
+ .i $D(^ESP04ACT) d ADD^PRTREP00(REPID,"PRT",epis)
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ i CAB=2&(fil(0)'=4) d HeaderMic1 q
+ I fil(0)'=4 i CAB=3 d:fil(0)'=5 HeaderMic2 d:fil(0)=5 HeaderMic3 q
+ s sw=0
+ i CAB=4&(fil(0)'=4) d
+ . s mitext=$$buscartext(language,"ESP04CAB15") i mitext="" s mitext="Compañía"
+ . d box(top,2,4,35,mitext)
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(top+1,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(6))
+ . d CUP(top+2,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(24))
+ . s sw=1
+ i fil(0)'=4 i (fil(16)_fil(17))'="" d
+ . d box(top,40,4,35,"")
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(top+1,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(16))
+ . d CUP(top+2,41)
+ . s mitext=$$buscartext(language,"ESP04CAB16") i mitext="" s mitext="Colegiado "
+ . d ADD^PRTREP00(REPID,"PRT",mitext_fil(17))
+ . s sw=1
+ i sw=1&(fil(0)'=4) s top=18
+ i fil(0)=4 s top=14
+ d LITERAL
+ d CAB(top,language)
+ q
+HeaderMic1 ; cabecera tipo 2 mutua-1
+ s sw=0
+ i ($p(VISIT(74),$c(1),1)'="9940117") d
+ . s mitext=$$buscartext(language,"ESP04CAB15") i mitext="" s mitext="Compañía"
+ . d box(top,2,4,35,mitext)
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(15,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(6))
+ . d CUP(16,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(24))
+ . s sw=1
+ i (fil(16)_fil(17))'="" d
+ . d box(top,40,4,35,"")
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(15,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(16))
+ . d CUP(16,41)
+ . s mitext=$$buscartext(language,"ESP04CAB16") i mitext="" s mitext="Colegiado "
+ . d ADD^PRTREP00(REPID,"PRT",mitext_fil(17))
+ . s sw=1
+ i sw=1 s top=18
+ d LITERAL
+ d CAB(top,language)
+ q
+HeaderMic2 ; cabecera tipo 3 empresa-1
+ s sw=0
+ i (fil(10)_fil(11)_fil(12)_fil(13)_fil(16)_fil(17))'="" d
+ . d box(top,2,8,35,"")
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(15,3)
+ . s mitext=$$buscartext(language,"ESP04CAB17") i mitext="" s mitext="Nº Matricula: "
+ . d ADD^PRTREP00(REPID,"PRT",$S(fil(10)="":fil(10),1:mitext_fil(10)))
+ . d CUP(16,3)
+ . s mitext=$$buscartext(language,"ESP04CAB10") i mitext="" s mitext="Sector: "
+ . d ADD^PRTREP00(REPID,"PRT",$s(fil(11)="":"",1:mitext_fil(11)))
+ . d CUP(17,3)
+ . s mitext=$$buscartext(language,"ESP04CAB18") i mitext="" s mitext="Categoría: "
+ . d ADD^PRTREP00(REPID,"PRT",$s(fil(12)="":"",1:mitext_fil(12)_"-"_$P($G(^ESP04RCAT(fil(12))),"#",1)))
+ . d CUP(18,3)
+ . s mitext=$$buscartext(language,"ESP04CAB19") i mitext="" s mitext="Puesto de trabajo: "
+ . d ADD^PRTREP00(REPID,"PRT",$s(fil(13)="":fil(13),1:mitext_fil(13)))
+ . d CUP(19,3)
+ . d ADD^PRTREP00(REPID,"PRT",fil(16))
+ . d CUP(20,3)
+ . s mitext=$$buscartext(language,"ESP04CAB16") i mitext="" s mitext="Colegiado "
+ . d ADD^PRTREP00(REPID,"PRT",$s(fil(17)="":fil(17),1:mitext_fil(17)))
+ . s sw=1
+ i (fil(6)_fil(7,1)_fil(7,2)_fil(7,3)_fil(8)_fil(9))'="" d
+ . s mitext=$$buscartext(language,"ESP04CAB15") i mitext="" s mitext="Compañía"
+ . d box(top,40,8,35,mitext) 
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(15,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(6))
+ . d CUP(16,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(7,1))
+ . d CUP(17,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(7,2))
+ . d CUP(18,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(7,3))
+ . d CUP(19,41)
+ . s mitext=$$buscartext(language,"ESP04CAB20") i mitext="" s mitext="Empresa: "
+ . d ADD^PRTREP00(REPID,"PRT",$S(fil(8)="":"",1:mitext_fil(8)))
+ . d CUP(20,41)
+ . s mitext=$$buscartext(language,"ESP04CAB21") i mitext="" s mitext="CCC/Nº petición mútua: "
+ . d ADD^PRTREP00(REPID,"PRT",$S(fil(9)="":"",1:mitext_fil(9)))
+ . s sw=1
+ i sw=1 s top=22
+ s sw=0
+ d LITERAL
+ d CAB(top,language)
+ q
+HeaderMic3 ; cabecera tipo 3 SOLO INDUSTRIA
+ s sw=0
+ i (fil(6)_fil(7,1)_fil(7,2)_fil(7,3)_fil(8)_fil(9))'="" d
+ . s mitext=$$buscartext(language,"ESP04CAB15") i mitext="" s mitext="Compañía"
+ . d box(top,40,8,35,mitext) 
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T") ; 12x inch times new roman
+ . d CUP(15,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(6))
+ . d CUP(16,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(7,1))
+ . d CUP(17,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(7,2))
+ . d CUP(18,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(7,3))
+ . d CUP(19,41)
+ . d ADD^PRTREP00(REPID,"PRT",fil(8))
+ . s sw=1
+ i sw=1 s top=22
+ d LITERALI
+ d CAB(top,language)
+ q
+LITERALI ;...LITERAL INDUSTRIA
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U") ;Seleccio de Joc de caracters windows
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v1s0b16901T") ; 16x inch times new roman italic
+ s mitext=$$buscartext(language,"ESP04IND43") 
+ i mitext="" s mitext="Los resultados del presente informe análitico corresponden únicamente a la muestra/s recibidas y analizada/s. Este informe"
+ d CUP(top,2)
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ s mitext=$$buscartext(language,"ESP04IND44") 
+ i mitext="" s mitext="analítico no podrá ser reproducido, total o parcialmente, sin expresa autorización de Laboratorio de análisis DR.Echevarne."
+ d CUP(top+1,2)
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ s mitext=$$buscartext(language,"ESP04IND45") 
+ i mitext="" s mitext="CONFIDENCIAL."
+ d CUP(top+2,2)
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ D ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U"_$C(27)_"(s1p10v0s0b16901T")
+ s top=top+3
+ q
+LITERAL ;LITERAL FIJO
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U") ;Seleccio de Joc de caracters windows
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v1s0b16901T") ; 16x inch times new roman italic
+ s mitext=$$buscartext(language,"ESP04CAB31") 
+ i mitext="" s mitext="Le informamos que, según la Ley Orgánica de Protección de Datos de Carácter personal (LEY 15/1999 de 13 de diciembre),"
+ I $P(VISIT(125),$c(1),1)=5!($P(VISIT(125),$c(1),1)=6) s mitext=""
+ d CUP(top,2)
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ s mitext=$$buscartext(language,"ESP04CAB32") 
+ i mitext="" s mitext="sus datos personales, así como los resultados de los análisis clínicos, serán recogidos en un fichero automatizado que será"
+ I $P(VISIT(125),$c(1),1)=5!($P(VISIT(125),$c(1),1)=6) s mitext=""
+ d CUP(top+1,2)
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ s mitext=$$buscartext(language,"ESP04CAB33") 
+ i mitext="" s mitext="utilizado, únicamente, para la realización de los servicios solicitados por Ud."
+ I $P(VISIT(125),$c(1),1)=5!($P(VISIT(125),$c(1),1)=6) s mitext=""
+ d CUP(top+2,2)
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ D ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U"_$C(27)_"(s1p10v0s0b16901T")
+ s top=top+3
+ q
+CAB(top,language) ; common Header
+ d box2(top,language)
+ s type=$$OriCop()
+ ;CODIGO DE BARRAS
+ d ADD^PRTREP00(REPID,"PRT",$C(27)_"&a100h100V")
+ d ADD^PRTREP00(REPID,"PRT",$C(27)_"(s6,16,22,17B")
+ d ADD^PRTREP00(REPID,"PRT",$C(27)_"(s6,16,22,17S")
+ d ADD^PRTREP00(REPID,"PRT",$C(27)_"(s24700T")
+ d ADD^PRTREP00(REPID,"PRT",$C(27)_"(s-4P")
+ d ADD^PRTREP00(REPID,"PRT",$C(27)_"(s301H")
+ d ADD^PRTREP00(REPID,"PRT",$C(27)_"(s144V")
+ d ADD^PRTREP00(REPID,"PRT",fil(18))
+ d ADD^PRTREP00(REPID,"PRT",$C(27)_"(s*******T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p8v0s0b16901T") ; 16x inch times new roman
+ ;CODIGO DE BARRAS
+ d CUP(top+1,4)
+ D ADD^PRTREP00(REPID,"PRT",$C(27)_"&fS")
+ D ADD^PRTREP00(REPID,"PRT",$C(27)_")10Q"_$C(27)_")s1p8v0s0b10000T")
+ D ADD^PRTREP00(REPID,"PRT",$C(27)_")s2b10006T")
+ i top="6" D ADD^PRTREP00(REPID,"PRT",$C(27)_"*p0h390Y"_$C(14)_"*"_fil(18)_"*"_$c(15)_$c(27))
+ i top="17" D ADD^PRTREP00(REPID,"PRT",$C(27)_"*p0h950Y"_$C(14)_"*"_fil(18)_"*"_$c(15)_$c(27))
+ i top="21" D ADD^PRTREP00(REPID,"PRT",$C(27)_"*p0h1150Y"_$C(14)_"*"_fil(18)_"*"_$c(15)_$c(27))
+ i top="22" D ADD^PRTREP00(REPID,"PRT",$C(27)_"*p0h1195Y"_$C(14)_"*"_fil(18)_"*"_$c(15)_$c(27))
+ i top="23" D ADD^PRTREP00(REPID,"PRT",$C(27)_"*p0h1240Y"_$C(14)_"*"_fil(18)_"*"_$c(15)_$c(27))
+ i top="25" D ADD^PRTREP00(REPID,"PRT",$C(27)_"*p0h1350Y"_$C(14)_"*"_fil(18)_"*"_$c(15)_$c(27))
+ i top="31" D ADD^PRTREP00(REPID,"PRT",$C(27)_"*p0h1640Y"_$C(14)_"*"_fil(18)_"*"_$c(15)_$c(27))
+ D ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U"_$C(27)_"(s1p16v0s3b16901T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p8v0s0b16901T") ; 16x inch times new roman
+ d CUP(top+1,23)
+ s mitext=$$buscartext(language,"ESP04CAB22") i mitext="" s mitext="Nº Petición"
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ d CUP(top+1,34)
+ s mitext=$$buscartext(language,"ESP04CAB23") i mitext="" s mitext="Fecha toma de muestra"
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ d CUP(top+1,49)
+ s mitext=$$buscartext(language,"ESP04CAB24") i mitext="" s mitext="Fecha Recepción"
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ d CUP(top+1,64)
+ s mitext=$$buscartext(language,"ESP04CAB25") i mitext="" s mitext="Fecha edición"
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p12v0s3b16901T") ; 16x inch times new roman
+ s pos=10-$l(fil(18))\2
+ d CUP(top+2,5+pos)
+ ;IMPRESION DE CODIGO DE BARRAS
+ d CUP(top+2,22)
+ d ADD^PRTREP00(REPID,"PRT",fil(18))
+ d CUP(top+2,34)
+ d ADD^PRTREP00(REPID,"PRT",fil(19))
+ d CUP(top+2,49)
+ d ADD^PRTREP00(REPID,"PRT",fil(20))
+ d CUP(top+2,62)
+ d ADD^PRTREP00(REPID,"PRT",fil(22)_$s(type=+type:" ("_type_")",1:" "_type))
+ D ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U"_$C(27)_"(s1p16v0s3b16901T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p8v0s0b16901T") ; 16x inch times new roman
+ d CUP(top+4,23)
+ I '($D(^ESP04ACT)) d ADD^PRTREP00(REPID,"PRT",fil(31))
+ I fil(0)'=5 I $D(^ESP04ACT) d ADD^PRTREP00(REPID,"PRT",epis)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p12v0s3b16901T") ; 16x inch times new roman
+ D ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U"_$C(27)_"(s1p16v0s3b16901T")
+ d ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0P")
+ d CUP(top+5,1)
+ d ADD^PRTREP00(REPID,"PRT","!") 
+ q
+ ; print multiple reports
+ ; print footer
+Footer(page,par1,par2) n (page,par1,par2,REPID,VISIT,DOC,HOSP,dh1,dh2)
+ n lin,mitext,pos,pag
+ d  ;imprimir firma
+ . n pag
+ . s pag=$o(^TMP("REPORT",$j,""),-1)
+ . i pag=page d boxf(pag,VISIT(1),dh1,dh2)
+ s lin=$tr($j("",73)," ",$c(196))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0P") ; Fixed spacing
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s10H") ; character x inch size
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(10U") ; Seleccio de Joc de caracters PC-8
+ d CUP(62,2)
+ d ADD^PRTREP00(REPID,"PRT",lin)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U") ;Seleccio de Joc de caracters windows
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s16H") ; character x inch size
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s16901T") ; select font type times New Roman
+ s msg=""
+ s ok=$$select^LVBCTCO($p(VISIT(66),$c(1)))
+ i 'ok s msg=$p(PLIST(6),"-",2,99)_" "_PLIST(7)_$S(PLIST(12)="":"  ",1:"  TELF: "_PLIST(12))_$S(PLIST(10)="":"  ",1:"  FAX: "_PLIST(10))_"  "_PLIST(15)_" "_PLIST(8)
+ i ok s ok=$$select^LVBCTCO("01") s msg="" d:'ok
+ .s msg=$p(PLIST(6),"-",2,99)_" "_PLIST(7)_$S(PLIST(12)="":"  ",1:"  TELF: "_PLIST(12))_$S(PLIST(10)="":"  ",1:"  FAX: "_PLIST(10))_"  "_PLIST(15)_" "_PLIST(8)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p8v0s0b16901T") ; 16x inch times new roman
+ i +$p(PLIST(6),"-",1)=0 d CUP(64,10)
+ i +$p(PLIST(6),"-",1)'=0 d CUP(64,+$p(PLIST(6),"-",1))
+ d ADD^PRTREP00(REPID,"PRT",msg)
+ d CUP(65,35)
+ d ADD^PRTREP00(REPID,"PRT","www.echevarne.com")
+ d CUP(66,67)
+ d ADD^PRTREP00(REPID,"PRT","Página "_page_" de "_($o(^TMP("REPORT",$j,""),-1)))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U") ;Seleccio de Joc de caracters windows
+ q
+Address(x1,x2,x3,x4,x5,Address) n (x1,x2,x3,x4,x5,Address) k Address s cnt=0 f j=1:1:3 s Address(j)=""
+ i $l(x1) s cnt=cnt+1,Address(cnt)=x1
+ i $l(x2) s cnt=cnt+1,Address(cnt)=x2
+ s cnt=cnt+1
+ i $l(x3) s Address(cnt)=Address(cnt)_$s($l(Address(cnt)):",",1:"")_x3
+ i $l(x4) s Address(cnt)=Address(cnt)_$s($l(Address(cnt)):",",1:"")_x4
+ i $l(x5) d
+ .i cnt>1,'$l(Address(cnt)) s cnt=cnt-1
+ .s Address(cnt)=Address(cnt)_$s($l(Address(cnt)):",",1:"")_x5
+ q
+box(top,left,height,width,title) 
+ n i,lin
+ s title=$e(title,1,width-4)
+ s lin=$tr($j("",width-2)," ",$c(196))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0P") ; Fixed spacing
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s10H") ; character x inch size
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(10U") ; Seleccio de Joc de caracters PC-8
+ d CUP(top,left) ;d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a"_top_"R"_$c(13)) ; posicionar a fila
+ i $l(title) d
+ . n tmp
+ . d ADD^PRTREP00(REPID,"PRT",$c(218)_" ")
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U") ;Seleccio de Joc de caracters windows
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p8v1s0b16901T") ; 16x inch times new roman italic
+ . d ADD^PRTREP00(REPID,"PRT",title)
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(10U") ; Seleccio de Joc de caracters PC-8
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s10H") ; 10 char x inch
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0S") ; treure italic
+ . d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0P") ;lletre d'amplada fixe
+ . s tmp=(left+($l(title)/16*10\1)+4) ; calcul amplada titol a tamany 10
+ . d CUP(top,tmp)
+ . d ADD^PRTREP00(REPID,"PRT",$e(lin,1,width-(tmp-left)-1)_$c(191))
+ i '$l(title) d
+ . d ADD^PRTREP00(REPID,"PRT",$c(218)_lin_$c(191))
+ f i=1:1:height-2 d
+ . d CUP(top+i,left)
+ . d ADD^PRTREP00(REPID,"PRT",$c(179))
+ . d CUP(top+i,left+width-1)
+ . d ADD^PRTREP00(REPID,"PRT",$c(179))
+ d CUP(top+height-1,left)
+ d ADD^PRTREP00(REPID,"PRT",$c(192)_lin_$c(217))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U") ;Seleccio de Joc de caracters windows
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U") ;Seleccio de Joc de caracters windows
+ q
+box2(top,language) 
+ n i,lin,spc
+ s lin=$tr($j("",13)," ",$c(196))
+ s spc=$j("",13)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0P") ; Fixed spacing
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s10H") ; character x inch size
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(10U") ; Seleccio de Joc de caracters PC-8
+ d CUP(top,2) ; posicionar cursor
+ d ADD^PRTREP00(REPID,"PRT",$c(218)_lin_$c(196,196,194)_lin_$c(194)_lin_$c(194)_lin_$c(194)_lin_$c(191))
+ d CUP(top+1,2) ; posicionar cursor
+ d ADD^PRTREP00(REPID,"PRT",$c(179)_spc_"  "_$c(179)_spc_$c(179)_spc_$c(179)_spc_$c(179)_spc_$c(179))
+ d CUP(top+2,2) ; posicionar cursor
+ d ADD^PRTREP00(REPID,"PRT",$c(179)_spc_"  "_$c(179)_spc_$c(179)_spc_$c(179)_spc_$c(179)_spc_$c(179))
+ d CUP(top+3,2) ; posicionar cursor
+ d ADD^PRTREP00(REPID,"PRT",$c(192)_lin_$c(196,196,193)_lin_$c(193)_lin_$c(193)_lin_$c(193)_lin_$c(217))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s12H") ; 12 char x inch
+ d CUP(top+4,2) ; posicionar cursor
+ s mitext=$$buscartext(language,"ESP04CAB27") i mitext="" s mitext="PRUEBA"
+ i fil(0)=5 s mitext=""
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ d CUP(top+4,38) ; posicionar cursor
+ s mitext=$$buscartext(language,"ESP04CAB28") i mitext="" s mitext="RESULTADO"
+ i fil(0)=5 s mitext=""
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ d CUP(top+4,49) ; posicionar cursor
+ s mitext=$$buscartext(language,"ESP04CAB29") i mitext="" s mitext="UNIDADES"
+ i fil(0)=5 s mitext=""
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ d CUP(top+4,59) ; posicionar cursor
+ s mitext=$$buscartext(language,"ESP04CAB30") i mitext="" s mitext="VAL.DE.REFERENCIA"
+ i fil(0)=5 s mitext=""
+ d ADD^PRTREP00(REPID,"PRT",mitext)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s10H") 
+ d CUP(top+5,2) ; posicionar cursor
+ d ADD^PRTREP00(REPID,"PRT",$tr($j("",73)," ",$c(196)))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(9U") ;Seleccio de Joc de caracters windows
+ q
+boxf(pag,epis,dh1,dh2) 
+ n A,Col,QDR,Row,x,PLIST,tsnum,fechaval,BITMAP,B,ts,cnt
+ S EPVIS=$g(^TEPI(epis))
+ S language=$p(EPVIS,"\",61)
+ S VISIT(15)=$p(EPVIS,"\",13)
+ i language="",$d(dh1),dh1="D",dh2=VISIT(15) s:$p(VISIT(15),$c(1))'="" language=$p($g(^TTAB("DR",$p(VISIT(15),$c(1)))),"\",25)
+ S VISIT(22)=$P(EPVIS,"\",20)
+ S VISIT(74)=$P(EPVIS,"\",22)
+ i language="",$d(dh1),dh1="H",dh2=VISIT(22) d
+ .i VISIT(74)'="" s language=$P($G(^TTAB("BILL-LOC",$P(VISIT(74),$C(1)))),"\",15)
+ .i language="" i VISIT(22)'="" s language=$P($G(^TTAB("RH",$P(VISIT(22),$C(1)))),"\",31)
+ i language="" s language=8
+ s Row=60/6*720\1
+ s Col=48/10*720\1
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a"_Col_"h"_Row_"V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T")
+ s userside=$$seldata^LVBEPVIS(epis,66)
+ s tipopet=$$seldata^LVBEPVIS(epis,125)
+ s dataentry=$$seldata^LVBEPVIS(epis,10)
+ S nomdoctor=$s(tipopet=6:"Lourdes Molina",1:"")
+ s QDR=$s(tipopet=6:"ESP04-LOURDES",1:"")
+ i nomdoctor="" d
+ . k PLIST
+ . I $$fetchall^LVBCTCOP(userside,"","","","","","","","","")
+ . m DOCUSER=PLIST K PLIST s datadoc=""
+ . f  s datadoc=$o(DOCUSER(datadoc)) q:datadoc=""  i dataentry>$P(DOCUSER(datadoc),$c(28),2) d
+ .. s nomdoctor=$p($P(DOCUSER(datadoc),$c(1),2),$c(28),1)
+ .. s QDR=$p($P(DOCUSER(datadoc),$c(1),2),$c(28),2)
+ i nomdoctor="" s nomdoctor="Beatriz Fernandez Forner"
+ i tipopet=5 s nomdoctor=""
+ d ADD^PRTREP00(REPID,"PRT",nomdoctor)
+ s (ts,cnt)="",fechaval=0
+ f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  s doa=$p(^(cnt),"\",4) i doa>fechaval s fechaval=doa
+ s Row=61/6*720\1
+ s Col=48/10*720\1
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a"_Col_"h"_Row_"V")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p10v0s0b16901T")
+ s mitext=$$buscartext(language,"ESP04CAB26") i mitext="" s mitext="Fecha Validación: "
+ d ADD^PRTREP00(REPID,"PRT",mitext_$zd(fechaval,4,,4))
+ s Row=55/6*720\1
+ s Col=46/10*720\1
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a"_Col_"h"_Row_"V")
+ I QDR="" S QDR="ESP04-FIRMA"
+ i tipopet'=5 s A="" f  s A=$o(^SS("QDR",QDR,A)) q:A=""  d
+ .i $p(^(A),"-",1)="BITMAP" d  q
+ ..s BITMAP=$tr($p(^(A),"-",2,99)," ")
+ ..s B="" f  s B=$o(^SS("QDR",BITMAP,B)) q:B=""  d  
+ ...s x=x+1,^TMP("REPORT",$j,pag,"TEXT",x)=^SS("QDR",BITMAP,B)
+ .d ADD^PRTREP00(REPID,"PRT",^SS("QDR",QDR,A))
+ q
+state(pro) 
+ n PLIST
+ i '$$select^LVBCTSC(pro) q $g(PLIST(3))
+ q pro
+date(dat,tim) 
+ n ret
+ q:'dat ""
+ s tim=$g(tim)
+ i tim s ret=$zd(dat,4,,4)_" "_$zt(tim,2)
+ i 'tim s ret="  "_$zd(dat,4,,4)
+ q ret
+Create1(vtsRID,cum,group,cOrder) k Breaks
+ s DH=dh1,PrintTestHeader=1
+ s type="P" i '$$SINGLE^PRTDR00(vtsRID,type,cum,,DH,group,cOrder),PLIST d
+ .s BodyLength=$g(Breaks) k cPartialHeader
+ .s TestHeader=0 f j=1:1:HEADER i HEADER(j)="!" s TestHeader=TestHeader+1
+ .s TestBody=0 f j=1:1:PLIST i PLIST(j)="!",j<PLIST s TestBody=TestBody+1
+ .s test=$p(vtsRID,"||",2),StopSplit=$$seldata^LVBCTTS(test,25)
+ .s Start="Y",NewPage=ForceNewPage f jLine=1:1:PLIST d
+ ..i $o(^TMP("REPORT",$j,""))="" s NewPage=1
+ ..i 'NewPage,jLine=1,StopSplit="Y",PageLine+TestHeader+TestBody+2>MaxLine s NewPage=1
+ ..i 'NewPage,jLine=1,BodyLength,StopSplit="T",PageLine+TestHeader+BodyLength+1>MaxLine s NewPage=1
+ ..i 'NewPage,$d(Breaks(jLine)),PageLine+TestHeader+Breaks(jLine)>MaxLine s NewPage=1
+ ..i (jLine=1)!NewPage d
+ ...i 'NewPage d OldPage^PRTDR00(vtsRID)
+ ...i NewPage d NewPage^PRTDR00(vtsRID)
+ ...d Max(page,vtsRID)
+ ..i Start="Y" d  s Start="N"
+ ...i REPORT(5)="Y" d PrintDepHeader^PRTDR00
+ ...d PrintSection^PRTDR00("H")
+ ...d PrintTestHeader^PRTDR00(1)
+ ..i PLIST(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i jLine=PLIST q
+ ..I page="" s page=$o(^TMP("REPORT",$j,""),-1) s:page="" page=1
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ..i NewPage s x="" f  s x=$o(PartialHeader(x)) q:x=""  i jLine>$p(PartialHeader(x),",",1),jLine<$p(PartialHeader(x),",",2) k cPartialHeader m cPartialHeader=PartialHeader(x)
+ .i $d(COMMENTS) f jLine=1:1 q:'$d(COMMENTS(jLine))  d
+ ..i NewPage d NewPage^PRTDR00(vtsRID),Max(page,vtsRID)
+ ..i COMMENTS(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i '$d(COMMENTS(jLine+1)) q
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)=COMMENTS(jLine)
+ .d CheckLastPage^PRTDR00
+ q
+Max(page,vtsRID) ;
+ s MaxLine=45
+ i page=1 K ^TMP("REPORT",$j,1,"ORIGINAL") S MaxLine=MaxLine-$$MAXLIN($P(vtsRID,"||"))
+ q
+CUP(Row,Col) ;
+ s Row=Row/6*720\1
+ s Col=Col/10*720\1
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a"_Col_"h"_Row_"V")
+ q
+DATA(epis) 
+ n (epis,CAB,fil)
+ k CAB,fil
+ i $$select^LVBEPVIS(epis)
+ M VISIT=PLIST
+ s CAB=$$PRTTYPE(epis,.VISIT)
+ s fil(0)=$P(VISIT(125),$C(1),1)
+ f i=1:1:31 s fil(i)=""
+ s fil(2,1)=""
+ s fil(2,2)=""
+ s fil(2,3)=""
+ i $P(VISIT(125),$C(1),1)=4 d  
+ .S fil(1)=PLIST(3) ;INICIALES
+ .I PLIST(6)'=""  S fil(2)=$zd(PLIST(6),4,,4) ;FECHA NACIMIENTO
+ .S fil(3)=$P(PLIST(5),$C(1),2) ;SEXSO
+ .S fil(4)=$p(PLIST(51),$c(1),2) ;nombre del estudio
+ .s fil(5)=PLIST(76) ;numero de visitas
+ .s fil(6)=PLIST(77) ;numero de tratamiento
+ .s fil(7)=PLIST(109) ;numero randomizacion
+ .s fil(8)=PLIST(82) ;numero de seleccion
+ .s fil(9)=PLIST(80) ;nombre del investigador
+ .s fil(18)=VISIT(2)
+ .s fil(19)=$$date(VISIT(12),VISIT(13))
+ .s fil(20)=$$date(VISIT(61))
+ .i $$open^LVBVIS5(epis)  ;comprobar
+ .i $$fetchbuffer^LVBVIS5(epis)   ;comprober
+ .s fil(21)=$$date(VISIT(14))     ;comprobar
+ .i $$close^LVBVIS5()     ;comprobar
+ .s fil(22)=$$date(+$h)
+ .S fil(31)=VISIT(101)
+ i $P(VISIT(125),$C(1),1)=5 d
+ .s fil(1)=VISIT(3)
+ .s fil(2,1)=VISIT(99)
+ .s fil(2,2)=VISIT(4)
+ .s fil(2,3)=VISIT(77)
+ .s fil(3)=VISIT(81)
+ .s fil(4)=VISIT(76)
+ .s fil(5)=VISIT(82)
+ i $P(VISIT(125),$C(1),1)<5&($P(VISIT(125),$C(1),1)'=4) d
+ .s fil(1)=$$NameFormat^LVBCOM03("PT",$P(VISIT(7),$C(1),2),VISIT(4),VISIT(3),VISIT(99),VISIT(100),VISIT(101))
+ .s fil(2,1)=VISIT(32)
+ .s fil(2,2)=VISIT(36)_" "_VISIT(34)
+ .s fil(2,3)=$$state(VISIT(35))
+ .s fil(3)=VISIT(126)
+ .s fil(4)=VISIT(43)
+ .s fil(5)=VISIT(44)
+ i $P(VISIT(125),$C(1),1)=6&($P(VISIT(125),$C(1),1)'=4) d
+ .s fil(1)=VISIT(3)
+ .s fil(2,1)=$p(VISIT(5),$c(1),2)
+ .s fil(2,2)=VISIT(4)
+ .s fil(2,3)=""
+ .s fil(3)=""
+ .s fil(4)=""
+ .s fil(5)=""
+ i $P(VISIT(125),$C(1),1)=3&($P(VISIT(125),$C(1),1)'=4) d
+ .s fil(2,1)=""
+ .s fil(2,2)=""
+ .s fil(2,3)=""
+ s fil(28)=$P(VISIT(94),$C(1),2)
+ s fil(25)=VISIT(112)
+ s fil(26)=VISIT(113)
+ s fil(6)=$e($p(VISIT(74),$c(1),2),1,40)
+ s ok=0
+ s pro=$p(VISIT(74),$c(1))
+ i $l(pro),'$$select^LVBCTBL(pro) s ok=1
+ I $P(VISIT(125),$C(1),1)=3,VISIT(164)'="" D
+ .S VISIT(114)=$P($G(^TTAB("CTCN",VISIT(164))),"\",1)
+ .S VISIT(78)=$P($G(^TTAB("CTCN",VISIT(164))),"\",2)
+ i ok d
+ . s:CAB=3 fil(7,1)=$P($G(^TTAB("BI",$P(VISIT(9),$C(1),1))),"\",8) ;... cargo
+ . s:$P(VISIT(125),$C(1),1)=5 fil(7,1)=PLIST(9) ;...industria, DIRECCION COMPAÑIA
+ . s fil(7,2)=PLIST(13)_" "_PLIST(11)
+ . s fil(7,3)=$$state(PLIST(12))
+ . s fil(8)=$s(CAB=3:VISIT(114),1:PLIST(3))
+ . s:$P(VISIT(125),$C(1),1)=5 fil(8)=$P($G(^TTAB("BI",$P(VISIT(9),$C(1),1))),"\",8) ;... CARGO
+ i 'ok d
+ . s fil(7,1)=$s($P(VISIT(125),$C(1),1)=5:$P($G(^TTAB("BI",$P(VISIT(9),$C(1),1))),"\",8),1:"") ;...cargo
+ . s fil(7,2)=""
+ . s fil(7,3)=""
+ . s fil(8)=$s(CAB=3:VISIT(114),1:"")
+ s fil(9)=$s(CAB=3:VISIT(164),1:VISIT(23))
+ s fil(10)=VISIT(82)
+ s fil(11)=$s(VISIT(76)="":VISIT(148),1:VISIT(76))
+ I fil(11)'="" d
+ .i $P(VISIT(74),$C(1),1)="30" d
+ ..s fil(11)=fil(11)_"-"_$P($G(^ESP04FOFI(fil(11))),"#",1)
+ .i $P(VISIT(74),$C(1),1)="287" d
+ ..s fil(11)=fil(11)_"-"_$P($G(^ESP04ADIF(fil(11))),"#",1)
+ .i $P(VISIT(74),$C(1),1)="63501" d
+ ..s fil(11)=fil(11)_"-"_$P($G(^ESP04OPER(fil(11))),"#",1)
+ s fil(12)=VISIT(77)
+ s fil(13)=VISIT(81)
+ i $l(fil(13)),$d(^ESP04RCAT(fil(13))) s fil(13)=^ESP04RCAT(fil(13))
+ s fil(14)=$s(VISIT(118)'="":VISIT(118),1:$p(VISIT(22),$c(1),2))
+ s ok=0
+ s pro=$p(VISIT(22),$c(1))
+ i $l(pro),'$$select^LVBCTHOS(pro) s ok=1
+ i ok d
+ . s fil(15,1)=$S(VISIT(37)'="":VISIT(37),1:PLIST(4))
+ . s fil(15,2)=$S(VISIT(41)'="":VISIT(41),1:PLIST(8))_" "_$S(VISIT(39)'="":VISIT(39),1:PLIST(6))
+ . s fil(15,3)=$$state($S(VISIT(40)'="":VISIT(40),1:PLIST(7)))
+ i 'ok d
+ . s fil(15,1)=""
+ . s fil(15,2)=""
+ . s fil(15,3)=""
+ s ok=0
+ I $P(VISIT(27),$C(1),1)="SM" d
+ .s fil(14)=fil(1)
+ .i VISIT(37)'="" d
+ ..s fil(15,1)=VISIT(37)
+ ..S fil(15,2)=VISIT(41)_"-"_VISIT(39)
+ ..S fil(15,3)=$S(VISIT(40)'="":$$state(VISIT(40)),1:"")
+ .i VISIT(37)="" d
+ ..s fil(15,1)=VISIT(32)
+ ..S fil(15,2)=VISIT(36)_"-"_VISIT(34)
+ ..S fil(15,3)=$s(VISIT(35)'="":$$state(VISIT(35)),1:"")
+ s pro=$p($g(VISIT(15)),$c(1))
+ i $l(pro),'$$select^LVBCTDR(pro) s ok=1
+ i ok d
+ . s fil(16)=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51))
+ . s fil(17)=PLIST(18)
+ i 'ok d
+ . s fil(16)=""
+ . s fil(17)=""
+ s fil(18)=VISIT(2)
+ s fil(19)=$$date(VISIT(12),VISIT(13))
+ s fil(20)=$$date(VISIT(61))
+ i $$open^LVBVIS5(epis)  ;comprobar
+ i $$fetchbuffer^LVBVIS5(epis)   ;comprober
+ s fil(21)=$$date(VISIT(14))     ;comprobar
+ i $$close^LVBVIS5()     ;comprobar
+ s fil(22)=$$date(+$h)
+ ;se modifica siempre nombre del paciente 08-09-2004
+ ;NO SE UTILIZA PORQUE SE MODIFICA AL FINAL fil(23,1) el resto no se imprime
+ s ok=0
+ s pro=$o(^TEPI(VISIT(1),5,""))
+ i $l(pro),'$$select^LVBVISDC(VISIT(1)_"||"_pro) s ok=1
+ i ok d
+ . s fil(23,1)=$s($P(VISIT(125),$C(1),1)=5:"",1:PLIST(4))
+ . s fil(23,2)=PLIST(5)
+ . s fil(23,3)=PLIST(9)_" "_PLIST(7)
+ . s fil(23,4)=$$state(PLIST(8))
+ i 'ok d
+ . s fil(23,1)=$s($P(VISIT(125),$C(1),1)=5:"",1:fil(1))
+ . s fil(23,2)=fil(2,1)
+ . s fil(23,3)=fil(2,2)
+ . s fil(23,4)=fil(2,3)
+ ;i $P(VISIT(125),$C(1),1)'=2 s fil(24)=$p(VISIT(9),$C(1),2)
+ s fil(24)=$P($G(^TTAB("BI",$P(VISIT(9),$C(1),1))),"\",8)
+ s fil(27)=VISIT(100)
+ i ($p(VISIT(74),$c(1),1)=63944) d     ;...ics imprimeix cip
+ .i $l(VISIT(8))'=0 S fil(27)=VISIT(8)
+ ;se modifica siempre nombre del paciente 08-09-2004
+ S fil(23,1)=$s($P(VISIT(125),$C(1),1)=5:"",1:fil(1))
+ i $P(VISIT(74),$C(1),1)="287" d
+ .s fil(23,1)=fil(11)
+ .s fil(11)="",fil(4)="",fil(5)="",fil(7,1)=""
+ i $P(VISIT(74),$C(1),1)="63501" d
+ .s fil(23,1)=fil(11)
+ .s fil(11)="",fil(4)="",fil(5)="",fil(7,1)=""
+ s fil(29)=VISIT(17)
+ s fil(30)=VISIT(88)
+ S fil(31)=VISIT(101)
+ q
+PRTTYPE(epis,VISIT) ;
+ s cabt=3
+ ;Compañía de privados 60450 08-09-2004
+ I $P(VISIT(125),$c(1),1)=1,($p(VISIT(74),$c(1),1)="60450") s cabt=1 q cabt
+ I $P(VISIT(125),$c(1),1)=1 s cabt=2 q cabt
+ I $P(VISIT(125),$c(1),1)=3 s cabt=3
+ I $P(VISIT(125),$c(1),1)=2 s cabt=4
+ q cabt
+MAXLIN(epis) ;
+ n (epis)
+ d DATA(epis)
+ s max=8+3
+ i fil(0)=4 q max
+ i CAB=1!(CAB=4) d  q max
+ . i (fil(16)_fil(17))'="" s max=max+4
+ i CAB=2 d  q max
+ . s sw=0
+ . i (fil(6)_fil(24))'="" s sw=1
+ . i (fil(16)_fil(17))'="" s sw=1
+ . i sw s max=max+4
+ i CAB=3 d  q max
+ . s sw=0
+ . i (fil(6)_fil(7,1)_fil(7,2)_fil(7,3)_fil(8)_fil(9))'="" s sw=1
+ . i (fil(10)_fil(11)_fil(12)_fil(13)_fil(16)_fil(17))'="" s sw=1
+ . i sw I fil(0)'=5 s max=max+8 
+ . i sw I fil(0)=5 s max=max+8
+ . s sw=0
+ q
+IN ; Numeric
+ n (result,FORMAT,cnt,lan)
+ i $d(^TTAB("RC",result)) d  q
+ .i $l($g(lan)),$d(^TTAB("RC",result,"LAN",lan)) s result(1)=$p(^(lan),"\",1),result="" q
+ .s result(1)=$p(^TTAB("RC",result),"\",1),result=""
+ s Flag="" i "<>+-"[$e(result) s Flag=$e(result),result=$e(result,2,$l(result))
+ i (result?1.N.E)!(result?1"."1.N.E) s result=+result
+ i (result'?.N.1".".N)!(result="")!(result=".") q
+ i $l(Flag),"<>+-"'[Flag q
+ s result=$FN(result,".",$e($p(FORMAT(cnt),$c(2),18),2,4))
+ s result=Flag_result,result=$j(result,$p(FORMAT(cnt),$c(2),19))
+ q
+IS ; Standard comments
+ s width=tsWD-$p(FORMAT(cnt),$c(2),7) i width'>0 s width=0
+ i 'width k result s result=""
+ n (result,tc,width,lan) s result=$tr(result,"{}[]"),result=$tr(result,$c(16,17,18),"^\|")
+ i tc="C0065" s result=$tr(result,"()","[]")
+ i $l(result),$l(result)<30,$d(^TTAB("TC",tc,2,result)) d  s result=""
+ . k res s x=0,i=0 f  s x=$o(^TTAB("TC",tc,2,result,x)) q:x=""  d ISadd(^(x))
+ . i $l($g(lan)),$d(^TTAB("TC",tc,"2L",result,lan)) k res s x=0,i=0 f  s x=$o(^TTAB("TC",tc,"2L",result,lan,x)) q:x=""  d ISadd(^(x))
+ . ; adjust width of the free text to a width of the report
+ . s x="" f  s x=$o(res(x)) q:x=""  s line=res(x) d
+ .. f  q:$l(line)'>width  d
+ ... f xx1=1:1 i $l($p(line," ",1,xx1))>width s l1=$p(line," ",1,xx1-1),line=$p(line," ",xx1,$l(line," ")) q
+ ... i l1="" s l1=$e(line,1,width),line=$e(width+1,$l(line))
+ ... s xx2=$o(result(""),-1)+1,result(xx2)=$$justify(l1,width)
+ .. s xx2=$o(result(""),-1)+1,result(xx2)=line
+ s i="",replace=0
+ f  s i=$o(result(i)) q:i=""  d
+ . s txt=result(i)
+ . i '$f(txt,$c(27)) q
+ . s wtxt=""
+ . f n=1:1:$l(txt,$c(27)) d
+ .. s pie=$p(txt,$c(27),n)
+ .. i n=1 s wtxt=wtxt_pie q
+ .. s replace=replace+1
+ .. s remove=$p(replace(replace),"\",1)
+ .. s add=$p(replace(replace),"\",2)
+ .. s wtxt=wtxt_add_$e(pie,remove+1,$l(pie))
+ . s result(i)=wtxt
+ q
+ISadd(txt) n x,line,buff,n,pie,c
+ f x=1:1:$l(txt,"!")     d
+ . s line=$tr($p(txt,"!",x),$c(16,17,18),"^\|")
+ . 
+ . s buff=""
+ . f n=1:1:$l(line,"~G") d
+ .. s pie=$p(line,"~G",n)
+ .. i n=1,$l(pie) s buff=buff_pie q
+ .. s c=$e(pie),pie=$e(pie,2,$l(pie))
+ .. s buff=buff_$c(27)_pie
+ .. s replace=$o(replace(""),-1)+1
+ .. s replace(replace)="0\~G"_c
+ . 
+ . s i=i+1,res(i)=buff
+ q
+justify(txt,width) n (txt,width) ; Justify Mc_Fly Apr 18, 2006
+ s words=$l(txt," ")
+ i words=1 q txt
+ s chars=$l($tr(txt," "))
+ s spaces=width-chars
+ s spa=spaces\(words-1),rest=spaces#(words-1)
+ s (new,sep)=""
+ f n=1:1:$l(txt," ") d
+ . s w=$p(txt," ",n)
+ . i $l(w) s new=new_sep_w,sep=$j("",spa) i rest s rest=rest-1,sep=sep_" "
+ q new
+OriCop() ;Comprobar los TSET se editan todos los del episodio para asignar numero
+ i $d(^TMP("REPORT",$j,1,"ORIGINAL")) q ^TMP("REPORT",$j,1,"ORIGINAL")
+ n (epis)
+ ;PARA LISTADO WEB DE RELACION DE PETICIONES IMPRESAS
+ S mihost=$$seldata^LVBEPVIS(epis,22)
+ i $$select^LVBCTHOS(mihost,"","")
+ m miHOST=PLIST K PLIST
+ s vengoweb=0 i ($d(^TMP("VISOR",$j,epis))) s vengoweb=1
+ s novisor=1 i miHOST(33)="WEB",vengoweb=0 s novisor=0
+ k ^TMP("VISOR",$j,epis)
+ I novisor=1 S ^PRTREPORT($P($H,",",1),$P($H,",",2),epis)=""
+ i $$fetchall^LVBVISTS(epis)
+ m MITS=PLIST k mepits
+ s tsseg="" f  s tsseg=$o(MITS(tsseg)) q:tsseg=""  d
+ .s tsitem=$P($P(MITS(tsseg),"||",3),$C(1),1)
+ .S tset=$p(MITS(tsseg),"||",2)
+ .i $$select^LVBCTTS($P(MITS(tsseg),"||",2))
+ .i PLIST(63)'="Y" s prueba="" D
+ ..s okmepi=1
+ ..f  s prueba=$o(^TEPI(epis,1,tset,tsitem,"DATA",prueba)) q:prueba=""  d
+ ...i prueba="T" i $p(^TEPI(epis,1,tset,tsitem,"DATA",prueba,"REM",1)," ",1)="." s okmepi=0 q
+ ...i prueba'="T" i $p(^TEPI(epis,1,tset,tsitem,"DATA",prueba)," ",1)="." s okmepi=0 q
+ ...i $P(^TTAB("TS",tset),"\",52)="" s okmepi=0 q
+ ...s okmepi=1
+ ..i okmepi=1 s mepits(epis,$P(MITS(tsseg),"||",2))=""
+ s (page,ts)=""
+ f  s page=$o(^TMP("REPORT",$j,page)) q:page=""  d
+ . f  s ts=$o(^TMP("REPORT",$j,page,"TEST",ts)) q:ts=""  d
+ .. k mepits(epis,$p(ts,"||",2))
+ i '($d(mepits)) s:novisor=1 ^PRCNT(epis)=$S($D(^PRCNT(epis))#2:^PRCNT(epis)+1,1:1) s ret=+$g(^PRCNT(epis))
+ i $d(mepits) s ret="P"
+ s ^TMP("REPORT",$j,1,"ORIGINAL")=ret
+ q ret
+SplitPage(epis,pag) 
+ n MaxLine,lineas,lin,x
+ ;comprovar l'ultima pagina
+ q:pag=""
+ ;calcular les linies de la pagina
+ d Max(pag,epis)
+ s tipopet=$$seldata^LVBEPVIS(epis,125) s tipopet=$p(tipopet,$c(1),1)
+ i tipopet'=5 s MaxLine=MaxLine-3 ;tamany firma
+ ;calcular les linies de la pagina
+ s lineas=0,lin=""
+ f  s lin=$o(^TMP("REPORT",$j,pag,"TEXT",lin)) q:lin=""  d  q:lineas>MaxLine
+ .i (^(lin)="!") s lineas=lineas+1 
+ ; si lin'="" indica cal fer split
+ i lin'="" s lin=$$SplitNeeded(MaxLine,pag,lin)
+ ; si lin'="" indica cal fer split
+ i lin="" d  q
+ ;fer l'split
+ s lineas=0
+ f x=1:1 s lin=$o(^TMP("REPORT",$j,pag,"TEXT",lin)) q:lin=""  d
+ .i ^TMP("REPORT",$j,pag,"TEXT",lin)="!" s lineas=lineas+1
+ .i ^TMP("REPORT",$j,pag,"TEXT",lin)="~SectionFooter" d
+ ..s ^TMP("REPORT",$j,pag,"TEXT",lin)="!" s lineas=lineas+1
+ .m ^TMP("REPORT",$j,pag+1,"TEXT",x)=^TMP("REPORT",$j,pag,"TEXT",lin)
+ .k ^TMP("REPORT",$j,pag,"TEXT",lin)
+ q
+ ;*** intent de buscar el lloc apropiat per fer el canvi de pagina
+SplitNeeded(MaxLine,pag,lin) 
+ n lineas,primera,ultima,wrk,wrk2,wrk3,swwrk,swtrp,wrkreg,cnt
+ ; asegurar que queda algo x escriure
+ i $o(^TMP("REPORT",$j,pag,"TEXT",lin))="" q ""
+ ; doble espai i nomes una linia
+ s wrk=$o(^TMP("REPORT",$j,pag,"TEXT",lin),-1)
+ i ^(wrk)="!" d  i lineas=1 d Move(pag,lin) q ""
+ . s lineas=0,wrk=lin
+ . f  s wrk=$o(^TMP("REPORT",$j,pag,"TEXT",wrk)) q:wrk=""  i (^(wrk)="!") s lineas=lineas+1
+ ;ens situem 10 lineas amunt com a maxim (ja en portem 6)
+ s lineas=0,MaxLine=MaxLine-4,wrk=""
+ f  s wrk=$o(^TMP("REPORT",$j,pag,"TEXT",wrk)) q:wrk=""  d  q:lineas>MaxLine
+ .i (^(wrk)="!") s lineas=lineas+1
+ s primera=wrk
+ ;com a minim hem de deixar una linia per l'altre full
+ s wrk="",cnt=0
+ s wrk=$o(^TMP("REPORT",$j,pag,"TEXT",wrk),-1)
+ f  s wrk=$o(^TMP("REPORT",$j,pag,"TEXT",wrk),-1) q:wrk=""  i (^(wrk)="!") s cnt=cnt+1 q:cnt=2
+ s ultima=wrk
+ ;buscar una linia en blanc buscan enrera
+ s wrk2=$o(^TMP("REPORT",$j,pag,"TEXT",ultima)),swwrk=0
+ f  s wrk2=$o(^TMP("REPORT",$j,pag,"TEXT",wrk2),-1) q:wrk2=primera  d  q:swwrk
+ . i ^(wrk2)'="!" q
+ . s wrk3=$o(^TMP("REPORT",$j,pag,"TEXT",wrk2),-1)
+ . i ^(wrk3)'="!" s wrk2=wrk3 q
+ . s lin=wrk2,swwrk=1 q
+ i 'swwrk d
+ . ;buscar el menys identat
+ . s (wrk2,wrkid)=ultima,wrkidn=9999999
+ . f  s wrk2=$o(^TMP("REPORT",$j,pag,"TEXT",wrk2),-1) q:wrk2=wrk!(wrk2<primera)  d  q:swwrk
+ .. q:^(wrk2)'="!"
+ .. s wrk3=wrk2
+ .. f  s wrk3=$o(^TMP("REPORT",$j,pag,"TEXT",wrk3)) q:wrk3=""  s swtrp=0 d  q:swtrp
+ ... s wrkreg=^TMP("REPORT",$j,pag,"TEXT",wrk3)
+ ... q:wrkreg=$c(13)
+ ... q:$e(wrkreg)="~"
+ ... i $e(wrkreg)="?" s i=+$e(wrkreg,2,4)
+ ... i $e(wrkreg)'="?" f i=1:1:$l(wrkreg) q:$e(wrkreg,i)'=" "
+ ... i i<wrkidn s wrkidn=i,wrkid=wrk2
+ ... s swtrp=1
+ . i wrkid'=lin s lin=wrkid
+ q lin
+Move(page,lin) 
+ n x
+ f  s x=$o(^TMP("REPORT",$j,pag,"TEXT",lin)) q:x=""  d
+ . s ^TMP("REPORT",$j,pag,"TEXT",lin)=^TMP("REPORT",$j,pag,"TEXT",x)
+ . s lin=x
+ k ^TMP("REPORT",$j,pag,"TEXT",lin)
+ q
+tsLM(type) n (type,epis,test,dep,tsLM,tsWD)
+ s tsLM=0 i '$$select^LVBCTTS(test,"Y"),PLIST(41) s tsLM=PLIST(41)
+ s word=PLIST(31)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ s tsWD=80 i '$$select^MVBCFLAB(1) d
+ .i PLIST(42) s tsWD=PLIST(42)
+ .i PLIST(43),'tsLM s tsLM=PLIST(43)
+ I word="Y" s tsWD=90
+ q
+ ; print test set comments
+Comments1 
+ k PLIST i '$$COMMENTS^LVBCOM01ESP04(vtsRID,,type,"N",,,,,,mismpl),PLIST d ADD^PRTDR00ESP04(,"~Break"),Lines^PRTDR00ESP04(2) f j1=1:1:PLIST d
+ .s x1="" f j2=1:1:$l(PLIST(j1),"^") s x2=$p(PLIST(j1),"^",j2) i $l(x2) d
+ ..i type="P" s x2=$tr(x2,$c(16,17,18),"^\|")
+ ..i $e(x2)'="~" d ADD^PRTDR00ESP04(tsLM+x1+margin,x2) s x1=x1+$l(x2)
+ ..i $e(x2)="~" d ADD^PRTDR00ESP04(,x2)
+ .d LN^PRTDR00ESP04()
+ q
+ ; print pathogens comments
+Comments2 
+ k PLIST i '$$COMMENTS^LVBCOM01ESP04(vtsRID,,type,"V",,,,,,mismpl),PLIST d ADD^PRTDR00ESP04(,"~Break"),Lines^PRTDR00ESP04(2) f j1=1:1:PLIST d
+ .s x1="" f j2=1:1:$l(PLIST(j1),"^") s x2=$p(PLIST(j1),"^",j2) i $l(x2) d
+ ..i type="P" s x2=$tr(x2,$c(16,17,18),"^\|")
+ ..i $e(x2)'="~" d ADD^PRTDR00ESP04(tsLM+x1+margin,x2) s x1=x1+$l(x2)
+ ..i $e(x2)="~" d ADD^PRTDR00ESP04(,x2)
+ .d LN^PRTDR00ESP04()
+ q
+control 
+ ;Comprobar el tipo de prueba WORD o CRYSTAL para mensaje
+ i $e(PAR2,1,3)="PDF",$P($G(^TTAB("TS",test)),"\",19)'="CRYSTAL" s ^TMPERROR("REPORT",$J,epis)="Existe listado Doctor Reports"
+ i $e(PAR2,1,3)'="PDF",$P($G(^TTAB("TS",test)),"\",19)="CRYSTAL" s ^TMPERROR("REPORT",$J,epis)="Existe listado PDF/EMAIL"
+ i $e(PAR2,1,3)'="PDF",($P($G(^TTAB("TS",test)),"\",47)="Y") s ^TMPERROR("REPORT",$J,epis)="Existe listado WORD"
+ q
+copyadd 
+ I copyadd'="",dh1="H",dh2=pclocorig,'($d(^TMP("PRTDR00",$j,"TMPADD","Z",epis))) D   ; 
+ I $p($g(^TEPI(epis)),"\",62)'="Y" d
+ S ^TMP("PRTDR00",$j,"TMPADD","Z",epis)=""
+ m ^TMP("PRTDR00",$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4_"Z",1:epis_"z"),report)=^TMP("PRTDR00",$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report)
+listar 
+ ;se realiza la imrpesion de AVISOS 
+ Q:('$D(^TMPERROR("REPORT",$j)))  s PARx=PAR S $P(PARx,$c(1),4)="REPORT",$p(PARx,$c(1),5)=$j
+ i $$START^PRTREP00("trak","",PARx,"CLNESP04REP")
+ Q
+]]></Routine>
+</Export>

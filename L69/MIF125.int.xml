@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF125" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF125(mi) ; ML 14/3/2000 ; WALLAC MultiCalc (Bi-Directional)
+ ;
+ini s $zt="error^"_$zn
+ ; outbound directory for loadlist 'W' files
+ s outdir="c:\temp\out\"
+ ; inbound directory for result 'A' files
+ s indir="c:\temp\in\"
+ k test s test=$$TEST(mi)
+ f  d Main i $$stop^MIF000() q
+ q
+Main i $$RESFILE() d PROCESS
+ d:" L "[(" "_par9_" ") loadlist^MIF000(mi) q:'$d(^TMIF(mi,10))
+ d CREATE
+ s ord="" f  s ord=$O(^TMIF(mi,10,ord)) q:ord=""  d
+ .s rec=^TMIF(mi,10,ord) d WFILE
+ d CLOSE
+ k ^TMIF(mi,10)
+ h 10
+ q
+ ; close 'W' files
+CLOSE s numfile=0,numfile=$l(test,"^")
+ f cnt=1:1:numfile k @($p($p(test,"^",cnt),"_",1))
+ f cnt=1:1:numfile c ntdir_($p($p(test,"^",cnt),"_",1))_".W99"
+ q
+ ; create device flags for 'W' files
+CREATE s numfile=0,numfile=$l(test,"^")
+ f cnt=1:1:numfile s @($p($p(test,"^",cnt),"_",1))=0
+ q
+WFILE ; create 'W' files for loadlist
+ s (ffname,exnum)="",space="                           "
+ s ffname=$p($p(rec,$c(1),1),"_",1)
+ ; extract analysis number to put in file
+ s annum=$p($p(rec,$c(1),1),"_",2)_space
+ s annum=annum_$j("",19-$l(annum))
+ ; if device flag 'off' the open file
+ i @(ffname)=0 o ntdir_ffname_".W99":"WNS" s @(ffname)=1
+ s row=$p(rec,$c(1),2)
+ u ntdir_ffname_".W99"
+ w $p(rec,$c(1),2)_annum,!
+ q
+ ; create loadlist record
+SAVE(mi) s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+ s (z,test)="" f  s z=$o(^TMP("MIF000",$j,"LL","TEST",z)) q:z=""  s test=test_$s($l(test):"\",1:"")_z
+ d SET(epis,test,sample)
+ q 0
+ ; set record to be sent to instrument
+SET(epis,tests,cup) s (surn,mrn)="",num=$l(tests,"\")
+ q:'$d(^TEPI(epis))
+ d ORDER
+ s cnt=($l(order,"^")-1)
+ f v=1:1:cnt d
+ .s cnt=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,cnt)=$p(order,"^",v)
+ q        
+ ; get orders for an episode
+ORDER s order="",testcnt=$l(test,"\")
+ ; process number is always 99
+ s procid="99",space="                                  ",sep=" "
+ f i=1:1:testcnt d
+ .s testx=$p(test,"\",i)
+ .s epis=$$justRL(epis,8,"R")_sep
+ .s date=$$justRL(procid_$e($zd($h,3),5,9999)_space,12,"L")
+ .s order=order_testx_$c(1)_epis_date_"^"
+ q
+ ; extract list of tests to check for files
+TEST(mi) n (mi) s tests=""
+ s tc="" f  s tc=$o(^TMIF(mi,3,tc)) q:tc=""  d
+ .s tests=tests_tc_"^"
+ s len=$l(tests,"^"),tests=$p(tests,"^",1,(len-1))
+ q tests
+ ; process results from ^TMP($zn,$j,"RES")
+PROCESS s tc="",sep=" ",adj=0
+ s (sample,epis,surname,result,date,time,QC)=""
+ f xx=1:1 s tc=$o(^TMP($zn,$j,"RES",tc)) q:tc=""  d
+ .s line="",tcx=tc
+ .f xxx=1:1 s line=$o(^TMP($zn,$j,"RES",tc,line)) q:line=""  d
+ ..s text=^(line)
+ ..s text=$$STRIP(text,1)
+ ..q:text=$c(26)  q:text=""
+ ..s text=$$STRIP(text,2)
+ ..q:$e(text,1,4)="CODE"
+ ..s cnt=$f(text,sep),epis=$e(text,1,(cnt-2)),text=$e(text,cnt,9999)
+ ..s text=$$STRIP(text,2)
+ ..s cnt=$f(text," "),null=$e(text,1,(cnt-1)),text=$e(text,cnt,9999)
+ ..s text=$$STRIP(text,2)
+ ..s cnt=$f(text," "),spec=$e(text,1,(cnt-1)),text=$e(text,cnt,9999)
+ ..s text=$$STRIP(text,2)
+ ..s res=text
+ ..i adj=0 d
+ ...s cnt=$f(spec," ")
+ ...s spec=$e(spec,1,(cnt-2))
+ ...s tc=tc_"_"_spec
+ ...s adj=1
+ ..s resx=tc_$c(par10)_res_$c(par11)
+ ..d file^MIF000(mi,sample,epis,surname,resx,date,time,QC)
+ .s adj=0
+ k ^TMP($zn,$j,"RES")
+ q
+ ; check for result file 'A' and load if exist
+RESFILE() n loaded,appeared s loaded=0
+ ; to find a result file
+ s file="*.A*",checkfile=indir_file
+ s appeared='$zf(-1,"dir "_checkfile)
+ i 'appeared d  q loaded
+ .d trace^MIF000(mi,checkfile_" : No files detected","H<--M")
+ d trace^MIF000(mi,checkfile_" : Files detected","H<--M")
+ ; extract file names to check for from tests performed
+ s num=$l(test,"^") f i=1:1:num d
+ .s tc=$p($p(test,"^",i),"_",1)
+ .q:'$$FileExist(tc)
+ .s (^TMIF(mi,27),n,filenum)=$g(^TMIF(mi,27))+1
+ .f  q:$l(filenum)>3  s filenum=0_filenum
+ .d CopDel
+ .d READ
+ s loaded=$$DONE
+ q loaded
+ ; check if file for test exists
+FileExist(file) n exists,detected
+ s exists=0
+ s FileName=indir_file_".A*"
+ s detected='$zf(-1,"DIR "_indir)
+ i 'detected d  q exists
+ .d trace^MIF000(mi,file_"not detected *****","*****")
+ s exists=1 d trace^MIF000(mi,file_" detected *****","*****")
+ q exists
+ ; copy file to new location and delete
+CopDel s NewFile=ntdir_"HOST"_tc_filenum_".txt"
+ s copied='$zf(-1,"COPY "_FileName_" "_NewFile)
+ d trace^MIF000(mi,"Copy of "_FileName_" to "_NewFile_$s(copied:" successful ",1:" failed ")_"*****","*****")
+ i 'copied q
+ ; once its copied, save the pointer
+ s ^TMIF(mi,"File",n)=NewFile
+ ; delete copied file
+ s deleted='$zf(-1,"DEL "_FileName)
+ d trace^MIF000(mi,Filename_$s(deleted:" deleted",1:" NOT deleted")_" *****","*****")
+ q
+ ; read file into ^TMP($zn,$j,"RES")
+READ o NewFile:"R":5 e  d trace^MIF000(mi,"Cannot open "_NewFile_" for reading *****","*****") q
+ f j=1:1 u NewFile r data s ^TMP($zn,$j,"RES",tc,j)=data
+ c NewFile
+ q
+ ; delete and clean directory for next time round
+DONE() s ref="" f  s ref=$o(^TMIF(mi,27,ref),-1) q:ref=""  d
+ .s file=$g(^TMIF(mi,27,ref))
+ .s deleted='$zf(-1,"DEL "_file)
+ .i deleted d trace^MIF000(mi,"Directory cleanup - "_file_" deleted *****","*****")
+ .k ^TMIF(mi,27,ref)
+ k n,ref,filenum,file,delete,copied
+ q 1
+ ; right/left justify
+justRL(a,l,just) n (a,l,x,just) s x=""
+ i just="R" d
+ .i $l(a)>l s x=$e(a,1,l) q
+ .s x=$j(a,l)
+ i just="L" d
+ .i $l(a)'<l s x=$e(a,1,l) q
+ .s x=(a_$j("",l-$l(a)))
+ q x
+ ; strip unwanted characters
+STRIP(a,method) n (a,x,method) s len=$l(a),x=""
+ i method=1 d
+ .f i=len:-1 s x=$e(a,i) q:x'=" "
+ .s x=$e(a,1,i)
+ i method=2 d
+ .f i=1:1:len s x=$e(a,i) q:x'=" "
+ .s x=$e(a,i,len)
+ q x
+ ; trap any file handling errors
+error i $ze["<ENDOFFILE>" d trace^MIF000(mi,"End of File - Closing *****","*****") c NewFile q
+ i $ze["<INTERRUPT>" d trace^MIF000(mi,"File read interrupted - closing file *****","*****") c NewFile g ini
+ i $ze["<FILEFULL>" d trace^MIF000(mi,"File full *****","*****") q
+ d trace^MIF000(mi,"ERROR - "_$ze_"*****","*****")
+ d BACK^%ETN
+ g ini
+]]></Routine>
+</Export>

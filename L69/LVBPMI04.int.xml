@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPMI04" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBPMI04 ; ML 09/05/2000 ; HOSPITAL PMI INTERFACE - CARDINAL MEDLINC TO LABTRAK HL7 (Territory Health Services)
+ q
+ ; loop thru and receive patient details from Cardinal Medlinc
+INIT k (error) s $zt="error^"_$zn k ^TMP($zn,$j) s (readfail,timeout)="",client="MEDLINK"
+ s opcl=$s($g(error)=1:1,1:0) f  q:'$$opcl(opcl)  s opcl=1
+ f  d READ q:timeout=20
+ g INIT
+ ; check for start of transmission
+READ r *R:60 i R'=11 s x=$$timeout() q
+ d trace("Start of transmission received *****","*****")
+ s (careid,rec)="" k msg
+ ; read in record
+ f  r record:10 s fail=$t q:'fail  d  i $e(record,$l(record)-2,$l(record))=$c(28,13,13) q
+ .i rec'="" s rec=rec_$p(record,$c(13)),record=$p(record,2,999) d SET(rec)
+ .s len=$l(record,$c(13)) f i=1:1:len-1 s rec=$p(record,$c(13),i) i rec'="" d SET(rec)
+ .s rec=$p(record,$c(13),len)
+ i 'fail s readfail=readfail+1 i readfail'=6 d trace("Transmission error - continuing *****","*****")
+ i readfail=6 d  q
+ .d trace("Transmission errors - closing device *****","*****") k msg s x=$$opcl(1)
+ q:careid=""  s (readfail,timeout)=""
+ s str="MSH|^~\|LABTRAK||MEDILINC||"_date_"|TRAKS|ACK|"_careid_"|"_packid_"|"_2.2_"|"_sno d trace(str,"L-->M")
+ w *11,str,*13
+ s str="MSA|AA|"_careid_"|" d trace(str,"L-->M") w str,*13,*28,*13,*-3
+ s caremrn=$p($p($g(msg("PID")),"|",3),"^") i caremrn="" d TRAP q
+ s carepis=$p($g(msg("PV1")),"|",19) i carepis="" s carepis="NONE"
+ d file^LHOSPINT04(caremrn,carepis,$g(msg("PID")),$g(msg("PV1")))
+ q
+ ; setup message array based on packet id
+SET(packet) d trace(packet,"L<--M")
+ s messid=$p(packet,"|") q:messid=""
+ i messid="MSH" s careid=$p(packet,"|",10),packid=$p(packet,"|",11),sno=$p(packet,"|",13,999),date=$p(packet,"|",7)
+ s msg(messid)=$p(packet,"|",2,999)
+ q
+TRAP ; trap episodes without pat demo's
+ s j=$g(^TMPpmi(client,"exclusions",+$h,""),-1)+1 m ^TMPpmi(client,"exclusions",+$h,j)=msg
+ q
+ ; read has failed or timed out
+timeout() s timeout=$g(timeout)+1
+ i timeout=20 d  q 100
+ .d trace("Timeout occurred - closing device *****","*****") s x=$$opcl(1)
+ q 0
+ ; way : L-->M - Labtrak to Medlink
+ ;       L<--M - Medlinc to Labtrak
+ ;       ***** - packet sent/ack/nak, device opened/closed
+ ;       ERROR - error occurred
+trace(record,way) ; trace file
+ s type="trace"
+ s j="" f  s j=$o(^TMPpmi(client,type,j)) q:j=""  q:j>($h-2)  k ^TMPpmi(client,type,j)
+ s j=$o(^TMPpmi(client,type,+$h,""),-1)+1
+ s time=$p($h,",",2)\60,time=$e(time\60+100,2,3)_":"_$e(time#60+100,2,3)
+ s ^TMPpmi(client,type,+$h,j)=$s(type="trace":way_" : "_time_" ",1:"")_record
+ q
+ ; open and close device
+opcl(opclx) s dev=$p($g(^CF("LAB",1,"IP",client)),"\",2)
+ i opclx c dev d trace("Device closed *****","*****") h 120
+ o dev::10 e  d trace("Unable to open device *****","*****") q 100
+ d trace("Device opened *****","*****")
+ u dev s timeout=""
+ q 0
+ ; trap any 'write' errors which may occur due to JADE side closing down
+error d trace($ze,"ERROR")
+ i $ze["WRITE" s error=1 g INIT+1
+ i $ze["READ" s error=1 g INIT+1
+ i $ze["COMMAND" s error=1 g INIT+1
+ d BACK^%ETN
+ g INIT+1
+]]></Routine>
+</Export>

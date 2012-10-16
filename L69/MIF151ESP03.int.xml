@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF151ESP03" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF151ESP03(mi) ; SIRSCAN - Sant Pau
+ ; Mc_Fly, December 2003
+ ; 
+ ; Globals:
+ ; 
+ ; ^TMIF(mi,30,1,daybook,isolate)=+$h_"\"_episode_"\"_test item
+ ; ^TMIF(mi,30,2,daybook,test item)=isolate
+ ; ^TMIF(mi,30,3,+$h,daybook,isolate)=""
+ ; 
+ ; 
+ ; ^TMIF(mi,30,4,sirscan mumber)=Creation date\episode\test item
+ ; ^TMIF(mi,30,6,Creation date,sirscan number)=""
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ d trace^MIF000(mi,"*** Start ***","INFOR")
+ l +^TMIFLOCK(mi):1  e  q
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ i $$start^MIF000() q
+ s $p(^TMIF(mi),"\",4)="N",$p(^TMIF(mi),"\",12)="Started "_$zd($h,4)_" "_$zt($p($h,",",2),2)
+ l +^TMIFLOCK(mi)
+ s stx=$c(2),etx=$c(3),eot=$c(4),enq=$c(5),ack=$c(6),nack=$c(21),can=$c(24)
+ s lastpurge=$g(^TMIF(mi,30,3))
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main 
+ n res
+ r *R:10 e  d purge q
+ i $c(R)=enq d enq
+ d trace^MIF000(mi,"Unknow char "_R,"H<--M")
+ q
+enq 
+ d trace^MIF000(mi,"ENQ","H<--M")
+ d ack
+ r *R:10
+ i R=-1 d trace^MIF000(mi,"Timeout") q
+ i $c(R)=enq g enq ; Sometimes it send twice...
+ s type=$c(R)
+ d trace^MIF000(mi,type_" ("_R_")","H<--M")
+ d ack
+ i type="E" d  q
+ . d send
+ . s rn=""
+ . f  s rn=$o(^TMIF(mi,10,rn)) q:rn=""  q:'$$out(rn)
+ . w eot,*-3
+ . d trace^MIF000(mi,"EOT","H-->M")
+ i type="R" d
+ . k ^TMP($zn,$j)
+ . f  s record=$$read^MIF000(stx,etx_","_eot) q:'$l(record)  d
+ .. d trace^MIF000(mi,record,"H<--M")
+ .. s crc=$e(record,$l(record)),record=$e(record,1,$l(record)-1)
+ .. i $c($zboolean($zcrc(record,1),$zh("40"),7))'=crc d nack q
+ .. d ack
+ .. s nlin=$o(^TMP($zn,$j,""),-1)+1
+ .. s ^TMP($zn,$j,nlin)=record
+ . d trace^MIF000(mi,"EOT","H<--M")
+ . d receive
+ q
+send ;
+ n (res,mi)
+ s (tci,tsi)=""
+ f  s tci=$o(^TMIF(mi,2,tci)) q:tci=""  d
+ . i $p($g(^TTAB("TC",tci)),"\",3)="V" d
+ .. f  s tsi=$o(^TMIF(mi,2,tci,0,tsi)) q:tsi=""  s ts(tsi,tci)=""
+ s (ts,epis,cnt,tc)=""
+ f  s ts=$o(ts(ts)) q:ts=""  d
+ . f  s epis=$o(^TTRQ(ts,epis)) q:epis=""  d
+ .. f  s cnt=$o(^TTRQ(ts,epis,cnt)) q:cnt=""  d 
+ ... f  s tc=$o(ts(ts,tc)) q:tc=""  d
+ .... s realbug=$p($g(^TEPI(epis,1,ts,cnt,"DATA",tc)),"\",1)
+ .... i realbug="" q
+ .... s db=$$getdb(epis,ts,tc,cnt)
+ .... i db="" q
+ .... s isolate=$g(^TMIF(mi,30,2,db,tc))
+ .... s sentbug="" i $l(isolate) s sentbug=$p($g(^TMIF(mi,30,1,db,isolate)),"\",4)
+ .... i $l(sentbug),$l(realbug),sentbug'=realbug d
+ ..... k ^TMIF(mi,20,epis,"TI",tc)
+ ..... d trace^MIF000(mi,"Send new bug epis="_epis_" tc="_tc,"INFOR") ; Send new bug
+ .... i $d(^TMIF(mi,20,epis,"TI",tc)) q
+ .... d add(epis,ts,tc,db,cnt)
+ q
+getdb(epis,ts,tc,cnt) ;^THIR(346,"U032A","TEST","346||MU001||1")=
+ n (epis,ts,tc,cnt)
+ s (tsi,ret)="",d=epis_"||"_ts_"||"_cnt
+ f  s ret=$o(^THIR(epis,ret)) q:ret=""  s tsi=$o(^THIR(epis,ret,"TEST",tsi)) q:tsi=""  q:tsi=d
+ q ret
+add(epis,ts,tc,db,cnt) ; ^TEPI(1,1,"MF002",1,"DATA","M0006")=1ACT\\\\\\
+ n (mi,epis,ts,tc,db,res,cnt)
+ k PLIST,TEPI
+ i $$select^LVBEPVIS(epis,"Y") q
+ m TEPI=PLIST
+ k PLIST,TDB
+ i $$select^LVBHIVAC(epis_"||"_db,"Y") q
+ m TDB=PLIST
+ s bug=$$getbug(epis,ts,tc,cnt)
+ ; field n° 1:   Nothing or D,
+ s reg="D"
+ ; field n° 2:   Reserved,
+ s reg=reg_"|"
+ ; field n° 3:   Reserved,
+ s reg=reg_"|"
+ ; field n° 4:   Specimen number : 15 characters maximum; can be numeric and/or alphabetic
+ s reg=reg_"|"_$$AccNoFormat^LVBCOM03(db) ; Int -> Ext
+ ; field n° 5:   Patient name = 20 characters maximum,
+ s reg=reg_"|"_$e(TEPI(3)_" "_TEPI(99),1,20)
+ ; field n° 6:   Patient first name = 15 characters maximum,
+ s reg=reg_"|"_$e(TEPI(4),1,15)
+ ; field n° 7:   Patient sex = 1 character M: male, F: female,
+ s reg=reg_"|"_$s($e(TEPI(5),1)="F":"F",1:"M")
+ ; field n° 8:   Birthdate; format: YYYYMMDD,
+ s reg=reg_"|"_$s($l(TEPI(6)):$zd(TEPI(6),8),1:$zd($h,8))
+ ; field n° 9:   Admission date; format: YYYYMMDD; important information,
+ s reg=reg_"|"_$s($l(TEPI(47)):$zd(TEPI(47),8),1:"")
+ ; field n° 10:  Patient number = 15 characters maximum; it is a permanent number,
+ s reg=reg_"|"_$e(TEPI(20),1,15)
+ ; field n° 11:  Admission number: 15 characters maximum,
+ s reg=reg_"|"_$e(TEPI(2),1,15)
+ ; field n° 12:  Pregnancy women = 1 character, O: Yes, N: No,
+ s reg=reg_"|"_$s(TEPI(63)="N":"N",1:"O")
+ ; field n° 13:  Patient temperature,
+ s reg=reg_"|"
+ ; field n° 14:  Maiden name,
+ s reg=reg_"|"
+ ; field n° 15:  ZIP code,
+ s reg=reg_"|"
+ ; field n° 16:  Reserved,
+ s reg=reg_"|"
+ ; field n° 17:  Reserved,
+ s reg=reg_"|"
+ ; field n° 18:  Reserved,
+ s reg=reg_"|"
+ ; field n° 19:  Reserved,
+ s reg=reg_"|"
+ ; field n° 20:  Reserved,
+ s reg=reg_"|"
+ ; field n° 21:  Reserved,
+ s reg=reg_"|"
+ ; field n° 22:  Reserved,
+ s reg=reg_"|"
+ ; field n° 23:  Ward (can be translated): 30 characters maximum,
+ s reg=reg_"|"_$e(TEPI(22),1,30)
+ ; field n° 24:  Physician (can be translated): 30 characters maximum,
+ s reg=reg_"|"
+ ; field n° 25:  Room number (or free text) : 30 characters maximum,
+ s reg=reg_"|"
+ ; field n° 26:  Reserved,
+ s reg=reg_"|"
+ ; field n° 27:  Reserved,
+ s reg=reg_"|"
+ ; field n° 28:  Collection date; format: YYYYMMDD,
+ s reg=reg_"|"_$s($l(TEPI(12)):$zd(TEPI(12),8),1:$zd($h,8))
+ ; field n° 29:  Collection time; format : HHMM,
+ s reg=reg_"|"
+ ; field n° 30:  Reception date (in laboratory); foramt : YYYYMMDD,
+ s reg=reg_"|"
+ ; field n° 31:  Reception time(in laboratory) ; format : HHMM,
+ s reg=reg_"|"
+ ; field n° 32:  Source (can be translated): 30 characters maximum,
+ s reg=reg_"|"_TDB(3)
+ ; field n° 33:  Origin (can be translated): 30 characters maximum,
+ s reg=reg_"|"_TDB(20)
+ ; field n° 34:  Site (can be translated): 30 characters maximum,
+ s reg=reg_"|"_$p(TDB(7),"||",2)
+ ; field n° 35:  Specimen free text : 30 characters maximum,
+ s reg=reg_"|"
+ ; field n° 36:  Reserved,
+ s reg=reg_"|"
+ ; field n° 37:  Reserved,
+ s reg=reg_"|"
+ ; field n° 38:  Bench number : 15 characters maximum,
+ s reg=reg_"|"
+ ; field n° 39:  Reserved,
+ s reg=reg_"|"
+ ; field n° 40:  Reserved,
+ s reg=reg_"|"
+ ; field n° 41:  Reserved,
+ s reg=reg_"|"
+ s isolate=""
+ i $d(^TMIF(mi,30,2,db,tc)) s isolate=^(tc)
+ i isolate="" d
+ . s isolate=$o(^TMIF(mi,30,1,db,""),-1)+1
+ . s ^TMIF(mi,30,1,db,isolate)=+$h_"\"_epis_"\"_tc
+ . s ^TMIF(mi,30,2,db,tc)=isolate
+ . s ^TMIF(mi,30,3,+$h,db,isolate)=""
+ s $p(^TMIF(mi,30,1,db,isolate),"\",4)=$p(bug,$c(1),1)
+ ; field n° 42:  Isolate number : numerical,
+ s reg=reg_"|"_isolate
+ ; field n° 43:  Organism name (can be translated) : 30 characters maximum,
+ s reg=reg_"|"_$p(bug,$c(1),1)
+ ; field n° 44:  Organism free text : 30 characters maximum,
+ s reg=reg_"|"_$p(bug,$c(1),2)
+ ; field n° 45:  Suspceptibility test panel name : 30 characters maximum,
+ s reg=reg_"|"
+ ; field n° 46:  Reserved,
+ s reg=reg_"|"
+ ; field n° 47:  Reserved,
+ s reg=reg_"|"
+ ; field n° 48:  Reserved,
+ s reg=reg_"|"
+ ; field n° 49:  Reserved,
+ s reg=reg_"|"
+ ; field n° 50:  Reserved,
+ s reg=reg_"|"
+ ; field n° 51:  Organism quantity : 15 characters maximum,
+ s reg=reg_"|"
+ ; field n° 52:  Biochemical profile  : 15 characters maximum,
+ s reg=reg_"|"
+ ; field n° 53:  Serotype : 15 characters maximum,
+ s reg=reg_"|"
+ ; field n° 54:  Strain collection number : 15 characters maximum, 
+ s reg=reg_"|"
+ ; field n° 55:  Reserved,
+ s reg=reg_"|"
+ ; field n° 56:  Reserved,
+ s reg=reg_"|"
+ ; field n° 57:  Reserved,
+ s reg=reg_"|"
+ ; field n° 58:  Reserved,
+ s reg=reg_"|"
+ ; field n° 59:  Reserved,
+ s reg=reg_"|"
+ ; field n° 60:  Reserved.
+ s reg=reg_"|"
+ s sw=0
+ f i=4,5,10,23,28,32 i $p(reg,"|",i)="" s sw=1 q
+ q:sw
+ s nlin=$o(^TMIF(mi,10,""),-1)+1
+ s ^TMIF(mi,10,nlin)=reg
+ s ^TMIF(mi,20,epis,"TI",tc)=""
+ s $p(^TMIF(mi,20,epis),"\",2)=$h
+ q
+getbug(epis,ts,tc,cnt) 
+ n (epis,ts,tc,cnt)
+ s ret=$p($g(^TEPI(epis,1,ts,cnt,"DATA",tc)),"\",1)
+ i $l(ret) s ret=ret_$c(1)_$p($g(^TTAB("BUG",ret)),"\",1)
+ q ret
+receive ;
+ i '$d(^TMP($zn,$j)) q
+ k resultant
+ s (rn,coment,result)="",skip=1
+ f  s rn=$o(^TMP($zn,$j,rn)) q:rn=""  s reg=^TMP($zn,$j,rn) d receive2
+ d saveant
+ k ^TMP($zn,$j)
+ q
+receive2 
+ s rt=$p(reg,"|",1) 
+ i rt="P" d pat q
+ i rt="A" d ant q
+ i rt="T" q
+ i rt="C" q
+ q
+pat ; Patient record
+ d saveant
+ ; field # 1:    P: record identifier,
+ ; field # 2:    Indicates if the organism has already been extracted or no. 
+ ; One character:
+ ; . P indicates that it is the first extraction.
+ ; . R indicates that it is a retransmission.
+ ; field # 3:    Collection date; format: YYYYMMDD
+ ; field # 4:    Patient name: 20 characters maximum.
+ ; field # 5:    Patient first name: 15 characters maximum.
+ ; field # 6:    Patient number (permanent number): 15 characters maximum.
+ ; field # 7:    Sex: M, F or nothing (nothing = 2 separators that follow).
+ ; field # 8:    Ward (can be translated): 30 characters maximum.
+ ; field # 9:    Physician (can be translated): 30 characters maximum.
+ ; field # 10:   Free text (Room number, ...): 30 characters maximum.
+ ; field # 11:   Source (can be translated): 30 characters maximum.
+ ; field # 12:   Origin (can be translated): 30 characters maximum.
+ ; field # 13:   Free text (Body site, ...): 30 characters maximum.
+ ; field # 14:   Organism (can be translated): 30 characters maximum.
+ s bug=$p(reg,"|",14)
+ ; field # 15:   Organism free text (serotype, ...): 30 characters maximum.
+ ; field # 16:   Organism quantity : 30 characters maximum.
+ ; field # 17:   Specimen Number: 15 characters maximum.
+ s dbext=$p(reg,"|",17)
+ s db=$$AccNoTranslate^LVBCOM03(dbext) ; Ext->Int
+ ; field # 18:   Analysis number (or strain number): 15 characters maximum.
+ ; field # 19:   Admission date; format: YYYYMMDD.
+ ; field # 20:   Panel name (susceptibility tests) (can be translated): 15 characters maximum.
+ ; field # 21:   Sir number: 6 numerical characters maximum; this number is automati-cally assigned (sequentially) by Sir for each creation of organism (alone identification or susceptibility test); it is unique and can thus al-low to distinguish two organisms which belong to the same specimen.
+ ; In case of retransmission, the same number is sent for the same organ-ism; then this number can allow a well-off update in case of retransmis-sion of the organism by Sir: if the Sir number exists already on the LIS, then it is necessary to suppress the old results and to create the new, otherwise it is necessary just to create the new organism.
+ ; This number is sequential, but not adjacent and does not begin to 1; this number is included from 1 to 999999; in one specimen, we can consider that the 3 last digits give an unicity for the strain.
+ s sirnum=$p(reg,"|",21)
+ ; field # 22:   Birthdate YYYYMMDD.
+ ; field # 23:   Indication of pregnant woman: O/N/nothing.
+ ; field # 24:   Collection hour (HHMM).
+ ; field # 25:   Indication if nosocomial infection: O/N/nothing.
+ ; field # 26:   Organism serotype : 30 characters maximum.
+ ; field # 27:   Strain storing number : 30 characters maximum.
+ ; field # 28:   Isolate number : numéric field.
+ s isolate=$p(reg,"|",28)
+ ; field # 29:   Site (can be translated): 30 characters maximum.
+ ; field # 30:   Patient temperature.
+ ; field # 31:   Reception date (YYYYMMDD).
+ ; field # 32:   Reception time (HHMM).
+ ; field # 33:   ZIP code.
+ ; field # 34:   File validation level : N (not validated), technician level (T), biologist level (B).
+ ; field # 35:   Laboratory number (numerical).
+ ; field # 36:   File origin : Sir or SirScan (0 or nothing), API, MicroScan, Vitek, Phoe-nix,
+ ; field # 37:   Reserved.
+ ; field # 38:   Reserved.
+ ; field # 39:   Reserved.
+ ; field # 40:   Reserved.
+ d trace^MIF000(mi,"Sirnum="_sirnum,"INFOR")
+ d trace^MIF000(mi,"Isolate="_isolate,"INFOR")
+ d trace^MIF000(mi,"db="_db,"INFOR")
+ i $l(sirnum)=0 q
+ s swreplace=0
+ s (epis,ts,cnt,tc)=""
+ ; $h_"\"_epis_"\"_tc
+ i $d(^TMIF(mi,30,4,sirnum)) s r=^(sirnum) d load
+ i 'swreplace,$l(isolate),$d(^TMIF(mi,30,1,db,isolate)) s r=^(isolate) d load
+ ; New bug created at Sirscan
+ i 'swreplace d newbug
+ d trace^MIF000(mi,"epis="_epis_" tc="_tc_" bug="_bug,"INFOR")
+ i epis="" q
+ i tc="" q
+ i bug="" q
+ ; ^TMIF(mi,30,1,daybook,isolate)=+$h_"\"_episode_"\"_test item
+ ; ^TMIF(mi,30,2,daybook,test item)=isolate
+ ; ^TMIF(mi,30,3,+$h,daybook,isolate)=""
+ i $l(isolate),'$d(^TMIF(mi,30,1,db,isolate)) d
+ . s ^TMIF(mi,30,1,db,isolate)=+$h_"\"_epis_"\"_tc
+ . s ^TMIF(mi,30,2,db,tc)=isolate
+ . s ^TMIF(mi,30,3,+$h,db,isolate)=""
+ ; ^TMIF(mi,30,4,sirscan mumber)=Creation date\episode\test item
+ ; ^TMIF(mi,30,6,Creation date,sirscan number)=""
+ i $l(sirnum),'$d(^TMIF(mi,30,4,sirnum)) d
+ . s ^TMIF(mi,30,4,sirnum)=+$h_"\"_epis_"\"_tc
+ . s ^TMIF(mi,30,6,+$h,sirnum)=""
+ s (sample,surname,result,QC)=""
+ s date=$p($h,",",1)
+ s time=$p($h,",",2)
+ s alarm=""
+ s (comm,sep)=""
+ s i=rn
+ f  s i=$o(^TMP($zn,$j,i)) q:i=""  s rt=$p(^(i),"|",1) q:rt="P"  d
+ . i rt="C" s comm=comm_sep_$p(^(i),"|",3),sep=$c(par27)
+ s result=tc_$c(par10)_bug_$c(par10)_alarm_$c(par10)_sample_$c(par10)_comm_$c(par11)
+ ; Sets the DB number
+ s num=+$e(tc,2,$l(tc))
+ f n=num:-1:1 i $d(^TMIF(mi,3,"DB"_n)) q
+ s result=result_"DB"_n_$c(par10)_dbext_$c(par11)
+ d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ s $p(^TMIF(mi,20,epis),"\",3)=$h
+ q
+saveant 
+ i '$d(resultant) q
+ i epis="" k resultant q
+ i tc="" k resultant q
+ s resultant=bug_$c(par10)_resultant
+ d fileant^MIF000(mi,sample,epis,resultant,"A")
+ d fileTEPI2^MIF000(mi,epis_"||"_"||",tc,"N","N")
+ k resultant
+ q
+newbug 
+ s epis=$o(^THIRi("Accession",db,""))
+ i epis="" q
+ s tsid=$o(^THIR(epis,db,"TEST",""))
+ s ts=$p(tsid,"||",2)
+ s cnt=$p(tsid,"||",3)
+ s tc=""
+ ; Search first patogen free
+ k PLIST
+ s x=$$getall^LVBCTTSF(ts,0)
+ m layout=PLIST
+ s i=""
+ f  s i=$o(layout(i)) q:i=""  d  q:tc'=""
+ . s wtc=$p(layout(i),$c(2),4)
+ . i wtc="" q
+ . k PLIST
+ . s x=$$select^LVBCTTC(wtc)
+ . i PLIST(5)'="V" q
+ . s r=$g(^TEPI(epis,1,ts,cnt,"DATA",wtc))
+ . i $p(r,"\",1)="" s tc=wtc q
+ d trace^MIF000(mi,"New bug: "_epis_","_tc,"INFOR")
+ q
+load 
+ ; Creation time $piece 1
+ s epis=$p(r,"\",2)
+ s tc=$p(r,"\",3)
+ s swreplace=1
+ q
+ant 
+ ; field # 1:    A: Record identifier.
+ ; field # 2:    Reserved.
+ ; field # 3:    Antibiotic name (can be translated): 30 characters maximum.
+ s ant=$p(reg,"|",3)
+ ; field # 4:    Diameter value: 2 numerical characters maximum.
+ s diam=$p(reg,"|",4)
+ ; field # 5:    MIC value: optional operator (among <,   <=, >=,>), followed by a real (3 decimals maximum).
+ s mic=$p(reg,"|",5)
+ i $e(mic,1,2)=">=" s mic=">"_($e(mic,3,$l(mic))/2)
+ i $e(mic,1,2)="<=" s mic="<"_($e(mic,3,$l(mic))*2)
+ ; field # 6:    Raw result: S, I, R or nothing: it is the observed result "in vitro".
+ ; field # 7:    Interpreted result: it is the final result to the antibiotic, the alone to take into account
+ ; for the therapy; it is a chain of 30 characters maximum; this field can be translated (it can be translated in S, I or R).
+ ; If LIS accepts, this field can be variable in one special case : when it contains MIC value
+ ; (used usually for spécial case, like straptococcus pneumoniae).
+ s res=$p(reg,"|",7)
+ ; field # 8:    Additional result : additional result (usually used for clinical aspects) : 30 characters maximum; can be translated in SIR 
+ ; field # 9:    Reserved.
+ ; field # 10:   Dosage : 10 characters maximum.
+ ; field # 11:   Administration way: 10 characters maximum.
+ ; field # 12:   Cost: 10 characters maximum.
+ ; field # 13:   Drug comment (fixed) : 30 characters maximum.
+ ; field # 14:   Drug comment (variable) : 30 characters maximum; it is a variable comment linked to the drug, and affected by expert system
+ ; it can be used for some information depending on some parameters like ward, organism, drug profile; it can be used to store therapy costs, dos-ages,
+ ; field # 15:   Reserved.
+ ; field # 16:   Reserved.
+ ; field # 17:   Reserved.
+ ; field # 18:   Low value for diameter breakpoint.
+ ; field # 19:   High value for diameter breakpoint .
+ ; field # 20:   Low value for MIC breakpoint.
+ ; field # 21:   High value for MIC breakpoint.
+ ; field # 22:   Reserved.
+ ; field # 23:   Reserved.
+ ; field # 24:   Reserved.
+ ; field # 25:   Reserved.
+ ; field # 26:   Inhibtory ratio : serum level divided by MIC.
+ ; field # 27:   AUIC : area under the curve divided by MIC.
+ ; field # 28:   Reserved.
+ ; field # 29:   Reserved.
+ ; field # 30:   Reserved.
+ ; field # 31:   Reserved.
+ ; field # 32:   Reserved.
+ ; field # 33:   Reserved.
+ ; field # 34:   Reserved.
+ ; field # 35:   Reserved.
+ i ant="" q
+ i res="" q
+ s resultant=$g(resultant)_ant_$c(par28)_res_$c(par28)_mic_$c(par28)_diam_$c(par27)
+ q
+ack 
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+nack 
+ w nack,*-3
+ d trace^MIF000(mi,"NACK","H-->M")
+ q
+crc(x) 
+ q $c($zboolean($zcrc(x,1),$zh("40"),7))
+out(rn) 
+ n x,i,reg
+ s x=$g(^TMIF(mi,10,rn))
+ i x="" q 1
+ s reg=stx_x_$$crc(x)_etx
+ f i=1:1:3 d  q:R=$a(ack)  q:R=$c(can)
+ . w reg,*-3
+ . d trace^MIF000(mi,x,"H-->M")
+ . r *R:3
+ . i R=-1 d trace^MIF000(mi,"Timeout") s i=3 q
+ . d trace^MIF000(mi,$s(R=$a(ack):"ACK",R=$a(nack):"NACK",R=$a(can):"CAN",1:R),"H<--M")
+ . i R=$a(nack) h 1
+ i R=$a(ack) k ^TMIF(mi,10,rn) q 1
+ q 0
+purge 
+ n dat,i,max
+ i lastpurge=+$h q
+ ; Kill last year insolate & sirscan numbers
+ s max=+$h-365
+ ; ^TMIF(mi,30,1,daybook,isolate)=+$h_"\"_episode_"\"_test item
+ ; ^TMIF(mi,30,2,daybook,test item)=isolate
+ ; ^TMIF(mi,30,3,+$h,daybook,isolate)=""
+ s (dat,db,i)=""
+ f  s dat=$o(^TMIF(mi,30,3,dat)) q:dat=""  q:dat>max  d
+ . f  s db=$o(^TMIF(mi,30,3,dat,db)) q:db=""  d
+ .. f  s i=$o(^TMIF(mi,30,3,dat,db,i)) q:i=""  d
+ ... s r=^TMIF(mi,30,1,db,i)
+ ... s tc=$p(r,"\",3)
+ ... k ^TMIF(mi,30,1,db,i)
+ ... k ^TMIF(mi,30,2,db,tc)
+ ... k ^TMIF(mi,30,3,dat,db,i)
+ ; ^TMIF(mi,30,4,sirscan mumber)=Creation date\episode\test item
+ ; ^TMIF(mi,30,6,Creation date,sirscan number)=""
+ s (dat,i)=""
+ f  s dat=$o(^TMIF(mi,30,6,dat)) q:dat=""  q:dat>max  d
+ . f  s i=$o(^TMIF(mi,30,6,dat,i)) q:i=""  d
+ .. k ^TMIF(mi,30,4,i)
+ .. k ^TMIF(mi,30,6,dat,i)
+ s lastpurge=+$h
+ s ^TMIF(mi,30,3)=lastpurge
+ q
+]]></Routine>
+</Export>

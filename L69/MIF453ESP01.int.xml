@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF453ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF453ESP01(mi) ; ML 21/9/99 ; ASTM protocol  -  ABBOTT Cell Dyne Sapphire (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4)
+ s lf=$c(10),cr=$c(13),(result,epis,FullRecord)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 e  d  q
+ .d:" L "[(" "_par9_" ") loadlist^MIF000(mi)
+ i $c(R)=enq d
+ .d trace^MIF000(mi,"ENQ","H<--M"),ACK
+ .f  r *R:10 q:$c(R)=eot  d
+ ..i $c(R)=enq d trace^MIF000(mi,"ENQ","H<--M"),ACK q
+ ..i $c(R)'=stx q
+ ..s record=$$read^MIF000("",lf) q:'$l(record)
+ ..s record=$p(record,$c(23),1)
+ ..d trace^MIF000(mi,$tr(record,$c(13),"@"),"H<--M"),ACK
+ ..s FullRecord=FullRecord_$e(record,2,$l(record))
+ i $c(R)=eot d
+ .d trace^MIF000(mi,"EOT","H<--M")
+ .f jj=1:1:$l(FullRecord,$c(13)) s record=$p(FullRecord,$c(13),jj) i $l(record) d
+ .. ; query record
+ ..i $e(record)="Q" d  q
+ ...s epis=$p($p(record,"|",3),"^",2) i $l(epis),$d(^TEPI(epis,1)) s ^TMP($zn,$j,"ENQ",epis)=""
+ .. ; patient record
+ ..i $e(record)="P" d  q
+ ...d LAST
+ ...s (sample,epis,surname,result,date,time,QC)=""
+ ...s surname=$p($p(record,"|",6),"^")
+ .. ; order record
+ ..i $e(record)="O" d  q
+ ...s epis=$tr($p($p(record,"|",3),"^",1)," "),QC=$s($p($p(record,"|",16),"^",1)="QC":"\"_$e(epis,$l(epis)),1:"") s:'$l(epis) epis=$tr($p($p(record,"|",4),"^",1)," ")
+ .. ; result record
+ ..i $e(record)="R" d  q
+ ...i $tr($p(record,"|",4)," ")="----" q
+ ...s x1=$tr($p($p(record,"|",3),"^",8)," "),x2=$tr($p(record,"|",4)," "),x3=$tr($p(record,"|",7)," ")
+ ...i $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ... ; date and time
+ ...i $l($tr($p(record,"|",12)," ")) d
+ ....s date=$$intdate^SSUTIL4($e($p(record,"|",12),1,4)_"/"_$e($p(record,"|",12),5,6)_"/"_$e($p(record,"|",12),7,8))
+ ....s time=($e($p(record,"|",12),9,10)*3600)+($e($p(record,"|",12),11,12)*60)
+ .. ; last record
+ ..i $e(record)="L" d LAST q
+ .s FullRecord=""
+ .d ORDER
+ q
+LAST ; file result if exists
+ i epis?1.99AN,$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ s (sample,epis,surname,result,date,time,QC)=""
+ q
+ORDER ; create list of orders if exists
+ s epis="" f  s epis=$o(^TMP($zn,$j,"ENQ",epis)) q:epis=""  d
+ .d scanone^MIF000(mi,epis)
+ .d PATDET(epis)
+ .s tc="",tcx="," f N=1:1 s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  s tcx=tcx_tc_","
+ .d SET(epis,tcx)
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|N"
+ .k ^TMP($zn,$j,"ENQ",epis)
+ .d Send K ^TMIF(mi,10)
+ q
+SAVE ; create loadlist records
+ s epis=^TMIF("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMIF("MIF000",$j,"LL","SAMPLE")
+ d PATDET(epis)
+ s tc="" f  s tc=$o(^TMIF("MIF000",$j,"LL","TEST",tc)) q:tc=""  d SET(epis,tc)
+ q
+PATDET(epis) ; set patient details record
+ i '$$select^LVBEPVIS(epis,"Y") d  q
+ .f j=1:1:PLIST i $d(PLIST) s PLIST(j)=$p(PLIST(j),$c(1))
+ .s sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+ .s (nace,anno,gfho,gfhd)=""
+ . i $p(^TEPI(epis),"\",4)'="" s nace=$zd($p(^TEPI(epis),"\",4),8)
+ . i $p(^TEPI(epis),"\",25)'="" s anno=$p(^TEPI(epis),"\",25)_"^y"
+ . i $p(^TEPI(epis),"\",49)'="" s gfho=$p(^TEPI(epis),"\",49)
+ . i $p(^TEPI(epis),"\",20)'="" s gfhd=$p(^TEPI(epis),"\",20)
+ . s nombre=$e($g(PLIST(3)),1,16)_"^"_$e($g(PLIST(4)),1,12),nombre=$tr(nombre,"Ñ","N")
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1||||"_nombre_"||"_nace_"|"_sex_"|||||"_anno_"||"_gfho_"^"_gfhd_"^NA^"_$g(PLIST(20))
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1||||^||||||||"
+ q
+SET(epis,tcx) ; set record to be sent to instrument
+ s test="CBC"
+ i tcx[",xxx," s test="CBCEC"
+ i tcx[",yyy," s test="CBCEL"
+ i tcx[",RETC," s test="CBC+RETC"
+ i tcx[",RETC,",tcx[",yyy," s test="CBCEL+RETC"
+ s (rango,anno2)=""
+ i $p(^TEPI(epis),"\",4)'="" s dob=$$extdate2^SSUTIL4($p(^TEPI(epis),"\",4)),fecha=$$extdate2^SSUTIL4($p($h,","))
+ s yeardob=$p(dob,"/",3),yearfecha=$p(fecha,"/",3)
+ s anno2=yearfecha-yeardob
+ s monthdob=$p(dob,"/"),monthfecha=$p(fecha,"/")
+ i monthdob=monthfecha d
+ .s daydob=$p(dob,"/",2),dayfecha=$p(fecha,"/",2)
+ .i daydob>dayfecha s anno2=anno2-1
+ i monthdob>monthfecha s anno2=anno2-1
+ i anno2'<1,anno2'>2 s rango="^^3"
+ i anno2>2,anno2'>4 s rango="^^4"
+ i anno2>4,anno2'>8 s rango="^^5"
+ i anno2>8,anno2'>12 s rango="^^6"
+ i anno2>12 d
+ .s sexo=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+ .i sexo="M" s rango="^1^7"
+ .i sexo="F" s rango="^1^8"
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="O|1|"_epis_"||^^^"_test_rango_"|||||||||||Patient^Human||||||||||Q"
+ q
+Send ; send list of orders if exists
+ w enq,*-3 f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ i $c(R)=enq q
+ i $c(R)'=ack w eot,*-3 q
+ q:$$SEND("1H|\^&||||||||||P|1")
+ s x="" f FRAME=2:1 s x=$o(^TMIF(mi,10,x)) q:x=""  q:$$SEND(FRAME#8_^TMIF(mi,10,x))
+ w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ q
+SEND(str) ; send string to instrument
+ s str=str_cr_etx,chsum=$$CHSUM(str)
+ w stx,str,chsum,cr,lf,*-3 d trace^MIF000(mi,str_chsum,"H-->M")
+ f j=1:1:6 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 0
+ d trace^MIF000(mi,R,"H<--M")
+ q 1
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

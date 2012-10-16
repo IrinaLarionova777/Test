@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR2SPB04" type="INT" languagemode="0"><![CDATA[
+PRTDR2SPB04   ;SPARM; Doctors Reports printing (single test set - antibiotic panel) ;ÖÊÄË (FMU);@gol;
+ ;
+ ; supported calls :
+ ;
+ ; $$print^PRTDR201(vtsRID,type,DH)
+ ;
+ ; type  : P - print
+ ;         V - view from Enquiry
+ ;           - view from Entry
+ ; DH    : D - Doctor
+ ;         H - Hospital
+print(vtsRID,type,DH) n (vtsRID,type,DH,tsLM,tsWD) s vtsRID=$g(vtsRID),type=$g(type),DH=$g(DH)
+ s test=$p(vtsRID,"||",2),ColWidth=9,ColLeft=40,tsLM=$g(tsLM),tsWD=$g(tsWD)
+ ; check for margin changes
+ s margin="",%routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Margin^"_%routine i $l($t(@LineRoutine)) x "s margin=$$Margin^"_%routine_"()"
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .s tsLM=PLIST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ i '$$select^MVBCFLAB(1) d
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ k ^TMP($zn,$j,"ANT")
+ k FORMAT i '$$getit^LVBCTTSF(test,,"Y") m FORMAT=PLIST
+ ; print an antibiotic panel
+ s x1="" f  s x1=$o(FORMAT(x1)) q:x1=""  i $p(FORMAT(x1),$c(2),18)="V" d
+ .s rowid=vtsRID_"||"_$p(FORMAT(x1),$c(2),10)
+ .i '$$select^LVBVISTD(rowid),$l(PLIST(3)) d
+ ..i '$$select^LVBCTBUG(PLIST(3),"Y") d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...s cnt=$o(^TMP($zn,$j,"ANT",0,""),-1)+1,^TMP($zn,$j,"ANT",0,cnt)=$s($l(PLIST(3))<ColWidth:PLIST(3),1:PLIST(2))
+ ...i $$open^LVBVISTA(rowid)
+ ...f  q:$$fetch^LVBVISTA(rowid)  d
+ ....i $l(PLIST(2)),$l(PLIST(3)) d
+ .....i $l(type),PLIST(4)'="Y" q
+ .....f j=2:1:6 s $p(^TMP($zn,$j,"ANT",0,cnt,$p(PLIST(2),$c(1))),$c(2),j)=PLIST(j)
+ ...i $$close^LVBVISTA()
+ ... ; check if there is a reportable antibiotic
+ ...i $d(^TMP($zn,$j,"ANT",0,cnt))\10=0 k ^TMP($zn,$j,"ANT",0,cnt)
+ ...s (ok,ant)="" f  s ant=$o(^TMP($zn,$j,"ANT",0,cnt,ant)) q:ant=""  d  i ok
+ ....i $l(type),$p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),4)'="Y" q
+ ....s ok=1
+ ...i 'ok k ^TMP($zn,$j,"ANT",0,cnt)
+ ; 
+ ; sort antibiotics
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,"ANT",0,cnt)) q:cnt=""  d
+ .s ant="" f  s ant=$o(^TMP($zn,$j,"ANT",0,cnt,ant)) q:ant=""  d
+ ..s seq="" d %0Ao
+ ..s ^TMP($zn,$j,"ANT",1,+seq,ant,cnt)=""
+ i '$d(^TMP($zn,$j,"ANT",0)) q 0
+ d ADD^PRTDR00(,"~RES-ABP"),ADD^PRTDR00(,$c(13))
+ ;
+ ; print header panel
+ d ADD^PRTDR00(tsLM+margin,"Àíòèáèîòèê/Êóëüòóðà")  ;"Antibiotic/Culture:")
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,"ANT",0,cnt)) q:cnt=""  d
+ .s name=^TMP($zn,$j,"ANT",0,cnt)
+ .d ADD^PRTDR00(tsLM+ColLeft+(ColWidth*(cnt-1))+margin,name)
+ d LN^PRTDR00()
+ d ADD^PRTDR00(tsLM+margin,"-------------------") s line="",$p(line,"-",ColWidth-1)=""
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,"ANT",0,cnt)) q:cnt=""  d
+ .d ADD^PRTDR00(tsLM+ColLeft+(ColWidth*(cnt-1))+margin,line)
+ d LN^PRTDR00()
+ s seq="" f  s seq=$o(^TMP($zn,$j,"ANT",1,seq)) q:seq=""  d
+ .s ant="" f  s ant=$o(^TMP($zn,$j,"ANT",1,seq,ant)) q:ant=""  d
+ ..s cnt="" f first=0:1 s cnt=$o(^TMP($zn,$j,"ANT",1,seq,ant,cnt)) q:cnt=""  d
+ ...i 'first d ADD^PRTDR00(tsLM+margin,$p($p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),2),$c(1),2))
+ ... ; non printable/viewable antibiotics
+ ...i $l(type),$p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),4)'="Y" q
+ ... ; print result
+ ...s result=$p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),3)
+ ...i $p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),4)'="Y" s result=result_" NR"
+ ...i $l(result) d
+ ....s result="  "_result
+ ....d ADD^PRTDR00(tsLM+ColLeft+(ColWidth*(cnt-1))+margin,result)
+ ..d LN^PRTDR00()
+ d ADD^PRTDR00(,"~NORMAL"),ADD^PRTDR00(,$c(13))
+ d LN^PRTDR00()
+ d ADD^PRTDR00(tsLM+margin,"Êîììåíò:  S = ×óâñòâèòåëüíûé  I = Óìåðåííî óñòîé÷èâûé  R = Óñòîé÷èâûé")
+ d LN^PRTDR00()         
+ k ^TMP($zn,$j,"ANT")
+ q 0
+ ;-----------------------------------------------------
+%0ABs1 s %val=$s(%val'=+%val:"",1:$fn(%val,"",0)) q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(ant,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$e(ant,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p($g(%mmmsqld(3)),"||",1,1)
+ i %mmmsqld(6)'="",$d(^TTAB("ANT",%mmmsqld(6)))
+ e  g %0ABdun
+ s %mmmsqln=$g(^TTAB("ANT",%mmmsqld(6)))
+ s seq=$p(%mmmsqln,"\",2) s:seq'="" seq=+seq
+ 
+ s %val=$P(seq,$C(1)) d %0ABs1:%val'="" s $P(seq,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+]]></Routine>
+</Export>

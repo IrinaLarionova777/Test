@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="CLNTKVIEWERESP03" type="INT" languagemode="0"><![CDATA[
+CLNTKVIEWERESP03 ; Medical Viewer - Sant Pau
+ ; --------------------------------
+ ; Calls:
+ ; $$getgrid^CLNTKVIEWERESP03(mrn,ver)
+ ; $$setjob^CLNTKVIEWERESP03()
+ ; d dojob^CLNTKVIEWERESP03
+ ; --------------------------------
+ ; Create a CSP Class with OnPage
+ ;s nsold=$znspace
+ ;zn "BUILD"
+ ;d dojob^CLNTKVIEWERESP03
+ ;zn nsold
+ ;Quit $$$OK
+ q
+ ; mrn = mrn number
+ ; ver = VB version (2)
+getgrid(mrn,ver) s mrn=$g(mrn),ver=+$g(ver)
+ i mrn="" q "ERROR: Número d'història no informat"
+ s epis=""
+ s dat=$o(^TDEB(mrn,99999),-1)
+ i $l(dat) s epis=$o(^TDEB(mrn,dat,0,""),-1)
+ i '$l(epis) q "ERROR: Número d'història "_mrn_" sense peticions"
+ s r=^TEPI(epis)
+ s err=$$select^LVBEPVIS(epis,"Y")
+ s surname1=PLIST(3)
+ s givenname=PLIST(4)
+ s surname2=PLIST(99)
+ k ^TMP($zn,$j)
+ s type="SECT"
+ s (dat,epis,ts,cnt,num)=""
+ f  s dat=$o(^TDEB(mrn,dat),-1) q:dat=""  d
+ . f  s epis=$o(^TDEB(mrn,dat,0,epis),-1) q:epis=""  d
+ .. s num=num+1
+ .. s time=$p($g(^TEPI(epis)),"\",11)
+ .. s ^TMP($zn,$j,"EP",epis)=num_"\"_dat_"\"_time
+ .. f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ... ; Hide MI TestSets
+ ... i $e(ts,1,2)="MI" q
+ ... s (stat,bugs)=""
+ ... f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ .... s s=$p(^(cnt),"\",31),stat=stat_$s(s="A":"A",s="C":"C",1:"E")
+ .... i ver=2 s bugs=bugs_$$getbugs(epis,ts,cnt)
+ ... i $l(stat)>1 f x="C","E","A" i $f(stat,x) s stat=x q
+ ... s stat=$s(stat="C":"En curs",stat="E":"Provisional",1:"Final")
+ ... i stat'="C" s stat=stat_bugs
+ ... s r=^TTAB("TS",ts)
+ ... s desc=$p(r,"\",1)
+ ... s sect=$p(r,"\",55)
+ ... i '$l(sect) s sect=" "
+ ... s ^TMP($zn,$j,type,sect,ts,epis)=stat_"\"_($l(bugs,$c(13)))
+ ... s ^TMP($zn,$j,"EP",epis,$e(ts))=""
+ s fixedcols=2
+ k PLIST
+ s head1="^"_$c(9)_"Data de recollida"
+ s head2=$c(9)_"Hora de recollida"
+ s head3="Codi"_$c(9)_"Descripció prova / Núm. de petició"
+ s epis=""
+ f  s epis=$o(^TMP($zn,$j,"EP",epis)) q:epis=""  d
+ . s r=^(epis)
+ . s pos=$p(r,"\",1),dat=$p(r,"\",2),time=$p(r,"\",3)
+ . s $p(head1,$c(9),pos+fixedcols)="^"_$zd(dat,4)
+ . s $p(head2,$c(9),pos+fixedcols)=$p($zt(time),":",2,3)
+ . s wepis=epis
+ . i $l(wepis)>6 s wepis=$e(wepis,$l(wepis)-6,$l(wepis))
+ . s $p(head3,$c(9),pos+fixedcols)=wepis
+ s PLIST(1)=head1
+ s PLIST(2)=head2
+ s PLIST(3)=head3
+ s PLIST=3
+ s cols=0 k maxlines
+ s (i,j,epis)=""
+ f  s i=$o(^TMP($zn,$j,type,i)) q:i=""  d
+ .
+ . s sectdesc=$p($g(^TTAB("LA",i)),"\",1)
+ . i '$l(sectdesc) s sectdesc="Desconeguda"
+ . s PLIST=$g(PLIST)+1
+ . s PLIST(PLIST)=$c(9)_sectdesc
+ . 
+ . f  s j=$o(^TMP($zn,$j,type,i,j)) q:j=""  d
+ .. s PLIST=$g(PLIST)+1
+ .. s PLIST(PLIST)=j_$c(9)_$p(^TTAB("TS",j),"\",1)
+ .. s maxlines=1
+ .. f  s epis=$o(^TMP($zn,$j,type,i,j,epis)) q:epis=""  d
+ ... s r=^(epis)
+ ... s stat=$p(r,"\",1),lines=$p(r,"\",2)
+ ... i lines>maxlines s maxlines=lines
+ ... s pos=$p(^TMP($zn,$j,"EP",epis),"\",1)
+ ... s $p(PLIST(PLIST),$c(9),pos+fixedcols)=stat
+ ... i (pos+fixedcols)>cols s cols=pos+fixedcols
+ .. s maxlines(PLIST)=maxlines
+ s i="" f  s i=$o(maxlines(i)) q:i=""  s $p(PLIST(i),$c(9),cols+1)=maxlines(i)
+ k ^TMP($zn,$j)
+ q mrn_$c(9)_surname1_" "_surname2_", "_givenname_$c(9)_cols
+getbugs(epis,ts,cnt) n (epis,ts,cnt)
+ s bugs=""
+ k PLIST,layout
+ s x=$$getall^LVBCTTSF(ts,0)
+ m layout=PLIST
+ s i=""
+ f  s i=$o(layout(i)) q:i=""  d
+ . s wtc=$p(layout(i),$c(2),4)
+ . i wtc="" q
+ . k PLIST
+ . s x=$$select^LVBCTTC(wtc)
+ . i PLIST(5)'="V" q
+ . s r=$g(^TEPI(epis,1,ts,cnt,"DATA",wtc))
+ . s res=$p(r,"\",1)
+ . i res="" q
+ . i $p(r,"\",3)="Y" q  ; Suppress report
+ . s bugs=bugs_$c(13)_res
+ q bugs
+setjob() 
+ k joblist
+ s job=$$getjob()
+ s joblist=$g(joblist)+1
+ s joblist(joblist)=job
+ s ^TMPtkviewer(job)=$h_"\VIEW"
+ s i=""
+ f  s i=$o(PLIST(i)) q:i=""  s epis=$p(PLIST(i),"=",1),test=$p(PLIST(i),"=",2) d
+ . f n=1:1:$l(test,",") s ^TMPtkviewer(job,epis,$p(test,",",n))=""
+ k PLIST
+ m PLIST=joblist
+ q $$webaddress()_"?Job="
+webaddress() 
+ q "http://infocom0/csp/user/STPAU.TkViewer.cls"
+ ;For test:
+ ;q "http://localhost/csp/user/STPAU.TkViewer.cls"
+getjob() 
+ n abc,str,n
+ s abc="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890"
+ s str=""
+ f  s str="" d  q:'$d(^TMPtkviewer(str))
+ . f n=1:1:30 s str=str_$e(abc,$r($l(abc)+1))
+ q str
+ ; Web portion   
+dojob 
+ s $zt="err"     
+ w "<HTML><HEAD><TITLE>Visualització de peticions</TITLE>",!
+ w "<base target=""_blank"">",!
+ w "</HEAD>",!
+ w "<BODY>",!
+ x "s sn=$g(%request.Data(""Job"",1))" ; Cache 3.0 compatible
+ ; w "<p>sn=",sn,"</p>"
+ i sn="" w "<p><font color=""#FF0000"">Accés no autoritzat</font></p></BODY></html>" q
+ s r=$g(^TMPtkviewer(sn))
+ s time=$p(r,"\",1)
+ s jobtype=$p(r,"\",2)
+ i $l(time),$$diff(time,$h)>180 k ^TMPtkviewer(sn)
+ i '$d(^TMPtkviewer(sn)) w "<p><font color=""#FF0000"">La pàgina ha caducat</font></p></BODY></html>" q
+ i jobtype="VIEW" d view q
+ i jobtype="PRINT" d view q
+ w "<p><font color=""#FF0000"">Job ",jobtype," desconegut</font></p></BODY></html>"
+ k ^TMPtkviewer(sn)
+ q
+diff(old,new) n (old,new)
+ s tot=0
+ s dold=$p(old,",",1)
+ s told=$p(old,",",2)
+ s dnew=$p(new,",",1)
+ s tnew=$p(new,",",2)
+ s sold=(dold*86400)+told
+ s snew=(dnew*86400)+tnew
+ i snew<sold q 99999
+ s diff=$j((snew-sold)/3600,0,0)
+ q diff
+view 
+ s epis="",swprint=0
+ f  s epis=$o(^TMPtkviewer(sn,epis)) q:epis=""  d showepi
+ w "</BODY></html>"
+ k ^TMPtkviewer(sn)
+ q
+showepi 
+ i $$select^LVBEPVIS(epis) q
+ k VISIT m VISIT=PLIST
+ i swprint d
+ . w "<hr>"
+ . i jobtype="PRINT" w "<DIV STYLE=""page-break-after: always;""><BR></DIV>",!
+ s swprint=1
+ i jobtype="VIEW" d
+ . w "<table border=""0"" cellpadding=""0"" cellspacing=""0"" style=""border-collapse: collapse"" bordercolor=""#111111"" width=""100%"" id=""AutoNumber1"">",!
+ . w "<tr>",!
+ . w "<td width=""90%"">&nbsp;</td>",!
+ . w "<td width=""10%"">",!
+ . s job=$$getjob()
+ . s ^TMPtkviewer(job)=$h_"\PRINT"
+ . s ^TMPtkviewer(job,epis)=""
+ . w "<form method=""POST"" action="""_$$webaddress()_""">",!
+ . w "<input type=""submit"" value=""Imprimir aquest"" name=""B1"">",!
+ . w "<input type=""hidden"" value="""_job_""" name=""Job""></form>",!
+ . w "</td>",!
+ . w "<td width=""10%"">",!
+ . s job=$$getjob()
+ . m ^TMPtkviewer(job)=^TMPtkviewer(sn)
+ . s ^TMPtkviewer(job)=$h_"\PRINT"
+ . w "<form method=""POST"" action="""_$$webaddress()_""">",!
+ . w "<input type=""submit"" value=""Imprimir tots"" name=""B1"">",!
+ . w "<input type=""hidden"" value="""_job_""" name=""Job""></form>",!
+ . w "</td>",!
+ . w "</tr>",!
+ . w "</table>"
+ w "<pre>",!
+ i jobtype="PRINT" d
+ . w "<font size=""1"">",!
+ . w "      <img border=""0"" src=""/images/logo.jpg"" width=""250"" height=""84"">"
+ . s line=$$just("",16,"<font size=""4""><b>SERVEI DE MICROBIOLOGIA</b></font>")
+ . w line,!
+ . s line=$$just("",66,"<font size=""1"">Tel: 93 291 90 71 - Fax: 93 291 90 70</font>")
+ . w line,!
+ . s line=$$just("",6,"<font size=""1"">Sant Antoni M. Claret, 167 - 08025 Barcelona</font>")
+ . s line=$$just(line,85,"<font size=""1"">******************************************</font>")
+ . w line,!!
+ s line=$$just("",6,"<b>"_$p(VISIT(3),$c(1))_" "_$p(VISIT(99),$c(1))_" "_$p(VISIT(4),$c(1))_"</b>")
+ s line=$$just(line,65,"N. Història:"_$p(VISIT(20),$c(1)))
+ w line,!
+ s line=$$just("",6,"Data Naix.(edat):"_$$prtdate($p(VISIT(6),$c(1)))_" ("_$p(VISIT(26),$c(1))_")")
+ s line=$$just(line,40,$p(VISIT(5),$c(1),2)) ; Sex
+ s line=$$just(line,58,"N. Episodi SAP:"_$p(VISIT(65),",",1))
+ w line,!
+ s line=$$just("",58,"N. Extracció:"_$p(VISIT(2),$c(1)))
+ w line,!
+ s line=$$just("",6,"Servei origen:"_$$spec(VISIT(48)))
+ s line=$$just(line,58,"N. Id. extern:"_$p(VISIT(78),$c(1),1))
+ w line,!
+ s line=$$just("",6,"Origen petició:"_$e($$hos(VISIT(123)),1,27))
+ s line=$$just(line,49,VISIT(113)) ; Bed
+ s line=$$just(line,58,"Data recepció:"_$s(VISIT(61)="":"",1:$zd(VISIT(61),4)))
+ w line,!
+ s line=$$just("",6,"Servei destí:"_$$spec(VISIT(92)))
+ s line=$$just(line,58,"Data resultat:"_$$maxautho(epis))
+ w line,!
+ s line=$$just("",6,"Destí resultat:"_$e($p(VISIT(22),$c(1),2),1,27))
+ s line=$$just(line,49,VISIT(112)) ; Bed
+ s line=$$just(line,58,"Dr./Dra.:"_$p(VISIT(15),$c(1),2))
+ w line,!
+ w "     <b>",$tr($j("",105)," ","_"),"</b>",!!
+ s (ts,cnt)=""
+ i jobtype="VIEW" f  s ts=$o(^TMPtkviewer(sn,epis,ts)) q:ts=""  d cnt
+ i jobtype="PRINT" d
+ . f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d cnt
+ . w "</font>"
+ w "</pre>",!
+ q
+cnt 
+ f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ . s tid=epis_"||"_ts_"||"_cnt k format
+ . i '$$isvisible(tid) q
+ . k PLIST
+ . i '$$SINGLE^PRTDR00(tid,"P") d adjust(.PLIST)
+ . f j=1:1:PLIST w PLIST(j),!
+ . s vtsRID=epis_"||"_ts_"||"_cnt
+ . s text="Autoritzat per: Pendent"
+ . i $$status^LVBVIS1(vtsRID)="A",'$$select^LVBVISTS(vtsRID) d
+ .. s text="Autoritzat per "_$p(PLIST(9),$c(1),2)_" el "_$$extdate2^SSUTIL4(PLIST(7))_" a les "_$$exttime^SSUTIL4(PLIST(8))
+ . w !!,$j("",98-$l(text)),text
+ q
+isvisible(tid) n (tid)
+ s epi=$p(tid,"||",1)
+ s ts=$p(tid,"||",2)
+ ; Hide MI TestSets
+ i $e(ts,1,2)="MI" q 0
+ s cnt=$p(tid,"||",3)
+ s status=$$status^LVBVIS1(tid)
+ i status="A" q 1
+ s vis=0
+ s i=""
+ f  s i=$o(^TEPI(epi,1,ts,cnt,"QUEUE","VQ",i)) q:i=""  d
+ . s queue=$p(^(i),"\",1)
+ . i '$$select^LVBCTVQ(queue),PLIST(6)="Y" s vis=1
+ q vis
+just(line,num,add) 
+ s line=$e(line_$j("",80),1,num)_add
+ q line
+prtdate(dat) n ret
+ q:dat'=(+dat)
+ s ret=$zd(dat,8)
+ q $e(ret,7,8)_"/"_$e(ret,5,6)_"/"_$e(ret,1,4)
+spec(code) n (code)
+ i code="" q ""
+ i $$select^LVBCTSPL(code) q ""
+ q PLIST(3)
+maxautho(epis) n (epis) s epis=$g(epis),result=""
+ s (i,j)=""
+ f  s i=$o(^TEPI(epis,1,i)) q:i=""  d
+ . f  s j=$o(^TEPI(epis,1,i,j)) q:j=""  d
+ .. i $$status^LVBVIS1(epis_"||"_i_"||"_j)="A" s d=$p(^TEPI(epis,1,i,j),"\",4) i d>result s result=d
+ i $l(result) s result=$zd(result,4)
+ q result
+hos(code) n (code)
+ i code="" q ""
+ i $$select^LVBCTHOS(code) q ""
+ q PLIST(3)
+adjust(ARRAY) 
+ k array,insert,format,html
+ s x2=1,x1="",tab=1
+ f  s x1=$o(ARRAY(x1)) q:x1=""  d
+ . i ARRAY(x1)=$c(13) q
+ . i ARRAY(x1)="!" d  k html s x2=x2+1,tab=1 q
+ .. i $d(html) s insert(x2,$l($g(array(x2)))+1)=html
+ .
+ . i ARRAY(x1)="~BOLD" q:$d(format("B"))  s html=$g(html)_"<b>",format("B")="" q
+ . i ARRAY(x1)="~ITALIC" q:$d(format("I"))  s html=$g(html)_"<i>",format("I")="" q
+ . i ARRAY(x1)="~NORMAL" d
+ .. i $d(format("B")) s html=$g(html)_"</b>"
+ .. i $d(format("I")) s html=$g(html)_"</i>"
+ .. k format
+ . 
+ . i $e(ARRAY(x1))="~" q
+ . 
+ . i $e(ARRAY(x1))="?" s tab=+$e(ARRAY(x1),2,4),ARRAY(x1)=$e(ARRAY(x1),5,$l(ARRAY(x1)))
+ .
+ . i ARRAY(x1)="" q
+ . i $d(html) s insert(x2,tab)=html k html
+ . s $e(array(x2),tab,tab+$l(ARRAY(x1))-1)=ARRAY(x1)
+ . s tab=tab+$l(ARRAY(x1))
+ k ARRAY m ARRAY=array s ARRAY=$o(ARRAY(""),-1)
+ f j=1:1:ARRAY i '$d(ARRAY(j)) s ARRAY(j)=""
+ s i=""
+ f  s i=$o(insert(i)) q:i=""  d
+ . f  s tab=$o(insert(i,tab),-1) q:tab=""  d
+ .. s ARRAY(i)=$e(ARRAY(i),1,tab-1)_insert(i,tab)_$e(ARRAY(i),tab,$l(ARRAY(i)))
+ q
+err 
+ w "ERROR:",$ze
+ q
+]]></Routine>
+</Export>

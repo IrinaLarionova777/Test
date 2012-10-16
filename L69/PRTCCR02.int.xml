@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCCR02" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTCCR02 ; IG 07/10/98 ; Cancer Council reports
+ Q
+ ; Parameters :  1.Start date
+ ;               2.End date
+ ;               3.File (Y/N)
+ ;               4.Report ID
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($ZN,$J)
+ K xHEADER D INIT
+ s line=1,xHEADER(line)=REPname
+ s line=2,xHEADER(line)=""
+ D HEADER^PRTREP00(.xHEADER,PAR1,PAR2),BODY,PRINT,FILE:PAR3="Y"
+ i '$$select^LVBCTLR(PAR4,"Y") s PLIST(4)=PAR2 i $$update^LVBCTLR(PAR4)
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=PAR4 I $$update^LVBPRPR(REPID)
+ K ^TMP($ZN,$J),^TMP("PRTREP00",$J)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$ZN)
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+ s REPname="" i '$$select^LVBCTLR(PAR4,"Y") s REPname=PLIST(3)
+ Q
+ ; create temporary printing file
+BODY k ^TMP($zn,$j,"REPORT")
+ ; list of tests
+ i $$open^LVBCTLRT(PAR4,"Y")
+ f  q:$$fetch^LVBCTLRT(PAR4,"Y")  s ^TMP($zn,$j,"TEST",$p(PLIST(2),$c(1)))=PLIST(3)
+ i $$close^LVBCTLRT()
+ f date=PAR1:1:PAR2 d
+ .s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  s ur=$p(^TEPI(epis),"\",18) d
+ ..s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  d
+ ...i '$d(^TMP($zn,$j,"TEST",ts)) q
+ ...s cnt="" f  s cnt=$o(^TEPIi("AUTHORISED",date,epis,ts,cnt)) q:cnt=""  d
+ .... ; CCR codes report
+ ....i $l(^TMP($zn,$j,"TEST",ts)) s list=^(ts) d  q
+ .....s (found,count)="" f j=1:1:$l(list,",") s single=$p(list,",",j) d
+ ......s code=$e(single,1,$l(single)-1),result=$e(single,$l(single)) i $l(code),$l(result) s count=count+1
+ ......i $l(code),$l(result),$g(^TEPI(epis,1,ts,cnt,"CCR",code))=result s found=found+1
+ .....i found=count s ^TMP($zn,$j,"REPORT",ur,epis,ts,cnt)=""
+ .... ; SNOMED codes report
+ ....k ^TMP($zn,$j,"DATA") s (include,exclude)=""
+ ....i $$open^LVBVISSN(epis_"||"_ts_"||"_cnt)
+ ....f  q:$$fetch^LVBVISSN(epis_"||"_ts_"||"_cnt)  d
+ .....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .....i PLIST(4)="" s PLIST(4)=" "
+ .....i $e(PLIST(3))="T" s ^TMP($zn,$j,"DATA",PLIST(4),"T",PLIST(3))=""
+ .....i $e(PLIST(3))="M" s ^TMP($zn,$j,"DATA",PLIST(4),"M",PLIST(3))=""
+ ....i $$close^LVBVISSN()
+ ....s group="" f  s group=$o(^TMP($zn,$j,"DATA",group)) q:group=""  d
+ ..... ; check inclusions
+ .....i $$open^LVBCTLRI(PAR4,"Y")
+ .....f  q:$$fetch^LVBCTLRI(PAR4,"Y")  d  i include q
+ ......s (include("T"),include("M"))=""
+ ...... ; check T-codes
+ ......i '$l(PLIST(3)) s include("T")=1
+ ......i $l(PLIST(3)) s line=$tr(PLIST(3)," ") d
+ .......s code="" f  s code=$o(^TMP($zn,$j,"DATA",group,"T",code)) q:code=""  d  i include("T") q
+ ........f j=1:1:$l(line,",") d  i include("T") q
+ .........s xx1=$e($p($p(line,",",j),":",1),3,7),xx2=$e($p($p(line,",",j),":",2),3,7)
+ .........i $l(xx1),'$l(xx2),$e(code,3,7)=xx1 s include("T")=1 q
+ .........i $l(xx1),$l(xx2) d
+ ..........i $e(code,3)?1U,$e(code,3)=$e(xx1),$e(code,4,7)'<$e(xx1,2,9),$e(code,4,7)'>$e(xx2,2,9) s include("T")=1 q
+ ..........i $e(code,3)?1N,$e(code,3,7)'<xx1,$e(code,3,7)'>xx2 s include("T")=1 q
+ ...... ; check M-codes
+ ......i include("T") d  i include("M") s include=1
+ .......i '$l(PLIST(4)) d
+ ........ ; check 5th digits
+ ........i '$l(PLIST(5)) s include("M")=1
+ ........i $l(PLIST(5)) f i=1:1:$l(PLIST(5),",") i $e(code,7)=$p(PLIST(5),",",i) s include("M")=1 q
+ .......i $l(PLIST(4)) s line=$tr(PLIST(4)," ") d
+ ........s code="" f  s code=$o(^TMP($zn,$j,"DATA",group,"M",code)) q:code=""  d  i include("M") q
+ .........f j=1:1:$l(line,",") d  i include("M") q
+ ..........s xx1=$e($p($p(line,",",j),":",1),3,6),xx2=$e($p($p(line,",",j),":",2),3,6)
+ ..........i $l(xx1),'$l(xx2),$e(code,3,6)=xx1 d
+ ........... ; check 5th digits
+ ...........i '$l(PLIST(5)) s include("M")=1
+ ...........i $l(PLIST(5)) f i=1:1:$l(PLIST(5),",") i $e(code,7)=$p(PLIST(5),",",i) s include("M")=1 q
+ ..........i $l(xx1),$l(xx2),$e(code,3,6)'<xx1,$e(code,3,6)'>xx2 d
+ ........... ; check 5th digits
+ ...........i '$l(PLIST(5)) s include("M")=1
+ ...........i $l(PLIST(5)) f i=1:1:$l(PLIST(5),",") i $e(code,7)=$p(PLIST(5),",",i) s include("M")=1 q
+ .....i $$close^LVBCTLRI()
+ .....i 'include q
+ ..... ; check exclusions
+ .....i $$open^LVBCTLRE(PAR4,"Y")
+ .....f  q:$$fetch^LVBCTLRE(PAR4,"Y")  d  i exclude q
+ ......s (exclude("T"),exclude("M"))=""
+ ...... ; check T-codes
+ ......i '$l(PLIST(3)) s exclude("T")=1
+ ......i $l(PLIST(3)) s line=$tr(PLIST(3)," ") d
+ .......s code="" f  s code=$o(^TMP($zn,$j,"DATA",group,"T",code)) q:code=""  d  i exclude("T") q
+ ........f j=1:1:$l(line,",") d  i exclude("T") q
+ .........s xx1=$e($p($p(line,",",j),":",1),3,7),xx2=$e($p($p(line,",",j),":",2),3,7)
+ .........i $l(xx1),'$l(xx2),$e(code,3,7)=xx1 s exclude("T")=1 q
+ .........i $l(xx1),$l(xx2) d
+ ..........i $e(code,3)?1U,$e(code,3)=$e(xx1),$e(code,4,7)'<$e(xx1,2,9),$e(code,4,7)'>$e(xx2,2,9) s exclude("T")=1 q
+ ..........i $e(code,3)?1N,$e(code,3,7)'<xx1,$e(code,3,7)'>xx2 s exclude("T")=1 q
+ ...... ; check M-codes
+ ......i exclude("T") d  i exclude("M") s exclude=1
+ .......i '$l(PLIST(4)) d
+ ........ ; check 5th digits
+ ........i '$l(PLIST(5)) s exclude("M")=1
+ ........i $l(PLIST(5)) f i=1:1:$l(PLIST(5),",") i $e(code,7)=$p(PLIST(5),",",i) s exclude("M")=1 q
+ .......i $l(PLIST(4)) s line=$tr(PLIST(4)," ") d
+ ........s code="" f  s code=$o(^TMP($zn,$j,"DATA",group,"M",code)) q:code=""  d  i exclude("M") q
+ .........f j=1:1:$l(line,",") d  i exclude("M") q
+ ..........s xx1=$e($p($p(line,",",j),":",1),3,6),xx2=$e($p($p(line,",",j),":",2),3,6)
+ ..........i $l(xx1),'$l(xx2),$e(code,3,6)=xx1 d
+ ........... ; check 5th digits
+ ...........i '$l(PLIST(5)) s exclude("M")=1
+ ...........i $l(PLIST(5)) f i=1:1:$l(PLIST(5),",") i $e(code,7)=$p(PLIST(5),",",i) s exclude("M")=1 q
+ ..........i $l(xx1),$l(xx2),$e(code,3,6)'<xx1,$e(code,3,6)'>xx2 d
+ ........... ; check 5th digits
+ ...........i '$l(PLIST(5)) s exclude("M")=1
+ ...........i $l(PLIST(5)) f i=1:1:$l(PLIST(5),",") i $e(code,7)=$p(PLIST(5),",",i) s exclude("M")=1 q
+ .....i $$close^LVBCTLRE()
+ .....i 'exclude s ^TMP($zn,$j,"REPORT",ur,epis,ts,cnt)=""
+ Q
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s ur="" f  s ur=$o(^TMP($zn,$j,"REPORT",ur)) q:ur=""  d
+ ..s newur=1,epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",ur,epis)) q:epis=""  d  s newur=0
+ ...i '$$select^LVBEPVIS(epis) k VISIT m VISIT=PLIST
+ ...i '$$select^LVBCTDR($p(VISIT(15),$c(1)),"Y") k DOC m DOC=PLIST
+ ...s xxx(1)=DOC(18) k PLIST m PLIST=VISIT i 'newur s PLIST(20)=""
+ ...s ts="" f  s ts=$o(^TMP($zn,$j,"REPORT",ur,epis,ts)) q:ts=""  d
+ ....s cnt="" f  s cnt=$o(^TMP($zn,$j,"REPORT",ur,epis,ts,cnt)) q:cnt=""  d
+ .....s vtsRID=epis_"||"_ts_"||"_cnt
+ .....s i=0 k an
+ .....s an="" f  s an=$o(^THIR(epis,an)) q:an=""  i $d(^THIR(epis,an,"TEST",vtsRID)) s i=i+1,an(i)=an
+ .....i $d(an)\10=0 d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST q
+ .....s an="" f  s an=$o(an(an)) q:an=""  s xxx(2)=an(an) d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="CBR"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+FILE s file="sjp_"_$tr($$extdate2^SSUTIL4(+$h),"/")_".txt" o file:"WNS":2 e  q
+ s ur="" f  s ur=$o(^TMP($zn,$j,"REPORT",ur)) q:ur=""  d
+ .s newur=1,epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",ur,epis)) q:epis=""  d  s newur=0
+ ..i $$select^LVBEPVIS(epis,"Y") q
+ ..k VISIT m VISIT=PLIST k PLIST
+ ..i $l(VISIT(22)),$$select^LVBCTHOS(VISIT(22),"Y") q
+ ..k HOSP m HOSP=PLIST k PLIST
+ ..i $l(VISIT(15)),$$select^LVBCTDR(VISIT(15),"Y") q
+ ..k DOC m DOC=PLIST k PLIST
+ ..s ts="" f  s ts=$o(^TMP($zn,$j,"REPORT",ur,epis,ts)) q:ts=""  d
+ ...s cnt="" f  s cnt=$o(^TMP($zn,$j,"REPORT",ur,epis,ts,cnt)) q:cnt=""  d
+ ....i $$select^LVBVISTS(epis_"||"_ts_"||"_cnt) q
+ ....k VTS m VTS=PLIST
+ ....s report=$c(10,13),xx="" f  s xx=$o(^TEPI(epis,1,ts,cnt,"DATA","T","REM",xx)) q:xx=""  d
+ .....s report=report_$tr(^(xx),"""","'")_$c(10,13)
+ ....s RECORD="" f j="HT","HC","HS","HW","HE","HM","HO" d
+ .....s xx=$g(^TEPI(epis,1,ts,cnt,"CCR",j)) i $l(xx) s xx=$e(j,2)_xx
+ .....s RECORD=RECORD_$s($l(RECORD):",",1:"")_$$text(xx)
+ ....s (j,SNOMED)="" f  s j=$o(^TEPI(epis,1,ts,cnt,"SNOMED",j)) q:j=""  d
+ .....s xx=$p(^(j),"\") i $l(xx) s SNOMED=$s($l(SNOMED):SNOMED_" ",1:"")_xx
+ ....u file
+ ....w $$text("SJG"),",",$$text(epis),",",$$text($p(VISIT(20),$c(1))),","
+ ....w $$text(VISIT(3)),",",$$text(VISIT(4)),","
+ ....s address=$$address(VISIT(32),VISIT(33),VISIT(34),"")
+ ....w $$text($p(address,$c(1),1)),",",$$text($p(address,$c(1),2)),",",$$text(VISIT(36)),",",$$text("WA"),","
+ ....w $$text($$date(VISIT(6))),",",$$text(DOC(18)),",",$$text(DOC(3)),",",$$text(DOC(4)),","
+ ....w $$text(DOC(9)),",",$$text(DOC(10)),",",$$text(DOC(12)),",",$$text(DOC(13)),",",$$text("WA"),","
+ ....f j=19:1:26 w $$text(""),","
+ ....w $$text($$date(VISIT(14))),",",$$text($$date(VTS(7))),",",RECORD,",",$$text(report),","
+ ....w $$text($s($g(HOSP(19))="Y":"I",1:"")),",",$$text($g(HOSP(3))),",",$$text(SNOMED),","
+ ....w $$text($p(VISIT(5),$c(1))),",",$$text(""),",",$$text($s($l(VTS(11)):VTS(11),1:$p(VTS(9),$c(1),2))),!
+ c file
+ q
+text(x) n (x) q """"_x_""""
+date(date) n (date) s xx=$$extdate2^SSUTIL4($g(date))
+ q $p(xx,"/",1)_$p(xx,"/",2)_$p(xx,"/",3)
+address(x1,x2,x3,x4) n (x1,x2,x3,x4) s (res1,res2)=""
+ i $l(x4) s res2=x3_" "_x4,res1=x1_" "_x2
+ e  i $l(x3) s res2=x2_" "_x3,res1=x1
+ e  i $l(x2) s res2=x2,res1=x1
+ e  s (res1,res2)=x1
+ q res1_$c(1)_res2
+]]></Routine>
+</Export>

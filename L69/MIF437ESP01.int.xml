@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF437ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF437ESP01(mi) ; ASTM protocol - UniCAP (Bi-Directional)
+ ; Check Use only ETX
+ ; Oct 21, 2005 by Mc_Fly - TrakHealth BCN - Rita's demographics
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),etb=$c(23),lf=$c(10),cr=$c(13),nak=$c(21)
+ k ^TMP($zn,$j,"ENQ")
+ i $$start^MIF000() q
+ f  d Main,ORDER,Send i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10
+ i $c(R)'=enq q
+ d trace^MIF000(mi,"ENQ","H<--M"),ACK
+ s (epis,result)=""
+ f  r *R:10 q:$c(R)=eot  q:R=-1  d
+ . i $c(R)=enq d trace^MIF000(mi,"ENQ","H<--M"),ACK q
+ . i $c(R)'=stx q
+ . s record=$$read^MIF000("",lf) q:'$l(record)
+ . d trace^MIF000(mi,$$RE(stx_record_lf),"H<--M")
+ . ; check record validity
+ . s chsum=$e($p(record,etx,2),1,2),chrecord=$p(record,etx,1)_etx
+ . i $$CHSUM(chrecord)'=chsum d NAK q
+ . d ACK
+ . ; header record
+ . i $e(record,2)="H" q
+ . ; patient record
+ . i $e(record,2)="P" d Last s (sample,epis,surname,result,date,time,QC)="" q
+ . ; order record
+ . i $e(record,2)="O" d  q
+ .. s epis=$p(record,"|",4),ac=$p(record,"|",12) 
+ .. s QC=""
+ .. i ac="Q" s epis=$p($p(record,"|",3),"^",1),QC="\"_epis
+ . ; result record
+ . i $e(record,2)="R" d  q
+ .. s test=$p($p(record,"|",3),"^",4)
+ .. s meth=$p($p(record,"|",3),"^",5)
+ .. s ch=meth_" "_test
+ .. s res=$p($p(record,"|",4),"^"),class=$p($p(record,"|",4),"^",2)
+ .. s flag=$p(record,"|",7)
+ .. i $l(ch),$l(res) d
+ ... s result=result_ch_$c(par10)_res_$c(par10)_flag_$c(par11)
+ ... s result=result_ch_" cl"_$c(par10)_class_$c(par10)_flag_$c(par11)
+ . ; Query
+ . i $e(record,2)="Q" d  q
+ .. s ^TMP($zn,$j,"ENQ","ALL")="" ; this machine always ask for ALL
+ . ; last record
+ . i $e(record,2)="L" d Last q
+ q
+Last ; file result if exist
+ i $l(result),epis?1.99AN d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ s (sample,epis,surname,result,date,time,QC)=""
+ q
+ORDER ; create list of orders if exists
+ i '$d(^TMP($zn,$j,"ENQ")) q
+ k ^TMP($zn,$j,"ENQ")
+ d scanall(mi)
+ i '$d(^TMP("MIF-SCAN",$j,mi)) q
+ i '$d(^TMIF(mi,10)) s ^TMIF(mi,10,1)="H|@^\|||Host|||||||P|1|"_$zd(+$h,8)_$tr($zt($p($h,",",2),1),":","") 
+ s epis=""
+ f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  d
+ . d PATDET(epis),SET(epis,"SCAN")
+ . k ^TMP("MIF-SCAN",$j,mi,epis)
+ q
+PATDET(epis) ; set patient details record
+ n i,pat,line,sex,PLIST,r
+ s i="",pat=0
+ f  s i=$o(^TMIF(mi,10,i),-1) q:i=""  i $p(^(i),"|",1)="P" s pat=$p(^(i),"|",2) q
+ s pat=pat+1
+ s r="P|"_pat
+ i '$$select^LVBEPVIS(epis) d
+ . s sex=$p($g(PLIST(5)),$c(1))
+ . i '$f("MF",sex) s sex="U"
+ . s r=r_"|"_$p($g(PLIST(20)),$c(1)) ; 3- Practice PID
+ . s r=r_"|"_$p($g(PLIST(109)),$c(1)) ; 4- Laboratory PID (ICU)
+ . s r=r_"||"_$$NameFormat^LVBCOM03("PT","",$g(PLIST(4)),$g(PLIST(3)),$g(PLIST(99))) ; 6 - Patient name
+ . s r=r_"||"_$s($l($g(PLIST(6))):$tr($zd(PLIST(6),3),"-"),1:"") ; 8 - Date of birth
+ . s r=r_"|"_sex ; 9 - Sex
+ . s r=r_"||||||"_$p($g(PLIST(15)),$c(1),2) ; 15 - Comments (Doctor)
+ . s r=r_"^"_$p($g(PLIST(22)),$c(1),2) ; Patient location
+ . s r=r_"|"_$g(PLIST(26)) ; 16 - Age
+ . s r=r_"|||"_$p($g(PLIST(53)),"|",1) ; 19 - Diagosis
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)=r
+ q
+SET(epis,mode) ; set record to be sent to instrument
+ ; process a single episode scan
+ i mode="QUERY",$d(^TMP("MIF-SINGLE",$j,mi,epis)) d
+ . k test
+ . s tc="" f  s tc=$o(^TMP("MIF-SCAN",$j,mi,epis,tc)) q:tc=""  s test($p(tc," ",1,2))=""
+ . f cnt=1:1 s tc=$o(test(tc)) q:tc=""  d
+ .. s line=$o(^TMIF(mi,10,""),-1)+1
+ .. s ^TMIF(mi,10,line)="O|"_cnt_"|"_epis_"||^^^"_$p(tc," ",2)_"^"_$p(tc," ",1)_"|R|"_$zd(+$h,8)_$tr($zt($p($h,",",2),1),":","")_"|||||||||P||||||||||O"
+ ; process an all episode scan
+ i mode="SCAN",$d(^TMP("MIF-SCAN",$j,mi,epis)) d  q
+ . k test,wtest
+ . s tc="" f  s tc=$o(^TMP("MIF-SCAN",$j,mi,epis,tc)) q:tc=""  s test($p(tc," ",1,2))=^(tc)
+ . f  s tc=$o(test(tc)) q:tc=""  s wtest(+test(tc),tc)=""
+ . s cnt=1,(ord,tc)=""
+ . f  s ord=$o(wtest(ord)) q:ord=""  d
+ .. f  s tc=$o(wtest(ord,tc)) q:tc=""  d
+ ... s line=$o(^TMIF(mi,10,""),-1)+1
+ ... s ^TMIF(mi,10,line)="O|"_cnt_"|"_epis_"||^^^"_$p(tc," ",2)_"^"_$p(tc," ",1)_"|R|"_$zd(+$h,8)_$tr($zt($p($h,",",2),1),":","")_"|||||||||P||||||||||O"
+ ... s cnt=cnt+1
+ ; process a load list episode scan
+ i mode="LOAD" d
+ . k test
+ . s tc="" f  s tc=$o(^TMP("MIF000",$j,"LL","TEST",tc)) q:tc=""  s test($p(tc," ",1,2))=""
+ . f cnt=1:1 s tc=$o(test(tc)) q:tc=""  d
+ .. s line=$o(^TMIF(mi,10,""),-1)+1
+ .. s ^TMIF(mi,10,line)="O|"_cnt_"|"_epis_"||^^^"_$p(tc," ",2)_"^"_$p(tc," ",1)_"|R|"_$zd(+$h,8)_$tr($zt($p($h,",",2),1),":","")_"|||||||||P||||||||||O"
+ q
+Send ; send list of orders if exists
+ i '$d(^TMIF(mi,10)) q
+ d ENQ
+ f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ d trace^MIF000(mi,$$RE($c(R)),"H<--M")
+ i $c(R)=enq q
+ i $c(R)'=ack d EOT q
+ s i="",frame=0
+ f  s i=$o(^TMIF(mi,10,i)) q:i=""  q:$$SEND(^(i))
+ i i="" d SEND("L|1|F") k ^TMIF(mi,10)
+ d EOT
+ q
+SEND(str) ; send string to instrument
+ s frame=frame+1
+ s str=frame#8_str_cr_etx
+ s str=str_$$CHSUM(str)
+ w stx,str,cr,lf,*-3
+ d trace^MIF000(mi,$$RE(str),"H-->M")
+ f j=1:1:15 r *R:1 i ($c(R)=ack)!($c(R)=eot)!($c(R)=nak) q
+ i $c(R)=ack d trace^MIF000(mi,"<ACK>","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"<EOT>","H<--M") q 1
+ d trace^MIF000(mi,R,"H<--M")
+ q 2
+CHSUM(x) ; calculate check sum
+ n z
+ s z=$zh($zcrc(x,0)#256)
+ i $l(z)=1 s z="0"_z
+ q z
+ENQ w enq,*-3 d trace^MIF000(mi,"<ENQ>","H-->M") q
+ACK w ack,*-3 d trace^MIF000(mi,"<ACK>","H-->M") q
+NAK w nak,*-3 d trace^MIF000(mi,"<NAK>","H-->M") q
+EOT w eot,*-3 d trace^MIF000(mi,"<EOT>","H-->M") q 
+NEXTTRAY(tray) q tray
+RE(str) 
+ n z,i
+ s z=""
+ f i=1:1:$l(str) s a=$e(str,i) d  s z=z_a
+ . i $a(a)>31 q
+ . i a=cr s a="<CR>" q
+ . i a=lf s a="<LF>" q
+ . i a=stx s a="<STX>" q
+ . i a=etx s a="<ETX>" q
+ . i a=etb s a="<ETB>" q
+ . i a=eot s a="<EOT>" q
+ . i a=ack s a="<ACK>" q
+ . i a=nak s a="<NACK>" q
+ . i a=enq s a="<ENQ>" q
+ . s a="<"_$a(a)_">" q
+ q z
+ ; ---------------------------------------------------------
+ ; Copy of scanall^MIF000
+ ; ---------------------------------------------------------
+ ; scan TTRQ for all pending jobs
+ ; limit scan to first 10 episodes
+scanall(mi,tg,p2,p3) n (mi,tg) k ^TMP("MIF-SCAN",$j)
+ s mi=$g(mi),tg=$g(tg),stop=0
+ s ep="" f  s ep=$o(^TMIF(mi,20,ep)) q:ep=""  d  q:stop>10
+ .f j=1,2,3 s @("x"_j)=$p($g(^TMIF(mi,20,ep)),"\",j)
+ .s new=""
+ . ; check entry with send
+ .i $p(x1,",",1)>$p(x2,",",1) s new=1
+ .e  i $p(x1,",",1)=$p(x2,",",1),$p(x1,",",2)>$p(x2,",",2) s new=1
+ . ; check receive with send
+ .i $p(x3,",",1)>$p(x2,",",1) s new=1
+ .e  i $p(x3,",",1)=$p(x2,",",1),$p(x3,",",2)>$p(x2,",",2) s new=1
+ .i new d
+ ..k ^TMP("MIF-SINGLE",$j,mi)
+ ..d scanone(mi,ep,tg,,,"Y")
+ ..s ep1="" f  s ep1=$o(^TMP("MIF-SINGLE",$j,mi,ep1)) q:ep1=""  d
+ ...m ^TMP("MIF-SCAN",$j,mi,ep1)=^TMP("MIF-SINGLE",$j,mi,ep1)
+ ...s stop=stop+1
+ ..k ^TMP("MIF-SINGLE",$j,mi)
+ q
+ ; ---------------------------------------------------------
+ ; Copy of scanone^MIF000
+ ; It returns the channels ordered by testset entry sequence
+ ; ^TMP("MIF-SINGLE",$j,mi,epis,sequence,ch)=""
+ ; ---------------------------------------------------------
+ ; scan TTRQ for single episode
+scanone(mi,epis,tg,test,suffix,all) n (mi,epis,tg,test,suffix,all) k ^TMP($zn,$j),^TMP("MIF-SINGLE",$j,mi)
+ s mi=$g(mi),epis=$g(epis),tg=$g(tg),test=$g(test),suffix=$g(suffix),all=$g(all)
+ s site=$p($g(^TMIF(mi)),"\",18)
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . ; check if TestSet exist in TestGroup
+ .i $l(test),ts'=test q
+ . ; not for this instrument
+ .i '$d(^TMIF(mi,0,ts)) q
+ .i $l(tg),$$select^LVBMITGS(mi_"||"_tg_"||"_ts) q
+ .s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d
+ ..s vtsRID=epis_"||"_ts_"||"_tscnt
+ .. ; test is on hold
+ ..s hold=$p($g(^TEPI(epis,1,ts,tscnt)),"\",41)
+ ..i hold="Y" q
+ ..s sequence=$p($g(^TEPI(epis,1,ts,tscnt)),"\",48)
+ .. ; different user site
+ ..i $l(site),site'=$$site^LVBVISTS(vtsRID) q
+ .. ; send only if test set has not been authorised yet
+ ..i $$status^LVBVIS1(vtsRID)'="A" s ^TMP($zn,$j,1,epis,ts,$p(vtsRID,"||",3))=sequence
+ k test s test(epis)=""
+ s sfx="" f  s sfx=$o(^TMIF(mi,20,epis,"SFX",sfx)) q:sfx=""  s test(epis_sfx)=""
+ s ts="" f  s ts=$o(^TMP($zn,$j,1,epis,ts)) q:ts=""  d
+ .i '$$getall1^LVBCTTC(ts) k FORMAT m FORMAT=PLIST d
+ ..s z="" f  s z=$o(FORMAT(z)) q:z=""  s tc=$p(FORMAT(z),$c(2),1) i $l(tc) d
+ ... ; check if result already has been entered
+ ...s ok=1,tscnt="" f  s tscnt=$o(^TMP($zn,$j,1,epis,ts,tscnt)) q:tscnt=""  i '$d(^TEPI(epis,1,ts,tscnt,"DATA",tc)) s ok=0,sequence=^TMP($zn,$j,1,epis,ts,tscnt) q
+ ...i 'ok s xx=$g(^TMIF(mi,2,tc)),ch=$p(xx,"\",1),direction=$p(xx,"\",3),sfx=$p(xx,"\",4) i $l(ch)," Y LI "[(" "_direction_" ") d
+ ....i $l(suffix),suffix'=sfx q
+ ....i $l(tg) s ok=0 d  q:'ok
+ .....i '$$select^LVBMITGI(mi_"||"_tg_"||"_tc),PLIST(3)="Y" s ok=1
+ ....i all="Y",$d(^TMIF(mi,20,epis,"TI",tc)) q
+ ....i $l(sfx) s ^TMIF(mi,20,epis,"SFX",sfx)=""
+ ....s test(epis_sfx,ch)=sequence,test(epis_sfx)=""
+ k ^TMP($zn,$j) m ^TMP("MIF-SINGLE",$j,mi)=test
+ i $d(^TMP("MIF-SINGLE",$j,mi)) s $p(^TMIF(mi,20,epis),"\",2)=$$zts^MIF000
+ q
+]]></Routine>
+</Export>

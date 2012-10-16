@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBAT3HBA" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBAT3HBA ; IG 24/07/96 ; Receiving Accounts payments - HBA
+ ;
+ ; supported calls :
+ ;
+ ; $$start^LVBAT3HBA(type,create,user)
+ ;
+ ; 
+ ; type : HBA
+start(type,create,user) n (type,create,user) s type=$g(type),create=$g(create),user=$g(user) k ^TMP($zn,$j)
+ d Log^LVBAT201(type,"Start Processing <"_type_">...")
+ d Log^LVBAT201(type," ")
+ k CFLAB i '$$select^MVBCFLAB(1) m CFLAB=PLIST
+ i $$select^LVBCTPCT(type) q 100
+ s dir=$tr(PLIST(6),$c(17),"\"),x=$s(dir["\":"\",1:"/") i $e(dir,$l(dir))'=x s dir=dir_x
+ s dir=dir_"*.*"
+ ; MS-DOS based system
+ i $zf(-1,"DIR "_dir_" /B > ""edi.txt""")
+ ; UNIX based system
+ ;i $zf(-1,"ls "_dir_" > ""edi.txt""")
+ s $zt="Error1^"_$zn
+ s FILE="edi.txt"
+ o FILE:("RS"::$c(10,13))
+ f  u FILE r x s xxFILE=$p(x," ",$l(x," ")) i xxFILE[".",$l(xxFILE) s ^TMP($zn,$j," ",xxFILE)=""
+END1 c FILE
+END2 s $zt="Error2^"_$zn
+ s xxFILE=$o(^TMP($zn,$j," ","")) i $l(xxFILE) d
+ .s x=$s(dir["\":"\",1:"/"),xFILE=$p(dir,x,1,$l(dir,x)-1)_x_xxFILE
+ .d Log^LVBAT201(type,"Processing file <"_xFILE_">...")
+ .o xFILE:("RS"::$c(10,13)):1 e  q
+ .s Error="" f  d
+ ..s MESS=$$read(1) i $p(MESS,$c(1)) s Error=10 d Log^LVBAT201(type,Error) q
+ ..s MESS=$p(MESS,$c(1),2) i MESS'="*" q
+ ..s MESS=$$read(1) i $p(MESS,$c(1)) s Error=10 d Log^LVBAT201(type,Error) q
+ ..s MESS="*"_$p(MESS,$c(1),2)
+ ..i MESS="*C" d  k:Error ^TMP($zn,$j,"REPORT-C",xxFILE) q
+ ...s MESS=$$read(36) i $p(MESS,$c(1)) s Error=10 d Log^LVBAT201(type,Error) q
+ ...s MESS=$p(MESS,$c(1),2)
+ ...s MESS="*C"_MESS,^TMP($zn,$j,"REPORT-C",xxFILE)=MESS
+ ...f j=1:1:$tr($e(MESS,36,38)," ") d  i Error q
+ ....s MESS=$$read(50) i $p(MESS,$c(1)) s Error=10 d Log^LVBAT201(type,Error) q
+ ....s MESS=$p(MESS,$c(1),2)
+ ....i $e(MESS,1,2)'="*P" s Error=2 d Log^LVBAT201(type,Error) q
+ ....s xLine=$o(^TMP($zn,$j,"REPORT-C",xxFILE,""),-1)+1,^TMP($zn,$j,"REPORT-C",xxFILE,xLine)=MESS
+ ..i MESS="*T" d  k:Error ^TMP($zn,$j,"REPORT-T",xxFILE) q
+ ...s MESS=$$read(33) i $p(MESS,$c(1)) s Error=10 d Log^LVBAT201(type,Error) q
+ ...s MESS=$p(MESS,$c(1),2)
+ ...s MESS="*T"_MESS,^TMP($zn,$j,"REPORT-T",xxFILE)=MESS
+ ...f jj=1:1:$tr($e(MESS,25,27)," ") d  i Error q
+ ....s MESS=$$read(22) i $p(MESS,$c(1)) s Error=10 d Log^LVBAT201(type,Error) q
+ ....s MESS=$p(MESS,$c(1),2)
+ ....i $e(MESS,1,2)'="*H" s Error=2 d Log^LVBAT201(type,Error) q
+ ....s INV=$p($e(MESS,3,22)," ",1)_"||"_$p($e(MESS,3,22)," ",2),^TMP($zn,$j,"REPORT-T",xxFILE,INV)=MESS
+ ....f i=1:1:xx d  i Error q
+ .....s MESS=$$read(108) i $p(MESS,$c(1)) s Error=10 d Log^LVBAT201(type,Error) q
+ .....s MESS=$p(MESS,$c(1),2)
+ .....i $e(MESS,1,2)'="*L" s Error=3 d Log^LVBAT201(type,Error) q
+ .....s x=$o(^TMP($zn,$j,"REPORT-T",xxFILE,INV,""),-1)+1,^TMP($zn,$j,"REPORT-T",xxFILE,INV,x)=MESS
+ s $zt="Error^"_$zn
+ ; print payments reports
+ s xFILE="" f  s xFILE=$o(^TMP($zn,$j,"REPORT-C",xFILE)) q:xFILE=""  d
+ .k ^TMP("EDI",$j,"REPORT-C",xFILE)
+ .m ^TMP("EDI",$j,"REPORT-C",xFILE)=^TMP($zn,$j,"REPORT-C",xFILE)
+ .i $$START^PRTREP00(user,"",xFILE,"HBAC")
+ .k ^TMP("EDI",$j,"REPORT-C",xFILE)
+ ; print exceptions reports
+ s xFILE="" f  s xFILE=$o(^TMP($zn,$j,"REPORT-T",xFILE)) q:xFILE=""  d
+ .k ^TMP("EDI",$j,"REPORT-T",xFILE)
+ .m ^TMP("EDI",$j,"REPORT-T",xFILE)=^TMP($zn,$j,"REPORT-T",xFILE)
+ .i $$START^PRTREP00(user,"",xFILE,"HBAT")
+ .k ^TMP("EDI",$j,"REPORT-T",xFILE)
+ k ^TMP($zn,$j)
+ d Log^LVBAT201(type," ")
+ d Log^LVBAT201(type,"Finish Processing <"_type_">...")
+ q 0
+read(xx) s (result,ok)="" u xFILE f j=1:1:xx r *x:1 d  i ok q
+ .i  s result=result_$c(x)
+ .e  s ok=100
+ q ok_$c(1)_result
+ ; Error log
+Error d BACK^%ETN
+ q
+Error1 i $ze["ENDOFFILE" g END1
+ d BACK^%ETN
+ q
+Error2 i $ze'["ENDOFFILE" d BACK^%ETN q
+ d Log^LVBAT201(type,"Finish processing file <"_xFILE_">...")
+ c xFILE k ^TMP($zn,$j," ",xxFILE)
+ ; Move the file
+ s x=$s(dir["\":"\",1:"/"),xFILEN=x_$p(xFILE,x,$l(xFILE,x))
+ ; MS-DOS based system
+ i '$zf(-1,"copy "_xFILE_" "_$p(dir,x,1,$l(dir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN),$zf(-1,"del "_xFILE)
+ ; UNIX based system
+ ;i $zf(-1,"mv "_xFILE_" "_$p(dir,x,1,$l(dir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN)
+ g END2
+]]></Routine>
+</Export>

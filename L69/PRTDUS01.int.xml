@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDUS01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDUS01 ; IG 19/08/99 ; Doctor/User statistics
+ q
+ ; Parameters :  1. Date From
+ ;               2. Date To
+ ;               3. Select criteria :    DR - Doctor
+ ;                                       DG - Doctor group
+ ;                                       US - User
+ ;               4. Value
+ ;               5. Report
+ ;               6. Print lab statistic
+ ;               7. Print 0 values
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql)
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ i PAR4="" d
+ .k ^TMP($zn,$j,"ALL")
+ .i PAR3="DR" d
+ ..i $$open^LVBCTDR(,"Y","Y")
+ ..f  q:$$fetch^LVBCTDR(,"Y","Y")  s ^TMP($zn,$j,"ALL",PLIST(2))=""
+ ..i $$close^LVBCTDR()
+ .i PAR3="DG" d
+ ..i $$open^LVBCTDG("Y")
+ ..f  q:$$fetch^LVBCTDG("Y")  s ^TMP($zn,$j,"ALL",PLIST(2))=""
+ ..i $$close^LVBCTDG()
+ .i PAR3="US" d
+ ..i $$open^MVBSSUSR(,"Y",,"Y")
+ ..f  q:$$fetch^MVBSSUSR(,"Y",,"Y")  s ^TMP($zn,$j,"ALL",PLIST(2))=""
+ ..i $$close^MVBSSUSR()
+ .s code="" f  s code=$o(^TMP($zn,$j,"ALL",code)) q:code=""  d
+ ..s $p(PAR,$c(1),4)=code
+ ..d START^PRTREP00(USER,,PAR,"DUS")
+ .k ^TMP($zn,$j,"ALL")
+ i PAR4'="" d
+ .k ^TMP($zn,$j,"REPORT")
+ .k xHEADER d INIT
+ .s line=1,xHEADER(line)="Statistical analysis"
+ .s line=2,xHEADER(line)=""
+ .s line=3,xHEADER(line)="From "_$$extdate2^SSUTIL4(PAR1)_" to "_$$extdate2^SSUTIL4(PAR2)
+ .s line=4,xHEADER(line)="Selection criteria : "_$$name(PAR3)_" = ( "_PAR4_" )  "_Data(1)
+ .i $l($g(Data(2))) s line=line+1,xHEADER(line)=Data(2)
+ .s line=line+1,xHEADER(line)=""
+ .d HEADER^PRTREP00(.xHEADER),BODY,PRINT
+ .k ^TMP($zn,$j,"REPORT"),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xxx,xSORT d H^PRTREP00(PAR10,$zn) f j=1,2 s Data(j)=""
+ i PAR3="DR",'$$select^LVBCTDR(PAR4,"Y") d
+ .s Data(1)=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51))
+ .s Data(2)=$tr(PLIST(33),"|"," ")
+ i PAR3="DG",'$$select^LVBCTDG(PAR4,"Y") s Data(1)=PLIST(3)
+ i PAR3="US" s Data(1)=PAR4
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+name(par) n (par) s name=""
+ i par="DR" s name="Doctor"
+ i par="DG" s name="Doctor group"
+ i par="US" s name="User"
+ q name
+BODY ; create temporary printing file
+ i $l(PAR5) d
+ .s found=0
+ .k REPORT i '$$select^LVBCTLR(PAR5,"Y") m REPORT=PLIST
+ .s date=PAR1-1 f  s date=$o(^TDAY(1,date)) q:date=""  q:date>PAR2  d
+ ..s epis="" f  s epis=$o(^TDAY(1,date,0,epis)) q:epis=""  d
+ ...i '$$select^LVBEPVIS(epis,"Y") d
+ ....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k VISIT m VISIT=PLIST
+ ....s x1="" f  s x1=$o(^TTAB("LA-REPORT",PAR5,"GROUP",x1)) q:x1=""  d
+ .....s x2="" f  s x2=$o(^TTAB("LA-REPORT",PAR5,"GROUP",x1,x2)) q:x2=""  d
+ ......s x3="" f  s x3=$o(^TTAB("LA-REPORT",PAR5,"GROUP",x1,x2,x3)) q:x3=""  s xx=^(x3) d
+ .......f j=1:1:3 s @("xx"_j)=$p(xx,"\",j)
+ .......i $l(xx1),$l(xx2),$l(xx3) d
+ ........s cnt="" f  s cnt=$o(^TEPI(epis,1,xx1,cnt)) q:cnt=""  d
+ ......... ; check result
+ .........i $p($g(^TEPI(epis,1,xx1,cnt,"DATA",xx2)),"\")=xx3 d
+ ..........d SetTotal(4,1,x1,x2,epis)
+ .......... ; check selection type
+ ..........s ok=1 d  i ok s found=1 d SetTotal(2,1,x1,x2,epis)
+ ...........i PAR3="DR",PAR4'=VISIT(15) s ok=0 q
+ ...........i PAR3="DG",$$select^LVBCTDGD(PAR4_"||"_VISIT(15)) s ok=0 q
+ ...........i PAR3="US" d  q
+ ............i $l(REPORT(6)),PAR4'=$tr($p($g(^TEPI(epis,1,xx1,cnt,"DATA",REPORT(6))),"\"),"{}[]") s ok=0
+ ............i '$l(REPORT(6)),PAR4'=$p($g(^TEPI(epis,1,xx1,cnt)),"\",6) s ok=0
+ ......... ; check comments
+ .........s x="" f  s x=$o(^TEPI(epis,1,xx1,cnt,"DATA",xx2,"REM",x)) q:x=""  i (^(x)[("["_xx3_"]"))!(^(x)[("{"_xx3_"}")) d
+ ..........d SetTotal(4,1,x1,x2,epis)
+ .......... ; check selection type
+ ..........s ok=1 d  i ok s found=1 d SetTotal(2,1,x1,x2,epis)
+ ...........i PAR3="DR",(","_PAR4_",")'[(","_VISIT(15)_",") s ok=0 q
+ ...........i PAR3="DG",$$select^LVBCTDGD(PAR4_"||"_VISIT(15)) s ok=0 q
+ ...........i PAR3="US" d  q
+ ............i $l(REPORT(6)),PAR4'=$tr($p($g(^TEPI(epis,1,xx1,cnt,"DATA",REPORT(6))),"\"),"{}[]") s ok=0
+ ............i '$l(REPORT(6)),PAR4'=$p($g(^TEPI(epis,1,xx1,cnt)),"\",6) s ok=0
+ i $d(^TMP($zn,$j,"ALL")),'found k ^TMP($zn,$j,"REPORT")
+ ; sort it
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s x="" f tot2=0:1 s x=$o(^TMP($zn,$j,"REPORT",2,x)) q:x=""
+ .s $p(^TMP($zn,$j,"REPORT",0),"\",2)=tot2
+ .s x="" f tot4=0:1 s x=$o(^TMP($zn,$j,"REPORT",4,x)) q:x=""
+ .s $p(^TMP($zn,$j,"REPORT",0),"\",4)=tot4
+ .s group="" f  s group=$o(^TMP($zn,$j,"REPORT",0,group)) q:group=""  d
+ ..i '$p(^(group),"\",2),PAR7'="Y" k ^TMP($zn,$j,"REPORT",0,group)
+ ..s item="" f  s item=$o(^TMP($zn,$j,"REPORT",0,group,item)) q:item=""  d
+ ...i tot2 s $p(^(item),"\",3)=+$j($p(^(item),"\",2)/tot2*100,0,2)
+ ...i tot4 s $p(^(item),"\",5)=+$j($p(^(item),"\",4)/tot4*100,0,2)
+ q
+ ; set totals
+SetTotal(piece,tot,x1,x2,epis) n (piece,tot,x1,x2,epis)
+ s $p(^TMP($zn,$j,"REPORT",0),"\",piece)=$p($g(^TMP($zn,$j,"REPORT",0)),"\",piece)+tot
+ s $p(^TMP($zn,$j,"REPORT",0,x1),"\",piece)=$p($g(^TMP($zn,$j,"REPORT",0,x1)),"\",piece)+tot
+ s $p(^TMP($zn,$j,"REPORT",0,x1,x2),"\",piece)=$p($g(^TMP($zn,$j,"REPORT",0,x1,x2)),"\",piece)+tot
+ s ^TMP($zn,$j,"REPORT",piece,epis)=""
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .i PAR7="Y" d
+ ..s group="" f  s group=$o(^TTAB("LA-REPORT",PAR5,"GROUP",group)) q:group=""  d
+ ...s item="" f  s item=$o(^TTAB("LA-REPORT",PAR5,"GROUP",group,item)) q:item=""  d
+ ....s ^TMP($zn,$j,"REPORT",0,group,item)=$g(^TMP($zn,$j,"REPORT",0,group,item))
+ .s group="" f  s group=$o(^TMP($zn,$j,"REPORT",0,group)) q:group=""  d
+ ..i '$$select^LVBCTLRG(PAR5_"||"_group) s xxx(1)=PLIST(3)
+ ..d PRINT^PRTREP00(,.N) k xxx
+ ..s item="" f  s item=$o(^TMP($zn,$j,"REPORT",0,group,item)) q:item=""  d
+ ...f j=2:1:5 s xxx(j)=+$p(^(item),"\",j) i PAR7'="Y",'xxx(j) s xxx(j)=""
+ ...i '$$select^LVBCTLRA(PAR5_"||"_group_"||"_item) s xxx(1)=PLIST(3)
+ ...i PAR6="Y" f j=4,5 s xxx(j)=0 i PAR7'="Y",'xxx(j) s xxx(j)=""
+ ...d PRINT^PRTREP00(,.N) k xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .s xxx(1)="Total patients"
+ .f j=2:1:5 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT",0)),"\",j) i PAR7'="Y",'xxx(j) s xxx(j)=""
+ .i PAR6="Y" f j=4,5 s xxx(j)=0 i PAR7'="Y",'xxx(j) s xxx(j)=""
+ .d PRINT^PRTREP00(,.N) k xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ i $d(^TMP($zn,$j,"ALL")),'$d(^TMP($zn,$j,"REPORT")) q
+ s report="DUS"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

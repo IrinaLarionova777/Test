@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBEPIS16" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBEPIS16 ; IG 12/07/98 ; Episode control - IDS
+ ;
+ ; supported calls:
+ ;
+ ; $$check^LVBEPIS16(site,epis)
+ ; $$medicare^LVBEPIS16(pc,deb,data)
+ ;
+check(site,epis) n (PLIST,site,epis) k PLIST
+ ; check existing TEPI
+ i $d(^TEPI(epis)) s deb="" d  g end
+ .  ;---&sql(SELECT EPVIS_DebtorNumber_DR INTO :deb FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  .  ;--- ** SQL PUBLIC Variables: SQLCODE, deb, epis
+ . Do %0Ao
+ .s deb=$p(deb,$c(1)),ok=$s($l(deb):10,1:40) k PLIST s PLIST(1)=epis
+ ; normal request for new Episode
+ i epis="." s ok=50 i '$$new^LVBEPVIS("") g end
+ ; request for Episode with prefix
+ i epis?1U1"." s ok=50 i '$$new^LVBEPVIS($e(epis)) g end
+ ; check Episode format
+ s sum=0 f j=1:1:7 s sum=sum+$e(epis,j)
+ s ok=100 i $e(epis,8)=(sum#10) s ok=50 k PLIST s PLIST(1)=epis
+end s PLIST=$o(PLIST(""),-1)
+ q ok
+ ; data   : medicare number or
+ ;          veterans affairs number
+ ;          pensioner card number
+ ; return : 0   - ok
+ ;          40  - empty
+ ;          50  - wrong issue
+ ;          100 - wrong 
+ ; type   : 0 - Medicare
+ ;          1 - DVA
+ ;          2 - Pensioner
+medicare(pc,deb,data,type) n (pc,deb,data,type,PLIST) k ^TMP($zn,$j)
+ s pc=$g(pc),deb=$g(deb),data=$$ALPHAUP^SSUTIL4($g(data)),type=+$g(type),ok=0
+ k PAYCODE i '$$select^LVBCTPC(pc,"Y") m PAYCODE=PLIST
+ ; check Medicare
+ i type=0 d
+ .i '$l(data) s:$g(PAYCODE(34))="M" ok=40 q
+ .i $l(data)'=10 s ok=100 q
+ .i "23456"'[$e(data) s ok=100 q
+ .s check=$e(data)+($e(data,2)*3)+($e(data,3)*7)+($e(data,4)*9)+$e(data,5)+($e(data,6)*3)+($e(data,7)*7)+($e(data,8)*9)#10
+ .i check'=$e(data,9) s ok=100 q
+ ; check DVA
+ i type=1 d
+ .i '$l(data) s:$g(PAYCODE(35))="M" ok=40 q
+ .i $l(data)>9 s ok=100 q
+ ; check Pensioner
+ i type=2 d
+ .i '$l(data) s:$g(PAYCODE(36))="M" ok=40 q
+ i $l(deb),'$l(data) d  s ok=0
+ . ; Medicare
+ .i type=0 d
+ ..s x="" f cnt=1:1 s x=$o(^TDEBi(deb,"MEDICARE",x)) q:x=""  s ^TMP($zn,$j,cnt)=x
+ . ; DVA
+ .i type=1 d
+ ..s x="" f cnt=1:1 s x=$o(^TDEBi(deb,"DVA",x)) q:x=""  s ^TMP($zn,$j,cnt)=x
+ . ; Pensioner
+ .i type=2 d
+ ..s x="" f cnt=1:1 s x=$o(^TDEBi(deb,"PENSIONER",x)) q:x=""  s ^TMP($zn,$j,cnt)=x
+ m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q ok                                  
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3)))
+ s deb=$p(%mmmsqld(10),"\",18)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3)))
+ s deb=$p(%mmmsqld(13),"\",18)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+]]></Routine>
+</Export>

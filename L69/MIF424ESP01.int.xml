@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF424ESP01" type="INT" languagemode="0"><![CDATA[
+MIF424ESP01(mi) ; ML 21/02/02 ; ASTM protocol  -  ROCHE PSM (Bi-Directional)  ; Compiled November 11, 2003 09:54:59 for Cache for Windows
+ s mi=$g(mi) i '$l(mi) q
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4)
+ s lf=$c(10),cr=$c(13),nak=$c(21),(result,epis)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 i $c(R)=enq d  q
+ .d trace^MIF000(mi,"ENQ","H<--M")
+ .d ACK
+ .f  r *R:10 q:$c(R)=eot  q:R=-1  d
+ ..i $c(R)'=stx d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=enq:"ENQ",$c(R)=nak:"NAK",$c(R)=eot:"EOT",1:R),"H<--M") q
+ ..s record=$$read^MIF000("",lf,,5) q:'$l(record)
+ ..s record=$e(record,1,$l(record)-1)
+ ..d trace^MIF000(mi,$tr(record,$c(13,3)," "),"H<--M")
+ .. ; check record validity
+ ..s chsum=$p(record,etx,2),chrecord=$p(record,etx,1)_etx
+ ..i $$CHSUM(chrecord)'=chsum d  q
+ ...w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+ ..d ACK
+ ..s (sample,epis,surname,result,date,time,QC)=""
+ ..i $e(record,2)="Q" d PETI       ; Peticion de Pruebas
+ ..i $e(record,2)="R" d RES        ; Entrega de Resultados
+ ..i $e(record,2)="O" d ORD        ; Order
+ .d trace^MIF000(mi,"EOT","H<--M")
+ .i $d(^TMIF(mi,10)) d Send
+ q
+ORD ; order record
+ s epp=$tr($p($p(record,"|",3),"^",1)," ") s:'$l(epis) epis=$tr($p($p(record,"|",4),"^",1)," ")
+ s cup=$p($p(record,"|",4),"^",3)
+ q
+ ; Envio de Resultados ***************************************
+PETI s stop=0 d
+ .s ts="" f  s ts=$o(^TMIF(mi,0,ts)) q:ts=""  d  q:stop>10
+ ..s ep="" f  s ep=$o(^TTRQ(ts,ep)) q:ep=""  d  q:stop>10
+ ...s tss="",Procesado=0
+ ...f  s tss=$o(^TTRQi(ep,tss)) q:tss=""  d
+ ....i '$d(^TMIF(mi,0,tss)) q
+ ....i $d(^TMIF(mi,15,ep,tss)) q
+ ....s tc=""
+ ....f  s tc=$o(^TTRQ(tss,ep,1,tc)) q:tc=""  d  
+ .....i '$d(^TMIF(mi,2,tc)) q
+ .....i $l($p(^TMIF(mi,2,tc),"\",3))=0 q
+ .....i $p(^TMIF(mi,2,tc),"\",3)="IL" q
+ .....i $d(^TMIF(mi,16,ep,tss,"DATA",tc)) q
+ .....i '$d(^TTRQ(tss,ep)) q
+ .....s ^TMIF(mi,15,ep,tss)=+$h
+ .....s ^TMIF(mi,16,ep,tss)=$h,^TMIF(mi,16,ep,tss,"DATA",tc)=""
+ .....s ^TMP("MIF-SCAN",$j,mi,ep,tc)=""
+ .....i $d(^TMP("MIF-SCAN",$j,mi,ep)) s ^TMIF(mi,15,ep)=+$h
+ .....s Procesado=1
+ ...i Procesado s stop=stop+1
+ q:'$d(^TMP("MIF-SCAN",$j,mi))
+ s epis="" f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  d
+ .d PATDET(epis)
+ .s mode="SCAN" d SET(epis,mode)
+ .k ^TMP("MIF-SCAN",$j,mi,epis)
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|F"
+ q
+ ; Entrega de Resultados ****************************************
+RES s x1=$tr($p($p(record,"|",3),"^",4)," "),x2=$tr($p(record,"|",4)," "),x3=$tr($p(record,"|",7)," ")
+ i $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ; Fecha y Hora **********************************************
+ i $l($tr($p(record,"|",13)," ")) d
+ .s date=$$intdate^SSUTIL4($e($p(record,"|",13),5,6)_"/"_$e($p(record,"|",13),7,8)_"/"_$e($p(record,"|",13),1,4))
+ .s time=($e($p(record,"|",13),9,10)*3600)+($e($p(record,"|",13),11,12)*60)
+ i $l(result) d file^MIF000(mi,sample,epp,surname,result,date,time,QC)
+ q
+ ; create loadlist records
+SAVE(mi) s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),lf=$c(10),cr=$c(13),nak=$c(21)
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+ s mode="LOAD" d SET(epis,mode) k VISIT
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|F"
+ d Send
+ q 0
+PATDET(epis) ; set patient details record
+ i '$$select^LVBEPVIS(epis,"Y") d  q
+ .m VISIT=PLIST f j=1:1:VISIT i $d(VISIT) s VISIT(j)=$p(VISIT(j),$c(1))
+ .s sex=$s($g(VISIT(5))="M":"M",$g(VISIT(5))="F":"F",1:"U")
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1||||"_$g(VISIT(3))_"^"_$g(VISIT(4))_"|||"_sex_"|||||"_$g(VISIT(15))
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1||||^||||||||"
+ k PLIST
+ q
+SET(epis,mode) ; set record to be sent to instrument
+ s (tc,tcx,datetime)=""
+ s date=$s(VISIT(61)'="":$$extdate2^SSUTIL4(VISIT(61)),1:"00000000"),time=$s(VISIT(62)'="":$$exttime^SSUTIL4(VISIT(62)),1:"00:00")
+ s datetime=$p(date,"/",3)_$p(date,"/",2)_$p(date,"/")_$p(time,":")_$p(time,":",2)_"00"
+ ; process an all episode scan ****************************
+ i mode="SCAN",$d(^TMP("MIF-SCAN",$j,mi,epis)) d
+ .s i=1,para=0
+ .f  s tc=$o(^TMP("MIF-SCAN",$j,mi,epis,tc)) q:tc=""  d 
+ ..s tcx=tcx_"^^^"_tc_"\"
+ ..s para=para+1
+ ..i para=15 d
+ ...i $l(tcx) s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="O|"_i_"|"_epis_"||"_$e(tcx,1,$l(tcx)-1)_"||"_datetime_"|||||"_$s(mode="SCAN":"A",mode="LOAD":"A",1:"N")_"||||||||||||||"_$s(mode="LOAD":"O",mode="SCAN":"O",1:"Q")
+ ...s para=0,i=i+1,tcx=""
+ I tcx'="" d
+ .i $l(tcx) s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="O|"_i_"|"_epis_"||"_$e(tcx,1,$l(tcx)-1)_"||"_datetime_"|||||"_$s(mode="SCAN":"A",mode="LOAD":"A",1:"N")_"||||||||||||||"_$s(mode="LOAD":"O",mode="SCAN":"O",1:"Q")
+ q
+Send ; send list of orders if exists
+ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M")
+ f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=enq:"ENQ",$c(R)=nak:"NAK",1:R),"H<--M")
+ i $c(R)=enq q
+ i $c(R)'=ack w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+ q:$$SEND("1H|\^&|||LABTRAK|||||||P|1")
+ s x="" f FRAME=2:1 s x=$O(^TMIF(mi,10,x)) q:x=""  q:$$SEND(FRAME#8_^TMIF(mi,10,x))
+ i x="" k ^TMIF(mi,10)
+ w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ q
+SEND(str) ; send string to instrument
+ s str=str_cr_etx,chsum=$$CHSUM(str)
+ w stx,str,chsum,cr,lf,*-3 d trace^MIF000(mi,str_chsum,"H-->M")
+ f j=1:1:6 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 2
+ d trace^MIF000(mi,R,"H<--M")
+ q 1
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+NEXTTRAY(tray) 
+ q tray
+]]></Routine>
+</Export>

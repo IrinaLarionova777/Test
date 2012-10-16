@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="zmattfis" type="INT" languagemode="0"><![CDATA[
+PRTFIS01 ; ML 22/10/98 ; FINANCIAL SUMMARY  ; Compiled December 2, 1999 13:42:24 for Cache for Windows
+ ;
+ k ^TMP($zn,$j)
+ s comp="" f  s comp=$o(^TSUM(comp)) q:comp=""  d SINCMP
+ d PRINT
+ q
+SINCMP ; process single company
+ s frdate="",type=""
+ f  s frdate=$o(^TSUM(comp,frdate)) q:frdate=""  d
+ .f  s type=$o(^TSUM(comp,frdate,type)) q:type=""  d
+ ..d:type="INVOICE" INV
+ ..d:type="CREDITS" CRE
+ ..d:type="JOURNAL" JOU
+ ..d:type="REBILL" RBL
+ q
+INV ; calculate invoice debits by paycode
+ w "Processing invoices : "_$$extdate^SSUTIL4(frdate),!
+ s (batch,epis,payc)=""
+ f  s payc=$o(^TSUM(comp,frdate,type,payc)) q:payc=""  d
+ .f  s batch=$o(^TSUM(comp,frdate,type,payc,batch)) q:batch=""  d
+ ..f  s epis=$o(^TMCB(payc,batch,epis)) q:epis=""  i $d(^TEPI(epis)) d
+ ...s billoc=$p(^TEPI(epis),"\",22) s:billoc="" billoc=" "
+ ...s amt=$p($g(^TMCB(payc,batch,epis)),"\",1)
+ ...s ^TMP($zn,$j,comp,type,payc)=$g(^TMP($zn,$j,comp,type,payc))+amt
+ q
+CRE ; calculate total credits
+ w "Processing credits : "_$$extdate^SSUTIL4(frdate),!
+ s (batch,line,epis,credit,amt)=""
+ f  s batch=$o(^TSUM(comp,frdate,type,batch)) q:batch=""  d
+ .f  s line=$o(^TSUM(comp,frdate,type,batch,line)) q:line=""  d
+ ..i $d(^TSUM(comp,frdate,type,batch,line))>10 d  q
+ ...s epis="" f  s epis=$o(^TSUM(comp,frdate,type,batch,line,epis)) q:epis=""  d  s payc=""
+ ....s z=^(epis),amt=$p(z,"\",1),payc=$p(^TEPI(epis),"\",7)
+ ....s ^TMP($zn,$j,comp,type,payc)=$g(^TMP($zn,$j,comp,type,payc))+amt
+ ..s z=^TSUM(comp,frdate,type,batch,line),epis=$p(^TBAT(batch,line),"\",1),payc=$p(^TEPI(epis),"\",7)
+ ..s amt=$p(z,"\",1)
+ ..s ^TMP($zn,$j,comp,type,payc)=$g(^TMP($zn,$j,comp,type,payc))+amt,payc=""
+ q
+JOU ; calculate total journals by journal code
+ w "Processing journals : "_$$extdate^SSUTIL4(frdate),!
+ s (jourcode,jour,epis,amt)=""
+ f  s jourcode=$o(^TSUM(comp,frdate,type,jourcode)) q:jourcode=""  d
+ .s jourtype=$p($g(^TTAB("JO",jourcode)),"\",2)
+ .f  s epis=$o(^TSUM(comp,frdate,type,jourcode,epis)) q:epis=""  d
+ ..f  s jour=$o(^TSUM(comp,frdate,type,jourcode,epis,jour)) q:jour=""  d
+ ...s z=^(jour),amt=$p(z,"\",1),payc=$p(^TEPI(epis),"\",7)
+ ...s:jourtype="C" ^TMP($zn,$j,comp,type_"-CR",payc)=$g(^TMP($zn,$j,comp,type_"-CR",payc))+amt
+ ...s:jourtype="D" ^TMP($zn,$j,comp,type_"-DE",payc)=$g(^TMP($zn,$j,comp,type_"-DE",payc))+amt
+ q
+RBL ; rebills
+ w "Processing rebills : "_$$extdate^SSUTIL4(frdate),!!!
+ s epis="" f  s epis=$o(^TSUM(comp,frdate,type,epis)) q:epis=""  d
+ .s payc=$p(^TEPI(epis),"\",7)
+ .s in1="" f  s in1=$o(^TSUM(comp,frdate,type,epis,in1)) q:in1=""  d
+ ..s in2="" f  s in2=$o(^TSUM(comp,frdate,type,epis,in1,in2)) q:in2=""  d
+ ...s date2=$p(^TMCB(in1,in2),"\",1)
+ ...s ^TMP($zn,$j,comp,"REBILL",payc)=$g(^TMP($zn,$j,comp,"REBILL",payc))+$p(^TMCB(in1,in2,epis),"\",1)
+ q
+PRINT ; print report
+ s comp="" f  s comp=$O(^TMP($zn,$j,comp)) q:comp=""  d
+ .k debamt,credit,jourcr,jourdb,rebill,openbal,closebal,move
+ .s (debamt,credit,jourcr,jourdb,rebill,openbal,closebal,move)=""
+ .s compdesc=$p($g(^TTAB("CO",comp)),"\")
+ .w comp," - ",compdesc,!!
+ . ; print total invoiced by paycode
+ .s (amt,totamt)=""
+ .f type="INVOICE","CREDITS","JOURNAL-CR","JOURNAL-DB","REBILL" d
+ ..w type_" DETAILS",!
+ ..s payc="" f  s payc=$o(^TMP($zn,$j,comp,type,payc)) q:payc=""  d
+ ...s amt=^(payc),totamt=$g(totamt)+amt
+ ...s paydesc=$p($g(^TTAB("BI",payc)),"\")
+ ...w paydesc_" ("_payc_") = "_amt,!
+ ..w "TOTAL "_type_" = "_totamt,!! s totamt=""
+ q
+ . ; print total credits
+ .s (amt,credamt)=""
+ .s payc="" f  s payc=$o(^TMP($zn,$j,comp,"CREDITS",payc)) q:payc=""  d
+ ..s amt=^(payc),credit=$g(credit)+amt
+ ..w $p(^TTAB("BI",payc),"\",1)_" ("_payc_") = "_amt,!
+ .w "TOTAL CREDITS = "_credamt,!!
+ . ; print total journals by journal code
+ .s (amt,jourcr,jourdb)=""
+ .s payc="" f  s payc=$o(^TMP($zn,$j,comp,"JOURNAL-CR",payc)) q:payc=""  d
+ ..s amt=^(payc),jourcr=$g(jourcr)+amt
+ ..w $p(^TTAB("BI",payc),"\",1)_" ("_payc_") = "_amt,!
+ .w "TOTAL JOURNAL CREDITS = "_jourcr
+ .s payc="" f  s payce=$o(^TMP($zn,$j,comp,"JOURNAL-DE",payc)) q:payc=""  d
+ ..s jourdebt="",journame=$p($g(^TTAB("JO",jourcode)),"\",1),tmpamt=""
+ ..s billoc="" f  s billoc=$o(^TMP($zn,$j,comp,"JOURNAL-DE",jourcode,billoc)) q:billoc=""  d
+ ...s amt=^(billoc),jourdb=$g(jourdb)+amt,jourdb(billoc)=$g(jourdb(billoc))+amt,tmpamt=tmpamt+amt
+ ..d ADDLINE^PRTREP00(REPID,"PRT","?24 "_journame_" ("_jourcode_")")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","?60 "_$j(tmpamt,10,2)),LN
+ . ; print rebills
+ .d ADDLINE^PRTREP00(REPID,"PRT","~BOLD")
+ .d ADDLINE^PRTREP00(REPID,"PRT","REBILLS")
+ .d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL"),LN,LN
+ .d ADDLINE^PRTREP00(REPID,"PRT","?5  REBILLS (previous period)"),LN
+ .s payc="" f  s payc=$o(^TMP($zn,$j,comp,"REBILL",1,payc)) q:payc=""  d
+ ..s (billoc,tmpamt)="" f  s billoc=$o(^TMP($zn,$j,comp,"REBILL",1,payc,billoc)) q:billoc=""  d
+ ...s amt=^(billoc),rebill(billoc)=$g(rebill(billoc))+amt,tmpamt=tmpamt+amt,rebill=rebill+amt
+ ..s paydesc=$p($g(^TTAB("BI",payc)),"\")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","?10 "_paydesc_" ("_payc_")")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","?60 "_$j(tmpamt,10,2)),LN
+ .f i=1:1:2 d LN
+ .d ADDLINE^PRTREP00(REPID,"PRT","?5  REBILLS (current period)"),LN
+ .s payc="" f  s payc=$o(^TMP($zn,$j,comp,"REBILL",2,payc)) q:payc=""  d
+ ..s (billoc,tmpamt)="" f  s billoc=$o(^TMP($zn,$j,comp,"REBILL",2,payc,billoc)) q:billoc=""  d
+ ...s amt=^(billoc),rebill(billoc)=$g(rebill(billoc))+amt,tmpamt=tmpamt+amt,rebill=rebill+amt
+ ..s paydesc=$p($g(^TTAB("BI",payc)),"\")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","?10 "_paydesc_" ("_payc_")")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","?60 "_$j(tmpamt,10,2)),LN
+ .d LN,ADDLINE^PRTREP00(REPID,"PRT",und),LN,LN
+ . ; calculate opening and closing balances and movement for company total and billing location total
+ .s billoc="" f  s billoc=$o(^TSUM(comp,PAR1,"OB",billoc)) q:billoc=""  d
+ ..s amt=^(billoc),openbal(billoc)=amt,openbal=openbal+amt
+ .s move=debamt+jourdb-jourcr-credit-rebill
+ .s billoc="" f  s billoc=$o(^TTAB("BILL-LOC",billoc)) q:billoc=""  d
+ ..s move(billoc)=$g(debamt(billoc))+$g(jourdb(billoc))-$g(jourcr(billoc))-$g(credit(billoc))-$g(rebill(billoc))
+ ..s closebal(billoc)=$g(openbal(billoc))+$g(move(billoc))
+ .i '$d(^TTAB("BILL-LOC")) s billoc=" " d
+ ..s move(billoc)=$g(debamt(billoc))+$g(jourdb(billoc))-$g(jourcr(billoc))-$g(credit(billoc))-$g(rebill(billoc))
+ ..s closebal(billoc)=$g(openbal(billoc))+$g(move(billoc))
+ .s billoc="" f  s billoc=$o(closebal(billoc)) q:billoc=""  d
+ ..s amt=closebal(billoc),^TSUM(comp,PAR2+1,"OB",billoc)=amt,closebal=closebal+amt
+ . ; print summary
+ .d LN,ADDLINE^PRTREP00(REPID,"PRT","OPENING BALANCE : "),ADDLINE^PRTREP00(REPID,"PRT","?60 "_$j(openbal,10,2))
+ .d LN,ADDLINE^PRTREP00(REPID,"PRT","SUMMARY OF MOVEMENT FOR THE PERIOD"),ADDLINE^PRTREP00(REPID,"PRT","?60 "_$j(move,10,2))
+ .d LN,ADDLINE^PRTREP00(REPID,"PRT","CLOSING BALANCE : "),ADDLINE^PRTREP00(REPID,"PRT","?60 "_$j(closebal,10,2)),LN,LN
+ q
+LN ; add line to report
+ d ADDLINE^PRTREP00(REPID,"PRT","!")
+ q
+]]></Routine>
+</Export>

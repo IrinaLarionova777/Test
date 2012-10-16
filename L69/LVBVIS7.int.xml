@@ -1,0 +1,702 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBVIS7" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBVIS7 ; IG 6/5/98 ; MVB Control data access for EP_Visit Test Set
+ ;
+ ; supported calls:
+ ;
+ ; $$open^LVBVIS7(epis,ur,testlist,dep,user,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBVIS7(epis,ur,testlist,dep,user,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBVIS7(epis,ur,testlist,dep,user,p5,p6,p7,p8,p9)
+ ; $$close^LVBVIS7()
+ ; $$caption^LVBVIS7(epis,ur,testlist,dep,user,Enquiry)
+ ; $$CumView^LVBVIS7(test,cnt,job,CumType,Continue,TYPE,user,pc)
+ ; $$CumTWG^LVBVIS7(type,epis,mrn,group,list,user)
+ ; $$next^LVBVIS7(test,cnt,job)
+ ; $$TScheck^LVBVIS7(vtsRID,event,BG,time,user)
+ ; $$BGcheck^LVBVIS7(vtsRID,prev,BG)
+ ; $$BBcheck^LVBVIS7(epis,packRID,mrn,vtsRID)
+ ; $$ABRcheck^LVBVIS7(vtsRID,mrn)
+ ; $$recent^LVBVIS7(mrn,test,user)
+ ; $$cumulative^LVBVIS7(mrn,user,testlist,dep,page)
+ ;
+recent(mrn,test,user) n (mrn,test,user) s mrn=$g(mrn),test=$g(test),user=$g(user),result=""
+ i $l(mrn),$l(test),$l(user) d
+ .s date="" f  s date=$o(^TDEB(mrn,date),-1) q:date=""  d  q:$l(result)
+ ..s epis="" f  s epis=$o(^TDEB(mrn,date,0,epis)) q:epis=""  d  q:$l(result)
+ ...s cnt="" f  s cnt=$o(^TEPI(epis,1,test,cnt)) q:cnt=""  d  q:$l(result)
+ ....s rid=epis_"||"_test_"||"_cnt
+ ....i '$$ValUser^LVBVISTS(user,rid,"V") s result=date
+ q result
+ ; check pack BG against patient BG
+BBcheck(epis,packRID,mrn,vtsRID) n (epis,packRID,mrn,vtsRID) s epis=$g(epis),packRID=$g(packRID),mrn=$g(mrn),vtsRID=$g(vtsRID),return=0
+ s BGpack=$$seldata^LVBBBP(packRID,9),ei=$$seldata^LVBBBBG(BGpack,9)
+ s BPpack=$$seldata^LVBBBP(packRID,8),group=$$seldata^LVBBBBP(BPpack,24),MatchABO=$$seldata^LVBBBBP(BPpack,6)
+ i '$l(mrn) s mrn=$$seldata^LVBEPVIS(epis,20)
+ s nXM=$$seldata^LVBVISTS(vtsRID,67)
+ i $l(BGpack) d
+ .i MatchABO'="Y" s return=0 q
+ .s return=100,BGepis=$$seldata^LVBDEB(mrn,9),mBG=$$seldata^LVBDEB($$seldata^LVBDEB(mrn,12),9),BGoriginal=$$seldata^LVBDEB(mrn,16)
+ .i $$seldata^MVBCFLAB(1,156)="Y",'$l(BGepis) s BGepis=BGoriginal
+ .i '$l(BGepis),ei="Y" s return=0 q
+ .d
+ ..i $l(BGepis),$l(mBG),nXM="Y" d  q
+ ...i '$$getall^LVBBBBGN(BGepis,BPpack,group) f j=1:1:PLIST i $p($p($p(PLIST(j),$c(2),4),$c(28),6),$c(1))=BGpack,$p($p($p(PLIST(j),$c(2),4),$c(28),3),$c(1))=mBG s return=0 q
+ ..i $l(BGepis) d  q
+ ...i '$$getall^LVBBBBGX(BGepis,BPpack,group) f j=1:1:PLIST i $p($p($p(PLIST(j),$c(2),4),$c(28),3),$c(1))=BGpack s return=0 q
+ q return
+ ; check BG entered against BG calculated
+BGcheck(vtsRID,prev,BG) n (vtsRID,prev,BG) s vtsRID=$g(vtsRID),prev=$g(prev),BG=$g(BG),result=0,epis=$p(vtsRID,"||")
+ i '$d(^TMP($zn,$j,"TScheck","DATA",vtsRID)),'$$results^LVBVISTS(vtsRID) d
+ .f j=1:1:PLIST s ti=$p(PLIST(j),$c(1),2) i $l(ti) s ^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)=$p(PLIST(j),$c(1),3,8)
+ s (bg,ti)="" f  s ti=$o(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)) q:ti=""  i $p($g(^TTAB("TC",ti)),"\",3)="B2" s bg=$p(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti),$c(1),1) q
+ ; check current BG
+ i prev'="Y",$l(bg) d
+ .s ti="" f  s ti=$o(^TTAB("BB-BG",bg,"R",ti)) q:ti=""  s xx=^(ti) d  i result q
+ ..i xx="-",$l($p($g(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)),$c(1))),$p($g(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)),$c(1))'="0" s result=1
+ ..i xx="+",$l($p($g(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)),$c(1))),$p($g(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)),$c(1))'>0 s result=1
+ ; check previous BG
+ i prev="Y",$l(bg) d
+ .i $l(BG),bg'=BG s result=1
+ .i '$l(BG),$e(vtsRID,1,4)'="BBP_" s mrn=$$mrn^LVBEPVIS(epis) i '$$select^LVBDEB(mrn) d
+ ..i $l($p(PLIST(9),$c(1))) s:bg'=$p(PLIST(9),$c(1)) result=1 q
+ ..i $l($p(PLIST(16),$c(1))) s:bg'=$p(PLIST(16),$c(1)) result=1 q
+ ..i $l($p(PLIST(15),$c(1))) s:bg'=$p(PLIST(15),$c(1)) result=1 q
+ .i '$l(BG),$e(vtsRID,1,4)="BBP_" s rowid=$p(vtsRID,"_",2)_"||"_$p(vtsRID,"_",3) i '$$select^LVBBBP(rowid) d
+ ..i $l($p(PLIST(9),$c(1))) s:bg'=$p(PLIST(9),$c(1)) result=1 q
+ ..i $l($p(PLIST(47),$c(1))) s:bg'=$p(PLIST(47),$c(1)) result=1 q
+ q result
+ ; check MRN in ABR
+ABRcheck(vtsRID,mrn,comm) n (vtsRID,mrn,comm) s vtsRID=$g(vtsRID),mrn=$g(mrn),comm=$g(comm),result=0
+ i '$l(mrn) s epis=$p(vtsRID,"||"),mrn=$$mrn^LVBEPVIS(epis)
+ i $l(mrn) d
+ .s x1="" f  s x1=$o(^TDEBi(mrn,"DATE",x1)) q:x1=""  d  q:result
+ ..s x2="" f  s x2=$o(^TDEBi(mrn,"DATE",x1,x2)) q:x2=""  d  q:result
+ ...s ep="" f  s ep=$o(^TDEBi(mrn,"DATE",x1,x2,ep)) q:ep=""  i $d(^BBRi("AR",ep)) d  q:result
+ ....i comm="" s result=1 q
+ ....i comm="Y" d
+ .....s rid="" f  s rid=$o(^BBRi("AR",ep,rid)) q:rid=""  s ti=$p(^BBR("AR",rid),"\") i $l(ti) d  q:result
+ ......s vts=$p(^BBR("AR",rid),"\",9) f j=1:1:3 s @("xx"_j)=$p(vts,"||",j)
+ ......i $l(xx1),$l(xx2),$l(xx3) s xx=$p($g(^TEPI(xx1,1,xx2,xx3,"DATA",ti)),"\") i $l(xx) d
+ .......i '$$select^LVBCTTCT(ti_"||"_xx),PLIST(5)="A" s result=1
+ q result
+ ; check tags for MRN
+BTcheck(vtsRID,mrn,tag) n (vtsRID,mrn,tag) s vtsRID=$g(vtsRID),mrn=$g(mrn),tag=$g(tag),result=0
+ i '$l(mrn) s epis=$p(vtsRID,"||"),mrn=$$mrn^LVBEPVIS(epis)
+ i $l(mrn) d
+ .s x="" f  s x=$o(^TDEB(mrn,"BBTAG",x)) q:x=""  d  q:result
+ ..i $l(tag),x'=tag q
+ ..s result=1
+ q result
+check(xx1,operand,xx2,comments) n (xx1,operand,xx2,comments,ok) s xx1=$g(xx1),operand=$g(operand),xx2=$g(xx2),comments=$g(comments)
+ i operand="[" d
+ .s xx1=$tr(xx1,"""","|"),xx2=$tr(xx2,"""","|")
+ .s xx1=$$UPPER^SSUTIL4(xx1),xx2=$$UPPER^SSUTIL4(xx2)
+ .i $e(xx2)="," s:$e(xx2,$l(xx2))'="," xx2=xx2_"," s x=xx2,xx2=","_xx1_",",xx1=x
+ i comments="",$e(xx2)="{" d
+ .i $e(xx1)=">" s xx1=$e(xx1,2,$l(xx1))+.00000001
+ .i $e(xx1)="<" s xx1=$e(xx1,2,$l(xx1))-.00000001
+ .s ok=0 i @(""""_xx1_""""_operand_$tr(xx2,"{}","()")) s ok=1
+ i comments="",$e(xx2)'="{" d
+ .s xx1=$tr(xx1,"""","|"),xx2=$tr(xx2,"""","|")
+ .i $e(xx1)=">" s xx1=$e(xx1,2,$l(xx1))+.00000001
+ .i $e(xx1)="<" s xx1=$e(xx1,2,$l(xx1))-.00000001
+ .s ok=0 i @(""""_xx1_""""_operand_""""_xx2_"""") s ok=1
+ q
+ ; check TS before filing
+ ; event : A - Authorize
+ ;         U - Update
+ ;         L - Load
+ ;         TA- Test Add
+ ;         TD- Test Delete
+ ;         TR- Test Receive
+ ; Etime : A - After Event
+ ;         B - Before Event
+TScheck(VTS,event,BG,Etime,user) n (VTS,event,BG,Etime,user,PLIST)
+ s VTS=$g(VTS),event=$g(event),BG=$g(BG),Etime=$g(Etime),user=$g(user),epis=$p(VTS,"||",1),ts=$p(VTS,"||",2)
+ s l=$i(^TMPlog("log")) m ^TMPlog("log",l)=PLIST
+ s ^TMPlog("log",l)=$h_" : "_$j_" : $$TScheck^"_$zn_" : "_VTS_"^"_event_"^"_BG_"^"_Etime_"^"_user
+ k ^TMP($zn,$j,"TScheck")
+ f j=1:1:PLIST s x=$p(PLIST(j),$c(1),1) i $l(x) d
+ .s xVTS=$p(PLIST(j),$c(1),9) i '$l(xVTS) s xVTS=VTS
+ .i x="DATA" s x1=$p(PLIST(j),$c(1),2) i $l(x1) s ^TMP($zn,$j,"TScheck","DATA",xVTS,x1)=$p(PLIST(j),$c(1),3,8)
+ .i x="VISTS" s xVTS=$p($p(PLIST(j),$c(1),2),$c(28)) i $l(xVTS) s PLIST(j)=$p(PLIST(j),$c(1),2,$l(PLIST(j),$c(1))) f i=1:1:$l(PLIST(j),$c(28)) s ^TMP($zn,$j,"TScheck","VISTS",xVTS,i)=$p(PLIST(j),$c(28),i)
+ .i x="ANT" s x1=$p(PLIST(j),$c(1),2),x2=$p(PLIST(j),$c(1),3) i $l(x1),$l(x2) s ^TMP($zn,$j,"TScheck","ANT",xVTS,x1,x2)=$tr($p(PLIST(j),$c(1),4,7),$c(1),"\")
+ .i x="EPVIS" s xVTS=$p(VTS,"||") i $l(xVTS) s PLIST(j)=$p(PLIST(j),$c(1),2,$l(PLIST(j),$c(1))) f i=1:1:$l(PLIST(j),$c(28)) s ^TMP($zn,$j,"TScheck","EPVIS",xVTS,i)=$p(PLIST(j),$c(28),i)
+ .i x="BBP" s xVTS=$p($p(PLIST(j),$c(1),2),"||",1,3),x1=$p(PLIST(j),$c(1),3),x2=$p(PLIST(j),$c(1),4) i $l(x1),$l(x2) f i=1:1:13 s ^TMP($zn,$j,"TScheck","BBP",xVTS,x1_"||"_x2,i)=$p(PLIST(j),$c(1),i+1)
+ .i x="VA" s xVTS=$p(VTS,"||"),x1=$p(PLIST(j),$c(1),2) i $l(xVTS),$l(x1) s ^TMP($zn,$j,"TScheck","VA",xVTS,x1)=""
+ .i x="DB" d
+ ..s x1=$p($p($p(PLIST(j),$c(1),2),$c(28),12),"||",2)
+ ..i x1="" s year=$e($p($$extdate2^SSUTIL4(+$h),"/",3),3,4),x1=$p($p(PLIST(j),$c(1),2),$c(28),9)_$p($p(PLIST(j),$c(1),2),$c(28),10)_year_$p($p(PLIST(j),$c(1),2),$c(28),8)
+ ..i $l(x1) f i=1:1:17 s ^TMP($zn,$j,"TScheck","DB",x1,i)=$p($p(PLIST(j),$c(1),2),$c(28),i)
+ k SSUSR i '$$selrow^MVBSSUSR(user,"Y") m SSUSR=PLIST
+ s VISTS="N" i $d(^TMP($zn,$j,"TScheck","VISTS")) s VISTS="Y"
+ i '$l(BG),$e(VTS,1,4)="BBP_" s rowid=$p(VTS,"_",2)_"||"_$p(VTS,"_",3),BG=$$seldata^LVBBBP(rowid,9)
+ i $l(ts) d
+ . ; get common actions
+ .i $$open^LVBCTTSU("Y","Y")
+ .f  q:$$fetch^LVBCTTSU("Y","Y")  d
+ ..s cnt1=$o(^TMP($zn,$j,"TScheck","tsAction",""),-1)+1
+ ..f j=1:1:PLIST s $p(^TMP($zn,$j,"TScheck","tsAction",cnt1),$c(1),j)=$p(PLIST(j),$c(1))
+ ..s par=PLIST(1)
+ ..i $$open^LVBCTTSV(par)
+ ..f cnt2=1:1 q:$$fetch^LVBCTTSV(par)  d
+ ...f j=1:1:PLIST s $p(^TMP($zn,$j,"TScheck","tsAction",cnt1,"tsaCond",cnt2),$c(1),j)=$p(PLIST(j),$c(1))
+ ..i $$close^LVBCTTSV()
+ .i $$close^LVBCTTSU()
+ . ; get ts-specific actions
+ .i $$open^LVBCTTSK(ts,"Y","Y")
+ .f  q:$$fetch^LVBCTTSK(ts,"Y","Y")  d
+ ..s cnt1=$o(^TMP($zn,$j,"TScheck","tsAction",""),-1)+1
+ ..f j=1:1:PLIST s $p(^TMP($zn,$j,"TScheck","tsAction",cnt1),$c(1),j)=$p(PLIST(j),$c(1))
+ ..s par=PLIST(1)
+ ..i $$open^LVBCTTSM(par)
+ ..f cnt2=1:1 q:$$fetch^LVBCTTSM(par)  d
+ ...f j=1:1:PLIST s $p(^TMP($zn,$j,"TScheck","tsAction",cnt1,"tsaCond",cnt2),$c(1),j)=$p(PLIST(j),$c(1))
+ ..i $$close^LVBCTTSM()
+ .i $$close^LVBCTTSK()
+ i '$l(ts) d
+ .i $$open^LVBCTPB()
+ .f cnt1=1:1 q:$$fetch^LVBCTPB(ts,"Y")  d
+ ..f j=1:1:PLIST s j1=$s(j=6:12,j=7:4,j=4:13,1:j),$p(^TMP($zn,$j,"TScheck","tsAction",cnt1),$c(1),j1)=$p(PLIST(j),$c(1))
+ ..s par=PLIST(1)
+ ..i $$open^LVBCTPBC(par)
+ ..f cnt2=1:1 q:$$fetch^LVBCTPBC(par)  d
+ ...f j=1:1:PLIST s $p(^TMP($zn,$j,"TScheck","tsAction",cnt1,"tsaCond",cnt2),$c(1),j)=$p(PLIST(j),$c(1))
+ ..i $$close^LVBCTPBC()
+ .i $$close^LVBCTPB()
+ k group
+ f tsActionCnt=1:1 q:'$d(^TMP($zn,$j,"TScheck","tsAction",tsActionCnt))  d
+ .k tsAction f j=1:1:13 s tsAction(j)=$p(^(tsActionCnt),$c(1),j)
+ .i '$l(tsAction(5)) q
+ .i $d(group(tsAction(5))) q
+ .s group=tsAction(5)
+ .i $l(tsAction(10)),Etime'=tsAction(10) q
+ .i $l(tsAction(8)),event="A"," A UA "'[(" "_tsAction(8)_" ") q
+ .i $l(tsAction(8)),event="U"," U UA "'[(" "_tsAction(8)_" ") q
+ .i $l(tsAction(8)),event="DA"," DA "'[(" "_tsAction(8)_" ") q
+ .i $l(tsAction(8)),event="L"," L "'[(" "_tsAction(8)_" ") q
+ .i $l(tsAction(8)),event="TA"," TA "'[(" "_tsAction(8)_" ") q
+ .i $l(tsAction(8)),event="TR"," TR "'[(" "_tsAction(8)_" ") q
+ .i $l(tsAction(8)),event="TD"," TD "'[(" "_tsAction(8)_" ") q
+ . ; check user
+ .i $l(tsAction(12)) s stop=0 d  q:stop
+ ..i $p(tsAction(12),"||")="U",(","_$p(tsAction(12),"||",2)_",")'[(","_user_",") s stop=1 q
+ ..i $p(tsAction(12),"||")="G",(","_$p(tsAction(12),"||",2)_",")'[(","_$g(SSUSR(4))_",") s stop=1 q
+ ..i $p(tsAction(12),"||")="S1",$g(SSUSR(8))'="Y" s stop=1 q
+ ..i $p(tsAction(12),"||")="S2",$g(SSUSR(15))'="Y" s stop=1 q
+ . ; check that VQ is unique
+ .i $e(tsAction(3),1,2)="VQ" s stop=0 d  q:stop
+ ..i $l(tsAction(4)) d
+ ... ; exclude VQ already on a Test
+ ...i '$$getall^LVBVISTQ(VTS) f j=1:1:PLIST i tsAction(4)=$p($p($p(PLIST(j),$c(2),4),$c(28),10),$c(1)) s stop=1 q
+ .s ok=1 f tsaCondCnt=1:1 q:'$d(^TMP($zn,$j,"TScheck","tsAction",tsActionCnt,"tsaCond",tsaCondCnt))  d  q:'ok
+ ..k tsaCond f j=1:1:9 s tsaCond(j)=$p(^(tsaCondCnt),$c(1),j)
+ .. ; check functions
+ ..i ok,$l(tsaCond(9)) x ("s x="_$tr(tsaCond(9),$c(16),"^")_"("""_VTS_""")") i x'="Y" s ok=0
+ .. ;
+ .. ; check DEB details
+ .. ;
+ ..i tsaCond(3)=43,$l(epis) d
+ ...i '$d(^TMP($zn,$j,"TScheck","EPVIS",epis)),'$$select^LVBEPVIS(epis,"Y") m ^TMP($zn,$j,"TScheck","EPVIS",epis)=PLIST
+ ...s deb=$g(^TMP($zn,$j,"TScheck","EPVIS",epis,20)) i '$l(deb) q
+ ...i '$d(^TMP($zn,$j,"TScheck","DEB",deb)),'$$select^LVBDEB(deb) m ^TMP($zn,$j,"TScheck","DEB",deb)=PLIST
+ ...s val="" i $l(tsaCond(4)) s val=$g(^TMP($zn,$j,"TScheck","DEB",deb,tsaCond(4)))
+ ...i ok,tsaCond(5)="CABR" s ok=$$ABRcheck(,deb) q
+ ...i ok,tsaCond(5)="CABRCom" s ok=$$ABRcheck(,deb,"Y") q
+ ...i ok,tsaCond(5)="BT" s ok=$$BTcheck(,deb) q
+ ...i ok,tsaCond(5)="BTtag" s ok=$$BTcheck(,deb,tsaCond(6)) q
+ ...i ok,tsaCond(5)="NotExist",$l(val) s ok=0
+ ...i ok,tsaCond(5)'="NotExist",'$l(val) s ok=0
+ ...i ok,tsaCond(5)="Exist",'$l(val) s ok=0
+ ...i ok,tsaCond(5)="-",(val<$p(tsaCond(6),","))!(val>$p(tsaCond(6),",",2)) s ok=0
+ ...i ok," - Exist NotExist "'[(" "_tsaCond(5)_" ") d check(val,tsaCond(5),tsaCond(6))
+ .. ;
+ .. ; check DEB_DepartmentHistory details
+ .. ;
+ ..i tsaCond(3)=514,$l(epis) d
+ ...i '$d(^TMP($zn,$j,"TScheck","EPVIS",epis)),'$$select^LVBEPVIS(epis,"Y") m ^TMP($zn,$j,"TScheck","EPVIS",epis)=PLIST
+ ...s dh=$g(^TMP($zn,$j,"TScheck","EPVIS",epis,20))_"||"_$e(ts)
+ ...i '$d(^TMP($zn,$j,"TScheck","DEB_DepHistory",dh)),'$$select^LVBDEBDH(dh) m ^TMP($zn,$j,"TScheck","DEB_DepHistory",dh)=PLIST
+ ...s val="" i $l(tsaCond(4)) s val=$g(^TMP($zn,$j,"TScheck","DEB_DepHistory",dh,tsaCond(4)))
+ ...i ok,tsaCond(5)="NotExist",$l(val) s ok=0
+ ...i ok,tsaCond(5)'="NotExist",'$l(val) s ok=0
+ ...i ok,tsaCond(5)="Exist",'$l(val) s ok=0
+ ...i ok,tsaCond(5)="-",(val<$p(tsaCond(6),","))!(val>$p(tsaCond(6),",",2)) s ok=0
+ ...i ok," - Exist NotExist "'[(" "_tsaCond(5)_" ") d check(val,tsaCond(5),tsaCond(6))
+ .. ;
+ .. ; check EPVIS details
+ .. ;
+ ..i tsaCond(3)=42,$l(epis) d
+ ... ; current patient
+ ...i tsaCond(7)="Y" d
+ ....i '$d(^TMP($zn,$j,"TScheck","EPVIS",epis)),'$$select^LVBEPVIS(epis,"Y") m ^TMP($zn,$j,"TScheck","EPVIS",epis)=PLIST
+ ....s val="" i $l(tsaCond(4)) s val=$g(^TMP($zn,$j,"TScheck","EPVIS",epis,tsaCond(4)))
+ .... ; get ALL VA codes
+ ....i tsaCond(4)=25 d
+ .....i '$d(^TMP($zn,$j,"TScheck","VA",epis)) s va="" f  s va=$o(^TEPI(epis,"VA",va)) q:va=""  s ^TMP($zn,$j,"TScheck","VA",epis,va)=""
+ .....s va="" f  s va=$o(^TMP($zn,$j,"TScheck","VA",epis,va)) q:va=""  s val=val_$s($l(val):" ",1:"")_va
+ .....i tsaCond(5)="=" s tsaCond(5)="[",tsaCond(6)=" "_tsaCond(6)_" " s:$l(val) val=" "_val_" "
+ ....i ok,tsaCond(5)="CABR" s ok=$$ABRcheck(epis) q
+ ....i ok,tsaCond(5)="CABRCom" s ok=$$ABRcheck(epis,,"Y") q
+ ....i ok,tsaCond(5)="BT" s ok=$$BTcheck(epis) q
+ ....i ok,tsaCond(5)="BTtag" s ok=$$BTcheck(epis,,tsaCond(6)) q
+ ....i ok,tsaCond(5)="NotExist",$l(val) s ok=0
+ ....i ok,tsaCond(5)'="NotExist",'$l(val) s ok=0
+ ....i ok,tsaCond(5)="Exist",'$l(val) s ok=0
+ ....i ok,tsaCond(5)="-",(val<$p(tsaCond(6),","))!(val>$p(tsaCond(6),",",2)) s ok=0
+ ....i ok," - Exist NotExist "'[(" "_tsaCond(5)_" ") d check(val,tsaCond(5),tsaCond(6))
+ ... ; not current patient
+ ...i tsaCond(7)'="Y" d
+ ....i ok,tsaCond(5)="CABR" s ok=$$ABRcheck(epis) q
+ ....i ok,tsaCond(5)="CABRCom" s ok=$$ABRcheck(epis,,"Y") q
+ ....i ok,tsaCond(5)="BT" s ok=$$BTcheck(epis) q
+ ....i ok,tsaCond(5)="BTtag" s ok=$$BTcheck(epis,,tsaCond(6)) q
+ ....i '$d(^TMP($zn,$j,"TScheck","EPVIS",epis)),'$$select^LVBEPVIS(epis,"Y") m ^TMP($zn,$j,"TScheck","EPVIS",epis)=PLIST
+ ....f j=12,13,20 s epis(j)=$p($g(^TMP($zn,$j,"TScheck","EPVIS",epis,j)),$c(1)) i (j=12)!(j=13) s epis(j)=+epis(j)
+ ....i $l(epis(20)),$l(epis(12)),$l(epis(13)) d
+ .....s date=epis(12)+1,(ep,Xstop)=""
+ .....f  s date=$o(^TDEBi(epis(20),"DATE",date),-1) q:date=""  q:date<(epis(12)-365)  d  q:Xstop
+ ......s time="" f  s time=$o(^TDEBi(epis(20),"DATE",date,time),-1) q:time=""  d  q:Xstop
+ .......i ((epis(12)-date*24)+(epis(13)-time/60))<0 q
+ .......i $l(ts) s ep="" f  s ep=$o(^TDEBi(epis(20),"DATE",date,time,ep)) q:ep=""  i ep'=epis,$d(^TEPI(ep,1,ts)) s Xstop=1 q
+ .......i '$l(ts) s ep="" f  s ep=$o(^TDEBi(epis(20),"DATE",date,time,ep)) q:ep=""  i ep'=epis s Xstop=1 q
+ .....i $l(ep),'$d(^TMP($zn,$j,"TScheck","EPVIS",ep)),'$$select^LVBEPVIS(ep,"Y") m ^TMP($zn,$j,"TScheck","EPVIS",ep)=PLIST
+ .....s val="" i $l(ep),$l(tsaCond(4)) s val=$g(^TMP($zn,$j,"TScheck","EPVIS",ep,tsaCond(4)))
+ ..... ; get ALL VA codes
+ .....i tsaCond(4)=25 d
+ ......i '$d(^TMP($zn,$j,"TScheck","VA",ep)) s va="" f  s va=$o(^TEPI(ep,"VA",va)) q:va=""  s ^TMP($zn,$j,"TScheck","VA",ep,va)=""
+ ......s va="" f  s va=$o(^TMP($zn,$j,"TScheck","VA",ep,va)) q:va=""  s val=val_$s($l(val):" ",1:"")_va
+ ......i tsaCond(5)="=" s tsaCond(5)="[",tsaCond(6)=" "_tsaCond(6)_" " s:$l(val) val=" "_val_" "
+ .....i ok,tsaCond(5)="NotExist",$l(val) s ok=0
+ .....i ok,tsaCond(5)'="NotExist",'$l(val)="" s ok=0
+ .....i ok,tsaCond(5)="Exist",'$l(val) s ok=0
+ .....i ok,tsaCond(5)="-",(val<$p(tsaCond(6),","))!(val>$p(tsaCond(6),",",2)) s ok=0
+ .....i ok," - Exist NotExist "'[(" "_tsaCond(5)_" ") d check(val,tsaCond(5),tsaCond(6))
+ .. ;
+ .. ; check VISTS details
+ .. ;
+ ..i tsaCond(3)=46,$l(epis) d
+ ... ; current patient
+ ...i tsaCond(7)="Y" d
+ ....s vtsRID=VTS i $l(tsaCond(8)) d
+ .....s vtsRID="",cnt=$o(^TEPI(epis,1,tsaCond(8),"")) i $l(cnt) s vtsRID=epis_"||"_tsaCond(8)_"||"_cnt
+ .....i '$l(vtsRID) f  s vtsRID=$o(^TMP($zn,$j,"TScheck","VISTS",vtsRID)) q:vtsRID=""  i $p(vtsRID,"||",2)=tsaCond(8) q
+ ....i '$l(vtsRID),tsaCond(4)=1,tsaCond(5)="NotExist" q
+ ....i '$l(vtsRID) s ok=0 q
+ ....i '$d(^TMP($zn,$j,"TScheck","VISTS",vtsRID)),'$$select^LVBVISTS(vtsRID,"Y") m ^TMP($zn,$j,"TScheck","VISTS",vtsRID)=PLIST
+ ....i '$d(^TMP($zn,$j,"TScheck","VISTS",vtsRID)),event="TA" d
+ .....s ^TMP($zn,$j,"TScheck","VISTS",vtsRID,2)=$p(VTS,"||",3)
+ .....s ^TMP($zn,$j,"TScheck","VISTS",vtsRID,3)=$p(VTS,"||",2)
+ .... ; i $l(tsaCond(4)),$g(^TMP($zn,$j,"TScheck","VISTS",vtsRID,tsaCond(4)))="" q
+ ....i '$d(^TMP($zn,$j,"TScheck","DATA",vtsRID)),'$$results^LVBVISTS(vtsRID) d
+ .....f j=1:1:PLIST s ti=$p(PLIST(j),$c(1),2) i $l(ti) s ^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)=$p(PLIST(j),$c(1),3,8)
+ ....s val="" i $l(tsaCond(4)) s val=$g(^TMP($zn,$j,"TScheck","VISTS",vtsRID,tsaCond(4)))
+ ....i ok," RNormal RPanic RPath Delta "[(" "_tsaCond(5)_" ") s ok=0 d  q
+ .....s pos=$s(tsaCond(5)="RNormal":1,tsaCond(5)="RPath":2,tsaCond(5)="RPanic":3,1:4)
+ .....s ti="" f  s ti=$o(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)) q:ti=""  d  q:ok
+ ......s val=$p(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti),$c(1))
+ ......s xx=$$validres^LVBVIS1(epis,ti,val,vtsRID,pos) i $p(xx,$c(1),pos)'="N" s ok=1
+ ....i ok,tsaCond(5)="RP" s ok=0 d  q
+ .....s ti="" f  s ti=$o(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)) q:ti=""  i $$seldata^LVBCTTC(ti,5)="V" d  q:ok
+ ......s val=$p(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti),$c(1)) i $$seldata^LVBCTBUG(val,8)="Y" s ok=1
+ ....i ok,tsaCond(5)="NotExist",$l(val) s ok=0
+ ....i ok,tsaCond(5)="CBG" s ok=$$BGcheck(vtsRID,,BG) q
+ ....s deb=$g(^TMP($zn,$j,"TScheck","EPVIS",epis,20))
+ ....i ok,tsaCond(5)="CABR" s ok=$$ABRcheck(vtsRID,deb) q
+ ....i ok,tsaCond(5)="CABRCom" s ok=$$ABRcheck(vtsRID,deb,"Y") q
+ ....i ok,tsaCond(5)="BT" s ok=$$BTcheck(vtsRID,deb) q
+ ....i ok,tsaCond(5)="BTtag" s ok=$$BTcheck(vtsRID,deb,tsaCond(6)) q
+ ....i ok,tsaCond(5)'="NotExist",'$l(val) s ok=0
+ ....i ok,tsaCond(5)="Exist",'$l(val) s ok=0
+ ....i ok,tsaCond(5)="-",(val<$p(tsaCond(6),","))!(val>$p(tsaCond(6),",",2)) s ok=0
+ ....i ok," - Exist NotExist CBG "'[(" "_tsaCond(5)_" ") d check(val,tsaCond(5),tsaCond(6))
+ ... ; not current patient
+ ...i tsaCond(7)'="Y" d
+ ....i ok,tsaCond(5)="CBG" s ok=$$BGcheck(VTS,"Y",BG) q
+ ....s deb=$g(^TMP($zn,$j,"TScheck","EPVIS",epis,20))
+ ....i ok,tsaCond(5)="CABR" s ok=$$ABRcheck(VTS,deb) q
+ ....i ok,tsaCond(5)="CABRCom" s ok=$$ABRcheck(VTS,deb,"Y") q
+ ....i ok,tsaCond(5)="BT" s ok=$$BTcheck(VTS,deb) q
+ ....i ok,tsaCond(5)="BTtag" s ok=$$BTcheck(VTS,deb,tsaCond(6)) q
+ ....i '$d(^TMP($zn,$j,"TScheck","EPVIS",epis)),'$$select^LVBEPVIS(epis,"Y") m ^TMP($zn,$j,"TScheck","EPVIS",epis)=PLIST
+ ....f j=12,13,20 s epis(j)=$p($g(^TMP($zn,$j,"TScheck","EPVIS",epis,j)),$c(1)) i (j=12)!(j=13) s epis(j)=+epis(j)
+ ....i $l(epis(20)),$l(epis(12)),$l(epis(13)) d
+ .....s date=epis(12)+1,(vts,Xstop)="",TS=$s($l(tsaCond(8)):tsaCond(8),1:ts)
+ .....f  s date=$o(^TDEBi(epis(20),"DATE",date),-1) q:date=""  q:date<(epis(12)-365)  d  q:Xstop
+ ......s time="" f  s time=$o(^TDEBi(epis(20),"DATE",date,time),-1) q:time=""  d  q:Xstop
+ .......i ((epis(12)-date*24)+(epis(13)-time/60))<0 q
+ .......s ep="" f  s ep=$o(^TDEBi(epis(20),"DATE",date,time,ep)) q:ep=""  d  q:Xstop
+ ........i ep'=epis,$d(^TEPI(ep,1,TS)) s Xstop=1,vts=ep_"||"_TS_"||"_$o(^TEPI(ep,1,TS,""))
+ .....i '$l(vts) s:tsaCond(5)="Exist" ok=0 q
+ .....i '$d(^TMP($zn,$j,"TScheck","VISTS",vts)),'$$select^LVBVISTS(vts,"Y") m ^TMP($zn,$j,"TScheck","VISTS",vts)=PLIST
+ ..... ; i $l(tsaCond(4)),$g(^TMP($zn,$j,"TScheck","VISTS",vts,tsaCond(4)))="" q
+ .....i '$d(^TMP($zn,$j,"TScheck","DATA",vts)),'$$results^LVBVISTS(vts) d
+ ......f j=1:1:PLIST s ti=$p(PLIST(j),$c(1),2) i $l(ti) s ^TMP($zn,$j,"TScheck","DATA",vts,ti)=$p(PLIST(j),$c(1),3,8)
+ .....s val="" i $l(tsaCond(4)) s val=$g(^TMP($zn,$j,"TScheck","VISTS",vts,tsaCond(4)))
+ .....i ok," RNormal RPanic RPath Delta "[(" "_tsaCond(5)_" ") s ok=0 d  q
+ ......s pos=$s(tsaCond(5)="RNormal":1,tsaCond(5)="RPath":2,tsaCond(5)="RPanic":3,1:4)
+ ......s ti="" f  s ti=$o(^TMP($zn,$j,"TScheck","DATA",vts,ti)) q:ti=""  d  q:ok
+ .......s val=$p(^TMP($zn,$j,"TScheck","DATA",vts,ti),$c(1))
+ .......s xx=$$validres^LVBVIS1(ep,ti,val,vts,pos) i $p(xx,$c(1),pos)'="N" s ok=1
+ .....i ok,tsaCond(5)="RP" s ok=0 d  q
+ ......s ti="" f  s ti=$o(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)) q:ti=""  i $$seldata^LVBCTTC(ti,5)="V" d  q:ok
+ .......s val=$p(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti),$c(1)) i $$seldata^LVBCTBUG(val,8)="Y" s ok=1
+ .....i ok,tsaCond(5)="NotExist",$l(val) s ok=0
+ .....i ok,tsaCond(5)'="NotExist",'$l(val) s ok=0
+ .....i ok,tsaCond(5)="Exist",'$l(val) s ok=0
+ .....i ok,tsaCond(5)="-",(val<$p(tsaCond(6),","))!(val>$p(tsaCond(6),",",2)) s ok=0
+ .....i ok," - Exist NotExist CBG "'[(" "_tsaCond(5)_" ") d check(val,tsaCond(5),tsaCond(6))
+ .. ;
+ .. ; check VISTD details
+ .. ;
+ ..i tsaCond(3)=47,$l(epis) d
+ ...s vtsRID=VTS i $l(tsaCond(8)) s vtsRID="",cnt=$o(^TEPI(epis,1,tsaCond(8),""),-1) i $l(cnt) s vtsRID=epis_"||"_tsaCond(8)_"||"_cnt
+ ...i '$l(vtsRID) s ok=0 q
+ ... ; current patient
+ ...i tsaCond(7)="Y" d
+ ....i '$d(^TMP($zn,$j,"TScheck","DATA",vtsRID)),'$$results^LVBVISTS(vtsRID) d
+ .....f j=1:1:PLIST s ti=$p(PLIST(j),$c(1),2) i $l(ti) s ^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)=$p(PLIST(j),$c(1),3,8)
+ ....s okStart=ok f tiCnt=1:1:$l(tsaCond(4),",") s ti=$p(tsaCond(4),",",tiCnt) i $l(ti) s ok=okStart d  i ok q
+ .....s val1=$p($g(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)),$c(1),1) ; result
+ .....s val2=$p($g(^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)),$c(1),2) ; comment
+ .....i ok," RNormal RPanic RPath Delta "[(" "_tsaCond(5)_" ") s ok=0 d  q
+ ......s pos=$s(tsaCond(5)="RNormal":1,tsaCond(5)="RPath":2,tsaCond(5)="RPanic":3,1:4)
+ ......s xx=$$validres^LVBVIS1(epis,ti,val1,vtsRID,pos) i $p(xx,$c(1),pos)'="N" s ok=1
+ .....i ok,tsaCond(5)="NotExist",$l(val1)!$l(val2) s ok=0
+ .....i ok,tsaCond(5)'="NotExist",'($l(val1)!$l(val2)) s ok=0
+ .....i ok,tsaCond(5)="Exist",'($l(val1)!$l(val2)) s ok=0
+ .....i ok,tsaCond(5)="-" d
+ ......i $l(val1),(val1<$p(tsaCond(6),","))!(val1>$p(tsaCond(6),",",2)) s ok=0
+ .....i ok,tsaCond(5)="TWO" d
+ ......i $l(val1,";")'>1 s ok=0 q
+ ......i $p($p(val1,";",$l(val1,";")),",")=$p($p(val1,";",$l(val1,";")-1),","),tsaCond(6)'="Y" s ok=0 q
+ ......i $p($p(val1,";",$l(val1,";")),",")'=$p($p(val1,";",$l(val1,";")-1),","),tsaCond(6)="Y" s ok=0 q
+ .....i ok," - Exist NotExist TWO "'[(" "_tsaCond(5)_" ") d
+ ......s format=$$seldata^LVBCTTC(ti,5)
+ ......i $p(format,$c(1))="A" s val1=$p($p(val1,";",$l(val1,";")),",")
+ ......i $l(val1) d check(val1,tsaCond(5),tsaCond(6))
+ ......i $l(val2),'$l(val1)!'ok d check(val2,tsaCond(5),tsaCond(6),"Y")
+ ... ; not current patient
+ ...i tsaCond(7)'="Y" d
+ ....i '$d(^TMP($zn,$j,"TScheck","EPVIS",epis)),'$$select^LVBEPVIS(epis,"Y") m ^TMP($zn,$j,"TScheck","EPVIS",epis)=PLIST
+ ....f j=12,13,20 s epis(j)=$p($g(^TMP($zn,$j,"TScheck","EPVIS",epis,j)),$c(1)) i (j=12)!(j=13) s epis(j)=+epis(j)
+ ....i $l(epis(20)),$l(epis(12)),$l(epis(13)) d
+ .....s date=epis(12)+1,(vts,Xstop)="",TS=$s($l(tsaCond(8)):tsaCond(8),1:ts)
+ .....f  s date=$o(^TDEBi(epis(20),"DATE",date),-1) q:date=""  q:date<(epis(12)-365)  d  q:Xstop
+ ......s time="" f  s time=$o(^TDEBi(epis(20),"DATE",date,time),-1) q:time=""  d  q:Xstop
+ .......i ((epis(12)-date*24)+(epis(13)-time/60))<0 q
+ .......s ep="" f  s ep=$o(^TDEBi(epis(20),"DATE",date,time,ep)) q:ep=""  d  q:Xstop
+ ........i ep'=epis,$d(^TEPI(ep,1,TS)) s Xstop=1,vts=ep_"||"_TS_"||"_$o(^TEPI(ep,1,TS,""))
+ .....i '$l(vts) s:tsaCond(5)="Exist" ok=0 q
+ .....i '$d(^TMP($zn,$j,"TScheck","DATA",vts)),'$$results^LVBVISTS(vts) d
+ ......f j=1:1:PLIST s ti=$p(PLIST(j),$c(1),2) i $l(ti) s ^TMP($zn,$j,"TScheck","DATA",vts,ti)=$p(PLIST(j),$c(1),3,4)
+ .....s okStart=ok f tiCnt=1:1:$l(tsaCond(4),",") s ti=$p(tsaCond(4),",",tiCnt) i $l(ti) s ok=okStart d  i ok q
+ ......s val1=$p($g(^TMP($zn,$j,"TScheck","DATA",vts,ti)),$c(1),1) ; result
+ ......s val2=$p($g(^TMP($zn,$j,"TScheck","DATA",vts,ti)),$c(1),2) ; comment
+ ......i ok," RNormal RPanic RPath Delta "[(" "_tsaCond(5)_" ") s ok=0 d  q
+ .......s pos=$s(tsaCond(5)="RNormal":1,tsaCond(5)="RPath":2,tsaCond(5)="RPanic":3,1:4)
+ .......s xx=$$validres^LVBVIS1(epis,ti,val1,vtsRID,pos) i $p(xx,$c(1),pos)'="N" s ok=1
+ ......i ok,tsaCond(5)="NotExist",$l(val1)!$l(val2) s ok=0
+ ......i ok,tsaCond(5)'="NotExist",'($l(val1)!$l(val2)) s ok=0
+ ......i ok,tsaCond(5)="Exist",'($l(val1)!$l(val2)) s ok=0
+ ......i ok,tsaCond(5)="-" d
+ .......i $l(val1),(val1<$p(tsaCond(6),","))!(val1>$p(tsaCond(6),",",2)) s ok=0
+ ......i ok,tsaCond(5)="TWO" d
+ .......i $l(val1,";")'>1 s ok=0 q
+ .......i $p($p(val1,";",$l(val1,";")),",")=$p($p(val1,";",$l(val1,";")-1),","),tsaCond(6)'="Y" s ok=0 q
+ .......i $p($p(val1,";",$l(val1,";")),",")'=$p($p(val1,";",$l(val1,";")-1),","),tsaCond(6)="Y" s ok=0 q
+ ......i ok," - Exist NotExist TWO "'[(" "_tsaCond(5)_" ") d
+ .......s format=$$seldata^LVBCTTC(ti,5)
+ .......i $p(format,$c(1))="A" s val1=$p($p(val1,";",$l(val1,";")),",")
+ .......i $l(val1) d check(val1,tsaCond(5),tsaCond(6))
+ .......i $l(val2),'$l(val1)!'ok d check(val2,tsaCond(5),tsaCond(6),"Y")
+ .. ;
+ .. ; check VISTA details
+ .. ;
+ ..i tsaCond(3)=216,$l(epis) d
+ ...s vtsRID=VTS i $l(tsaCond(8)) s vtsRID="",cnt=$o(^TEPI(epis,1,tsaCond(8),""),-1) i $l(cnt) s vtsRID=epis_"||"_tsaCond(8)_"||"_cnt
+ ...i '$l(vtsRID) s ok=0 q
+ ... ; current patient only
+ ...i tsaCond(7)="Y" d
+ ....i '$d(^TMP($zn,$j,"TScheck","DATA",vtsRID)),'$$results^LVBVISTS(vtsRID) d
+ .....f j=1:1:PLIST s ti=$p(PLIST(j),$c(1),2) i $l(ti) s ^TMP($zn,$j,"TScheck","DATA",vtsRID,ti)=$p(PLIST(j),$c(1),3,8)
+ ....i '$d(^TMP($zn,$j,"TScheck","ANT",vtsRID)) d
+ .....f j=1:1:3 s @("x"_j)=$p(vtsRID,"||",j)
+ .....i $l(x1),$l(x2),$l(x3) s x4="" f  s x4=$o(^TEPI(x1,1,x2,x3,"DATA",x4)) q:x4=""  m ^TMP($zn,$j,"TScheck","ANT",vtsRID,x4)=^TEPI(x1,1,x2,x3,"DATA",x4,"ANT")
+ .... ; Result Type : 1-result
+ .... ;               3-MIC
+ .... ;               4-mm
+ ....s ResultType=$p(tsaCond(4),"-",2),Org=$p(tsaCond(6),",",1),Ant=$p(tsaCond(6),",",2),tsaCond(6)=$p(tsaCond(6),",",3,99)
+ ....s (val,x4)="" f  s x4=$o(^TMP($zn,$j,"TScheck","ANT",vtsRID,x4)) q:x4=""  d  q:$l(val)
+ .....i $l(Org),Org'=$p($g(^TMP($zn,$j,"TScheck","DATA",vtsRID,x4)),$c(1)) q
+ .....i $l(Ant),$l($p($g(^TMP($zn,$j,"TScheck","ANT",vtsRID,x4,Ant)),"\",ResultType)) s val=$p($g(^TMP($zn,$j,"TScheck","ANT",vtsRID,x4,Ant)),"\",ResultType)
+ .....i '$l(Ant) d  s Ant=""
+ ......s Ant="" f  s Ant=$o(^TMP($zn,$j,"TScheck","ANT",vtsRID,x4,Ant)) q:Ant=""  d  q:$l(val)
+ .......i $l($p($g(^TMP($zn,$j,"TScheck","ANT",vtsRID,x4,Ant)),"\",ResultType)) s val=$p($g(^TMP($zn,$j,"TScheck","ANT",vtsRID,x4,Ant)),"\",ResultType)
+ ....i ok,tsaCond(5)="NotExist",$l(val) s ok=0
+ ....i ok,tsaCond(5)'="NotExist",'$l(val) s ok=0
+ ....i ok,tsaCond(5)="Exist",'$l(val) s ok=0
+ ....i ok,tsaCond(5)="-",$l(val),(val<$p(tsaCond(6),","))!(val>$p(tsaCond(6),",",2)) s ok=0
+ ....i ok," - Exist NotExist "'[(" "_tsaCond(5)_" "),$l(val) d check(val,tsaCond(5),tsaCond(6))
+ .. ;
+ .. ; check VISTE details
+ .. ;
+ ..i tsaCond(3)=507,$l(epis) d
+ ...s vtsRID=VTS i $l(tsaCond(8)) s vtsRID="",cnt=$o(^TEPI(epis,1,tsaCond(8),""),-1) i $l(cnt) s vtsRID=epis_"||"_tsaCond(8)_"||"_cnt
+ ...i '$l(vtsRID) s ok=0 q
+ ... ; current patient only
+ ...i tsaCond(7)="Y" d
+ ....i '$d(^TMP($zn,$j,"TScheck","BBP",vtsRID)) d
+ .....f j=1:1:3 s @("x"_j)=$p(vtsRID,"||",j)
+ .....i $l(x1),$l(x2),$l(x3) d
+ ......s x4="" f  s x4=$o(^TEPI(x1,1,x2,x3,"BBP",x4)) q:x4=""  d
+ .......s x5="" f  s x5=$o(^TEPI(x1,1,x2,x3,"BBP",x4,x5)) q:x5=""  s xx=^(x5) d
+ ........s ^TMP($zn,$j,"TScheck","BBP",vtsRID,x4_"||"_x5,1)=x4_"||"_x5
+ ........s ^TMP($zn,$j,"TScheck","BBP",vtsRID,x4_"||"_x5,2)=x4
+ ........s ^TMP($zn,$j,"TScheck","BBP",vtsRID,x4_"||"_x5,3)=x5
+ ........f i=1,2,5:1:10 s ^TMP($zn,$j,"TScheck","BBP",vtsRID,x4_"||"_x5,i+3)=$p(xx,"\",i)
+ ........s ^TMP($zn,$j,"TScheck","BBP",vtsRID,x4_"||"_x5,6)=$p(xx,"\",4)
+ ........s ^TMP($zn,$j,"TScheck","BBP",vtsRID,x4_"||"_x5,7)=$p(xx,"\",3)
+ ....s x4="" f  s x4=$o(^TMP($zn,$j,"TScheck","BBP",vtsRID,x4)) q:x4=""  s ok=1 d  q:ok
+ .....s val="" i $l(tsaCond(4)) s val=$g(^TMP($zn,$j,"TScheck","BBP",vtsRID,x4,tsaCond(4)))
+ .....i ok,tsaCond(5)="NotExist",$l(val) s ok=0
+ .....i ok,tsaCond(5)'="NotExist",'$l(val) s ok=0
+ .....i ok,tsaCond(5)="Exist",'$l(val) s ok=0
+ .....i ok,tsaCond(5)="-",(val<$p(tsaCond(6),","))!(val>$p(tsaCond(6),",",2)) s ok=0
+ .....i ok," - Exist NotExist "'[(" "_tsaCond(5)_" ") d check(val,tsaCond(5),tsaCond(6))
+ .i ok s group(group)="" d
+ ..i $l(epis)," ACT "[(" "_$e(tsAction(3),1,3)_" "),$l(tsAction(4)) d  q:'ok
+ ...i $$open^LVBVISDC(epis,"Y")
+ ...f  q:$$fetch^LVBVISDC(epis,"Y")  d  q:'ok
+ ....i $l(PLIST(3)),$p(tsAction(4),"-")=PLIST(3) s ok=0
+ ....i $l(PLIST(17)),$p(tsAction(4),"-",2)=PLIST(17) s ok=0
+ ...i $$close^LVBVISDC()
+ ..i $l(epis)," TA TR "[(" "_$e(tsAction(3),1,2)_" "),$l(tsAction(4)) d  q:'ok
+ ...n PLIST
+ ...i '$d(^TMP($zn,$j,"TScheck","EPVIS",epis)),'$$select^LVBEPVIS(epis,"Y") m ^TMP($zn,$j,"TScheck","EPVIS",epis)=PLIST
+ ...s sex=$p($g(^TMP($zn,$j,"TScheck","EPVIS",epis,5)),$c(1))
+ ...s mrn=$p($g(^TMP($zn,$j,"TScheck","EPVIS",epis,20)),$c(1))
+ ...s cdate=$p($g(^TMP($zn,$j,"TScheck","EPVIS",epis,12)),$c(1))
+ ...s ctime=$p($g(^TMP($zn,$j,"TScheck","EPVIS",epis,13)),$c(1))
+ ...i VISTS="N" d
+ ....k ^TMP($zn,$j,"TScheck","VISTS")
+ ....i $$open^LVBVISTS(epis,,"Y")
+ ....f  q:$$fetch^LVBVISTS(epis,,"Y")  m ^TMP($zn,$j,"TScheck","VISTS",PLIST(1))=PLIST
+ ....i $$close^LVBVISTS()
+ ...k PLIST s x="" f j=1:1 s x=$o(^TMP($zn,$j,"TScheck","VISTS",x)) q:x=""  s PLIST(j)="TS\"_$p(x,"||",2)
+ ...s PLIST=$o(PLIST(""),-1)
+ ...i " TA "[(" "_$e(tsAction(3),1,2)_" ") d
+ ....s new=""
+ ....f ik=1:1:$l(tsAction(4),",") d
+ .....i "1234"[$p($$TSadd^LVBCOM07(epis,$p($p(tsAction(4),",",ik),$c(2)),user,sex,mrn,cdate,ctime),$c(1)) q
+ .....s new=new_$s($l(new):",",1:"")_$p(tsAction(4),",",ik)
+ ....s tsAction(4)=new i '$l(new) s ok=0
+ ...i ok f ik=1:1:$l(tsAction(4),",") d
+ ....i '$$selskip^LVBCTTS($p(tsAction(4),",",ik)) s $p(tsAction(4),",",ik)=$p(tsAction(4),",",ik)_$c(2)_PLIST(4)_$c(2)_PLIST(3)
+ ..s ^TMP($zn,$j,"TScheck","RESULT",group)=tsAction(3)_$c(1)_tsAction(4)_$c(1)_tsAction(6)_$c(1)_tsAction(7)_$c(1)_tsAction(9)_$c(1)_tsAction(11)_$c(1)_tsAction(13)
+ k PLIST s x="" f j=1:1 s x=$o(^TMP($zn,$j,"TScheck","RESULT",x)) q:x=""  s PLIST(j)=^(x)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j,"TScheck")
+ s l=$i(^TMPlog("log")) m ^TMPlog("log",l)=PLIST
+ s ^TMPlog("log",l)=$h_" : "_$j_" : $$TScheckEnd^"_$zn_" : "_VTS_"^"_event_"^"_BG_"^"_Etime_"^"_user
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("TScheck^"_$zn_$p(^CF("SM",1),"^",28)))) k %quit d @("TScheck^"_$zn_$p(^CF("SM",1),"^",28)) q:$d(%quit) %quit
+ q $s(PLIST:0,1:100)
+ ; check next in cum reports
+next(test,cnt,job) n (test,cnt,job,PLIST) s test=$g(test),cnt=$g(cnt)+1,job=$g(job)
+ s:'$l(job) job=+$j
+ s col=5 i '$$select^MVBCFLAB(1),PLIST(14) s col=PLIST(14)
+ s SQLCODE=100
+ f j1=1:1:$l(test,",") s ts=$p(test,",",j1) d  q:'SQLCODE
+ .s group="" f  s group=$o(^TMP($zn,job,"TS-LIST",group))  q:group=""  i $d(^TMP($zn,job,"TS-LIST",group,0,ts)) d  q:'SQLCODE
+ ..s (j2,stop,xCnt)="" f  s j2=$o(^TMP($zn,job,"TS-LIST",group,1,j2))  q:j2=""  d  q:stop
+ ...i group=" " d
+ ....i $d(^TMP($zn,job,"TS-LIST",group,1,j2,ts)),'^TMP($zn,job,"TS-LIST",group,1,j2,ts) d
+ .....s xCnt=xCnt+1 i xCnt>(cnt*col) s stop=1
+ ...i group'=" " d
+ ....s ts1="" f  s ts1=$o(^TMP($zn,job,"TS-LIST",group,0,ts1)) q:ts1=""  d  q:stop
+ .....i $d(^TMP($zn,job,"TS-LIST",group,1,j2,ts1)),'^TMP($zn,job,"TS-LIST",group,1,j2,ts1) d
+ ......s xCnt=xCnt+1 i xCnt>(cnt*col) s stop=1
+ ..i stop s SQLCODE=0
+ q SQLCODE
+ ; TYPE :   - Entry
+ ;        V - Enquiry
+ ; view cum reports
+CumView(test,cnt,job,CumType,Continue,TYPE,user,pc) n (test,cnt,job,CumType,Continue,TYPE,user,pc,PLIST)
+ s test=$g(test),cnt=$g(cnt),job=$g(job),CumType=$g(CumType),Continue=$g(Continue),TYPE=$g(TYPE),user=$g(user),pc=$g(pc)
+ s:'$l(job) job=+$j
+ i Continue="" d
+ .k ^TMP($zn,$j,"CumView")
+ .s col=5,j0=0 i '$$select^MVBCFLAB(1),PLIST(14) s col=PLIST(14)
+ .k PLIST f j1=1:1:$l(test,",") s ts=$p(test,",",j1) d
+ ..s group=$$seldata^LVBCTTS(ts,46) i '$l(group) s group=" "
+ ..i group'=" ",$d(done(group)) q
+ ..s done(group)=""
+ ..s (j2,Episodes,stop)="" f  s j2=$o(^TMP($zn,job,"TS-LIST",group,1,j2))  q:j2=""  d  q:stop=((cnt+1)*col)
+ ...i group=" " d
+ ....i $d(^TMP($zn,job,"TS-LIST",group,1,j2,ts)),'^TMP($zn,job,"TS-LIST",group,1,j2,ts) d
+ .....i (","_Episodes_",")[(","_^TMP($zn,job,"TS-LIST",group,1,j2)_",") q
+ .....s stop=stop+1 i stop>(cnt*col) s Episodes=Episodes_$s($l(Episodes):",",1:"")_^TMP($zn,job,"TS-LIST",group,1,j2)
+ ...i group'=" " d
+ ....s ts1="" f  s ts1=$o(^TMP($zn,job,"TS-LIST",group,0,ts1)) q:ts1=""  d
+ .....i $d(^TMP($zn,job,"TS-LIST",group,1,j2,ts1)),'^TMP($zn,job,"TS-LIST",group,1,j2,ts1) d
+ ......i (","_Episodes_",")[(","_^TMP($zn,job,"TS-LIST",group,1,j2)_",") q
+ ......s stop=stop+1 i stop>(cnt*col) s Episodes=Episodes_$s($l(Episodes):",",1:"")_^TMP($zn,job,"TS-LIST",group,1,j2)
+ ..i $l(Episodes) s j0=j0+1,PLIST(j0)=ts_$c(1)_Episodes_$c(1)_group
+ .s PLIST=$o(PLIST(""),-1)
+ .i $$CumView^PRTDR00(TYPE,CumType,user,pc)
+ .m ^TMP($zn,$j,"CumView")=PLIST
+ k PLIST
+ s (x,sum)="" f j=2:1 s x=$o(^TMP($zn,$j,"CumView",x)) q:x=""  q:(sum+$l(^(x)))>15000  s PLIST(j)=^(x),sum=sum+$l(PLIST(j))+5 k ^(x)
+ s PLIST=$o(PLIST(""),-1)
+ i PLIST s PLIST(1)=0 f j=2:1:PLIST i PLIST(j)="!" s PLIST(1)=PLIST(1)+1
+ i $o(^TMP($zn,$j,"CumView",""))="" k ^TMP($zn,$j,"CumView")
+ q $s($d(^TMP($zn,$j,"CumView")):0,1:100)
+ ; print TestWorkGroup reports
+CumTWG(type,epis,mrn,group,list,user) n (type,epis,mrn,group,list,user,PLIST)
+ s type=$g(type),epis=$g(epis),mrn=$g(mrn),group=$g(group),list=$g(list),user=$g(user)
+ k ^TMP($zn,$j,"xx-ReportH"),^TMP($zn,$j,"xx-ReportB"),^TMP($zn,$j,"xx-Report")
+ s max=6 i '$$select^MVBCFLAB(1),$l(PLIST(14)) s max=PLIST(14)
+ i '$l(mrn) s mrn=$$mrn^LVBEPVIS(epis)
+ s EpisodeList="" i $l(mrn) d
+ .s cnt=0 i $l(epis) s cnt=""
+ .s x1="" f  s x1=$o(^TDEBi(mrn,"DATE",x1),-1) q:x1=""  d  q:max=cnt
+ ..s x2="" f  s x2=$o(^TDEBi(mrn,"DATE",x1,x2),-1) q:x2=""  d  q:max=cnt
+ ...s ep="" f  s ep=$o(^TDEBi(mrn,"DATE",x1,x2,ep)) q:ep=""  d  q:max=cnt
+ ....i $l(epis),ep=epis s cnt=0
+ ....i $l(cnt) s cnt=cnt+1,EpisodeList=EpisodeList_$s($l(EpisodeList):",",1:"")_ep
+ i $l(group) d
+ .i $$open^LVBCTTWT(group,"Y")
+ .s list="" f  q:$$fetch^LVBCTTWT(group,"Y")  s list=list_$s($l(list):",",1:"")_PLIST(2)
+ .i $$close^LVBCTTWT()
+ i $l(list),$l(EpisodeList) d
+ .f jj=1:1:$l(list,",") d
+ ..s epis=$p(EpisodeList,","),test=$p(list,",",jj),tscnt=$o(^TEPI(epis,1,test,"")),vtsRID=epis_"||"_test_"||"_tscnt
+ ..i 'tscnt!($$status^LVBVIS1(vtsRID)="A") d
+ ...i $$ValUser^LVBVISTS(user,vtsRID,type) q
+ ...i $$SINGLE^PRTDR00(vtsRID,type,"C",EpisodeList)
+ ...i $d(^TMP($zn,$j,"xx-ReportH"))\10=0 m ^TMP($zn,$j,"xx-ReportH")=HEADER
+ ...i PLIST d
+ ....f j=1:1:PLIST s cnt=$o(^TMP($zn,$j,"xx-ReportB",""),-1)+1 s ^TMP($zn,$j,"xx-ReportB",cnt)=PLIST(j)
+ ....f j=1:1:2 s cnt=$o(^TMP($zn,$j,"xx-ReportB",""),-1)+1 s ^TMP($zn,$j,"xx-ReportB",cnt)="!"
+ m ^TMP($zn,$j,"xx-Report")=^TMP($zn,$j,"xx-ReportH")
+ s cnt1="" f  s cnt1=$o(^TMP($zn,$j,"xx-ReportB",cnt1)) q:cnt1=""   d
+ .s cnt2=$o(^TMP($zn,$j,"xx-Report",""),-1)+1,^TMP($zn,$j,"xx-Report",cnt2)=^TMP($zn,$j,"xx-ReportB",cnt1)
+ k PLIST m PLIST=^TMP($zn,$j,"xx-Report")
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j,"xx-ReportH"),^TMP($zn,$j,"xx-ReportB"),^TMP($zn,$j,"xx-Report")
+ s Lines=0 f j=1:1:PLIST s PLIST(j)=$tr(PLIST(j),"^",$c(28)) i PLIST(j)="!" s Lines=Lines+1
+ q Lines
+ ; find list of episodes to display in a caption
+caption(epis,ur,testlist,dep,user,Enquiry) n (epis,ur,testlist,dep,user,Enquiry,PLIST) k ^TMP($zn,$j)
+ s epis=$g(epis),ur=$g(ur),testlist=$g(testlist),dep=$g(dep),user=$g(user),Enquiry=$g(Enquiry)
+ i '$l(ur) s ur=$$seldata^LVBEPVIS(epis,20)
+ i $l(ur) s Start=1 d
+ .k CFSM i '$$select^MVBCFSM(1) m CFSM=PLIST
+ . ; resort episodes
+ .k ^TMP($zn,$j,"resort") m ^TMP($zn,$j,"resort")=^TDEBi(ur,"DATE")
+ .i $l(CFSM(8)) d
+ ..k ^TMP($zn,$j,"resort")
+ ..s x1="" f  s x1=$o(^TDEBi(ur,"DATE",x1)) q:x1=""  d
+ ...s x2="" f  s x2=$o(^TDEBi(ur,"DATE",x1,x2)) q:x2=""  d
+ ....s x3="" f  s x3=$o(^TDEBi(ur,"DATE",x1,x2,x3)) q:x3=""  d
+ .....f j=13,62 s PLIST(j)=$$seldata^LVBEPVIS(x3,j)
+ .....i CFSM(8)=PLIST(13) s PLIST(13)=PLIST(62)
+ .....i PLIST(13)="" s PLIST(13)=PLIST(62)
+ .....i PLIST(13)="" s PLIST(13)=" "
+ .....s ^TMP($zn,$j,"resort",x1,$s(PLIST(13):PLIST(13)\60,1:PLIST(13)),x3)=""
+ .s date="" f  s date=$o(^TMP($zn,$j,"resort",date),-1) q:date=""  d
+ ..s time="" f  s time=$o(^TMP($zn,$j,"resort",date,time),-1) q:time=""  d
+ ...s ep="" f  s ep=$o(^TMP($zn,$j,"resort",date,time,ep)) q:ep=""  d
+ ....s (col,ts)="" f  s ts=$o(^TEPI(ep,1,ts)) q:ts=""  d
+ .....i $l(testlist),(","_testlist_",")'[(","_ts_",") q
+ .....i $l(dep),(","_dep_",")'[(","_$e(ts)_",") q
+ .....s group=$$seldata^LVBCTTS(ts,46) i '$l(group) s group=" "
+ .....s (cnt,tscnt)="" f  s tscnt=$o(^TEPI(ep,1,ts,tscnt)) q:tscnt=""  d
+ ......s Flag=$c(1)_Enquiry_$c(1)_user
+ ......s rowid=ep_"||"_ts_"||"_tscnt,status=$$status^LVBVIS1(rowid),access=$$check^LVBVIS5(rowid,Flag)
+ ......i access<60 s cnt=cnt+1 d
+ .......i '$d(^TMP($zn,$j,"TS-LIST",group,0,ts,Start+cnt)) d
+ ........s ^TMP($zn,$j,"TS-LIST",group,0,ts,Start+cnt)=rowid_$c(1)_status_$c(1)_access
+ ........s ^TMP($zn,$j,"TS-LIST",group,1,Start+cnt)=ep
+ ........s ^TMP($zn,$j,"TS-LIST",group,1,Start+cnt,ts)=access
+ .......i $d(^TMP($zn,$j,"TS-LIST",group,0,ts,Start+cnt)),status="A" d
+ ........s ^TMP($zn,$j,"TS-LIST",group,0,ts,Start+cnt)=rowid_$c(1)_status_$c(1)_access
+ ........s ^TMP($zn,$j,"TS-LIST",group,1,Start+cnt)=ep
+ ........s ^TMP($zn,$j,"TS-LIST",group,1,Start+cnt,ts)=access
+ .....i cnt>col s col=cnt
+ ....i col d
+ .....f j=1:1:col s x=$o(^TMP($zn,$j,"CAPTION",""),-1)+1,^TMP($zn,$j,"CAPTION",x)=ep_$c(1)_date_$c(1)_$s(time=CFSM(8):time,time:time*60,1:time)
+ .....s Start=Start+col
+ k PLIST m PLIST=^TMP($zn,$j,"CAPTION")
+ s PLIST=$o(PLIST(""),-1)
+ q $j
+cumulative(mrn,user,testlist,dep,page) n (mrn,user,testlist,dep,page,PLIST) s mrn=$g(mrn),user=$g(user),testlist=$g(testlist),dep=$g(dep),page=$g(page)
+ k ^TMP($zn,$j)
+ s col=5 i '$$select^MVBCFLAB(1),PLIST(14) s col=PLIST(14)
+ i $$caption("",mrn,testlist,dep,user,"Y")
+ s Continue="" k WVLIST,PLIST
+ f  s isend=$$CumView(testlist,page,,,Continue,"V",user),Continue="Y"  d  q:isend
+ .f j=2:1:PLIST s a=$o(WVLIST(""),-1)+1,WVLIST(a)=$tr(PLIST(j),$c(28),"^")
+ k event s group="" f  s group=$o(^TMP($zn,$j,"TS-LIST",group))  q:group=""  d
+ .f j1=1:1:$l(testlist,",") s ts=$p(testlist,",",j1) d
+ ..s (j2,Episodes,stop)="" f  s j2=$o(^TMP($zn,$j,"TS-LIST",group,1,j2))  q:j2=""  d  q:stop=((page+1)*col)
+ ...s epis=^TMP($zn,$j,"TS-LIST",group,1,j2)
+ ...i group=" " d
+ ....i $d(^TMP($zn,$j,"TS-LIST",group,1,j2,ts)),'^TMP($zn,$j,"TS-LIST",group,1,j2,ts) d
+ .....i (","_Episodes_",")[(","_^TMP($zn,$j,"TS-LIST",group,1,j2)_",") q
+ .....s stop=stop+1 i stop>(page*col),$l(epis),$l(user),$l(testlist) s event(epis,user,testlist)=""
+ ...i group'=" " d
+ ....s ts1="" f  s ts1=$o(^TMP($zn,$j,"TS-LIST",group,0,ts1)) q:ts1=""  d
+ .....i $d(^TMP($zn,$j,"TS-LIST",group,1,j2,ts1)),'^TMP($zn,$j,"TS-LIST",group,1,j2,ts1) d
+ ......i (","_Episodes_",")[(","_^TMP($zn,$j,"TS-LIST",group,1,j2)_",") q
+ ......s stop=stop+1 i stop>(page*col),$l(epis),$l(user),$l(testlist) s event(epis,user,testlist)=""
+ s epis="" f  s epis=$o(event(epis)) q:epis=""  d
+ .s user="" f  s user=$o(event(epis,user)) q:user=""  d
+ ..s testlist="" f  s testlist=$o(event(epis,user,testlist)) q:testlist=""  d
+ ...i $$VBevent^LVBCOM01(epis,"WV","Cumulative Test Sets "_testlist_" has been reviewed by "_user)
+ k PLIST m PLIST=WVLIST k WVLIST,event
+ d adjustHTML^LVBCOM07
+ q
+open(epis,ur,testlist,dep,user,p5,p6,p7,p8,p9) n (epis,ur,testlist,dep,user,PLIST) k ^TMP($zn,$j,"LIST")
+ s epis=$g(epis),ur=$g(ur),testlist=$g(testlist),dep=$g(dep),user=$g(user)
+ s group="" f  s group=$o(^TMP($zn,$j,"TS-LIST",group)) q:group=""  d
+ .s ts="" f  s ts=$o(^TMP($zn,$j,"TS-LIST",group,0,ts)) q:ts=""  d
+ ..s line=$o(^TMP($zn,$j,"LIST",""),-1)+1,^TMP($zn,$j,"LIST",line)=ts
+ ..s seq="" f  s seq=$o(^TMP($zn,$j,"TS-LIST",group,0,ts,seq)) q:seq=""  s ^TMP($zn,$j,"LIST",line,seq)=^(seq)
+ s ^TMP($zn,$j,"LIST")=""
+ q 0
+fetch(epis,ur,testlist,dep,user,p5,p6,p7,p8,p9) n (epis,ur,testlist,dep,user,PLIST) s SQLCODE=100 k PLIST
+ s epis=$g(epis),ur=$g(ur),testlist=$g(testlist),dep=$g(dep),user=$g(user)
+ s line=$g(^TMP($zn,$j,"LIST")),line=$o(^TMP($zn,$j,"LIST",line)),^TMP($zn,$j,"LIST")=line
+ i $l(line) d
+ .s SQLCODE=0,ts=^TMP($zn,$j,"LIST",line)
+ .s tsname=$$seldata^LVBCTTS(ts,3),group=$$seldata^LVBCTTS(ts,46)
+ .s seq="" f  s seq=$o(^TMP($zn,$j,"LIST",line,seq)) q:seq=""  d
+ ..s PLIST(seq)=^(seq)
+ ..s vts=$p(PLIST(seq),$c(1))
+ ..f j=1:1:3 s @("x"_j)=$p(vts,"||",j)
+ ..i $l(x1),$l(x2),$l(x3) s status="" d  i $l(status) s $p(PLIST(seq),$c(1),2)=status
+ ...n (x1,x2,x3,status,vts)
+ ...s last=$o(^TEPI(x1,1,x2,x3,"QUEUE","VQ",""),-1)
+ ...i $l(last),'$$select^LVBVISTQ(vts_"||VQ||"_last,"Y"),'$l(PLIST(7)) s status="VQ-"_PLIST(10)
+ .s $p(PLIST(1),$c(1),3)=ts
+ .s $p(PLIST(1),$c(1),4)=$p(tsname,$c(1))
+ .s $p(PLIST(1),$c(1),5)=$p(group,$c(1))
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(epis,ur,testlist,dep,user,p5,p6,p7,p8,p9) k ^TMP($zn,$j,10)
+ s epis=$g(epis),ur=$g(ur),testlist=$g(testlist),dep=$g(dep),user=$g(user)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ s sum=0
+ f xxx=1:1:max s SQLCODE=$$fetch(epis,,testlist,dep,user) q:SQLCODE  d  q:sum>15000
+ .s cnt=$o(^TMP($zn,$j,10,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,10,cnt),$c(28),j)=$g(PLIST(j))
+ .s sum=sum+$l(^TMP($zn,$j,10,cnt))+2
+ k PLIST m PLIST=^TMP($zn,$j,10) k ^TMP($zn,$j,10)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+close() k ^TMP($zn,$j)
+ q 0
+]]></Routine>
+</Export>

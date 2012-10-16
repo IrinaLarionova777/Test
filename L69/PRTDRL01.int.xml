@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDRL01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDRL19 ; IG 07/10/98 ; Doctor's report listing
+ Q
+ ; Parameters :  1.Date from
+ ;               2.Date to
+ ;               3.Courier
+ ;               4.User
+ ;               5.Sort order : T-Printing Time
+ ;                              P-Report Recipient
+ ;                              S-Patient Name
+ ;                              M-Patient MRN
+ ;               6.RepID
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+ K xHEADER D INIT
+ s line=1,xHEADER(line)="Doctor's Report Listing"
+ s line=2,xHEADER(line)=""
+ i $l(PAR3) s line=3,xHEADER(line)=" for Courier Run : [ "_CTCR(2)_" ] - "_CTCR(3)
+ i $l(PAR4) s line=3,xHEADER(line)=" for User : [ "_SSUSR(2)_" ] - "_SSUSR(3)
+ i $l(PAR6) s line=3,xHEADER(line)=" for ReportID(s) : "_PAR6
+ D HEADER^PRTREP00(.xHEADER,PAR1,PAR2,,,PAR5),BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)="Run-"_PAR6 I $$update^LVBPRPR(REPID)
+ K ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$zn)
+ s xSORT("T")="Printing Time"
+ s xSORT("P")="Report Recipient"
+ s xSORT("S")="Patient Name"
+ s xSORT("M")="Patient MRN"
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+ i $l(PAR3),'$$select^LVBCTCR(PAR3,"Y") k CTCR m CTCR=PLIST
+ i $l(PAR4),'$$selrow^MVBSSUSR(PAR4,"Y") k SSUSR m SSUSR=PLIST
+ Q
+ ; create temporary printing file
+BODY s date=PAR1-1 f  s date=$o(^TEPIi("DR_Print",date)) q:date=""  q:date>PAR2  d
+ .i $l(PAR6) d  q
+ ..f j=1:1:$l(PAR6,",") s x1=$p(PAR6,",",j) d BODY1
+ .s x1="" f  s x1=$o(^TEPIi("DR_Print",date,x1)) q:x1=""  s xx=^(x1) d
+ ..i $l(PAR3) s stop=1 d  q:stop
+ ...i $p(xx,"\",1)="C",PAR3=$p(xx,"\",2) s stop=0
+ ...i $p(xx,"\",1)="CU",PAR3=$p($p(xx,"\",2),"||") s stop=0
+ ..i $l(PAR4) s stop=1 d  q:stop
+ ...i $p(xx,"\",1)="U",PAR4=$p(xx,"\",2) s stop=0
+ ...i $p(xx,"\",1)="CU",PAR4=$p($p(xx,"\",2),"||",2) s stop=0
+ ..D BODY1
+ q
+BODY1 s x2="" f  s x2=$o(^TEPIi("DR_Print",date,x1,x2)) q:x2=""  s xx1=^(x2) d
+ .s x3="" f  s x3=$o(^TEPIi("DR_Print",date,x1,x2,x3)) q:x3=""  d
+ ..s pages=$g(^TEPIi("DR_Print",date,x1,x2,x3))
+ ..s sort="" i $l(PAR5) d
+ ...f j=3,20,22 s EPVIS(j)=$$seldata^LVBEPVIS(x2,j)
+ ...i PAR5="T" s sort=$p(xx1,",",2)
+ ...i PAR5="P" s sort=x3
+ ...i PAR5="S" s sort=EPVIS(3)
+ ...i PAR5="M" s sort=EPVIS(20)
+ ..i '$l(sort) s sort=" "
+ ..s (x4,xx2)="" f  s x4=$o(^TEPIi("DR_Print",date,x1,x2,x3,x4)) q:x4=""  d
+ ...s ts=$p(x4,"||",2),syn="" i '$$selskip^LVBCTTS(ts) s syn=PLIST(4)
+ ...i $l(syn) s xx2=xx2_$s($l(xx2):",",1:"")_syn
+ ..s ^TMP($zn,$j,"REPORT",date,sort,x2)=xx1_"\"_xx2
+ ..s ^TMP($zn,$j,"REPORT",date,sort)=$g(^TMP($zn,$j,"REPORT",date,sort))+pages
+ q
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s date="" f  s date=$o(^TMP($zn,$j,"REPORT",date)) q:date=""  d
+ ..i PAR1'=PAR2 d
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...d ADDLINE^PRTREP00(REPID,"PRT","?5  Date : "_$$extdate2^SSUTIL4(date))
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..s (total,sort)="" f  s sort=$o(^TMP($zn,$j,"REPORT",date,sort)) q:sort=""  d
+ ...s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",date,sort,epis)) q:epis=""  d
+ ....s xx=^(epis)
+ ....s xxx(1)=$$extdate2^SSUTIL4(+$p(xx,"\",1))_" "_$$exttime^SSUTIL4($p($p(xx,"\",1),",",2))
+ ....s xxx(2)=$p(xx,"\",2)
+ ....i '$$select^LVBEPVIS(epis) s total=total+1 d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","?5  Total : "_total_" patients")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="DRL",EndLine=$$seldata^LVBCTCLR(report,9) i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

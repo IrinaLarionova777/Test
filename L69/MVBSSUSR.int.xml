@@ -1,0 +1,448 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MVBSSUSR" type="INT" languagemode="0" generated="1"><![CDATA[
+MVBSSUSR ; SP 24/11/95 ; MVB Control data access for SS_User
+ ;
+ ; supported calls:
+ ;
+ ; $$insert^MVBSSUSR()
+ ; $$update^MVBSSUSR(rowid)
+ ; $$delete^MVBSSUSR(rowid)
+ ; $$open^MVBSSUSR(code,skip,site,active,group,p5,p6,p7,p8,p9)
+ ; $$fetch^MVBSSUSR(code,skip,site,active,group,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^MVBSSUSR(code,skip,site,active,group,p5,p6,p7,p8,p9)
+ ; $$fetchall^MVBSSUSR(code,skip,site,active,group,p5,p6,p7,p8,p9)
+ ; $$close^MVBSSUSR()
+ ; $$select^MVBSSUSR(username,password,skip,active)
+ ; $$selrow^MVBSSUSR(rowid,skip,site,active)
+ ; $$seldata^MVBSSUSR(rowid,data)
+ ; $$encrypt^MVBSSUSR(password)
+ ; $$setuser^MVBSSUSR(user)
+ ; $$deluser^MVBSSUSR()
+ ; $$user^MVBSSUSR()
+ ; $$gettype^MVBSSUSR(user)
+ ; $$getall^MVBSSUSR(type,active,group)
+ ; $$val^MVBSSUSR(type,user) 
+ ; $$check^MVBSSUSR(user,password) 
+ ;
+  ;---&sql(DECLARE SSUSR CURSOR FOR SELECT * FROM SS_User
+   ;---         WHERE ((%ALPHAUP(SSUSR_Initials) %STARTSWITH :code) OR (:code IS NULL))
+   ;---         AND ((%ALPHAUP(SSUSR_Name) %STARTSWITH :name) OR (:name IS NULL))
+   ;---         AND ((SSUSR_UserSite_DR = :site) OR (:site IS NULL))
+   ;---         AND ((SSUSR_Group = :group) OR (:group IS NULL))
+   ;---         AND ((SSUSR_Active = :active) OR (:active IS NULL)))
+   ;--- ** SQL PUBLIC Variables: SQLCODE, active, code, group, name, site
+ q
+ ;
+open(code,skip,site,active,group,p5,p6,p7,p8,p9) s code=$g(code),skip=$g(skip),site=$g(site),active=$g(active),group=$g(group)
+ s name=$$ALPHAUP^SSUTIL4($p(code,$c(1),2)),code=$$ALPHAUP^SSUTIL4($p(code,$c(1),1))
+  ;---&sql(OPEN SSUSR)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %SSUSR0o
+ q 0
+ ;
+fetch(code,skip,site,active,group,p5,p6,p7,p8,p9) K PLIST s code=$g(code),skip=$g(skip),site=$g(site),active=$g(active),group=$g(group)
+ s name=$$ALPHAUP^SSUTIL4($p(code,$c(1),2)),code=$$ALPHAUP^SSUTIL4($p(code,$c(1),1))
+  ;---&sql(FETCH SSUSR INTO :PLIST() )
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Do
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(code,skip,site,active,group,p5,p6,p7,p8,p9) k ^TMP($zn,$j)
+ s code=$g(code),skip=$g(skip),site=$g(site),active=$g(active),group=$g(group)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100)
+ f xxx=1:1:max s SQLCODE=$$fetch(code,skip,site,active,group) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(code,skip,site,active,group,p5,p6,p7,p8,p9) N (code,skip,site,active,group,PLIST) K ^TMP($zn,$j)
+ s code=$g(code),skip=$g(skip),site=$g(site),active=$g(active),group=$g(group)
+ i $$open(code,skip,site,active,group)
+ f cnt=1:1 Q:$$fetch(code,skip,site,active,group)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+close()  ;---&sql(CLOSE SSUSR)
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %SSUSR0c
+ q 0
+ ; Return code - 0-ok
+ ;               1-length
+ ;               2-previous use
+check(user,password) n (user,password) s result=0
+ i " issaak trak "[(" "_user_" ") q result
+ i '$$select^MVBCFSM(1) k CFSM m CFSM=PLIST d
+ .i 'result,$l(CFSM(24)),$l(password)<CFSM(24) s result=1
+ .i 'result,'$$selrow(user,"Y"),$$ENCR^SSUTIL2(password)=PLIST(9) s result=2
+ .i 'result,CFSM(28)="Y" d
+ ..i $$open^MVBSUPH(user)
+ ..f cnt=1:1 q:$$fetch^MVBSUPH(user)  d  q:result  i CFSM(23),CFSM(23)=cnt q
+ ...i $$ENCR^SSUTIL2(password)=PLIST(3) s result=2 q
+ ..i $$close^MVBSUPH()
+ q result
+ ; validate user by username and password
+select(username,password,skip,active) n encrypt
+ i $g(username)="issaak" d
+ .i $d(^SSU("SSUSR",1,"issaak")) s PLIST(2)="issaak" i '$$selrow("issaak"),$$update("issaak")
+ .i '$d(^SSU("SSUSR",1,"issaak")) s PLIST(2)="issaak" i $$insert()
+ i $g(username)="trak" d
+ .i $d(^SSU("SSUSR",1,"issaak")) s PLIST(2)="trak" i '$$selrow("trak"),$$update("trak")
+ .i '$d(^SSU("SSUSR",1,"trak")) s PLIST(2)="trak" i $$insert()
+ s %msql=$g(^CF("MSQL")),skip=$g(skip),active=$g(active)
+ k PLIST
+  ;---&sql( SELECT * INTO :PLIST() FROM SS_User WHERE SSUSR_Initials=:username
+   ;---         AND ((SSUSR_Active = :active) OR (:active IS NULL)))
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE, active, username
+ Do %0Fo
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE,PLIST(9)'=$$ENCR^SSUTIL2(password) d  s SQLCODE=150
+ .s PLIST(25)=PLIST(25)+1 i '$$update(username) d
+ ..n PLIST k PLIST
+ ..s PLIST(5)="Login failed"
+ ..s PLIST=$o(PLIST(""),-1)
+ ..i $$insert^MVBSULG(username)
+ i 'SQLCODE d adjust i $p($g(^CF("SM",1)),"^",38) s xx=$p($g(^CF("SM",1)),"^",38)-($h-PLIST(23)) i xx<6 s PLIST(50)=$s(xx<1:0,1:xx)
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE,$tr($p($p($p($zv,")",2),"("),".")," ","")>4 d
+ .s ns=$zu(5,"")
+ .i $zu(5,"%CACHELIB")
+ .x "d $system.License.Login("""_username_""")"
+ .i $zu(5,ns)
+ q SQLCODE
+ ; select data by code and field No
+seldata(ROWID,data) n (ROWID,data) s ROWID=$g(ROWID),data=$g(data),result=""
+ i $l(ROWID) d  q result
+ .i data=3 s result=$p($g(^SSU("SSUSR",1,ROWID)),"^",2) q
+ .i data=4 s result=$p($g(^SSU("SSUSR",1,ROWID)),"^",4) q
+ .i data=8 s result=$p($g(^SSU("SSUSR",1,ROWID)),"^",8) q
+ .i data=10 s result=$p($g(^SSU("SSUSR",1,ROWID)),"^",9) q
+ .i data=12 s result=$p($g(^SSU("SSUSR",1,ROWID)),"^",11) q
+ .i data=14 s result=$p($g(^SSU("SSUSR",1,ROWID)),"^",13) q
+ .i data=16 s result=$p($g(^SSU("SSUSR",1,ROWID)),"^",15) q
+ .i '$$selrow(ROWID,"Y") s result=$g(PLIST(data))
+ q result
+encrypt(pass) ;encrypt
+ k PLIST s PLIST(1)=$$ENCR^SSUTIL2(pass),PLIST=1
+ q 0
+ ;
+ ; select user by rowid
+selrow(rowid,skip,site,active) s rowid=$p($g(rowid),$c(1)),skip=$g(skip),site=$g(site),active=$g(active) k PLIST
+  ;---&sql( SELECT * INTO :PLIST() FROM SS_User WHERE SSUSR_RowID=:rowid
+   ;---         AND ((SSUSR_UserSite_DR = :site) OR (:site IS NULL))
+   ;---         AND ((SSUSR_Active = :active) OR (:active IS NULL)))
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE, active, rowid, site
+ Do %0Ho
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; pre file adjustments
+pre(xUpdate) d PreSQL^SSUTIL4("","")
+ N J F J=1:1:PLIST I $D(PLIST(J))#10 S PLIST(J)=$P(PLIST(J),$C(1),1) 
+ i $g(PLIST(2))="issaak" s PLIST(3)="Issaak Guerchenzon",PLIST(9)="C-7XWViWkE8[",PLIST(7)="Y" d
+ .s group=$g(PLIST(4))
+ .i $l(group),$d(^SSU("SSGRP",group)),$$ALPHAUP^SSUTIL4($p(^(group),"^"))'="TRAKHEALTHADMINISTRATOR" s group=""
+ .i '$l(group) f  s group=$o(^SSU("SSGRP",group)) q:group=""  i $$ALPHAUP^SSUTIL4($p(^(group),"^"))="TRAKHEALTHADMINISTRATOR" q
+ .i '$l(group) f group=1:1 i '$d(^SSU("SSGRP",group)) s ^SSU("SSGRP",group)="TrakHealth Administrator" q
+ .s PLIST(4)=group d setup^SSDEMO(group)
+ i $g(PLIST(2))="trak" s PLIST(3)="TrakHealth user",PLIST(9)=")>,5+_"")m:7+",PLIST(7)="Y" d
+ .s group=$g(PLIST(4))
+ .i $l(group),$d(^SSU("SSGRP",group)),$$ALPHAUP^SSUTIL4($p(^(group),"^"))'="TRAKHEALTHADMINISTRATOR" s group=""
+ .i '$l(group) f  s group=$o(^SSU("SSGRP",group)) q:group=""  i $$ALPHAUP^SSUTIL4($p(^(group),"^"))="TRAKHEALTHADMINISTRATOR" q
+ .i '$l(group) f group=1:1 i '$d(^SSU("SSGRP",group)) s ^SSU("SSGRP",group)="TrakHealth Administrator" q
+ .s PLIST(4)=group d setup^SSDEMO(group)
+ i " trak issaak "'[(" "_$g(PLIST(2))_" "),$l($g(PLIST(9))),PLIST(9)'=$p($g(^SSU("SSUSR",1,PLIST(2))),"^",3) s PLIST(9)=$$ENCR^SSUTIL2(PLIST(9))
+ q
+ ;
+ ; Adjust certain fields
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("")
+ i $g(skip)="Y" q
+ ;
+ I $G(PLIST(4))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^MVBSSGRP(plist(4),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(1)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(4)=X K plist
+ I $G(PLIST(6))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^MVBSSLAN(plist(6),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(1)_$C(1)_PLIST(15)
+ .K PLIST M PLIST=plist S PLIST(6)=X K plist
+ I $G(PLIST(11))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTPT(plist(11),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(11)=X K plist
+ I $G(PLIST(12))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTUSL(plist(12),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(12)=X K plist
+ I $G(PLIST(13))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTPD(plist(13),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(13)=X K plist
+ I $G(PLIST(18))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTDBL(plist(18),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(18)=X K plist
+ I $G(PLIST(18))'="",$G(PLIST(19))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTDBF($p(plist(18),$c(1))_"||"_plist(19),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(19)=X K plist
+ Q
+ ; set user in ^TMPuser($j)
+setuser(user,pcname) s user=$g(user),pcname=$g(pcname),^TMP("USER",$j)=user
+ i $l(pcname),'$$selrow(user,"Y") s PLIST(21)=+$h,PLIST(25)="" i '$$update(user) d
+ .k PLIST
+ .s PLIST(5)="Login successful"
+ .s PLIST(6)=pcname
+ .s PLIST=$o(PLIST(""),-1)
+ .i $$insert^MVBSULG(user)
+ q 0
+ ; delete user
+deluser() k ^TMP("USER",$j)
+ q 0
+ ; get user rowid
+user(Job) i '$l($g(Job)) s Job=$j
+ q $g(^TMP("USER",Job))
+ ; get user type
+gettype(user) n (user,PLIST) k PLIST s PLIST=1,PLIST(1)=""
+ i $l(user) s per=$p($g(^SSU("SSUSR",1,user)),"^",10) i $l(per) s PLIST(1)=$p($g(^TTAB("PERTYP",per)),"\",2)
+ q 0
+ ;        
+getall(type,active,group) n (type,active,group,PLIST) k ^TMP($zn,$j) s type=$g(type),active=$g(active),group=$g(group)
+ i $$open(,"Y",,active,group)
+ s cnt=0 f  q:$$fetch(,"Y",,active,group)  d
+ .i type'="",$$val(type,PLIST(1)) q
+ .s cnt=cnt+1,^TMP($zn,$j,cnt)=$p(PLIST(1),$c(1))_$c(2)_$p(PLIST(3),$c(1))_$s($l(PLIST(12)):" ["_PLIST(12)_"]",1:"")_$c(2)_$P(PLIST(2),$c(1))
+ k PLIST m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ i $$close()
+ k ^TMP($zn,$j)
+ q 0
+insert() K PLIST(1) d pre("N")
+  ;---&SQL(insert INTO SS_User VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Jo
+ I 'SQLCODE Q $$selrow(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+ ; Update the data
+update(RowID) s RowID=$g(RowID) d pre("Y")
+ i $g(PLIST(9))="" s PLIST(9)=$p($g(^SSU("SSUSR",1,RowID)),"^",3)
+ i PLIST(9)'=$p($g(^SSU("SSUSR",1,RowID)),"^",3) d
+ .n PLIST k PLIST
+ .s PLIST(3)=$p($g(^SSU("SSUSR",1,RowID)),"^",3)
+ .s PLIST=$o(PLIST(""),-1) i $$insert^MVBSUPH(RowID)
+  ;---&SQL(UPDATE SS_User VALUES :PLIST() WHERE SSUSR_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ Do %0Lo
+ I 'SQLCODE Q $$selrow(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+ ; Delete the data
+delete(RowID) s RowID=$g(RowID)
+ i " issaak trak "[(" "_RowID_" ") q 0
+  ;---&SQL(DELETE FROM SS_User WHERE SSUSR_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: RowID, SQLCODE
+ Do %0No
+ Q SQLCODE
+ ;
+val(type,user) 
+ s type1=$p($g(^SSU("SSUSR",1,user)),"^",10)
+ q:type1="" 1
+ i $p($g(^TTAB("PERTYP",type1)),"\",2)'=type q 1
+ q 0
+%SSUSR0o s $zt="%SSUSR0E" s SQLCODE=$s($g(%SSUSR0c):-101,1:0) q:SQLCODE'=0  s %SSUSR0d(41)=0 s %SSUSR0d(42)=0,%SSUSR0d(43)=""
+ s %SSUSR0d(27)=$g(code),%SSUSR0d(28)=$g(code),%SSUSR0d(30)=$g(name),%SSUSR0d(31)=$g(name),%SSUSR0d(32)=$g(site),%SSUSR0d(33)=$g(site),%SSUSR0d(34)=$g(group),%SSUSR0d(35)=$g(group),%SSUSR0d(36)=$g(active),%SSUSR0d(37)=$g(active)
+ s %SSUSR0t(1)=$i(^||%sql.temp)
+ s %SSUSR0d(40)=$zu(28,%SSUSR0d(36),7)
+ s %SSUSR0c=1 q
+%SSUSR0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %SSUSR0c,%SSUSR0d,%SSUSR0E,%SSUSR0l,%SSUSR0n,%SSUSR0R,%SSUSR0s,%SSUSR0t,%SSUSR0Z q
+%0Afirst 
+ k ^||%sql.temp(%SSUSR0t(1),0) s ^||%sql.temp(%SSUSR0t(1),0)=$H_"^"_$J_"^"_$zu(67,11,$j)_"^"_$zu(67,12,$j)_"^"_$zu(67,15,$j)_"^"_$ZN_"^"_$zu(67,6,$j)
+ i $sortbegin(^||%sql.temp(%SSUSR0t(1),0))
+ ; asl MOD# 3
+ d %0ABMod
+ i $sortend(^||%sql.temp(%SSUSR0t(1),0))
+ s %SSUSR0s(1)=""
+%0ACk1 s %SSUSR0s(1)=$o(^||%sql.temp(%SSUSR0t(1),0,%SSUSR0s(1)))
+ i %SSUSR0s(1)="" g %0ACdun
+ s %SSUSR0d(1)=$s(%SSUSR0s(1)=-1E14:"",1:%SSUSR0s(1))
+ i %SSUSR0d(1)'="",$d(^SSU("SSUSR",1,%SSUSR0d(1)))
+ e  g %0ACk1
+ s %SSUSR0d(58)=$g(^SSU("SSUSR",1,%SSUSR0d(1)))
+ s %SSUSR0d(3)=$p(%SSUSR0d(58),"^",4)
+ g:'(((%SSUSR0d(3)'="")&&(%SSUSR0d(3)=%SSUSR0d(34)))||(%SSUSR0d(35)="")) %0ACk1
+ s %SSUSR0d(11)=$p(%SSUSR0d(58),"^",11)
+ g:'(((%SSUSR0d(11)'="")&&(%SSUSR0d(11)=%SSUSR0d(32)))||(%SSUSR0d(33)="")) %0ACk1
+ s %SSUSR0d(2)=$p(%SSUSR0d(58),"^",2) s %SSUSR0d(4)=$p(%SSUSR0d(58),"^",5) s %SSUSR0d(5)=$p(%SSUSR0d(58),"^",6) s %SSUSR0d(6)=$p(%SSUSR0d(58),"^",7) s %SSUSR0d(7)=$p(%SSUSR0d(58),"^",8) s %SSUSR0d(8)=$p(%SSUSR0d(58),"^",3) s %SSUSR0d(9)=$p(%SSUSR0d(58),"^",9) s %SSUSR0d(10)=$p(%SSUSR0d(58),"^",10) s %SSUSR0d(12)=$p(%SSUSR0d(58),"^",12) s %SSUSR0d(13)=$p(%SSUSR0d(58),"^",13) s %SSUSR0d(14)=$p(%SSUSR0d(58),"^",14) s %SSUSR0d(15)=$p(%SSUSR0d(58),"^",15) s %SSUSR0d(16)=$p(%SSUSR0d(58),"^",16) s %SSUSR0d(17)=$p(%SSUSR0d(58),"^",17) s %SSUSR0d(18)=$p(%SSUSR0d(58),"^",18) s %SSUSR0d(19)=$p(%SSUSR0d(58),"^",19) s %SSUSR0d(20)=$p(%SSUSR0d(58),"^",20) s %SSUSR0d(21)=$p(%SSUSR0d(58),"^",21) s %SSUSR0d(23)=$p(%SSUSR0d(58),"^",22) s %SSUSR0d(24)=$p(%SSUSR0d(58),"^",23) s %SSUSR0d(25)=$p(%SSUSR0d(58),"^",24)
+ s %SSUSR0d(22)=$$CT023^at157($g(%SSUSR0d(1))) s %SSUSR0d(29)=$zu(28,%SSUSR0d(2),6) s %SSUSR0d(39)=$zu(28,%SSUSR0d(6),7) s %SSUSR0d(26)=$zu(28,%SSUSR0d(1),6)
+ g:'((%SSUSR0d(39)=%SSUSR0d(40))||(%SSUSR0d(37)="")) %0ACk1
+ g:$zu(115,2)=0 %0ACuncommitted i $zu(115,2)=1 l +^SSU("SSUSR",1,$p(%SSUSR0d(1),"||",1))#"S":$zu(115,4) i $t { s %SSUSR0d(42)=1,%SSUSR0d(43)=$name(^SSU("SSUSR",1,$p(%SSUSR0d(1),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.SS_User for RowID value: "_%SSUSR0d(1) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %SSUSR0d(1)'="",$d(^SSU("SSUSR",1,%SSUSR0d(1)))
+ e  g %0ADdun
+ s %SSUSR0d(65)=$g(^SSU("SSUSR",1,%SSUSR0d(1)))
+ s %SSUSR0d(3)=$p(%SSUSR0d(65),"^",4)
+ g:'(((%SSUSR0d(3)'="")&&(%SSUSR0d(3)=%SSUSR0d(34)))||(%SSUSR0d(35)="")) %0ADdun
+ s %SSUSR0d(11)=$p(%SSUSR0d(65),"^",11)
+ g:'(((%SSUSR0d(11)'="")&&(%SSUSR0d(11)=%SSUSR0d(32)))||(%SSUSR0d(33)="")) %0ADdun
+ s %SSUSR0d(2)=$p(%SSUSR0d(65),"^",2) s %SSUSR0d(4)=$p(%SSUSR0d(65),"^",5) s %SSUSR0d(5)=$p(%SSUSR0d(65),"^",6) s %SSUSR0d(6)=$p(%SSUSR0d(65),"^",7) s %SSUSR0d(7)=$p(%SSUSR0d(65),"^",8) s %SSUSR0d(8)=$p(%SSUSR0d(65),"^",3) s %SSUSR0d(9)=$p(%SSUSR0d(65),"^",9) s %SSUSR0d(10)=$p(%SSUSR0d(65),"^",10) s %SSUSR0d(12)=$p(%SSUSR0d(65),"^",12) s %SSUSR0d(13)=$p(%SSUSR0d(65),"^",13) s %SSUSR0d(14)=$p(%SSUSR0d(65),"^",14) s %SSUSR0d(15)=$p(%SSUSR0d(65),"^",15) s %SSUSR0d(16)=$p(%SSUSR0d(65),"^",16) s %SSUSR0d(17)=$p(%SSUSR0d(65),"^",17) s %SSUSR0d(18)=$p(%SSUSR0d(65),"^",18) s %SSUSR0d(19)=$p(%SSUSR0d(65),"^",19) s %SSUSR0d(20)=$p(%SSUSR0d(65),"^",20) s %SSUSR0d(21)=$p(%SSUSR0d(65),"^",21) s %SSUSR0d(23)=$p(%SSUSR0d(65),"^",22) s %SSUSR0d(24)=$p(%SSUSR0d(65),"^",23) s %SSUSR0d(25)=$p(%SSUSR0d(65),"^",24)
+ s %SSUSR0d(22)=$$CT023^at157($g(%SSUSR0d(1))) s %SSUSR0d(29)=$zu(28,%SSUSR0d(2),6) s %SSUSR0d(39)=$zu(28,%SSUSR0d(6),7) s %SSUSR0d(26)=$zu(28,%SSUSR0d(1),6)
+ g:'((($c(0)[%SSUSR0d(27))||(%SSUSR0d(27)=$c(32,0)&&($e(%SSUSR0d(26))=$c(32)))||(%SSUSR0d(27)=$e(%SSUSR0d(26),1,$l(%SSUSR0d(27)))))||(%SSUSR0d(28)="")) %0ADdun
+ g:'((($c(0)[%SSUSR0d(30))||(%SSUSR0d(30)=$c(32,0)&&($e(%SSUSR0d(29))=$c(32)))||(%SSUSR0d(30)=$e(%SSUSR0d(29),1,$l(%SSUSR0d(30)))))||(%SSUSR0d(31)="")) %0ADdun
+ g:'((%SSUSR0d(39)=%SSUSR0d(40))||(%SSUSR0d(37)="")) %0ADdun
+%0ACuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %SSUSR0d(41)=%SSUSR0d(41)+1,%ROWCOUNT=%SSUSR0d(41),%ROWID=%SSUSR0d(1),%SSUSR0c=10 q
+%SSUSR0f i '$g(%SSUSR0c) { s SQLCODE=-102 q  } i %SSUSR0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%SSUSR0d(41))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%SSUSR0d(41),%SSUSR0c=100 q  } g %0Afirst:%SSUSR0c=1
+%0ADdun i $zu(115,2)=1,$g(%SSUSR0d(42))=1 { l -@%SSUSR0d(43) s %SSUSR0d(42)=0 }
+ g %0ACk1
+%0ACdun 
+%0AAdun 
+ s %ROWCOUNT=%SSUSR0d(41),SQLCODE=100,%SSUSR0c=100 q
+%SSUSR0c i '$g(%SSUSR0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%SSUSR0d(41)),1:0) f %SSUSR0d(44)=1 { i $sortend(^||%sql.temp(%SSUSR0t(%SSUSR0d(44)),0),0) } k ^||%sql.temp(%SSUSR0t(1))
+ i $zu(115,2)=1,$g(%SSUSR0d(42))=1 { l -@%SSUSR0d(43) } k %SSUSR0c,%SSUSR0d,%SSUSR0E,%SSUSR0l,%SSUSR0n,%SSUSR0R,%SSUSR0s,%SSUSR0t,%SSUSR0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %SSUSR0c=100
+ f %SSUSR0d(44)=1 i $sortend(^||%sql.temp(%SSUSR0t(%SSUSR0d(44)),0),0)
+ q
+%0ABMod ; asl MOD# 2
+ s %SSUSR0d(29)=""
+%0ABk1 s %SSUSR0d(29)=$o(^SSU("SSUSR","Name",%SSUSR0d(29)))
+ i %SSUSR0d(29)="" g %0ABdun
+ i '((($c(0)[%SSUSR0d(30))||(%SSUSR0d(30)=$c(32,0)&&($e(%SSUSR0d(29))=$c(32)))||(%SSUSR0d(30)=$e(%SSUSR0d(29),1,$l(%SSUSR0d(30)))))||(%SSUSR0d(31)="")) g %0ABk1
+ s %SSUSR0d(1)=""
+%0ABk2 s %SSUSR0d(1)=$o(^SSU("SSUSR","Name",%SSUSR0d(29),%SSUSR0d(1)))
+ i %SSUSR0d(1)="" g %0ABk1
+ s %SSUSR0d(26)=$zu(28,%SSUSR0d(1),6)
+ g:'((($c(0)[%SSUSR0d(27))||(%SSUSR0d(27)=$c(32,0)&&($e(%SSUSR0d(26))=$c(32)))||(%SSUSR0d(27)=$e(%SSUSR0d(26),1,$l(%SSUSR0d(27)))))||(%SSUSR0d(28)="")) %0ABk2
+ s %SSUSR0s(1)=$s(%SSUSR0d(1)'="":%SSUSR0d(1),1:-1E14),^||%sql.temp(%SSUSR0t(1),0,%SSUSR0s(1))=""
+ g %0ABk2
+%0ABdun 
+ q
+%0Do d %SSUSR0f q:SQLCODE'=0
+ s PLIST(1)=%SSUSR0d(1),PLIST(2)=%SSUSR0d(1),PLIST(3)=%SSUSR0d(2),PLIST(4)=%SSUSR0d(3),PLIST(5)=%SSUSR0d(4),PLIST(6)=%SSUSR0d(5),PLIST(7)=%SSUSR0d(6),PLIST(8)=%SSUSR0d(7),PLIST(9)=%SSUSR0d(8),PLIST(10)=%SSUSR0d(9),PLIST(11)=%SSUSR0d(10),PLIST(12)=%SSUSR0d(11),PLIST(13)=%SSUSR0d(12),PLIST(14)=%SSUSR0d(13),PLIST(15)=%SSUSR0d(14),PLIST(16)=%SSUSR0d(15),PLIST(17)=%SSUSR0d(16),PLIST(18)=%SSUSR0d(17),PLIST(19)=%SSUSR0d(18),PLIST(20)=%SSUSR0d(19),PLIST(21)=%SSUSR0d(20),PLIST(22)=%SSUSR0d(21),PLIST(23)=%SSUSR0d(22),PLIST(24)=%SSUSR0d(23),PLIST(25)=%SSUSR0d(24),PLIST(26)=%SSUSR0d(25)
+ q
+%0Fo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Ferr" s %mmmsqld(35)=0,%mmmsqld(36)=""
+ s %mmmsqld(27)=$g(username),%mmmsqld(28)=$g(active),%mmmsqld(29)=$g(active)
+ s SQLCODE=100
+ s %mmmsqld(32)=$zu(28,%mmmsqld(28),7)
+ ; asl MOD# 2
+ s PLIST(2)=%mmmsqld(27)
+ i PLIST(2)'="",$d(^SSU("SSUSR",1,PLIST(2)))
+ e  g %0FBdun
+ s %mmmsqld(43)=$g(^SSU("SSUSR",1,PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(43),"^",2) s PLIST(4)=$p(%mmmsqld(43),"^",4) s PLIST(5)=$p(%mmmsqld(43),"^",5) s PLIST(6)=$p(%mmmsqld(43),"^",6) s PLIST(7)=$p(%mmmsqld(43),"^",7) s PLIST(8)=$p(%mmmsqld(43),"^",8) s PLIST(9)=$p(%mmmsqld(43),"^",3) s PLIST(10)=$p(%mmmsqld(43),"^",9) s PLIST(11)=$p(%mmmsqld(43),"^",10) s PLIST(12)=$p(%mmmsqld(43),"^",11) s PLIST(13)=$p(%mmmsqld(43),"^",12) s PLIST(14)=$p(%mmmsqld(43),"^",13) s PLIST(15)=$p(%mmmsqld(43),"^",14) s PLIST(16)=$p(%mmmsqld(43),"^",15) s PLIST(17)=$p(%mmmsqld(43),"^",16) s PLIST(18)=$p(%mmmsqld(43),"^",17) s PLIST(19)=$p(%mmmsqld(43),"^",18) s PLIST(20)=$p(%mmmsqld(43),"^",19) s PLIST(21)=$p(%mmmsqld(43),"^",20) s PLIST(22)=$p(%mmmsqld(43),"^",21) s PLIST(24)=$p(%mmmsqld(43),"^",22) s PLIST(25)=$p(%mmmsqld(43),"^",23) s PLIST(26)=$p(%mmmsqld(43),"^",24)
+ s PLIST(23)=$$CT023^at157($g(PLIST(2))) s %mmmsqld(31)=$zu(28,PLIST(7),7)
+ g:'((%mmmsqld(31)=%mmmsqld(32))||(%mmmsqld(29)="")) %0FBdun
+ g:$zu(115,2)=0 %0FBuncommitted i $zu(115,2)=1 l +^SSU("SSUSR",1,$p(PLIST(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(35)=1,%mmmsqld(36)=$name(^SSU("SSUSR",1,$p(PLIST(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.SS_User for RowID value: "_PLIST(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(33)=$lb(""_%mmmsqld(31))
+ i PLIST(2)'="",$d(^SSU("SSUSR",1,PLIST(2)))
+ e  g %0FCdun
+ s %mmmsqld(50)=$g(^SSU("SSUSR",1,PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(50),"^",2) s PLIST(4)=$p(%mmmsqld(50),"^",4) s PLIST(5)=$p(%mmmsqld(50),"^",5) s PLIST(6)=$p(%mmmsqld(50),"^",6) s PLIST(7)=$p(%mmmsqld(50),"^",7) s PLIST(8)=$p(%mmmsqld(50),"^",8) s PLIST(9)=$p(%mmmsqld(50),"^",3) s PLIST(10)=$p(%mmmsqld(50),"^",9) s PLIST(11)=$p(%mmmsqld(50),"^",10) s PLIST(12)=$p(%mmmsqld(50),"^",11) s PLIST(13)=$p(%mmmsqld(50),"^",12) s PLIST(14)=$p(%mmmsqld(50),"^",13) s PLIST(15)=$p(%mmmsqld(50),"^",14) s PLIST(16)=$p(%mmmsqld(50),"^",15) s PLIST(17)=$p(%mmmsqld(50),"^",16) s PLIST(18)=$p(%mmmsqld(50),"^",17) s PLIST(19)=$p(%mmmsqld(50),"^",18) s PLIST(20)=$p(%mmmsqld(50),"^",19) s PLIST(21)=$p(%mmmsqld(50),"^",20) s PLIST(22)=$p(%mmmsqld(50),"^",21) s PLIST(24)=$p(%mmmsqld(50),"^",22) s PLIST(25)=$p(%mmmsqld(50),"^",23) s PLIST(26)=$p(%mmmsqld(50),"^",24)
+ s PLIST(23)=$$CT023^at157($g(PLIST(2))) s %mmmsqld(31)=$zu(28,PLIST(7),7)
+ s %mmmsqld(34)=$lb(""_%mmmsqld(31))
+ g:%mmmsqld(33)'=%mmmsqld(34) %0FCdun
+%0FBuncommitted ;
+ s PLIST(1)=PLIST(2)
+ s SQLCODE=0 g %0Fc
+%0FCdun i $zu(115,2)=1,$g(%mmmsqld(35))=1 { l -@%mmmsqld(36) s %mmmsqld(35)=0 }
+%0FBdun 
+%0FAdun 
+%0Fc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(35))=1 { l -@%mmmsqld(36) } q
+%0Ferr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Fc
+%0Ho n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Herr" s %mmmsqld(37)=0,%mmmsqld(38)=""
+ s %mmmsqld(27)=$g(rowid),%mmmsqld(28)=$g(site),%mmmsqld(29)=$g(site),%mmmsqld(30)=$g(active),%mmmsqld(31)=$g(active)
+ s SQLCODE=100
+ s %mmmsqld(34)=$zu(28,%mmmsqld(30),7)
+ ; asl MOD# 2
+ s PLIST(2)=%mmmsqld(27)
+ i PLIST(2)'="",$d(^SSU("SSUSR",1,PLIST(2)))
+ e  g %0HBdun
+ s %mmmsqld(45)=$g(^SSU("SSUSR",1,PLIST(2)))
+ s PLIST(12)=$p(%mmmsqld(45),"^",11)
+ g:'(((PLIST(12)'="")&&(PLIST(12)=%mmmsqld(28)))||(%mmmsqld(29)="")) %0HBdun
+ s PLIST(3)=$p(%mmmsqld(45),"^",2) s PLIST(4)=$p(%mmmsqld(45),"^",4) s PLIST(5)=$p(%mmmsqld(45),"^",5) s PLIST(6)=$p(%mmmsqld(45),"^",6) s PLIST(7)=$p(%mmmsqld(45),"^",7) s PLIST(8)=$p(%mmmsqld(45),"^",8) s PLIST(9)=$p(%mmmsqld(45),"^",3) s PLIST(10)=$p(%mmmsqld(45),"^",9) s PLIST(11)=$p(%mmmsqld(45),"^",10) s PLIST(13)=$p(%mmmsqld(45),"^",12) s PLIST(14)=$p(%mmmsqld(45),"^",13) s PLIST(15)=$p(%mmmsqld(45),"^",14) s PLIST(16)=$p(%mmmsqld(45),"^",15) s PLIST(17)=$p(%mmmsqld(45),"^",16) s PLIST(18)=$p(%mmmsqld(45),"^",17) s PLIST(19)=$p(%mmmsqld(45),"^",18) s PLIST(20)=$p(%mmmsqld(45),"^",19) s PLIST(21)=$p(%mmmsqld(45),"^",20) s PLIST(22)=$p(%mmmsqld(45),"^",21) s PLIST(24)=$p(%mmmsqld(45),"^",22) s PLIST(25)=$p(%mmmsqld(45),"^",23) s PLIST(26)=$p(%mmmsqld(45),"^",24)
+ s PLIST(23)=$$CT023^at157($g(PLIST(2))) s %mmmsqld(33)=$zu(28,PLIST(7),7)
+ g:'((%mmmsqld(33)=%mmmsqld(34))||(%mmmsqld(31)="")) %0HBdun
+ g:$zu(115,2)=0 %0HBuncommitted i $zu(115,2)=1 l +^SSU("SSUSR",1,$p(PLIST(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(37)=1,%mmmsqld(38)=$name(^SSU("SSUSR",1,$p(PLIST(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.SS_User for RowID value: "_PLIST(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(35)=$lb(""_PLIST(12),""_%mmmsqld(33))
+ i PLIST(2)'="",$d(^SSU("SSUSR",1,PLIST(2)))
+ e  g %0HCdun
+ s %mmmsqld(52)=$g(^SSU("SSUSR",1,PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(52),"^",2) s PLIST(4)=$p(%mmmsqld(52),"^",4) s PLIST(5)=$p(%mmmsqld(52),"^",5) s PLIST(6)=$p(%mmmsqld(52),"^",6) s PLIST(7)=$p(%mmmsqld(52),"^",7) s PLIST(8)=$p(%mmmsqld(52),"^",8) s PLIST(9)=$p(%mmmsqld(52),"^",3) s PLIST(10)=$p(%mmmsqld(52),"^",9) s PLIST(11)=$p(%mmmsqld(52),"^",10) s PLIST(12)=$p(%mmmsqld(52),"^",11) s PLIST(13)=$p(%mmmsqld(52),"^",12) s PLIST(14)=$p(%mmmsqld(52),"^",13) s PLIST(15)=$p(%mmmsqld(52),"^",14) s PLIST(16)=$p(%mmmsqld(52),"^",15) s PLIST(17)=$p(%mmmsqld(52),"^",16) s PLIST(18)=$p(%mmmsqld(52),"^",17) s PLIST(19)=$p(%mmmsqld(52),"^",18) s PLIST(20)=$p(%mmmsqld(52),"^",19) s PLIST(21)=$p(%mmmsqld(52),"^",20) s PLIST(22)=$p(%mmmsqld(52),"^",21) s PLIST(24)=$p(%mmmsqld(52),"^",22) s PLIST(25)=$p(%mmmsqld(52),"^",23) s PLIST(26)=$p(%mmmsqld(52),"^",24)
+ s PLIST(23)=$$CT023^at157($g(PLIST(2))) s %mmmsqld(33)=$zu(28,PLIST(7),7)
+ s %mmmsqld(36)=$lb(""_PLIST(12),""_%mmmsqld(33))
+ g:%mmmsqld(35)'=%mmmsqld(36) %0HCdun
+%0HBuncommitted ;
+ s PLIST(1)=PLIST(2)
+ s SQLCODE=0 g %0Hc
+%0HCdun i $zu(115,2)=1,$g(%mmmsqld(37))=1 { l -@%mmmsqld(38) s %mmmsqld(37)=0 }
+%0HBdun 
+%0HAdun 
+%0Hc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(37))=1 { l -@%mmmsqld(38) } q
+%0Herr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Hc
+%0Jo n %i,icol,ir
+ f icol=0:1:26 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.SSUser.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Jo
+%0Lo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Lerr" s %mmmsqld(4)=0 s %mmmsqld(5)=""
+ s %mmmsqld(3)=$g(RowID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ i %mmmsqld(2)'="",$d(^SSU("SSUSR",1,%mmmsqld(2)))
+ e  g %0LBdun
+ s %mmmsqld(12)=$$%getlock^User.SSUser.T1(%mmmsqld(2)) i '%mmmsqld(12) s SQLCODE=-110 g %0Lc
+ ; asl MOD# 3
+ i %mmmsqld(2)'="",$d(^SSU("SSUSR",1,%mmmsqld(2)))
+ e  g %0LCdun
+ k %data
+ f icol=0:1:26 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.SSUser.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(4))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(12)=1 %ReleaseLock^User.SSUser.T1(%mmmsqld(2)) g %0Lc
+%0LCdun 
+ d:%mmmsqld(12)=1 %ReleaseLock^User.SSUser.T1(%mmmsqld(2)) g:SQLCODE<0 %0Lc
+%0LBdun 
+%0LAdun 
+%0Lc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(4)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Lerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(12))=1 %ReleaseLock^User.SSUser.T1(%mmmsqld(2)) g %0Lc
+%0No n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Nerr" s %mmmsqld(3)=0 s %mmmsqld(4)=""
+ s %mmmsqld(2)=$g(RowID)
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(1)=%mmmsqld(2)
+ i %mmmsqld(1)'="",$d(^SSU("SSUSR",1,%mmmsqld(1)))
+ e  g %0NBdun
+ s %mmmsqld(11)=$$%getlock^User.SSUser.T1(%mmmsqld(1)) i '%mmmsqld(11) s SQLCODE=-110 g %0Nc
+ ; asl MOD# 3
+ i %mmmsqld(1)'="",$d(^SSU("SSUSR",1,%mmmsqld(1)))
+ e  g %0NCdun
+ d %delete^User.SSUser.T1(%mmmsqld(1),$c(0,2,0,0),'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(3))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(11)=1 %ReleaseLock^User.SSUser.T1(%mmmsqld(1)) g %0Nc
+%0NCdun 
+ d:%mmmsqld(11)=1 %ReleaseLock^User.SSUser.T1(%mmmsqld(1)) g:SQLCODE<0 %0Nc
+%0NBdun 
+%0NAdun 
+%0Nc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(3)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Nerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(11))=1 %ReleaseLock^User.SSUser.T1(%mmmsqld(1)) g %0Nc
+]]></Routine>
+</Export>

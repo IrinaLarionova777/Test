@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBDEBESP03" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBDEBESP03 ; MRN control - Sant Pau
+ ;
+ ; supported calls:
+ ;
+ ; $$check^LVBDEBESP03(deb,step)
+ ;
+ ; check debtor number
+ ; return code = ReturnCode_$c(1)_Flag1_$c(1)_Flag2
+ ; Return Code - 10 - exist in TDEB              - MRN - last visit
+ ;               20 - exist in THOS              - MRN - multiple THOS data
+ ;               30 - exist in Labtrak as HRN    -     - multiple Labtrak MRN's and last visits
+ ;               50 - does not exist but valid   - MRN - single THOS data
+ ;              100 - invalid MRN
+ ; Flag1       - Search DB : H - LVBHOSP
+ ;                           L - LVBEPVIS
+ ; Flag2       - Accept Hospital DB MRN as LabTrak MRN
+check(deb,step) n (PLIST,deb,step) k PLIST,^TMP($zn,$j)
+ ; request for new MRN                   - ok=50_$c(1)_"LH"_$c(1)_"N"
+ i deb="." s ok=50_$c(1)_"LH"_$c(1)_"N" k PLIST s PLIST(1)="E{New}" g end
+ ; existing LabTrak MRN                          - ok=10_$c(1)_$c(1)_"N"
+ i $e(deb)="E",'$$select^LVBDEB(deb) s ok=10_$c(1)_$c(1)_"N",last=PLIST(4) k PLIST s PLIST(1)=deb,PLIST(2)=last g end
+ ; This is a Hospital episode number
+ i $e(deb)="H",step<2 s ok=20_$c(1)_""_$c(1)_"Y" d  i ok g end 
+ .i $$select^LVBCTUR("S","Y") s ok=0 q
+ .i PLIST(7)'="Y" s ok=0 q
+ .k ^TMP($zn,$j)
+ .s epis=$e(deb,2,$l(deb))
+ .s deb=$o(^THOSi("VIS",epis,"S",""))
+ .i deb="" s ok=0 q
+ .i $$select^LVBHOSP("S||"_deb_"||"_epis)
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 s:cnt=1 cnt=2 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=PLIST(j)
+ .i '$d(^TMP($zn,$j)) s ok=0 q
+ .k PLIST s PLIST(1)=$e(deb,2,$l(deb)) m PLIST=^TMP($zn,$j)
+ s deb="S"_deb           
+ ; If existing Hospital MRN is empty, call SAP and retry   - ok=20_$c(1)_"HL"_$c(1)_"Y"
+ i step<2,deb?1U1.UN s ok=20_$c(1)_"L"_$c(1)_"Y" d  i ok g end
+ .i $$select^LVBCTUR($e(deb),"Y") s ok=0 q
+ .i PLIST(7)'="Y" s ok=0 q
+ .k ^TMP($zn,$j)
+ .i $$open^LVBHOSP($e(deb),,,,,deb)
+ .f  q:$$fetch^LVBHOSP($e(deb),,,,,deb)  d
+ ..s cnt=$o(^TMP($zn,$j,""),-1)+1 s:cnt=1 cnt=2 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=PLIST(j)
+ .i $$close^LVBHOSP()
+ .i '$d(^TMP($zn,$j)) d ^CLNSAPQRYAPMESP03(deb) s ok=0 q
+ .k PLIST s PLIST(1)=$e(deb,2,$l(deb)) m PLIST=^TMP($zn,$j)
+ ; existing Hospital MRN                         - ok=20_$c(1)_"HL"_$c(1)_"Y"
+ i step<2,deb?1U1.UN s ok=20_$c(1)_"L"_$c(1)_"Y" d  i ok g end
+ .i $$select^LVBCTUR($e(deb),"Y") s ok=0 q
+ .i PLIST(7)'="Y" s ok=0 q
+ .k ^TMP($zn,$j)
+ .i $$open^LVBHOSP($e(deb),,,,,deb)
+ .f  q:$$fetch^LVBHOSP($e(deb),,,,,deb)  d
+ ..s cnt=$o(^TMP($zn,$j,""),-1)+1 s:cnt=1 cnt=2 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=PLIST(j)
+ .i $$close^LVBHOSP()
+ .i '$d(^TMP($zn,$j)) s ok=0 q
+ .k PLIST s PLIST(1)=$e(deb,2,$l(deb)) m PLIST=^TMP($zn,$j)
+ ; existing LabTrak-Hospital MRN                 - ok=30_$c(1)_"HL"_$c(1)_"Y"
+ i deb?1U1.UN s ok=30_$c(1)_"HL"_$c(1)_"Y" d  i ok g end
+ .i $$select^LVBCTUR($e(deb),"Y") s ok=0 q
+ .i PLIST(7)'="Y" s ok=0 q
+ .k ^TMP($zn,$j)
+ .s mrn="" f  s mrn=$o(^TDEBj("HOSPITAL",deb,mrn)) q:mrn=""  d
+ ..i '$$select^LVBDEB(mrn) s cnt=$o(^TMP($zn,$j,""),-1)+1 s:cnt=1 cnt=2 s ^TMP($zn,$j,cnt)=mrn_$c(1)_PLIST(4)
+ .i '$d(^TMP($zn,$j)) s ok=0 q
+ .k PLIST s PLIST(1)=$e(deb,2,$l(deb)) m PLIST=^TMP($zn,$j)
+ s ok=100 k PLIST
+end k ^TMP($zn,$j) s PLIST=$o(PLIST(""),-1)
+ q ok
+]]></Routine>
+</Export>

@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDBLA02" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDBLA02 ; IG 02/09/98 ; Day Book Labels - SJOG
+ Q
+ ; Parameters :  1.Laboratory
+ ;               2.Site
+ ;               3.Date from
+ ;               4.Date to
+ ;               5.List episodes/accesion numbers
+ ;               6.Order RowID
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($ZN,$J)
+ D INIT,BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=$g(TYPE),PLIST(9)="M" I $$update^LVBPRPR(REPID)
+ K ^TMP($ZN,$J),^TMP("PRTREP00",$J)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ Q
+ ; check if visit/accession should print labels
+CHECK(XX) n (XX,PAR3,PAR4) s XX=$g(XX)
+ ; check if Histo or Cyto or Micro only
+ i " C H M I D "'[(" "_$e($p(XX,"||",2))_" ") q
+ ; check all blocks
+ i $$open^LVBHIVAB(XX)
+ f  q:$$fetch^LVBHIVAB(XX)  d
+ .f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ .k BLOCK m BLOCK=PLIST
+ . ; check all records
+ .i $$open^LVBHIVAO(BLOCK(1))
+ .f  q:$$fetch^LVBHIVAO(BLOCK(1))  d
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..i $l(PAR3),PLIST(8)<PAR3 q
+ ..i $l(PAR4),PLIST(8)>PAR4 q
+ ..i PLIST(7)'="Y" s ^TMP($zn,$j,"LIST",PLIST(1))=""
+ .i $$close^LVBHIVAO()
+ i $$close^LVBHIVAB()
+ Q
+ ; create list of labels to print
+BODY k ^TMP($zn,$j)
+ ; create list of labels for a laboratory
+ i '$l(PAR5) d
+ .s x1="" f  s x1=$o(^THIRi("PRINT-LABEL",x1)) q:x1=""  d
+ ..i $$select^LVBEPVIS(x1,"Y") q
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k VISIT m VISIT=PLIST
+ ..s x2="" f  s x2=$o(^THIRi("PRINT-LABEL",x1,x2)) q:x2=""  d
+ ... ; check laboratory
+ ...i $l(PAR1),$e(x2,1)'=PAR1 q
+ ... ; check site
+ ...i $l(PAR2),$e(x2,2)'=PAR2 q
+ ...D CHECK(x1_"||"_x2)
+ ; create list of labels for an episodes
+ i $l(PAR5) d
+ .i '$l(PAR6) d
+ ..f j=1:1:$l(PAR5,"|") s x1=$p($p(PAR5,"|",j),"~",1),x2=$p($p(PAR5,"|",j),"~",2) i $l(x1),$l(x2) d
+ ...i x2'="*",$d(^THIRi("PRINT-LABEL",x1,x2)) D CHECK(x1_"||"_x2)
+ ...i x2="*" s x2="" f  s x2=$o(^THIRi("PRINT-LABEL",x1,x2)) q:x2=""  d
+ .... ; check laboratory
+ ....i $l(PAR1),$e(x2,1)'=PAR1 q
+ .... ; check site
+ ....i $l(PAR2),$e(x2,2)'=PAR2 q
+ ....D CHECK(x1_"||"_x2)
+ .i $l(PAR6) f j=1:1:$l(PAR6,",") i $l($p(PAR6,",",j)) s ^TMP($zn,$j,"LIST",$p(PAR6,",",j))=""
+ ; Sort
+ s xROWID="" f  s xROWID=$o(^TMP($zn,$j,"LIST",xROWID)) q:xROWID=""  d
+ .i $e($p(xROWID,"||",2))="M" s SORT=xROWID
+ .e  i $e($p(xROWID,"||",2))="H" s SORT=$e($p(xROWID,"||",2),3,99)
+ .e  s SORT=$p(xROWID,"||",2)
+ .s ^TMP($zn,$j,"REPORT",SORT,xROWID)=""
+ Q
+ ; print all labels
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s SORT="" f  s SORT=$o(^TMP($zn,$j,"REPORT",SORT)) q:SORT=""  d
+ ..s xROWID="" f  s xROWID=$o(^TMP($zn,$j,"REPORT",SORT,xROWID)) q:xROWID=""  d
+ ... ; print Microbiology
+ ...i $e($p(xROWID,"||",2))="M" s TYPE=$e($p(xROWID,"||",2))_"-"_PAR2 d
+ .... ; order information
+ ....i $$select^LVBHIVAO(xROWID) q
+ ....f j=1,2,4:1:9 i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ORDER m ORDER=PLIST
+ .... ; update record that it had been printed already
+ ....f j=1:1:9 i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s PLIST(7)="Y",^is(xROWID)=$$update^LVBHIVAO(xROWID)
+ .... ; visit information
+ ....i $$select^LVBEPVIS($p(xROWID,"||"),"Y") q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k VISIT m VISIT=PLIST
+ .... ; accession number information
+ ....i $$select^LVBHIVAC($p(xROWID,"||",1,2)) q
+ ....f j=1:1:6,8:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ACCESS m ACCESS=PLIST
+ .... ; start build lines
+ ....s LINE(1)=$p(xROWID,"||",2)
+ ....s LINE(2)="Req #:"_$p(xROWID,"||",1)
+ .... ; get initials
+ ....s intials="" f j=1:1:$l(VISIT(4)," ") s intials=intials_$s($l(intials):" ",1:"")_$e($p(VISIT(4)," ",j))
+ ....s LINE(3)="Name: "_intials_" "_VISIT(3)
+ ....s LINE(4)="Site: "_$p(ACCESS(7),$c(1),2)
+ ....s LINE(5)=$s($l(VISIT(12)):$$extdate2^SSUTIL4(VISIT(12)),1:"")_" "
+ ....i $l(ORDER(3)) s LINE(5)=LINE(5)_$p(ORDER(3),$c(1),2)
+ ....e  s LINE(5)=LINE(5)_$p(ORDER(10),$c(1),2)
+ ... ; print Histology (West)
+ ...i $e($p(xROWID,"||",2))="H" s TYPE=$e($p(xROWID,"||",2))_"-"_PAR2 d
+ .... ; order information
+ ....i $$select^LVBHIVAO(xROWID) q
+ ....f j=1:1:4,6:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ORDER m ORDER=PLIST
+ .... ; update record that it had been printed already
+ ....f j=1:1:9 i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s PLIST(7)="Y" i $$update^LVBHIVAO(xROWID)
+ .... ; visit information
+ ....i $$select^LVBEPVIS($p(xROWID,"||"),"Y") q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k VISIT m VISIT=PLIST
+ .... ; accession number information
+ ....i $$select^LVBHIVAC($p(xROWID,"||",1,2)) q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ACCESS m ACCESS=PLIST
+ .... ; start build lines
+ ....s LINE(1)=ACCESS(10)_"-"_$p(xROWID,"||",3)
+ .... ; get initials
+ ....s intials="" f j=1:1:$l(VISIT(4)," ") s intials=intials_$s($l(intials):" ",1:"")_$e($p(VISIT(4)," ",j))
+ ....s LINE(2)=VISIT(3)_" "_intials
+ ....s LINE(3)=$s($l($p(ORDER(5),$c(1),2))>5:$p(ORDER(5),$c(1),1),1:$p(ORDER(5),$c(1),2))_"  L "_ORDER(10)
+ ....s LINE(4)=$p(xROWID,"||",1)
+ ... ; print Histology (East)
+ ...i $e($p(xROWID,"||",2))="I" s TYPE=$e($p(xROWID,"||",2))_"-"_PAR2 d
+ .... ; order information
+ ....i $$select^LVBHIVAO(xROWID) q
+ ....f j=1:1:4,6:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ORDER m ORDER=PLIST
+ .... ; update record that it had been printed already
+ ....f j=1:1:9 i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s PLIST(7)="Y" i $$update^LVBHIVAO(xROWID)
+ .... ; visit information
+ ....i $$select^LVBEPVIS($p(xROWID,"||"),"Y") q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k VISIT m VISIT=PLIST
+ .... ; accession number information
+ ....i $$select^LVBHIVAC($p(xROWID,"||",1,2)) q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ACCESS m ACCESS=PLIST
+ .... ; start build lines
+ ....s LINE(1)=ACCESS(9)_$s(ACCESS(10)="C":"C",1:"H")_ACCESS(10)_$p(xROWID,"||",3)
+ .... ; get initials
+ ....s intials="" f j=1:1:$l(VISIT(4)," ") s intials=intials_$s($l(intials):" ",1:"")_$e($p(VISIT(4)," ",j))
+ ....s LINE(2)=VISIT(3)_" "_intials
+ ....s LINE(3)=$s($l($p(ORDER(5),$c(1),2))>5:$p(ORDER(5),$c(1),1),1:$p(ORDER(5),$c(1),2))_"  L "_ORDER(10)
+ ....s LINE(4)=$p(xROWID,"||",1)
+ ....s date=$$extdate2^SSUTIL4(VISIT(12)),date=$p(date,"/",1,2)_"/"_$e($p(date,"/",3),3,4)
+ ....s LINE(5)="SJOG-"_$s($l(VISIT(12)):date,1:"")
+ ... ; print Cytology
+ ...i $e($p(xROWID,"||",2))="C" s TYPE=$e($p(xROWID,"||",2))_"-"_PAR2 d
+ .... ; order information
+ ....i $$select^LVBHIVAO(xROWID) q
+ ....f j=1:1:4,6:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ORDER m ORDER=PLIST
+ .... ; update record that it had been printed already
+ ....f j=1:1:9 i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s PLIST(7)="Y" i $$update^LVBHIVAO(xROWID)
+ .... ; visit information
+ ....i $$select^LVBEPVIS($p(xROWID,"||"),"Y") q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k VISIT m VISIT=PLIST
+ .... ; accession number information
+ ....i $$select^LVBHIVAC($p(xROWID,"||",1,2)) q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ACCESS m ACCESS=PLIST
+ .... ; start build lines
+ ....s LINE(1)=ACCESS(9)_"-"_$p(ACCESS(10),"-",1)
+ ....s LINE(2)=ACCESS(3)_" "_$s($l($p(ORDER(5),$c(1),2))>5:$p(ORDER(5),$c(1),1),1:$p(ORDER(5),$c(1),2))
+ .... ; get initials
+ ....s intials="" f j=1:1:$l(VISIT(4)," ") s intials=intials_$s($l(intials):" ",1:"")_$e($p(VISIT(4)," ",j))
+ ....s LINE(3)=VISIT(3)_" "_intials
+ ....s LINE(4)=$p(xROWID,"||",1)
+ ... ; print Cytology (East)
+ ...i $e($p(xROWID,"||",2))="D" s TYPE=$e($p(xROWID,"||",2))_"-"_PAR2 d
+ .... ; order information
+ ....i $$select^LVBHIVAO(xROWID) q
+ ....f j=1:1:4,6:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ORDER m ORDER=PLIST
+ .... ; update record that it had been printed already
+ ....f j=1:1:9 i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s PLIST(7)="Y" i $$update^LVBHIVAO(xROWID)
+ .... ; visit information
+ ....i $$select^LVBEPVIS($p(xROWID,"||"),"Y") q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k VISIT m VISIT=PLIST
+ .... ; accession number information
+ ....i $$select^LVBHIVAC($p(xROWID,"||",1,2)) q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ACCESS m ACCESS=PLIST
+ .... ; start build lines
+ ....s LINE(1)=ACCESS(9)_"-"_$p(ACCESS(10),"-",1)
+ .... ; get initials
+ ....s intials="" f j=1:1:$l(VISIT(4)," ") s intials=intials_$s($l(intials):" ",1:"")_$e($p(VISIT(4)," ",j))
+ ....s LINE(2)=VISIT(3)_" "_intials
+ ....s LINE(3)=ACCESS(3)_" "_$s($l($p(ORDER(5),$c(1),2))>5:$p(ORDER(5),$c(1),1),1:$p(ORDER(5),$c(1),2))
+ ....s LINE(4)=$p(xROWID,"||",1)
+ ... ; print created lines
+ ...i $e(TYPE)="H" d
+ ....s colldate=$$extdate2^SSUTIL4(VISIT(12)),colldate=$p(colldate,"/")_$p(colldate,"/",2)_$e($p(colldate,"/",3),3,4)
+ ....s LF=$c(10),LABnum=1
+ ....d ADD^SSPRINT(REPID,"PRT","FK""*"""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FS""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","Q160,24"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","R16,0"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,10,0,4,1,1,N,"""_LINE(1)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,40,0,2,1,1,N,"""_$p(LINE(2),",",1)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,70,0,2,1,1,N,"""_LINE(3)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,100,0,4,1,1,N,"""_LINE(4)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,130,0,2,1,1,N,""SJOGP-"_colldate_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FE"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FR""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","P1"_LF)
+ ...i $e(TYPE)="D" d
+ ....s colldate=$$extdate2^SSUTIL4(VISIT(12)),colldate=$p(colldate,"/")_$p(colldate,"/",2)_$e($p(colldate,"/",3),3,4)
+ ....s LF=$c(10),LABnum=1
+ ....d ADD^SSPRINT(REPID,"PRT","FK""*"""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FS""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","Q152,48"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","R16,0"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,10,0,4,1,1,N,"""_LINE(1)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,40,0,2,1,1,N,"""_$p(LINE(2),",",1)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,70,0,2,1,1,N,"""_LINE(3)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,100,0,4,1,1,N,"""_LINE(4)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,130,0,2,1,1,N,""SJOG-"_colldate_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FE"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FR""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","P1"_LF)
+ ...i $e(TYPE)="I" d
+ ....s colldate=$$extdate2^SSUTIL4(VISIT(12)),colldate=$p(colldate,"/")_$p(colldate,"/",2)_$e($p(colldate,"/",3),3,4)
+ ....s LF=$c(10),LABnum=1
+ ....d ADD^SSPRINT(REPID,"PRT","FK""*"""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FS""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","Q152,48"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","R16,0"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,10,0,3,1,1,N,"""_LINE(1)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,40,0,2,1,1,N,"""_$p(LINE(2),",",1)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,70,0,2,1,1,N,"""_LINE(3)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,100,0,4,1,1,N,"""_LINE(4)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,130,0,2,1,1,N,"""_LINE(5)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FE"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FR""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","P1"_LF)
+ ...i $e(TYPE)="C" d
+ ....s LF=$c(10),LABnum=1
+ ....d ADD^SSPRINT(REPID,"PRT","FK""*"""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FS""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","Q160,24"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","R16,0"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,10,0,4,1,1,N,"""_LINE(1)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,40,0,2,1,1,N,"""_LINE(2)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,70,0,2,1,1,N,"""_LINE(3)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,100,0,4,1,1,N,"""_LINE(4)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A312,130,0,2,1,1,N,""SJOGP-"_$p(ACCESS(8),$c(1))_$p(ACCESS(14),$c(1))_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FE"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FR""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","P1"_LF)
+ ...i $e(TYPE)="M" d
+ ....s LF=$c(10),LABnum=2
+ ....d ADD^SSPRINT(REPID,"PRT","FK""*"""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FS""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","Q200,24"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","R16,0"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","B240,10,0,1,2,2,51,B,"""_LINE(1)_""""_LF) 
+ ....d ADD^SSPRINT(REPID,"PRT","A240,90,0,3,1,1,N,"""_LINE(2)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A240,120,0,2,1,1,N,"""_LINE(3)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A240,140,0,2,1,1,N,"""_LINE(4)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A240,160,0,2,1,1,N,"""_LINE(5)_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FE"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FR""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","P1"_LF)
+ q
+]]></Routine>
+</Export>

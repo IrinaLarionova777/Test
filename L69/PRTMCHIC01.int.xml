@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTMCHIC01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTMCHIC01 ; IG 07/10/98 ; MEDICARE HIC
+ Q
+ ; Parameters :  1.Payment Code
+ ;               2.Batch Number
+ ;               3.Duplicate
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+ K xHEADER D INIT
+ s (xx1,xx2)="" i '$$select^LVBINVB(PAR1_"||"_PAR2) s xx1=$p(PLIST(10),$c(1),2),xx2=PLIST(5)
+ s line=1,xHEADER(line)="PATHOLOGY CLAIMS "_$s($l(Claim):"for claim "_Claim,1:"")
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="Service Provider : "_xx1_"   ("_xx2_")"
+ s line=4,xHEADER(line)="Company : "_COMP(3)_" ("_COMP(1)_")       Batch : "_PAR1_" "_PAR2
+ i $l(PAR3) s xHEADER(line)=xHEADER(line)_" (Duplicate)"
+ D HEADER^PRTREP00(.xHEADER),BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=PAR1_"-"_PAR2 I $$update^LVBPRPR(REPID)
+ K ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$zn)
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+ S COMP=$p(^TMCB(PAR1,PAR2),"\",3),Claim=$p(^TMCB(PAR1,PAR2),"\",4)
+ i '$$select^LVBCTCO(COMP,"Y") k COMP m COMP=PLIST
+ Q
+ ; create temporary printing file
+BODY s epis="" f  s epis=$o(^TMCB(PAR1,PAR2,epis)) q:epis=""  d
+ .s ^TMP($zn,$j,"REPORT",$$sort(epis),epis)=^TMCB(PAR1,PAR2,epis)
+ ; set events
+ s seq="" f  s seq=$o(^TMP($zn,$j,"REPORT",seq)) q:seq=""  s invoice=PAR1_"-"_PAR2 d
+ .s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",seq,epis)) q:epis=""  d
+ ..i '$l(PAR3) d events^LVBCOM01(epis,"ACC","Original invoice "_invoice_$s($l(USER):" printed by "_USER,1:"")) q
+ ..d events^LVBCOM01(epis,"ACC","Duplicate invoice "_invoice_$s($l(USER):" printed by "_USER,1:"")) q
+ Q
+ ; sort in surname order
+sort(epis) q $p(^TEPI(epis),"\",1)
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s (BTOT1,BTOT2,CNT1,CNT2,x1)="" f  s x1=$O(^TMP($zn,$j,"REPORT",x1)) q:x1=""  d
+ ..s epis="" f  s epis=$O(^TMP($zn,$j,"REPORT",x1,epis)) q:epis=""  d
+ ...k VISIT,visit i '$$select^LVBEPVIS(epis) m VISIT=PLIST,visit=PLIST s VISIT(7)=""
+ ... ; set Rebill flag
+ ...k xxx s va=$g(VISIT(25))
+ ...s Rebill="" i $$CT007^at345(epis,PAR1_"||"_PAR2)="Y" s xxx(7)=$p(VISIT(57),"||",1)_"-"_$p(VISIT(57),"||",2),Rebill="Y"
+ ...k DOC i '$$select^LVBCTDR($p(VISIT(15),$c(1)),"Y") m DOC=PLIST s xxx(2)=DOC(18)_$s(DOC(38)="Y":"(sd)",1:"")
+ ...i '$$select^LVBCTIC($p(VISIT(18),$c(1)),"Y"),PLIST(7)="Y",'$$select^LVBCTCC($p(VISIT(27),$c(1)),"Y") s xxx(1)=$s($l(PLIST(13))&(VISIT(12)<PLIST(13)):PLIST(14),1:PLIST(10))
+ ...k PLIST m PLIST=VISIT s CNT1=CNT1+1 i Rebill'="Y" s CNT2=CNT2+1
+ ...s item="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  s xx=^(item) d
+ ....s xxx(4)=item,xxx(5)=$p(xx,"\",1),xxx(6)=$p(xx,"\",2) i item=visit(54) s xxx(6)="Initiation code"
+ ....s BTOT1=BTOT1+xxx(5) i Rebill'="Y" s BTOT2=BTOT2+xxx(5)
+ ....d PRINT^PRTREP00(.VISIT,.N) k xxx,VISIT
+ ....i ($p(xx,"\",3)="Y")!($p(xx,"\",5)="Y"),$l($p(xx,"\",6)) d
+ .....s xx1=$p(xx,"\",6) f j6=1:1:$l(xx1,";") d
+ ......s ep=$p($p(xx1,";",j6),"-") i '$$select^LVBEPVIS(ep,"Y") d
+ .......s xxx(6)=$p(xx1,";",j6)_" time:"_$$exttime^SSUTIL4(PLIST(13))
+ .......d PRINT^PRTREP00(,.N) k xxx
+ ....i ($p(xx,"\",3)="Y")!($p(xx,"\",5)="Y") s xxx(6)="Rule 3 exemption" d PRINT^PRTREP00(,.N) k xxx
+ ...i $l(va) s message="" d
+ ....s message=$$seldata^LVBCTVA(va,6)
+ ....i $l(message) d
+ ..... ; get field length
+ .....s i="" f  s i=$o(N(i)) q:i=""  i $g(N(i,2))=6 s fieldlen=$g(N(i,"L")) q
+ .....s i="" f  d  q:$l($p(message," ",1,999))<fieldlen
+ ......s i=i+1 i $l($p(message," ",1,i))>20 d
+ .......k xxx s xxx(6)=$p(message," ",1,i-1),message=$p(message," ",i,999),i=""
+ .......d PRINT^PRTREP00(,.N)
+ .....i $l(message) k xxx s xxx(6)=message d PRINT^PRTREP00(,.N)
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .D ADD^SSPRINT(REPID,"PRT","?30 TOTAL BENEFIT CLAIMED     "_$j(BTOT1,0,2))
+ .i CNT1'=CNT2 D ADD^SSPRINT(REPID,"PRT","?70 "_$j(BTOT2,0,2))
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .D ADD^SSPRINT(REPID,"PRT","?30 NUMBER OF PATIENTS        "_CNT1)
+ .i CNT1'=CNT2 D ADD^SSPRINT(REPID,"PRT","?70 "_CNT2)
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="MCHIC",EndLine=$$seldata^LVBCTCLR(report,9) i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

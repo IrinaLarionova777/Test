@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR509" type="INT" languagemode="0"><![CDATA[
+PRTDR509 ;IG 27/05/98 ;Doctors Reports printing (Vertical cumulative) - Quinn's
+ ;
+ ; supported calls :
+ ;
+ ; $$print^PRTDR509(vtsRID,type,DH,EpisodeList,group,cOrder)
+ ;
+ ; type          : P - print
+ ;                 V - view from Enquiry
+ ;                   - view from Entry
+print(vtsRID,type,DH,EpisodeList,group,cOrder) n (vtsRID,type,DH,EpisodeList,group,cOrder,tsLM,tsWD,SPLIT,GroupName,BMP,COMMENTS) 
+ s vtsRID=$g(vtsRID),type=$g(type),DH=$g(DH),EpisodeList=$g(EpisodeList),group=$g(group),cOrder=$g(cOrder),dh1=$g(dh1),dh2=$g(dh2)
+ s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),max=7,ColWidth=11,ColLeft=18,FullYear="N",tsLM=$g(tsLM),tsWD=105
+ ; check for margin changes
+ s margin="",%routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Margin^"_%routine i $l($t(@LineRoutine)) x "s margin=$$Margin^"_%routine_"()"
+ K ^TMP($zn,$j,"CUM"),^TMP($zn,$j,"CUM-TC-ORDER"),^TMP($zn,$j,"CUM-COMMENTS")
+ i '$$select^LVBEPVIS(epis,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k VISIT m VISIT=PLIST
+ s range1="(",range2=")",(flaglow,flaghigh,Alternate)=""
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ i '$$select^MVBCFLAB(1) d
+ .i $l(PLIST(18)) s flaglow=PLIST(18)
+ .i $l(PLIST(19)) s flaghigh=PLIST(19)
+ .i $l(PLIST(20)) s range1=PLIST(20)
+ .i $l(PLIST(21)) s range2=PLIST(21)
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ .i PLIST(37)="Y" s ColWidth=11,FullYear="Y"
+ .i $l(PLIST(69)) s Alternate=PLIST(69)
+ i '$$getit^LVBCTTSF(,vtsRID,"Y") d
+ .k FORMAT f j=1:1:PLIST s ti=$p(PLIST(j),$c(2),10) i $l(ti) s FORMAT(ti)=PLIST(j)
+ ; create list of episodes and results
+ s date=+VISIT(12),time=+VISIT(13)\60
+ s (row,cnt)="" f  s cnt=$o(^TEPI(epis,1,test,cnt)) q:cnt=""  d
+ .s row=row+1,^TMP($zn,$j,"CUM",row)=epis_$c(1)_date_$c(1)_(time*60)
+ .s rowid=epis_"||"_test_"||"_cnt d TestItems(row,rowid)
+ s ur=VISIT(20),date=+VISIT(12),time=VISIT(13)\60
+ i $l(ur),$l(date),$l(time) d
+ .f  d:$l(date)  s date=$o(^TDEBi(ur,"DATE",date),-1) q:date=""  s time=""
+ ..f  d:$l(time)  s time=$o(^TDEBi(ur,"DATE",date,time),-1) q:time=""
+ ...s ep="" f  s ep=$o(^TDEBi(ur,"DATE",date,time,ep)) q:ep=""  i ep'=epis d
+ ....s cnt="" f  s cnt=$o(^TEPI(ep,1,test,cnt)) q:cnt=""  d
+ .....s row=row+1,^TMP($zn,$j,"CUM",row)=ep_$c(1)_date_$c(1)_(time*60)
+ .....s rowid=ep_"||"_test_"||"_cnt d TestItems(row,rowid)
+ i '$d(^TMP($zn,$j,"CUM")) d  q 100
+ .k ^TMP($zn,$j,"CUM"),^TMP($zn,$j,"CUM-TC-ORDER"),^TMP($zn,$j,"CUM-COMMENTS")
+ ; print test set header
+ i $l(TEST(17)) d LN^PRTDR00(),ADD^PRTDR00(tsLM+margin,$s(TEST(17)="*":TEST(3),1:TEST(17))),LN^PRTDR00()
+ ; print cumulative header
+ d ADD^PRTDR00(,"~BOLD","Y")
+ d LN^PRTDR00("Y")
+ s maxcol=$o(^TMP($zn,$j,"CUM-TC-ORDER",""),-1)
+ d ADD^PRTDR00(tsLM+margin,$e($j("",tsWD*10),1,ColLeft),"Y")
+ f col=1:1:maxcol s ti=$g(^TMP($zn,$j,"CUM-TC-ORDER",col)) i $l(ti) d
+ .s xx=$e($tr($p(FORMAT(ti),$c(2),3),":")_$j("",tsWD*10),1,ColWidth)
+ .d ADD^PRTDR00(tsLM+ColLeft+(col-1*ColWidth)+margin,xx,"Y")
+ d LN^PRTDR00("Y")
+ d ADD^PRTDR00(tsLM+margin,$e($j("",tsWD*10),1,ColLeft),"Y")
+ f col=1:1:maxcol s ti=$g(^TMP($zn,$j,"CUM-TC-ORDER",col)) i $l(ti) d
+ .s xx=$p(FORMAT(ti),$c(2),17)
+ .d ADD^PRTDR00(tsLM+ColLeft+(col-1*ColWidth)+margin,xx,"Y")
+ d LN^PRTDR00("Y")
+ d ADD^PRTDR00(tsLM+margin,$e($j("",tsWD*10),1,ColLeft),"Y")
+ f col=1:1:maxcol s ti=$g(^TMP($zn,$j,"CUM-TC-ORDER",col)) i $l(ti) d
+ .i $l($p(FORMAT(ti),$c(2),22)),$l($p(FORMAT(ti),$c(2),23)) d
+ ..i $e($p(FORMAT(ti),$c(2),22))?1N s $p(FORMAT(ti),$c(2),22)=$j($p(FORMAT(ti),$c(2),22),0,$e($p(FORMAT(ti),$c(2),18),2,4))
+ ..i $e($p(FORMAT(ti),$c(2),23))?1N s $p(FORMAT(ti),$c(2),23)=$j($p(FORMAT(ti),$c(2),23),0,$e($p(FORMAT(ti),$c(2),18),2,4))
+ ..d ADD^PRTDR00(tsLM+ColLeft+((col-1)*ColWidth)+margin,range1_$p(FORMAT(ti),$c(2),22)_"-"_$p(FORMAT(ti),$c(2),23)_range2,"Y")
+ .i $l($p(FORMAT(ti),$c(2),22)),'$l($p(FORMAT(ti),$c(2),23)) d
+ ..i $e($p(FORMAT(ti),$c(2),22))?1N s $p(FORMAT(ti),$c(2),22)=$j($j($p(FORMAT(ti),$c(2),22),0,$e($p(FORMAT(ti),$c(2),18),2,4)),$p(FORMAT(ti),$c(2),19)+$l(range1))
+ ..d ADD^PRTDR00(tsLM+ColLeft+((col-1)*ColWidth)+margin,range1_$p(FORMAT(ti),$c(2),22)_range2,"Y")
+ d LN^PRTDR00("Y")
+ d ADD^PRTDR00(,"~NORMAL","Y")
+ ; print results
+ s row="" f  s row=$o(^TMP($zn,$j,"CUM",row)) q:row=""  d
+ .s epis=$p(^(row),$c(1),1),date=$p(^(row),$c(1),2)
+ .s aa=$e($$extdate2^SSUTIL4(date),1,6)_$e($$extdate2^SSUTIL4(date),9,10)
+ .s xx=$e(epis_$j("",tsWD*10),1,8),xx=$e(xx_aa_$j("",tsWD*10),1,ColLeft)
+ .d ADD^PRTDR00(tsLM+margin,xx)
+ .f col=1:1:maxcol s ti=$g(^TMP($zn,$j,"CUM-TC-ORDER",col)) i $l(ti),$d(^TMP($zn,$j,"CUM",row,col)) d
+ ..s result=$p($g(^TMP($zn,$j,"CUM",row,col)),$c(1),1),flag=$p($g(^TMP($zn,$j,"CUM",row,col)),$c(1),2)
+ ..i result="" d
+ ...i $p(FORMAT(ti),$c(2),8)="M" s result="TF"
+ ...e  s result=""
+ .. ; print extra info for numeric fields
+ ..i "MN"[$e($p(FORMAT(ti),$c(2),18)) d
+ ...i flag="L" d
+ ....i $l(flaglow) s result=result_" "_flaglow
+ ....d ADD^PRTDR00(,"~BOLD")
+ ...i flag="H" d
+ ....i $l(flaghigh) s result=result_" "_flaghigh
+ ....d ADD^PRTDR00(,"~BOLD")
+ ..i epis=$p(vtsRID,"||") d ADD^PRTDR00(,"~BOLD")
+ ..d ADD^PRTDR00(tsLM+ColLeft+(col-1*ColWidth),result)
+ ..i epis=$p(vtsRID,"||") d ADD^PRTDR00(,"~NORMAL")
+ ..i "MN"[$e($p(FORMAT(ti),$c(2),18)) d
+ ...i (flag="L")!(flag="H") d ADD^PRTDR00(,"~NORMAL")
+ .d LN^PRTDR00()
+ ; create SPLIT
+ k SPLIT s SPLIT=1,SPLIT("SPLIT",0)="0-"_(tsLM+ColLeft)
+ s step=tsWD-tsLM-ColLeft\ColWidth
+ f col=1:step:maxcol  d  s SPLIT=SPLIT+1
+ .s $p(SPLIT("SPLIT",SPLIT),"-",1)=$p(SPLIT("SPLIT",SPLIT-1),"-",2)+1
+ .s $p(SPLIT("SPLIT",SPLIT),"-",2)=$p(SPLIT("SPLIT",SPLIT),"-",1)+(step*ColWidth)-1
+ s SPLIT("H1")=1 i $l(TEST(17)) s SPLIT("H1")=4
+ i $d(^TMP($zn,$j,"CUM-COMMENTS")) k COMMENTS d
+ .s row="" f  s row=$o(^TMP($zn,$j,"CUM-COMMENTS",row),-1) q:row=""  d
+ ..f j=1:1 q:'$d(^TMP($zn,$j,"CUM-COMMENTS",row,j))  d
+ ...s xx=^TMP($zn,$j,"CUM-COMMENTS",row,j)
+ ...i $e(xx)="~" s x=$o(COMMENTS(""),-1)+1,COMMENTS(x)=xx q
+ ...s x=$o(COMMENTS(""),-1)+1,COMMENTS(x)="?"_$e(tsLM_$j("",3),1,3)_xx
+ ...s x=$o(COMMENTS(""),-1)+1,COMMENTS(x)="!"
+ .f j=1,2 s x=$o(COMMENTS(""),-1)+1,COMMENTS(x)="!"
+ k ^TMP($zn,$j,"CUM"),^TMP($zn,$j,"CUM-TC-ORDER"),^TMP($zn,$j,"CUM-COMMENTS")
+ q 0
+ ; collect Test Items information
+TestItems(row,rowid) n (row,rowid,type,FORMAT,vtsRID,Alternate,tsWD,ColWidth) s row=$g(row),rowid=$g(rowid)
+ s status=$$status^LVBVIS1(rowid)
+ i '$$results^LVBVISTS(rowid) f j=1:1:PLIST d
+ .s ti=$p(PLIST(j),$c(1),2),(result,flag,sr)=""
+ .i (status="A")!(vtsRID=rowid) s result=$p(PLIST(j),$c(1),3),flag=$p(PLIST(j),$c(1),5),sr=$p(PLIST(j),$c(1),22)
+ .i '$d(FORMAT(ti)) q
+ . ; not included in cumulative
+ .i $p(FORMAT(ti),$c(2),20)'="Y" q
+ .i $l(ti),$l(result) d
+ .. ; Alternate result entered
+ ..i type="P",$l(Alternate),result=Alternate q
+ .. ; non printable test item
+ ..i $l(type),($p(FORMAT(ti),$c(2),15)'="Y")!(sr="Y") q
+ ..i $e($p(FORMAT(ti),$c(2),18))="N" d IN
+ ..i $e($p(FORMAT(ti),$c(2),18))="M" d IM
+ ..i $e($p(FORMAT(ti),$c(2),18))="D" d ID^PRTDR00
+ ..i $e($p(FORMAT(ti),$c(2),18))="T" d IT^PRTDR00
+ ..i $e($p(FORMAT(ti),$c(2),18))="Y" d IY^PRTDR00
+ ..i $e($p(FORMAT(ti),$c(2),18))="S" s (tc,cnt)=ti,resultx=result d IS^PRTDR00 d
+ ...i $o(result(""),-1)=1,$l(result(1))<ColWidth s x=result(1) k result s result=x q
+ ...m rescom(ti,resultx)=result s result=resultx
+ ..s col=$p(FORMAT(ti),$c(2),27) i '$l(col) s col=$p(FORMAT(ti),$c(2),2)
+ ..s ^TMP($zn,$j,"CUM-TC-ORDER",col)=ti
+ ..s ^TMP($zn,$j,"CUM",row,col)=result_$c(1)_flag
+ ; don't print comments if not most recent episode
+ i $p(rowid,"||",1)'=$p(vtsRID,"||",1) k rescom q
+ ; compile test item standard comments
+ i $d(rescom) d
+ .s ^TMP($zn,$j,"CUM-COMMENTS",row,1)="Std Comm : "
+ .s ti="",b=1 f  s ti=$o(rescom(ti)) q:ti=""  d
+ ..s res="" f  s res=$o(rescom(ti,res)) q:res=""  d
+ ...s ^TMP($zn,$j,"CUM-COMMENTS",row,1)=^TMP($zn,$j,"CUM-COMMENTS",row,1)_res_$s($o(rescom(ti,res))'="":", ",1:"")
+ ...s x="" f  s x=$o(rescom(ti,res,x)) q:x=""  s b=b+1,^TMP($zn,$j,"CUM-COMMENTS",row,b)=rescom(ti,res,x)
+ ; compile test set comments
+ k PLIST i '$$COMMENTS^LVBCOM01(rowid,,type,"N",,"N","Y",.ExcludeList) i PLIST d
+ .f j1=1:1:PLIST f j2=1:1:$l(PLIST(j1),"^") d
+ ..s xx=$o(^TMP($zn,$j,"CUM-COMMENTS",row,""),-1)+1,^TMP($zn,$j,"CUM-COMMENTS",row,xx)=$p(PLIST(j1),"^",j2)
+ q
+IN ; Numeric
+IM ; Numeric *1000
+ i $l(result),$d(^TTAB("RC",result)) q
+ s Flag="" f  q:'$l(result)  q:"<>+-"'[$e(result)  s Flag=Flag_$e(result),result=$e(result,2,$l(result))
+ s result=Flag_$j(result,0,$e($p(FORMAT(ti),$c(2),18),2,9))
+ q
+]]></Routine>
+</Export>

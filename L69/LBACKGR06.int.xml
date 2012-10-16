@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LBACKGR06" type="INT" languagemode="0" generated="1"><![CDATA[
+LBACKGR06 ; BackGround Job - 06 - background courier run reports
+ q
+ ;
+DOIT(zn,job,DATE,TIME) s zn=$g(zn),job=$g(job),DATE=$g(DATE),TIME=$g(TIME)
+ l +^TMP(zn,job,"DOIT06"):0 e  q
+ s zt=$zt,$zt="ERROR^"_$zn
+ ; Quick-Print reports
+ s xx="" i '$$getall^LVBCTPR() f j=1:1:PLIST i $p($p($p(PLIST(j),$c(2),4),$c(28),5),$c(1))="Y" s xx=xx_$s($l(xx):",",1:"")_$p($p($p(PLIST(j),$c(2),4),$c(28),2),$c(1))
+ i $l(xx) s courier="" f  s courier=$o(^TRPT("DR",courier)) q:courier=""  d docrun^LVBVIS1(courier_"\\\\\\"_xx,2)
+ ; courier run reports
+ s (type,list,SingleEpisode)="" i '$$select^MVBCFLAB(1) s type=PLIST(51),list=PLIST(113),SingleEpisode=PLIST(126)
+ i type="C" d
+ .s courier="" f  s courier=$o(^TRPT("DR",courier)) q:courier=""  d
+ ..i $$select^LVBCTCR(courier,"Y") q
+ ..f J=1:1:PLIST S PLIST(J)=$p(PLIST(J),$c(1))
+ ..K COURIER M COURIER=PLIST
+ .. ;
+ .. ; Time slot
+ .. ;
+ ..i $l(COURIER(7)) d  q
+ ...s xTIME=TIME\30\COURIER(7)
+ ...i $d(^TMP(zn,job,"DOIT06",DATE,COURIER(2),xTIME)) q
+ ...s $p(^TMP(zn,job,"DOIT06",DATE,COURIER(2),xTIME),"^",1)="START : "_$h
+ ...d docrun^LVBVIS1(COURIER(2),2)
+ ...s $p(^TMP(zn,job,"DOIT06",DATE,COURIER(2),xTIME),"^",2)="FINISH : "_$h
+ .. ;
+ .. ; Schedule
+ .. ;
+ ..i '$l(COURIER(7)) d  q
+ ...i $$open^LVBCTCRS(COURIER(2),"Y")
+ ...f  q:$$fetch^LVBCTCRS(COURIER(2),"Y")  d
+ ....s xTIME=PLIST(3)
+ .... ; already printed in this time slot
+ ....i $d(^TMP(zn,job,"DOIT06",DATE,COURIER(2),xTIME)) q
+ ....i TIME>PLIST(3),TIME<PLIST(4) d
+ .....s $p(^TMP(zn,job,"DOIT06",DATE,COURIER(2),xTIME),"^",1)="START : "_$h
+ .....d docrun^LVBVIS1(COURIER(2),2)
+ .....s $p(^TMP(zn,job,"DOIT06",DATE,COURIER(2),xTIME),"^",2)="FINISH : "_$h
+ ...i $$close^LVBCTCRS()
+ ; create CP - print by destination group
+ k user
+ s rg=$p($g(^TTAB("REPORT-GENERIC","DRP")),"\",4) i $l(rg) d
+ .s x1="" f  s x1=$o(^SSU("SSUSR",1,x1)) q:x1=""  d
+ ..s x2="" f  s x2=$o(^SSU("SSUSR",1,x1,"REP",x2)) q:x2=""  i $p(^(x2),"^")=rg s user(x1)="" q
+ i $d(user) d
+ .s type="" f  s type=$o(^TRPT("C",type)) q:type=""  d
+ ..s dh1="" f  s dh1=$o(^TRPT("C",type,dh1)) q:dh1=""  d
+ ...s dh2="" f  s dh2=$o(^TRPT("C",type,dh1,dh2)) q:dh2=""  d
+ ....s epis="" f  s epis=$o(^TRPT("C",type,dh1,dh2,epis)) q:epis=""  d
+ .....s ts="" f  s ts=$o(^TRPT("C",type,dh1,dh2,epis,ts)) q:ts=""  d
+ ......s tscnt="" f  s tscnt=$o(^TRPT("C",type,dh1,dh2,epis,ts,tscnt)) q:tscnt=""  d
+ .......s x=$p(^(tscnt),"\",2) i $l(x),$d(user(x)) d
+ ........s ^TRPT("CP",type_"-"_x,dh1,dh2,epis,ts,tscnt)=^TRPT("C",type,dh1,dh2,epis,ts,tscnt)
+ ........k ^TRPT("C",type,dh1,dh2,epis,ts,tscnt)
+ ; sort reports by user/destination
+ i $d(^TRPT("CU")) d
+ .k ^TMP($zn,$j) l +^TRPT("CU"):2
+ .s type="" f  s type=$o(^TRPT("CU",type)) q:type=""  d
+ ..s xType="Y" d DEST^PRTREP00(,"DRP","U-"_$p(type,"||",2)_"-",$p(type,"||",2),,.xType)
+ ..i xType s xType=$p(xType,$c(1),2)
+ ..s:'$l(xType) xType=" "
+ ..m ^TMP($zn,$j,xType,type)=^TRPT("CU",type)
+ .k ^TRPT("CU")
+ .s xType="" f  s xType=$o(^TMP($zn,$j,xType)) q:xType=""  s x1=$o(^TMP($zn,$j,xType,"")) i $l(x1) d
+ ..s x2="" f  s x2=$o(^TMP($zn,$j,xType,x2)) q:x2=""  m ^TRPT("CU",x1)=^TMP($zn,$j,xType,x2)
+ .k ^TMP($zn,$j) l -^TRPT("CU")
+ ; print reports
+ f Main="C","U","CU","CP" s type="" f  s type=$o(^TRPT(Main,type)) q:type=""  j CreateReport(Main,type,SingleEpisode,list)
+ ; RequestPads printing
+ s epis="" f  s epis=$o(^TMP("RequestPads",epis)) q:epis=""  d
+ .s (pad,status)=""
+ .  ;---&sql(SELECT EPVIS_DoctorCode_DR->CTDR_RequestPad_DR,EPVIS_StatusPrinting INTO :pad,:status FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  .  ;--- ** SQL PUBLIC Variables: SQLCODE, epis, pad, status
+ . Do %0Ao
+ .s pad=$p(pad,$c(1)),status=$p(status,$c(1))
+ .i status="F",'$$select^LVBPAD(pad) s PLIST(4)=1 i '$$update^LVBPAD(pad) d
+ ..i $$START^PRTREP00("","",pad_"\"_epis,"DRF")
+ ..k ^TMP("RequestPads",epis)
+ ; print Daily Discharge Summary
+ s type="" f  s type=$o(^TRPT("D",type)) q:type=""  d
+ .l +^TRPT("D",type):2
+ .s dh1="" f  s dh1=$o(^TRPT("D",type,dh1)) q:dh1=""  d
+ ..s dh2="" f  s dh2=$o(^TRPT("D",type,dh1,dh2)) q:dh2=""  d
+ ...s (list,epis)="" f  s epis=$o(^TRPT("D",type,dh1,dh2,epis)) q:epis=""  s list=list_$s($l(list):",",1:"")_epis
+ ...i $$START^PRTREP00("","","D\"_type_"\"_list_"\"_type_"\"_dh2,"DRP")
+ .l -^TRPT("D",type)
+ l -^TMP(zn,job,"DOIT06")
+ s $zt=zt
+ q
+CreateReport(Main,type,SingleEpisode,list) 
+ s $zt="ERROR^"_$zn
+ l +^TRPT(Main,type):10 e  q
+ i SingleEpisode="Y" d
+ .s repid=""
+ .s dh1="" f  s dh1=$o(^TRPT(Main,type,dh1)) q:dh1=""  d
+ ..s dh2="" f  s dh2=$o(^TRPT(Main,type,dh1,dh2)) q:dh2=""  d
+ ...s epis="" f  s epis=$o(^TRPT(Main,type,dh1,dh2,epis)) q:epis=""  d
+ ....s repid=repid_$s($l(repid):",",1:"")_$$START^PRTREP00($s(Main="U":type,Main="CP":$p(type,"-",2),1:""),"",Main_"\"_type_"\"_epis,"DRP")
+ .i list="Y",$l(repid),$$START^PRTREP00($s(Main="U":type,Main="CP":$p(type,"-",2),1:""),"",($h-1)_"\"_(+$h)_"\\\T\"_repid,"DRL")
+ i SingleEpisode'="Y" d
+ .s repid=$$START^PRTREP00($s(Main="U":type,Main="CP":$p(type,"-",2),1:""),"",Main_"\"_type,"DRP")
+ .i list="Y",$l(repid),$$START^PRTREP00($s(Main="U":type,Main="CP":$p(type,"-",2),1:""),"",($h-1)_"\"_(+$h)_"\\\T\"_repid,"DRL")
+ l -^TRPT(Main,type)
+ q
+ERROR d BACK^%ETN
+ s $zt=$g(zt)
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(10)=0,%mmmsqld(11)="",%mmmsqld(12)=0,%mmmsqld(13)=""
+ s %mmmsqld(8)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(7)=%mmmsqld(8)
+ i %mmmsqld(7)'="",$d(^TEPI(%mmmsqld(7)))
+ e  g %0ABdun
+ s %mmmsqld(17)=$g(^TEPI(%mmmsqld(7)))
+ s %mmmsqld(1)=$p(%mmmsqld(17),"\",13) s %mmmsqld(16)=$p(%mmmsqld(17),"\",18)
+ s status=$$CT029^at42($g(%mmmsqld(7)),$g(%mmmsqld(16)))
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(7),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(10)=1,%mmmsqld(11)=$name(^TEPI($p(%mmmsqld(7),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(7) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(7)'="",$d(^TEPI(%mmmsqld(7)))
+ e  g %0ACdun
+ s %mmmsqld(20)=$g(^TEPI(%mmmsqld(7)))
+ s %mmmsqld(1)=$p(%mmmsqld(20),"\",13) s %mmmsqld(16)=$p(%mmmsqld(20),"\",18)
+ s status=$$CT029^at42($g(%mmmsqld(7)),$g(%mmmsqld(16)))
+%0ABuncommitted ;
+ s %mmmsqld(2)=%mmmsqld(1)
+ i %mmmsqld(2)'="",$d(^TTAB("DR",%mmmsqld(2)))
+ e  s pad="",%mmmsqld(2)="" g %0ACp4
+ s %mmmsqld(25)=$g(^TTAB("DR",%mmmsqld(2)))
+ s pad=$p(%mmmsqld(25),"\",31)
+%0ACp4 
+ g:$zu(115,2)=0 %0ACuncommitted i $zu(115,2)=1 l +^TTAB("DR",$p(%mmmsqld(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(12)=1,%mmmsqld(13)=$name(^TTAB("DR",$p(%mmmsqld(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Doctor for RowID value: "_%mmmsqld(2) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %mmmsqld(2)'="",$d(^TTAB("DR",%mmmsqld(2)))
+ e  s pad="",%mmmsqld(2)="" g %0ADp1
+ s %mmmsqld(30)=$g(^TTAB("DR",%mmmsqld(2)))
+ s pad=$p(%mmmsqld(30),"\",31)
+%0ADp1 
+%0ACuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ADdun i $zu(115,2)=1,$g(%mmmsqld(12))=1 { l -@%mmmsqld(13) s %mmmsqld(12)=0 }
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) s %mmmsqld(10)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) } i $zu(115,2)=1,$g(%mmmsqld(12))=1 { l -@%mmmsqld(13) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+]]></Routine>
+</Export>

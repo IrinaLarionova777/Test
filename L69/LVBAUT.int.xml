@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBAUT" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBAUT ; IG 29/4/98 ; MVB Control code access for AU_AuditableTables
+ ;
+ ; supported calls:
+ ;
+ ; $$select^LVBAUT(ROWID,skip)
+ ; $$open^LVBAUT(skip,name,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBAUT(skip,name,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBAUT(skip,name,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBAUT(skip,name,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBAUT()
+ ; $$insert^LVBAUT()
+ ; $$update^LVBAUT(ROWID)
+ ; $$delete^LVBAUT(ROWID)
+ ; $$getall^LVBAUT(name,Continue)
+ ;
+  ;---&SQL(DECLARE AUT CURSOR FOR SELECT * FROM AU_AuditableTables
+   ;---         WHERE (%UPPER(AUT_Description) [ :name) OR (:name IS NULL))
+   ;--- ** SQL PUBLIC Variables: SQLCODE, name
+ ;
+ ; Insert the data
+insert() K PLIST(1) d pre("N")
+  ;---&SQL(insert INTO AU_AuditableTables VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Co
+ I 'SQLCODE Q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$G(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+ ; Update the data
+update(ROWID) s ROWID=$g(ROWID) d pre("Y") 
+  ;---&SQL(UPDATE AU_AuditableTables VALUES :PLIST() WHERE AUT_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Eo
+ I 'SQLCODE q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$G(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+ ; Delete the data
+delete(ROWID) s ROWID=$g(ROWID)
+  ;---&SQL(DELETE FROM AU_AuditableTables WHERE AUT_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: ROWID, SQLCODE
+ Do %0Go
+ Q SQLCODE
+ ;
+ ; Open the cursor
+open(skip,name,p2,p3,p4,p5,p6,p7,p8,p9) s skip=$g(skip),name=$$UPPER^SSUTIL4($g(name))
+  ;---&SQL(OPEN AUT)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %AUT0o
+ Q 0
+ ;
+ ; Fetch the data
+fetch(skip,name,p2,p3,p4,p5,p6,p7,p8,p9) s skip=$g(skip),name=$$UPPER^SSUTIL4($g(name)) K PLIST
+  ;---&SQL(FETCH AUT INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Jo
+ S PLIST=$o(PLIST(""),-1) 
+ I 'SQLCODE D adjust 
+ q SQLCODE 
+ ; Fetch all data
+fetchbuffer(skip,name,p2,p3,p4,p5,p6,p7,p8,p9) s skip=$g(skip),name=$g(name) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(skip,name) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(skip,name,p2,p3,p4,p5,p6,p7,p8,p9) N (skip,name,PLIST) s skip=$g(skip),name=$g(name) K ^TMP($zn,$j)
+ i $$open(skip,name)
+ f cnt=1:1 Q:$$fetch(skip,name)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ; Close the cursor 
+close()  ;---&SQL(CLOSE AUT) 
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %AUT0c 
+ q 0
+ ; select data by code
+select(ROWID,skip) K PLIST s ROWID=$g(ROWID),skip=$g(skip)
+  ;---&SQL(SELECT * INTO :PLIST() FROM AU_AuditableTables WHERE AUT_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Lo
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE D adjust
+ q SQLCODE
+ ; Pre-filing adjustments
+pre(xUpdate) d PreSQL^SSUTIL4("","")
+ s (PLIST(1),PLIST(2))=$$ALPHAUP^SSUTIL4(PLIST(2))
+ i $p($g(PLIST(5)),$c(1))="N" s PLIST(4)="N"
+ q
+ ; Post-filing adjustments
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("")
+ i $$user^MVBSSUSR()="issaak" s PLIST(4)="Y",PLIST(5)="Y"
+ ;
+ i $g(skip)="Y" q
+ I $G(PLIST(8))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select(plist(8),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(8)=X K plist
+ Q
+getall(name,Continue) N (Continue,name,PLIST) s Continue=$g(Continue),name=$g(name)
+ i Continue'="Y" d
+ . ; add all possible tables for auditing
+ .s tableName="" f  s tableName=$o(^oddDEF(tableName)) q:tableName=""  d
+ ..i $e(tableName,1,5)'="User." q
+ ..s code=$g(^oddDEF(tableName,58)),table=+$tr($p($g(^oddDEF(tableName,4)),"-",2)," (")
+ ..i " CTBB CF CT HOS MIF QC TSNO WS SS "'[(" "_$p(code,"_",1)_" ") q
+ .. ; exclusions for HOS
+ ..i " 316 373 399 "[(" "_table_" ") q
+ .. ; exclusions for MIF
+ ..i " 256 257 258 264 180 186 349 250 "[(" "_table_" ") q
+ .. ; exclusions for QC
+ ..i " 282 "[(" "_table_" ") q
+ .. ; exclusions for WS
+ ..i " 388 166 168 389 167 "[(" "_table_" ") q
+ .. ; exclusions for CT
+ ..i " 64 82 103 "[(" "_table_" ") q
+ .. ; exclusions for SS
+ ..i " 130 "[(" "_table_" ") q
+ ..s master=$$CT008^at420(table) s:'$l(master) master=" "
+ ..s ^TMP($zn,$j,1,master,table)="",^TMP($zn,$j,2,table)=""
+ . ; delete non existing tables
+ .i $$open("Y",name)
+ .f  q:$$fetch("Y",name)  s table=$p(PLIST(2),$c(1)) i '$d(^TMP($zn,$j,2,table)),$$delete(table)
+ .i $$close()
+ . ; add new tables
+ .d add(" ")
+ .s master="" f  s master=$o(^TMP($zn,$j,1,master)) q:master=""  i master'=" " d add(master)
+ .
+ .k ^TMP($zn,$j)
+ .i $$open("Y",name)
+ .f cnt=1:1 q:$$fetch("Y",name)  d
+ ..s PLIST(5)="N"
+ .. ; Billing
+ ..i " 350 236 432 433 434 641 647 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; Blood Bank
+ ..i " 462 503 506 512 513 536 555 556 557 558 581 582 592 595 599 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; DB Laboratory
+ ..i " 197 199 200 201 203 204 306 401 403 406 409 493 494 495 497 639 661 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; Doctors
+ ..i " 99 100 106 534 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; General
+ ..i " 62 75 87 104 107 109 175 205 283 302 307 358 363 366 408 415 441 533 535 541 542 552 562 570 672 673 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; Hospital
+ ..i " 316 318 319 320 321 372 398 691 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; Machine
+ ..i " 232 233 273 178 187 451 452 453 455 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; Microbiology
+ ..i " 96 360 361 362 376 378 379 381 382 383 385 386 387 390 391 392 583 584 585 586 587 613 614 615 616 617 618 690 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; Print Information
+ ..i " 207 208 211 303 304 313 312 347 668 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; Snomed codes
+ ..i " 240 355 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; System
+ ..i " 243 505 511 311 10 413 412 523 525 297 290 291 622 623 628 632 649 653 663 664 700 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; System Management
+ ..i " 17 157 230 160 219 517 158 159 218 242 524 635 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; Test Sets
+ ..i " 66 67 68 69 70 71 83 169 170 174 223 238 239 265 292 293 294 295 309 310 368 370 456 457 544 546 547 548 549 563 572 573 574 579 589 590 597 601 605 608 609 630 631 652 654 655 656 657 692 699 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; WorkSheet
+ ..i " 163 164 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ .. ; QC
+ ..i " 416 471 474 476 477 481 600 "[(" "_PLIST(2)_" ") s PLIST(5)="Y"
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..i $$update(PLIST(1))
+ ..s str="" f j=1:1:PLIST s $p(str,$c(28),j)=PLIST(j)
+ ..s ^TMP($zn,$j,cnt)=$p(PLIST(1),$c(1))_$c(2)_$P(PLIST(3),$c(1))_$c(2)_$P(PLIST(2),$c(1))_$c(2)_str
+ .i $$close()
+ k PLIST
+ s (x,cnt,sum)="" f  s x=$o(^TMP($zn,$j,x)) q:x=""  q:(sum+$l(^(x)))>15000  s cnt=cnt+1,PLIST(cnt)=^(x),sum=sum+$l(^(x)) k ^(x)
+ s PLIST=$o(PLIST(""),-1)
+ q $s($d(^TMP($zn,$j)):0,1:100)
+add(master) n (master) s master=$g(master)
+ s table="" f  s table=$o(^TMP($zn,$j,1,master,table)) q:table=""  d
+ .i $$select(table) k PLIST s PLIST(2)=table i $$insert()
+ q
+%AUT0o s $zt="%AUT0E" s SQLCODE=$s($g(%AUT0c):-101,1:0) q:SQLCODE'=0  s %AUT0d(14)=0 s %AUT0d(15)=0,%AUT0d(16)=""
+ s %AUT0d(9)=$g(name),%AUT0d(10)=$g(name)
+ s %AUT0c=1 q
+%AUT0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %AUT0c,%AUT0d,%AUT0E,%AUT0l,%AUT0n,%AUT0R,%AUT0Z q
+%0Afirst 
+ ; asl MOD# 2
+ s %AUT0d(1)=""
+%0ABk1 s %AUT0d(1)=$o(^AUDIT(%AUT0d(1)))
+ i %AUT0d(1)="" g %0ABdun
+ s %AUT0d(19)=$g(^AUDIT(%AUT0d(1)))
+ s %AUT0d(2)=$p(%AUT0d(19),"\",5) s %AUT0d(3)=$p(%AUT0d(19),"\",6) s %AUT0d(4)=$p(%AUT0d(19),"\",2) s %AUT0d(5)=$p(%AUT0d(19),"\",3) s %AUT0d(6)=$p(%AUT0d(19),"\",4) s %AUT0d(7)=$p(%AUT0d(19),"\",1)
+ s %AUT0d(8)=$zu(28,%AUT0d(2),5)
+ g:'(((%AUT0d(9)'="")&&((%AUT0d(8)'="")&&(%AUT0d(8)[%AUT0d(9))))||(%AUT0d(10)="")) %0ABk1
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^AUDIT($p(%AUT0d(1),"||",1))#"S":$zu(115,4) i $t { s %AUT0d(15)=1,%AUT0d(16)=$name(^AUDIT($p(%AUT0d(1),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.AU_AuditableTables for RowID value: "_%AUT0d(1) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %AUT0d(12)=$lb(""_%AUT0d(8))
+ i %AUT0d(1)'="",$d(^AUDIT(%AUT0d(1)))
+ e  g %0ACdun
+ s %AUT0d(22)=$g(^AUDIT(%AUT0d(1)))
+ s %AUT0d(2)=$p(%AUT0d(22),"\",5) s %AUT0d(3)=$p(%AUT0d(22),"\",6) s %AUT0d(4)=$p(%AUT0d(22),"\",2) s %AUT0d(5)=$p(%AUT0d(22),"\",3) s %AUT0d(6)=$p(%AUT0d(22),"\",4) s %AUT0d(7)=$p(%AUT0d(22),"\",1)
+ s %AUT0d(8)=$zu(28,%AUT0d(2),5)
+ s %AUT0d(13)=$lb(""_%AUT0d(8))
+ g:%AUT0d(12)'=%AUT0d(13) %0ACdun
+%0ABuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %AUT0d(14)=%AUT0d(14)+1,%ROWCOUNT=%AUT0d(14),%ROWID=%AUT0d(1),%AUT0c=10 q
+%AUT0f i '$g(%AUT0c) { s SQLCODE=-102 q  } i %AUT0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%AUT0d(14))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%AUT0d(14),%AUT0c=100 q  } g %0Afirst:%AUT0c=1
+%0ACdun i $zu(115,2)=1,$g(%AUT0d(15))=1 { l -@%AUT0d(16) s %AUT0d(15)=0 }
+ g %0ABk1
+%0ABdun 
+%0AAdun 
+ s %ROWCOUNT=%AUT0d(14),SQLCODE=100,%AUT0c=100 q
+%AUT0c i '$g(%AUT0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%AUT0d(14)),1:0)
+ i $zu(115,2)=1,$g(%AUT0d(15))=1 { l -@%AUT0d(16) } k %AUT0c,%AUT0d,%AUT0E,%AUT0l,%AUT0n,%AUT0R,%AUT0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %AUT0c=100 q
+%0Co n %i,icol,ir
+ f icol=0:1:8 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.AUAuditableTables.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Co
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Eerr" s %mmmsqld(4)=0 s %mmmsqld(5)=""
+ s %mmmsqld(3)=$g(ROWID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ i %mmmsqld(2)'="",$d(^AUDIT(%mmmsqld(2)))
+ e  g %0EBdun
+ s %mmmsqld(8)=$$%getlock^User.AUAuditableTables.T1(%mmmsqld(2)) i '%mmmsqld(8) s SQLCODE=-110 g %0Ec
+ ; asl MOD# 3
+ i %mmmsqld(2)'="",$d(^AUDIT(%mmmsqld(2)))
+ e  g %0ECdun
+ k %data
+ f icol=0:1:8 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.AUAuditableTables.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(4))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(8)=1 %ReleaseLock^User.AUAuditableTables.T1(%mmmsqld(2)) g %0Ec
+%0ECdun 
+ d:%mmmsqld(8)=1 %ReleaseLock^User.AUAuditableTables.T1(%mmmsqld(2)) g:SQLCODE<0 %0Ec
+%0EBdun 
+%0EAdun 
+%0Ec s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(4)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Eerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(8))=1 %ReleaseLock^User.AUAuditableTables.T1(%mmmsqld(2)) g %0Ec
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Gerr" s %mmmsqld(3)=0 s %mmmsqld(4)=""
+ s %mmmsqld(2)=$g(ROWID)
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(1)=%mmmsqld(2)
+ i %mmmsqld(1)'="",$d(^AUDIT(%mmmsqld(1)))
+ e  g %0GBdun
+ s %mmmsqld(7)=$$%getlock^User.AUAuditableTables.T1(%mmmsqld(1)) i '%mmmsqld(7) s SQLCODE=-110 g %0Gc
+ ; asl MOD# 3
+ i %mmmsqld(1)'="",$d(^AUDIT(%mmmsqld(1)))
+ e  g %0GCdun
+ d %delete^User.AUAuditableTables.T1(%mmmsqld(1),$c(0,2,0,0),'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(3))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(7)=1 %ReleaseLock^User.AUAuditableTables.T1(%mmmsqld(1)) g %0Gc
+%0GCdun 
+ d:%mmmsqld(7)=1 %ReleaseLock^User.AUAuditableTables.T1(%mmmsqld(1)) g:SQLCODE<0 %0Gc
+%0GBdun 
+%0GAdun 
+%0Gc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(3)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Gerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(7))=1 %ReleaseLock^User.AUAuditableTables.T1(%mmmsqld(1)) g %0Gc
+%0Jo d %AUT0f q:SQLCODE'=0
+ s PLIST(1)=%AUT0d(1),PLIST(2)=%AUT0d(1),PLIST(3)=%AUT0d(2),PLIST(4)=%AUT0d(3),PLIST(5)=%AUT0d(4),PLIST(6)=%AUT0d(5),PLIST(7)=%AUT0d(6),PLIST(8)=%AUT0d(7)
+ q
+%0Lo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Lerr" s %mmmsqld(11)=0,%mmmsqld(12)=""
+ s %mmmsqld(9)=$g(ROWID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(2)=%mmmsqld(9)
+ i PLIST(2)'="",$d(^AUDIT(PLIST(2)))
+ e  g %0LBdun
+ s %mmmsqld(15)=$g(^AUDIT(PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(15),"\",5) s PLIST(4)=$p(%mmmsqld(15),"\",6) s PLIST(5)=$p(%mmmsqld(15),"\",2) s PLIST(6)=$p(%mmmsqld(15),"\",3) s PLIST(7)=$p(%mmmsqld(15),"\",4) s PLIST(8)=$p(%mmmsqld(15),"\",1)
+ g:$zu(115,2)=0 %0LBuncommitted i $zu(115,2)=1 l +^AUDIT($p(PLIST(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(11)=1,%mmmsqld(12)=$name(^AUDIT($p(PLIST(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.AU_AuditableTables for RowID value: "_PLIST(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i PLIST(2)'="",$d(^AUDIT(PLIST(2)))
+ e  g %0LCdun
+ s %mmmsqld(18)=$g(^AUDIT(PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(18),"\",5) s PLIST(4)=$p(%mmmsqld(18),"\",6) s PLIST(5)=$p(%mmmsqld(18),"\",2) s PLIST(6)=$p(%mmmsqld(18),"\",3) s PLIST(7)=$p(%mmmsqld(18),"\",4) s PLIST(8)=$p(%mmmsqld(18),"\",1)
+%0LBuncommitted ;
+ s PLIST(1)=PLIST(2)
+ s SQLCODE=0 g %0Lc
+%0LCdun i $zu(115,2)=1,$g(%mmmsqld(11))=1 { l -@%mmmsqld(12) s %mmmsqld(11)=0 }
+%0LBdun 
+%0LAdun 
+%0Lc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(11))=1 { l -@%mmmsqld(12) } q
+%0Lerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Lc
+]]></Routine>
+</Export>

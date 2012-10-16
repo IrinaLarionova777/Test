@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBVIS15" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBVIS15 ; IG 2/6/98 ; Visit selection routines - Send test module
+ ;
+ ; supported calls:
+ ;
+ ; $$open^LVBVIS15(from,toSite,toRL,Flag,pack,type,episode,tab,p8,p9)
+ ; $$fetch^LVBVIS15(from,toSite,toRL,Flag,pack,type,episode,tab,p8,p9)
+ ; $$fetchbuffer^LVBVIS15(from,toSite,toRL,Flag,pack,type,episode,tab,p8,p9)
+ ; $$close^LVBVIS15()
+ ; $$getall1^LVBVIS15(epis,user)
+ ; $$getall2^LVBVIS15(epis,user)
+ ;
+ ; type : W-Waiting to Send
+ ;        S-Sent(to Receive)
+ ;        P-partial Received
+ ;        R-Received
+open(from,toSite,toRL,Flag,pack,type,episode,tab,p8,p9) n (from,toSite,toRL,Flag,pack,type,episode,tab) k ^TMP($zn,$j,"open")
+ s from=$g(from),toSite=$g(toSite),toRL=$g(toRL),Flag=$g(Flag),pack=$g(pack),type=$g(type),episode=$g(episode),tab=$g(tab)
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("open^"_$zn_$p(^CF("SM",1),"^",28)))) k %quit d @("open^"_$zn_$p(^CF("SM",1),"^",28)) q:$d(%quit) %quit 
+ f k=1:1:$l(type,",") s tp=$p(type,",",k) i $l(tp) d
+ .s loc=$s($l(from):from,$l(toSite):toSite,$l(toRL):toRL,1:"")
+ .s TYPE="MOVE-"_$s($l(from):"FUS",$l(toSite):"TUS",$l(toRL):"TRL",1:"")
+ .i $l(loc) d
+ ..i $l(episode) s epis=episode d  q
+ ...s x="" f  s x=$o(^TEPIi(TYPE,tp,loc,epis,x)) q:x=""  d
+ ....s vts="" f  s vts=$o(^TEPI(epis,9,x,"VTS",vts)) q:vts=""  d
+ .....s Sort=$p($$move^LVBVIS5(vts,Flag),$c(1),2) i '$l(Sort) s Sort=" "
+ .....i '$$check(vts,from,toSite,toRL,Flag,pack,x,$s(tp="W":1,tab="T":1,1:"")) s ^TMP($zn,$j,"open",Sort,vts)=epis_"||"_x
+ ..s epis="" f  s epis=$o(^TEPIi(TYPE,tp,loc,epis)) q:epis=""  d
+ ...s x="" f  s x=$o(^TEPIi(TYPE,tp,loc,epis,x)) q:x=""  d
+ ....s vts="" f  s vts=$o(^TEPI(epis,9,x,"VTS",vts)) q:vts=""  d
+ .....s Sort=$p($$move^LVBVIS5(vts,Flag),$c(1),2) i '$l(Sort) s Sort=" "
+ .....i '$$check(vts,from,toSite,toRL,Flag,pack,x,$s(tp="W":1,tab="T":1,1:"")) s ^TMP($zn,$j,"open",Sort,vts)=epis_"||"_x
+ s ^TMP($zn,$j,"open")=""
+ q 0
+ ;
+fetch(from,toSite,toRL,Flag,pack,type,episode,tab,p8,p9) n (from,toSite,toRL,Flag,pack,type,episode,tab,PLIST) k PLIST
+ s xx=$g(^TMP($zn,$j,"open")) f j=1,2 s @("x"_j)=$p(xx,"\",j)
+ f  d:$l(x1)  q:$l(x2)  s x1=$o(^TMP($zn,$j,"open",x1)) q:x1=""
+ .s x2=$o(^TMP($zn,$j,"open",x1,x2))
+ s SQLCODE=100 i $l(x1),$l(x2) s SQLCODE=$$select^LVBVIS5(x2,,,Flag,,$g(^TMP($zn,$j,"open",x1,x2)))
+ s ^TMP($zn,$j,"open")=x1_"\"_x2
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(from,toSite,toRL,Flag,pack,type,episode,tab,p8,p9) k ^TMP($zn,$j,1)
+ s from=$g(from),toSite=$g(toSite),toRL=$g(toRL),Flag=$g(Flag),pack=$g(pack),type=$g(type),episode=$g(episode),tab=$g(tab)
+ s episode=$g(episode)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ s xSUM=0
+ f xxx=1:1:max s SQLCODE=$$fetch(from,toSite,toRL,Flag,pack,type,episode,tab) q:SQLCODE  d  q:xSUM>15000
+ .s cnt=$o(^TMP($zn,$j,1,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,1,cnt),$c(28),j)=$g(PLIST(j))
+ .s xSUM=xSUM+$l(^TMP($zn,$j,1,cnt))
+ k PLIST m PLIST=^TMP($zn,$j,1) k ^TMP($zn,$j,1)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ;
+close() k ^TMP($zn,$j,"open")
+ q 0
+check(vts,from,toSite,toRL,Flag,pack,move,xx) n (vts,from,toSite,toRL,Flag,pack,move,xx) s ok=0
+ s vts=$g(vts),from=$g(from),toSite=$g(toSite),toRL=$g(toRL),Flag=$g(Flag),pack=$g(pack),move=$g(move),xx=$g(xx)
+ s rowid=$p(vts,"||")_"||"_move i $$select^LVBVISMV(rowid,"Y") q 100
+ m MOVE=PLIST
+ i 'ok,$l(from),from'=MOVE(3) s ok=1
+ i 'ok,$l(toSite),toSite'=MOVE(4) s ok=2
+ i 'ok,$l(toRL),toRL'=MOVE(5) s ok=3
+ i 'ok,$$ValUser^LVBVIS14($p(Flag,$c(1),3),vts,,$s(xx:"",1:toSite)) s ok=4
+ i 'ok,$l(pack),pack'=MOVE(8) s ok=5
+ q ok
+getall1(epis,user) n (epis,user,PLIST) s epis=$g(epis),user=$g(user) k ^TMP($zn,$j)
+ i $$open^LVBVISTS(epis,,"Y",user)
+ s cnt=0 f  q:$$fetch^LVBVISTS(epis,,"Y",user)  d
+ .k VISTS m VISTS=PLIST k PLIST
+ .i '$$select^LVBCTTS($p(VISTS(3),$c(1))) m CTTS=PLIST d
+ ..s str=PLIST(2)_$c(28)_PLIST(3)_$c(28)_PLIST(23)_$c(28)_PLIST(56)
+ ..s cnt=cnt+1,^TMP($zn,$j,cnt)=$p(VISTS(1),$c(1))_$c(2,2,2)_str
+ i $$close^LVBVISTS()
+ k PLIST m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k TMP($zn,$j)
+ q 0
+getall2(epis,user) n (epis,user,PLIST) s epis=$g(epis),user=$g(user) k ^TMP($zn,$j)
+ i $$open^LVBVISTS(epis,,"Y",user)
+ f  q:$$fetch^LVBVISTS(epis,,"Y",user)  d
+ .k VISTS m VISTS=PLIST k PLIST
+ .i '$$select^LVBCTTS($p(VISTS(3),$c(1))) d
+ ..i $l(PLIST(56)) s ^TMP($zn,$j,0,PLIST(56))=$g(^TMP($zn,$j,0,PLIST(56)))+1
+ i $$close^LVBVISTS()
+ s x="" f  s x=$o(^TMP($zn,$j,0,x)) q:x=""  d
+ .s str=x_$c(28)_^(x)
+ .s ^TMP($zn,$j,1,x)=$p(x,$c(1))_$c(2)_$p(x,$c(1),2)_$c(2,2)_str
+ k PLIST m PLIST=^TMP($zn,$j,1)
+ s PLIST=$o(PLIST(""),-1)
+ k TMP($zn,$j)
+ q 0
+]]></Routine>
+</Export>

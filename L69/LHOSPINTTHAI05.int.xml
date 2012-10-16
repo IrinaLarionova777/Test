@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LHOSPINTTHAI05" type="INT" languagemode="0" generated="1"><![CDATA[
+LHOSPINTTHAI05 ; IG 12/07/98 ; Hospital Interface - Thailand Phyathai
+ Q
+ ; MLAB interface
+START(HOSP) N (HOSP) k ^TMP($zn,$j) s delim=","
+ k CFSM i '$$select^MVBCFSM(1) m CFSM=PLIST
+ ; send data to M-LAB
+ s dir=$tr(CFSM(35),$c(16,17,18),"^\|") f j="/","\" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ s ts="" f  s ts=$o(^TTRQ(ts)) q:ts=""  i $e(ts)="F" d
+ .s epis="" f  s epis=$o(^TTRQ(ts,epis)) q:epis=""  d
+ ..s site=$e(epis)
+ ..s cnt="" f  s cnt=$o(^TTRQ(ts,epis,cnt)) q:cnt=""  d
+ ...s rowid=epis_"||"_ts_"||"_cnt
+ ...i '$$select^LVBVISTS(rowid,"Y"),PLIST(30)="" d
+ ....k VTS m VTS=PLIST k PLIST
+ ....i '$$select^LVBEPVIS(epis,"Y") d
+ .....k EPVIS m EPVIS=PLIST k PLIST
+ .....s line=rowid_delim_EPVIS(20)_delim_EPVIS(4)_delim_EPVIS(3)_delim_EPVIS(5)_delim_$$extdate2^SSUTIL4(EPVIS(6))
+ .....s line=line_delim_EPVIS(22)_delim_EPVIS(15)_delim_$$extdate2^SSUTIL4(EPVIS(12))
+ .....s line=line_delim_$$exttime^SSUTIL4(EPVIS(13))_delim_ts_delim_VTS(47)
+ .....i '$d(file(site)) d
+ ......s file(site)=dir_"MLAB"_$s(dir["\":"\",1:"/")_site_"LT"_($e(10001+$g(^MLAB(site)),2,99))_".txt"
+ ......o file(site):"WNS"
+ .....u file(site) w line,!
+ ....k PLIST m PLIST=VTS k VTS s PLIST(30)="MLAB" i $$update^LVBVISTS(rowid)
+ s site="" f  s site=$o(file(site)) q:site=""  d
+ .s ^MLAB(site)=$g(^MLAB(site))+1 i $l(^MLAB(site))=4 s ^MLAB(site)=0
+ .c file(site)
+ ; receive data from M-LAB
+ s dir=$tr(CFSM(34),$c(16,17,18),"^\|") f j="/","\" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ i $zf(-1,"DIR "_dir_"MLAB"_$s(dir["/":"/",1:"\")_"*.txt /B > ""mlab.txt""")
+ s file="mlab.txt"
+ o file:"WAS" u file w "End_Of_File",! c file
+ o file:("RS"::$c(10,13))
+ f  u file r x q:x="End_Of_File"  s xfile=$p(x," ",$l(x," ")) i xfile[".",$l(xfile) s ^TMP($zn,$j,"FileName",xfile)=""
+ c file
+ ; extract file content
+Read s $zt="Error^"_$zn
+ s file=$o(^TMP($zn,$j,"FileName","")) i $l(file) d
+ .s dir=$tr(CFSM(34),$c(16,17,18),"^\|") f j="/","\" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ .s fullname=dir_"MLAB"_$s(dir["\":"\",1:"/")_file
+ .o fullname:("RS"::$c(10,13)):1 e  q
+ .k ^TMP($zn,$j,file)
+ .u fullname s line="" f  r line:10 s cnt=$o(^TMP($zn,$j,file,""),-1)+1,^TMP($zn,$j,file,cnt)=line
+ k ^TMP($zn,$j,"FileName")
+ s file="" f  s file=$o(^TMP($zn,$j,file)) q:file=""  d
+ .s vtsRID=^TMP($zn,$j,file,1),text=""
+ .s cnt=1 f  s cnt=$o(^TMP($zn,$j,file,cnt)) q:cnt=""  s text=text_$s($l(text):"|",1:"")_$tr(^(cnt),"^\|",$c(16,17,18))
+ .k PLIST s PLIST(1)="T\"_text
+ .s PLIST=$o(PLIST(""),-1)
+ .i $l(vtsRID),$$save^LVBVIS4(vtsRID,"A","MLAB","N")
+ k ^TMP($zn,$j)
+ q
+ ; error log
+Error i $ze'["ENDOFFILE" d BACK^%ETN q
+ c fullname
+ ; del the file
+ k ^TMP($zn,$j,"FileName",file)
+ i '$zf(-1,"del "_fullname)
+ g Read
+]]></Routine>
+</Export>

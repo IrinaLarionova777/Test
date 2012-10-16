@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="web.CTDoctor">
+<ClassType/>
+<ProcedureBlock>0</ProcedureBlock>
+<Super>%Library.RegisteredObject,websys.Abstract</Super>
+<TimeCreated>61237,56981</TimeCreated>
+<Inheritance>right</Inheritance>
+
+<Parameter name="BUILD">
+<Internal/>
+<Default>153</Default>
+</Parameter>
+
+<Parameter name="SQLDATEFROM">
+<Internal/>
+</Parameter>
+
+<Parameter name="SQLDATETO">
+<Internal/>
+</Parameter>
+
+<Parameter name="SQLCODE">
+<Default>CTDR_Code</Default>
+</Parameter>
+
+<Parameter name="SQLDESCRIPTION">
+<Default>CTDR_Surname</Default>
+</Parameter>
+
+<Parameter name="SQLROWID">
+<Default>CTDR_RowId</Default>
+</Parameter>
+
+<Method name="TestNameExists">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>val:%Library.String</FormalSpec>
+<ReturnType>%Library.String</ReturnType>
+<Implementation><![CDATA[
+	n code
+	
+	&sql( SELECT CTDR_Code
+	INTO :code
+  	FROM SQLUser.CT_Doctor
+  	WHERE ((%ALPHAUP (CTDR_Title || ' ' || CTDR_GivenName || ' ' || CTDR_Surname || ' (' || CTDR_Code || ')') = %ALPHAUP :val)))
+	q code
+]]></Implementation>
+</Method>
+
+<Method name="CustomGetIdFromCodeOrDesc">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>val:%Library.String</FormalSpec>
+<ReturnType>%Library.String</ReturnType>
+<Implementation><![CDATA[
+  n code
+  ; testing patching
+  &sql(	SELECT CTDR_Code
+  	INTO :code
+  	FROM SQLUser.CT_Doctor
+  	WHERE ((%ALPHAUP (CTDR_Title || ' ' || CTDR_GivenName || ' ' || CTDR_Surname || ' (' || CTDR_Code || ')') = %ALPHAUP :val))	
+  	OR CTDR_Code = :val
+  	OR %ALPHAUP CTDR_Surname %STARTSWITH %ALPHAUP :val )
+  i SQLCODE q ""
+  q code
+]]></Implementation>
+</Method>
+
+<Method name="LookUpCustomBroker">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>itmjs:%Library.String="",itmjsex:%Library.String="",val:%Library.String="",sUser:%Library.String</FormalSpec>
+<ReturnType>%Library.Boolean</ReturnType>
+<Implementation><![CDATA[
+ ; SELECT CTDR_GivenName || ' ' || CTDR_Surname, CTDR_RowID, CTDR_Code
+ ;FROM SQLUser.CT_Doctor
+ ;WHERE (%ALPHAUP CTDR_Code %STARTSWITH %ALPHAUP :doctor)
+ ;ORDER BY CTDR_Code
+ n id,code,desc,sReturnCode
+ 
+ ;n webns,labns
+ ;s webns=$zu(5)
+ ;s labns=$lg(^websys.ConfigurationD(1),12)
+ ;zn labns 
+ s (id,code,desc)=""
+ s val=$g(val)
+ s sUser=$g(sUser)
+ s sReturnCode="100"
+ s sReturnCode=$$select^LVBCTDR(val,,sUser,)
+ i sReturnCode="100" d
+ . ;zn webns
+ . s val=##class(web.CTDoctor).CustomGetIdFromCodeOrDesc(val)
+ . ;zn labns
+ . s sReturnCode=$$select^LVBCTDR(val,,sUser,)
+
+ i sReturnCode'="100" d
+ . s id=PLIST(1)
+ . s code=PLIST(2)
+ . s desc=PLIST(26)_" "_PLIST(4)_" "_PLIST(3)_" ("_PLIST(2)_")"
+ ;zn webns
+ i sReturnCode="100" q '$$$OK	
+ s retval=itmjs_"('"_$ZCVT(desc,"O","JS")_"');"
+ i itmjsex'="""" s retval=retval_itmjsex_"('"_$ZCVT(code,"O","JS")_"^"_id_"^"_$ZCVT(desc,"O","JS")_"');"
+ &javascript<#(retval)#>
+ q $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="LookUpCustomClose">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&QHandle:%Binary]]></FormalSpec>
+<PlaceAfter>LookUpCustomExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ n sReturnCode 
+ n webns,labns,limit
+ ;s webns=$zu(5)
+ ;s labns=$lg(^websys.ConfigurationD(1),12)
+ ;zn labns 
+ s limit=$li(QHandle,3)
+ i 'limit s sReturnCode=$$close^LVBCTDR()
+ i limit s sReturnCode=$$close^MVBSUDR()
+ ;zn webns
+ s QHandle=""
+ ;
+ Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="LookUpCustomExecute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&QHandle:%Binary,sDoctor:%String="",sUser:%String=""]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ ; 'user' search values, current 'work' values, 
+ n user,work,sReturnCode
+
+
+ n webns,labns,limit
+ ;s webns=$zu(5)
+ ;s labns=$lg(^websys.ConfigurationD(1),12)
+ ;zn labns 
+ k PLIST s sReturnCode=$$getall^MVBSUDR(sUser)
+ i PLIST'="" d
+ . s limit=1
+ . s sReturnCode=$$open^MVBSUDR(sUser)
+ ;s sReturnCode=$$open^LVBCTDR(,"Y",,sUser,,,,sDoctor,)
+ i PLIST="" d
+ . s limit=0
+ . s sReturnCode=$$open^LVBCTDR(sDoctor,"Y",,sUser,,,,,)
+ ;zn webns
+ i sReturnCode="100" s QHandle="" q $$$OK
+ 
+ s user=$lb(sDoctor,sUser)
+ s work=limit
+ ;
+ s QHandle=$lb(0,user,work)
+ ;
+ Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="LookUpCustomFetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&QHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>LookUpCustomExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ n user,work,sUser,sDoctor,sDesc,sHidden,sCode,j,cnt,limit
+ ;
+ i QHandle="" s AtEnd=1,Row="" Q $$$OK
+ ;
+ s AtEnd=$li(QHandle,1)
+ s user=$li(QHandle,2)
+ s work=$li(QHandle,3)
+ s limit=work
+ ;
+ S sDoctor=$lg(user,1)
+ S sUser=$lg(user,2)
+ ;
+ ;n webns,labns
+ ;s webns=$zu(5)
+ ;s labns=$lg(^websys.ConfigurationD(1),12)
+ ;zn labns 
+ k PLIST
+ ;s sReturnCode=$$fetch^LVBCTDR(,"Y",,sUser,,,,sDoctor,)
+ i limit=0 d
+ . s sReturnCode=$$fetch^LVBCTDR(sDoctor,"Y",,sUser,,,,,)
+ i limit=1 d
+ . s sReturnCode=$$fetch^MVBSUDR(sUser)
+ . i $d(PLIST(1)) s sReturnCode=$$select^LVBCTDR($p(PLIST(1),"||",2))
+ i sReturnCode="100" s AtEnd=1,Row="" Q $$$OK
+ s sDesc=PLIST(26)_" "_PLIST(4)_" "_PLIST(3)_" ("_PLIST(2)_")"
+ s sCode=PLIST(2)
+ s sHidden=PLIST(1)
+ 
+ ;zn webns
+ 
+ s Row=$lb(sDesc,sHidden,sCode)	
+ ;
+ s QHandle=$lb(AtEnd,user,work)
+ ;
+ Q $$$OK
+]]></Implementation>
+</Method>
+
+<Query name="LookUpCustom">
+<Type>%Library.Query</Type>
+<FormalSpec>sDoctor:%String,sUser:%String</FormalSpec>
+<Parameter name="CONTAINID" value="1"/>
+<Parameter name="ROWSPEC" value="Description:%String,HIDDEN:%String,Code:%String"/>
+</Query>
+</Class>
+</Export>

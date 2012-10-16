@@ -1,0 +1,536 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBMIRH4" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBMIRH4 ; IG 6/5/98 ; Machine interface data access
+ ;
+ ; supported calls:
+ ;
+ ; $$create^LVBMIRH4(machine,tsgroup,ro)
+ ; $$clear^LVBMIRH4()
+ ; $$search^LVBMIRH4(episode)
+ ; $$results^LVBMIRH4(tsgroupRowID,ResultOnly,TF,Continue,misRID,page,Sort,Totals,p8,p9)
+ ; $$select^LVBMIRH4(machine,sample,epis,TF)
+ ; $$check^LVBMIRH4(machine,sample,epis)
+ ; $$next^LVBMIRH4(epis,sample,vtsRID,machine,job)
+ ; $$back^LVBMIRH4(epis,sample,vtsRID,machine,job)
+ ; $$flag^LVBMIRH4(epis,sample,vtsRID,machine,job)
+ ; $$authall^LVBMIRH4(user)
+ ; $$allresults^LVBMIRH4(msRID,TestItem)
+ ; $$updres^LVBMIRH4(machine,absolute,percent,clear,tcode)
+ ; $$captions^LVBMIRH4(Job)
+ ;
+ ; search in a grid
+search(episode) s episode=$g(episode),ROWS=18,result=""
+ s x="" f cnt=1:1 s x=$o(^TMP("RESULT-GRID",$j,"LIST",x)) q:x=""  d  i $l(result) q
+ .i episode=$p(^(x),"\",1) s result=(cnt\ROWS)+(''(cnt#ROWS))
+ q result
+ ; authorise all machine results
+ ; Return code : 0-ok
+ ;               1-Multiple transmissions
+authall(user) n (user) s user=$g(user),result=0
+ s tsgrpRID=$p($g(^TMP("RESULT-GRID",$j)),"^",2),mi=$p(tsgrpRID,"||")
+ k MIMP i '$$select^LVBMIMP(mi,"Y") m MIMP=PLIST
+ s epis="" f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:epis=""  d
+ .i " 0 9 "'[(" "_$p($g(^TEPI(epis)),"\",44)_" ") q
+ .s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ..
+ .. ; do not autoauthorise results with multiple transmissions
+ ..
+ ..s stop=""
+ ..i MIMP(37)="Y" s x1="" f  s x1=$o(^TMIF(mi,1,sample,"DATA",x1)) q:x1=""  d  i stop q
+ ...s x2="" f cnt=0:1 s x2=$o(^TMIF(mi,1,sample,"DATA",x1,x2)) q:x2=""
+ ...i cnt>1 s (result,stop)=1
+ ..i 'stop,'$$select(mi,sample,epis) d
+ ...k plist m plist=PLIST k PLIST s cnt=0
+ ...f j=2:1:plist i $l($p(plist(j),$c(1),2)),$l($p(plist(j),$c(1),3))!$l($p(plist(j),$c(1),4)) d  q:stop
+ ....i $p(plist(j),$c(1),26)="Y" s stop=1 q
+ ....s cnt=cnt+1,PLIST(cnt)=$tr($p(plist(j),$c(1),2,4),$c(1),"\")_"\"_$p(plist(j),$c(1),21)
+ ...i 'stop,$$machsave^LVBVIS4(mi,epis,"A",user,,tsgrpRID,"AG",,,,"Y")
+ q result
+ ; comes from the single result entry
+next(epis,sample,vtsRID,machine,job) n (epis,sample,vtsRID,machine,job,PLIST)
+ s epis=$g(epis),sample=$g(sample),ts=$p($g(vtsRID),"||",2),machine=$g(machine),job=$g(job) k PLIST
+ ; get next record
+Nnext s ok=0,SQLCODE=100 i '$l(job) s job=$j
+ s line1=+$g(^TMP("RESULT-GRID",job,"INDEX",epis,sample))
+ f  d  q:ok  s line1=line1+1 q:'$d(^TMP("RESULT-GRID",job,"LIST",line1))
+ .i $d(^TMP("RESULT-GRID",job,"LIST",line1)) d
+ ..s epis=$p(^TMP("RESULT-GRID",job,"LIST",line1),"\",1)
+ ..s sample=$p(^TMP("RESULT-GRID",job,"LIST",line1),"\",2)
+ ..i " 0 9 "'[(" "_$p($g(^TEPI(epis)),"\",44)_" ") q
+ ..s line2="" i $l(ts) s line2=$g(^TMP("RESULT-GRID",job,"PATIENT-INDEX",epis,sample,2,ts))
+ ..f  d:$l(line2)  q:ok  s line2=$o(^TMP("RESULT-GRID",job,"PATIENT-INDEX",epis,sample,1,line2))  q:line2=""
+ ...f  s ts=$o(^TMP("RESULT-GRID",job,"PATIENT-INDEX",epis,sample,1,line2,ts)) q:ts=""  d  q:ok
+ ....i '$d(^TMP("RESULT-GRID",job,"PATIENT",epis,sample,ts)) q
+ ....s ok=1 s vtsRID=^TMP("RESULT-GRID",job,"PATIENT",epis,sample,ts)
+ ; get result for the record
+ i ok s SQLCODE=0 d
+ .s PLIST(1)=vtsRID
+ .s PLIST(2)=machine_"||"_sample_"||"_epis
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; comes from the single result entry
+back(epis,sample,vtsRID,machine,job) n (epis,sample,vtsRID,machine,job,PLIST)
+ s epis=$g(epis),sample=$g(sample),ts=$p($g(vtsRID),"||",2),machine=$g(machine),job=$g(job) k PLIST
+ ; get previous record
+Nback s ok=0,SQLCODE=100 i '$l(job) s job=$g(job)
+ s line1=+$g(^TMP("RESULT-GRID",job,"INDEX",epis,sample))
+ f  d  q:ok  s line1=line1-1 q:'$d(^TMP("RESULT-GRID",job,"LIST",line1))
+ .i $d(^TMP("RESULT-GRID",job,"LIST",line1)) d
+ ..s epis=$p(^TMP("RESULT-GRID",job,"LIST",line1),"\",1)
+ ..s sample=$p(^TMP("RESULT-GRID",job,"LIST",line1),"\",2)
+ ..i " 0 9 "'[(" "_$p($g(^TEPI(epis)),"\",44)_" ") q
+ ..s line2="" i $l(ts) s line2=$g(^TMP("RESULT-GRID",job,"PATIENT-INDEX",epis,sample,2,ts))
+ ..f  d:$l(line2)  q:ok  s line2=$o(^TMP("RESULT-GRID",job,"PATIENT-INDEX",epis,sample,1,line2),-1)  q:line2=""
+ ...f  s ts=$o(^TMP("RESULT-GRID",job,"PATIENT-INDEX",epis,sample,1,line2,ts),-1) q:ts=""  d  q:ok
+ ....i '$d(^TMP("RESULT-GRID",job,"PATIENT",epis,sample,ts)) q
+ ....s ok=1 s vtsRID=^TMP("RESULT-GRID",job,"PATIENT",epis,sample,ts)
+ i ok s SQLCODE=0 d
+ .s PLIST(1)=vtsRID
+ .s PLIST(2)=machine_"||"_sample_"||"_epis
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; comes from the single result entry
+flag(epis,sample,vtsRID,machine,job) n (epis,sample,vtsRID,machine,job,PLIST)
+ s epis=$g(epis),sample=$g(sample),vtsRID=$g(vtsRID),machine=$g(machine),job=$g(job) k ^TMP($zn,$j,"flag")
+ s ^TMP($zn,$j,"flag",1)=$s($$next(epis,sample,vtsRID,machine,job):"N",1:"Y")
+ s ^TMP($zn,$j,"flag",2)=$s($$back(epis,sample,vtsRID,machine,job):"N",1:"Y")
+ k PLIST m PLIST=^TMP($zn,$j,"flag")
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j,"flag")
+ q 0
+ ; captions : 1.Test Item
+ ;            2.To follow
+ ;            3.Exceeded turnaround time
+captions(Job) n (Job,PLIST) s Job=$g(Job) i '$l(Job) s Job=$j
+ s ti="" f cnt=1:1 s ti=$o(^TMP("RESULT-GRID",Job,"TESTITEM",ti)) q:ti=""  d
+ .s PLIST(cnt)=ti_$c(1)_$p(^(ti),"\",2)_$c(1)_$p(^(ti),"\",3)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ; ResultOnly :  Empty   - All data
+ ;               RA      - Results from TMIF all
+ ;               RB      - Results from TMIF outstanding
+ ; page - page number (each page has 18 rows)
+ ; Sort : Empty - Default
+ ;        U     - Urgent first
+ ;        DT    - Date/Time of receiving results
+ ;        E     - Episode number
+ ;        PL    - Patient Location
+results(tsgRID,ro,TF,Continue,misRID,page,Sort,Totals,p8,p9) n (tsgRID,ro,TF,Continue,misRID,page,Sort,Totals,PLIST)
+ s tsgRID=$g(tsgRID),ro=$g(ro),TF=$g(TF),Continue=$g(Continue),misRID=$g(misRID),page=$g(page),Sort=$g(Sort),Totals=$g(Totals),ROWS=18
+ i '$l(misRID) d
+ .i Continue'="Y",$$create(tsgRID,ro,Sort,Totals)
+ .s machine=$p(tsgRID,"||",1)
+ .k ^TMP($zn,$j,0)
+ .i '$d(^TMP("RESULT-GRID",$j,"SENT")) d
+ ..s x="" f cnt1=1:1 s x=$o(^TMP("RESULT-GRID",$j,"LIST",x)) q:x=""  i (cnt1\ROWS)+(''(cnt1#ROWS))=page d
+ ...m ^TMP("RESULT-GRID",$j,"SENT",x)=^TMP("RESULT-GRID",$j,"LIST",x)
+ .s (sum,stop,x)="" f cnt=1:1 s x=$o(^TMP("RESULT-GRID",$j,"SENT",x)) q:x=""  d  q:stop
+ ..s epis=$p(^(x),"\",1),sample=$p(^(x),"\",2)
+ ..s line="" i '$$select(machine,sample,epis,TF) f j=1:1:PLIST s $p(line,$c(2),j)=PLIST(j)
+ ..i sum+$l(line)>15000 s stop=1 q
+ ..s ^TMP($zn,$j,0,cnt)=line,sum=sum+$l(line) k ^TMP("RESULT-GRID",$j,"SENT",x)
+ i $l(misRID) d
+ .s machine=$p(misRID,"||",1),sample=$p(misRID,"||",2),epis=$p(misRID,"||",3)
+ .k ^TMP($zn,$j,0)
+ .s line="" i '$$select(machine,sample,epis,TF) f j=1:1:PLIST s $p(line,$c(2),j)=PLIST(j)
+ .i $l(line) s ^TMP($zn,$j,0,1)=line
+ k PLIST m PLIST=^TMP($zn,$j,0) k ^TMP($zn,$j,0)
+ s PLIST=$o(PLIST(""),-1)
+ s x="" f cnt=0:1 s x=$o(^TMP("RESULT-GRID",$j,"LIST",x)) q:x=""
+ s LastPage=(cnt\ROWS)+(''(cnt#ROWS))
+ q $j_$c(1)_LastPage_$c(1)_$s($d(^TMP("RESULT-GRID",$j,"SENT")):0,1:100)
+clear() k ^TMP("RESULT-GRID",$j)
+ q 0
+check(machine,sample,epis) n (machine,sample,epis,ro) s machine=$g(machine),sample=$g(sample),epis=$g(epis)
+ k ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample," ")
+ ; QC result
+ i $e(epis,1,2)="QC" d
+ .s (ok,tc)="" f  s tc=$o(^TMIF(machine,1,sample,"DATA",tc)) q:tc=""  i $d(^TMP("RESULT-GRID",$j,"TESTITEM",tc)) s ok=1 q
+ .i ok s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample," ")=""
+ ; patient result
+ i $e(epis,1,2)'="QC" d
+ .s (ok,tc)="" f  s tc=$o(^TMIF(machine,1,sample,"DATA",tc)) q:tc=""  i $d(^TMP("RESULT-GRID",$j,"TESTITEM",tc)) s ok=1 q
+ .i ok s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample," ")="" q
+ .i ro="" d
+ ..s ts="" f  s ts=$o(^TTRQi(epis,ts)) q:ts=""  d  q:ok
+ ...s tscnt="" f  s tscnt=$o(^TTRQi(epis,ts,tscnt)) q:tscnt=""  d  q:ok
+ ....s tc="" f  s tc=$o(^TTRQi(epis,ts,tscnt,tc)) q:tc=""  i $d(^TMP("RESULT-GRID",$j,"TESTITEM",tc)) s ok=1 q
+ ..i ok s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample," ")=""
+ q
+ ;  1-machine_sample_episode
+ ;  2-episode
+ ;  4-priority
+ ;  5-MRN
+ ;  6-Y:pre-entered
+ ;    N:fully entered
+ ;  7-Y:QC
+ ;    N:patients
+ ;  8-Number of pathogens
+ ;  9-Scatter plot (Y/N)
+ ; 10-Date,Time of result
+ ; 11-Patient Location
+ ; 12-Exceeded turnaround time
+ ; 13-status Hold
+select(machine,sample,epis,TF) n (machine,sample,epis,TF,PLIST) k PLIST,^TMP($zn,$j,"select")
+ s machine=$g(machine),sample=$g(sample),epis=$g(epis),TF=$g(TF),NoValid=$g(NoValid)
+ s tiList=$$titemlst^LVBMIRH0(machine_"||"_sample,,$s(TF="Y":epis,1:""))
+ f j=17,20,22,86 s visit(j)=$$seldata^LVBEPVIS(epis,j)
+ s x="" f NP=0:1 s x=$o(^TMIF(machine,1,sample,"BUG",x)) q:x=""
+ s dt="" i $d(^TMIF(machine,1,sample)) s dt=$p(^TMIF(machine,1,sample),"\",3)_","_$p(^TMIF(machine,1,sample),"\",4)
+ s hold="N" i $d(^TMIF(machine,1,sample)) s hold=$p(^TMIF(machine,1,sample),"\",7)
+ s SP="N" i $d(^TMIF(machine,1,sample,"PLOT")) s SP="Y"
+ s tat=$p($g(^TMP("RESULT-GRID",$j,"PATIENT",epis)),"\",2)
+ s ^TMP($zn,$j,"select",1)=machine_"||"_sample_"||"_epis_$c(1)_epis_$c(1)_$c(1)_visit(17)_$c(1)_visit(20)_$c(1)_$s('visit(86):"N",1:"Y")_$c(1)_$s($e(epis,1,2)="QC":"Y",1:"N")_$c(1)_NP_$c(1)_SP_$c(1)_dt_$c(1)_visit(22)_$c(1)_tat_$c(1)_hold
+ f j1=1:1:$l(tiList,"~") s result=$p(tiList,"~",j1) i $l(result) d
+ .s ti=$p($p(result,"\",2),$c(1),1),tiCnt=$p($p($p(result,"\",1),$c(1),1),"||",4)
+ .s cnt=$o(^TMP($zn,$j,"select",""),-1)+1,^TMP($zn,$j,"select",cnt)=""
+ .s $p(^TMP($zn,$j,"select",cnt),$c(1),1)=$p($p(result,"\",1),$c(1),1)
+ .s $p(^TMP($zn,$j,"select",cnt),$c(1),2)=ti
+ .s $p(^TMP($zn,$j,"select",cnt),$c(1),3)=$p($p(result,"\",3),$c(1),1)
+ .s $p(^TMP($zn,$j,"select",cnt),$c(1),4)=$$zc^LVBVIS14($p($p(result,"\",9),$c(1),1),ti)
+ .i $e(epis,1,2)="QC" d
+ ..s qc=$p($p(result,"\",11),$c(1),1)
+ ..s $p(^TMP($zn,$j,"select",cnt),$c(1),23)=qc
+ ..i $l(qc) d
+ ...n (qc,cnt)
+ ...i '$$check^LVBQCML($p(qc,"||",1,2)) s $p(^TMP($zn,$j,"select",cnt),$c(1),24)=$tr($g(PLIST($p(qc,"||",6))),$c(2),",")
+ ...i '$$select^LVBQCMTD(qc),$l(PLIST(7)) d
+ ....s rule=$p(PLIST(7),$c(1)),par=$p(qc,"||",1,4),colour=""
+ ....i '$l(colour) d
+ .....i $$open^LVBQCMTR(par)
+ .....f  q:$$fetch^LVBQCMTR(par)  i $p(PLIST(3),$c(1))=rule s colour=PLIST(6) q
+ .....i $$close^LVBQCMTR()
+ ....i '$l(colour),'$$select^LVBCTQCR(rule,"Y") s colour=PLIST(6)
+ ....s $p(^TMP($zn,$j,"select",cnt),$c(1),18)=colour
+ .i $e(epis,1,2)'="QC" d
+ ..s comm="" i $l(tiCnt) s comm=$s($g(^TMIF(machine,1,sample,"DATA",ti,tiCnt,"REM",0)):"Y",1:"N")
+ ..s ant="N" i $l(tiCnt) s x="" f  s x=$o(TMIF(machine,1,sample,"DATA",ti,tiCnt,"ANT",x)) q:x=""  i $l($p(^(x),"\",1))!$l($p(^(x),"\",3))!$l($p(^(x),"\",4)) s ant="Y" q
+ ..s res=$p($p(result,"\",3),$c(1),1),flag=$p($p(result,"\",4),$c(1),1) i res="TF" s res=""
+ ..i NoValid'="Y" d
+ ...s err=$$validres^LVBVIS12(epis,ti,res,,comm,ant,machine_"||"_sample,,flag)
+ ...f j2=1:1:8 s $p(^TMP($zn,$j,"select",cnt),$c(1),4+j2)=$p(err,$c(1),j2)
+ ...f j2=1:1:6 s $p(^TMP($zn,$j,"select",cnt),$c(1),12+j2)=$p(PLIST(j2),$c(1))
+ ...i $l(tiCnt) s $p(^TMP($zn,$j,"select",cnt),$c(1),20)=$s($d(^TMIF(machine,1,sample,"DATA",ti,tiCnt,"ANT")):"Y",1:"N")
+ ...s $p(^TMP($zn,$j,"select",cnt),$c(1),21)=flag
+ ...s $p(^TMP($zn,$j,"select",cnt),$c(1),22)=$s($o(^TMIF(machine,1,sample,"DATA",ti,""))=$o(^TMIF(machine,1,sample,"DATA",ti,""),-1):"N",1:"Y")
+ ...s $p(^TMP($zn,$j,"select",cnt),$c(1),23)=$p(PLIST(10),$c(1))
+ ...s $p(^TMP($zn,$j,"select",cnt),$c(1),24)=$p($p(result,"\",10),$c(1),1)_","_$p($p(result,"\",14),$c(1),1)
+ ...s $p(^TMP($zn,$j,"select",cnt),$c(1),25)=$p($p(result,"\",7),$c(1),1)
+ ...s $p(^TMP($zn,$j,"select",cnt),$c(1),26)=""
+ ...s $p(^TMP($zn,$j,"select",cnt),$c(1),28)=$p(PLIST(11),$c(1))
+ ...f j2=1:1:$l(flag,",") i '$$select^LVBCTMF($p(flag,",",j2)),PLIST(4)="E" s $p(^TMP($zn,$j,"select",cnt),$c(1),26)="Y" q
+ k PLIST m PLIST=^TMP($zn,$j,"select") k ^TMP($zn,$j,"select")
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+create(tsgRID,ro,Sort,Totals) n (tsgRID,ro,Sort,Totals) k ^TMP("RESULT-GRID",$j)
+ s tsgRID=$g(tsgRID),ro=$g(ro),Sort=$g(Sort),Totals=$g(Totals)
+ s machine=$p(tsgRID,"||",1),tsgroup=$p(tsgRID,"||",2)
+ i '$$select^LVBMIMP(machine) d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .m mach=PLIST
+ ; create list of test sets
+ i $$getall^LVBMITGS(machine_"||"_tsgroup)
+ m ^TMP("RESULT-GRID",$j,"TESTSET")=PLIST
+ ; create list of test codes
+ i $$getall^LVBMITGI(machine_"||"_tsgroup,"Y")
+ f j=1:1:PLIST s ti=$p(PLIST(j),$c(2),3) i $l(ti) s ^TMP("RESULT-GRID",$j,"TESTITEM",ti)=""
+ i Totals="Y" s found="" d  i 'found s Totals=""
+ .s cnt="" f  s cnt=$o(^TMP("RESULT-GRID",$j,"TESTSET",cnt)) q:cnt=""  d
+ ..s ts=$p($g(^(cnt)),$c(2),3) q:ts=""
+ ..s result=$$seldata^LVBCTTS(ts,11),result=$j(result*(24*3600),0,0)
+ ..i result s found=1,x="" f  s x=$o(^TTAB("TS",ts,0,x)) q:x=""  s ti=$p(^(x),"\",8) d
+ ...i $l(ti) s xx=$g(^TMP("RESULT-GRID",$j,"TESTITEM",ti)),^TMP("RESULT-GRID",$j,"TESTITEM",ti)=$s('$l(xx):result,xx>result:result,1:xx)
+ i ro="RB" d
+ . ; create list of outstanding QC results from TMIF
+ .s epis="QB"_$c(127) f  s epis=$o(^TMIF(machine,9,epis)) q:$e(epis,1,2)'="QC"  d
+ ..s sample="" f  s sample=$o(^TMIF(machine,9,epis,sample)) q:sample=""  d
+ ...s (ok,ti)="" f  s ti=$o(^TMIF(machine,1,sample,"DATA",ti)) q:ti=""  i $d(^TMP("RESULT-GRID",$j,"TESTITEM",ti)) s ok=1 q
+ ...i ok s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample," ")=""
+ . ; create list of outstanding results from TTRQ
+ .s cnt="" f  s cnt=$o(^TMP("RESULT-GRID",$j,"TESTSET",cnt)) q:cnt=""  d
+ ..s ts=$p($g(^(cnt)),$c(2),3) q:ts=""
+ ..s SEQ=$$seq^LVBCTTS(ts)
+ ..s epis="" f  s epis=$o(^TTRQ(ts,epis)) q:epis=""  d
+ ...i '$d(^TMIF(machine,9,epis)) q
+ ...i " 0 9 "'[(" "_$p($g(^TEPI(epis)),"\",44)_" ") q
+ ...s tscnt="" f  s tscnt=$o(^TTRQ(ts,epis,tscnt)) q:tscnt=""  d
+ ....i '$d(^TEPI(epis,1,ts,tscnt)) q
+ .... ; check test/patient location
+ ....i $l(mach(21)) s ploc=$p(^TEPI(epis,1,ts,tscnt),"\",26) s:'$l(ploc) ploc=$p(^TEPI(epis),"\",36) i $l(ploc),mach(21)'=ploc q
+ ....s sample="" f  s sample=$o(^TMIF(machine,9,epis,sample)) q:sample=""  d
+ .....s (ok,x)="" f  s x=$o(^TTAB("TS",ts,0,x)) q:x=""  s ti=$p(^(x),"\",8) i $l(ti),$d(^TMP("RESULT-GRID",$j,"TESTITEM",ti)),$d(^TMIF(machine,1,sample,"DATA",ti)) s ok=1 q
+ .....i ok d
+ ......s ^TMP("RESULT-GRID",$j,"PATIENT-INDEX",epis,sample,1,SEQ,ts)=""
+ ......s ^TMP("RESULT-GRID",$j,"PATIENT-INDEX",epis,sample,2,ts)=SEQ
+ ......s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample,ts)=epis_"||"_ts_"||"_tscnt
+ ......s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample," ")=""
+ i ro'="RB" d
+ . ; create list of outstanding results from TMIF
+ .s sample="" f  s sample=$o(^TMIF(machine,1,sample)) q:sample=""  d
+ ..s epis=$p($g(^(sample)),"\",1)
+ ..i '$l(epis),$$delete^LVBMIRH(machine_"||"_sample)
+ ..i $l(epis) d
+ ... ; QC result
+ ...i $e(epis,1,2)="QC" d
+ ....s (ok,ti)="" f  s ti=$o(^TMIF(machine,1,sample,"DATA",ti)) q:ti=""  i $d(^TMP("RESULT-GRID",$j,"TESTITEM",ti)) s ok=1 q
+ ....i ok s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample," ")=""
+ ... ; patient result
+ ...i $e(epis,1,2)'="QC" d
+ ....s (ok,ti)="" f  s ti=$o(^TMIF(machine,1,sample,"DATA",ti)) q:ti=""  i $d(^TMP("RESULT-GRID",$j,"TESTITEM",ti)) s ok=1 q
+ ....i ok s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample," ")=""
+ . ; create list of outstanding results from TTRQ
+ .s cnt="" f  s cnt=$o(^TMP("RESULT-GRID",$j,"TESTSET",cnt)) q:cnt=""  d
+ ..s ts=$p($g(^(cnt)),$c(2),3) q:ts=""
+ ..s SEQ=$$seq^LVBCTTS(ts)
+ ..s epis="" f  s epis=$o(^TTRQ(ts,epis)) q:epis=""  d
+ ... ; check ro parameter
+ ...i ro="RA",'$d(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q
+ ...s tscnt="" f  s tscnt=$o(^TTRQ(ts,epis,tscnt)) q:tscnt=""  d
+ ....i '$d(^TEPI(epis,1,ts,tscnt)) q
+ .... ; check test/patient location
+ ....i $l(mach(21)) s ploc=$p(^TEPI(epis,1,ts,tscnt),"\",26) s:'$l(ploc) ploc=$p(^TEPI(epis),"\",36) i $l(ploc),mach(21)'=ploc q
+ ....i $d(^TMP("RESULT-GRID",$j,"PATIENT",epis)) d
+ .....s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ......s ^TMP("RESULT-GRID",$j,"PATIENT-INDEX",epis,sample,1,SEQ,ts)=""
+ ......s ^TMP("RESULT-GRID",$j,"PATIENT-INDEX",epis,sample,2,ts)=SEQ
+ ......s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample,ts)=epis_"||"_ts_"||"_tscnt
+ ....i '$d(^TMP("RESULT-GRID",$j,"PATIENT",epis)) s sample=epis d
+ .....s ^TMP("RESULT-GRID",$j,"PATIENT-INDEX",epis,sample,1,SEQ,ts)=""
+ .....s ^TMP("RESULT-GRID",$j,"PATIENT-INDEX",epis,sample,2,ts)=SEQ
+ .....s ^TMP("RESULT-GRID",$j,"PATIENT",epis,sample,ts)=epis_"||"_ts_"||"_tscnt
+ ; sort QC under sample id
+ s epis="QB"_$C(127) f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:$e(epis,1,2)'="QC"  d
+ .s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ..s list=$o(^TMP("RESULT-GRID",$j,"LIST",""),-1)+1
+ ..s ^TMP("RESULT-GRID",$j,"LIST",list)=epis_"\"_sample
+ .s ^TMP("RESULT-GRID",$j,"SORTED",epis)=""
+ i Sort="" d
+ . ;
+ . ; sort urgent first
+ . ;
+ .i mach(8)="Y" d
+ ..s epis="" f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:epis=""  i '$d(^TMP("RESULT-GRID",$j,"SORTED",epis)) d
+ ...s result=""
+ ...  ;---&sql(SELECT EPVIS_PriorityCode_DR->CTPR_Urgent INTO :result FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  ...  ;--- ** SQL PUBLIC Variables: SQLCODE, epis, result
+ ... Do %0Ao
+ ...i $p(result,$c(1))="Y" d
+ ....s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ .....s list=$o(^TMP("RESULT-GRID",$j,"LIST",""),-1)+1
+ .....s ^TMP("RESULT-GRID",$j,"LIST",list)=epis_"\"_sample
+ .....s ^TMP("RESULT-GRID",$j,"INDEX",epis,sample)=list
+ ....s ^TMP("RESULT-GRID",$j,"SORTED",epis)=""
+ . ;
+ . ; sort patients under sample id
+ . ;
+ .s epis="" f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:epis=""  i '$d(^TMP("RESULT-GRID",$j,"SORTED",epis)) d
+ ..s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ...s list=$o(^TMP("RESULT-GRID",$j,"LIST",""),-1)+1
+ ...s ^TMP("RESULT-GRID",$j,"LIST",list)=epis_"\"_sample
+ ...s ^TMP("RESULT-GRID",$j,"INDEX",epis,sample)=list
+ ..s ^TMP("RESULT-GRID",$j,"SORTED",epis)=""
+ i Sort="U" d
+ . ;
+ . ; sort urgent first
+ . ;
+ .s epis="" f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:epis=""  i '$d(^TMP("RESULT-GRID",$j,"SORTED",epis)) d
+ ..s result=""
+ ..  ;---&sql(SELECT EPVIS_PriorityCode_DR->CTPR_Urgent INTO :result FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  ..  ;--- ** SQL PUBLIC Variables: SQLCODE, epis, result
+ .. Do %0Co
+ ..i $p(result,$c(1))="Y" d
+ ...s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ....s list=$o(^TMP("RESULT-GRID",$j,"LIST",""),-1)+1
+ ....s ^TMP("RESULT-GRID",$j,"LIST",list)=epis_"\"_sample
+ ....s ^TMP("RESULT-GRID",$j,"INDEX",epis,sample)=list
+ ...s ^TMP("RESULT-GRID",$j,"SORTED",epis)=""
+ . ;
+ . ; sort patients under sample id
+ . ;
+ .s epis="" f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:epis=""  i '$d(^TMP("RESULT-GRID",$j,"SORTED",epis)) d
+ ..s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ...s list=$o(^TMP("RESULT-GRID",$j,"LIST",""),-1)+1
+ ...s ^TMP("RESULT-GRID",$j,"LIST",list)=epis_"\"_sample
+ ...s ^TMP("RESULT-GRID",$j,"INDEX",epis,sample)=list
+ ..s ^TMP("RESULT-GRID",$j,"SORTED",epis)=""
+ i Sort="E" d
+ . ;
+ . ; sort patients under sample id
+ . ;
+ .s epis="" f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:epis=""  i '$d(^TMP("RESULT-GRID",$j,"SORTED",epis)) d
+ ..s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ...s list=$o(^TMP("RESULT-GRID",$j,"LIST",""),-1)+1
+ ...s ^TMP("RESULT-GRID",$j,"LIST",list)=epis_"\"_sample
+ ...s ^TMP("RESULT-GRID",$j,"INDEX",epis,sample)=list
+ ..s ^TMP("RESULT-GRID",$j,"SORTED",epis)=""
+ i Sort="DT" d
+ . ;
+ . ; sort patients with Date/Time of transmission
+ . ;
+ .k ^TMP($zn,$j,"sort")
+ .s epis="" f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:epis=""  i '$d(^TMP("RESULT-GRID",$j,"SORTED",epis)) d
+ ..s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ...s date=$p($g(^TMIF(machine,1,sample)),"\",5),time=$p($g(^TMIF(machine,1,sample)),"\",6)
+ ...s:'$l(date) date=" " s:'$l(time) time=" " s ^TMP($zn,$j,"sort",date,time,epis,sample)=""
+ ..s ^TMP("RESULT-GRID",$j,"SORTED",epis)=""
+ .s date="" f  s date=$o(^TMP($zn,$j,"sort",date)) q:date=""  d
+ ..s time="" f  s time=$o(^TMP($zn,$j,"sort",date,time)) q:time=""  d
+ ...s epis="" f  s epis=$o(^TMP($zn,$j,"sort",date,time,epis)) q:epis=""  d
+ ....s sample="" f  s sample=$o(^TMP($zn,$j,"sort",date,time,epis,sample)) q:sample=""  d
+ .....s list=$o(^TMP("RESULT-GRID",$j,"LIST",""),-1)+1
+ .....s ^TMP("RESULT-GRID",$j,"LIST",list)=epis_"\"_sample
+ .....s ^TMP("RESULT-GRID",$j,"INDEX",epis,sample)=list
+ .k ^TMP($zn,$j,"sort")
+ i Sort="PL" d
+ . ;
+ . ; sort patients by Patient Location
+ . ;
+ .k ^TMP($zn,$j,"sort")
+ .s epis="" f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:epis=""  i '$d(^TMP("RESULT-GRID",$j,"SORTED",epis)) d
+ ..s result=$$seldata^LVBEPVIS(epis,22) i '$l(result) s result=" "
+ ..s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ...s ^TMP($zn,$j,"sort",result,epis,sample)=""
+ ..s ^TMP("RESULT-GRID",$j,"SORTED",epis)=""
+ .s sort="" f  s sort=$o(^TMP($zn,$j,"sort",sort)) q:sort=""  d
+ ..s epis="" f  s epis=$o(^TMP($zn,$j,"sort",sort,epis)) q:epis=""  d
+ ...s sample="" f  s sample=$o(^TMP($zn,$j,"sort",sort,epis,sample)) q:sample=""  d
+ ....s list=$o(^TMP("RESULT-GRID",$j,"LIST",""),-1)+1
+ ....s ^TMP("RESULT-GRID",$j,"LIST",list)=epis_"\"_sample
+ ....s ^TMP("RESULT-GRID",$j,"INDEX",epis,sample)=list
+ .k ^TMP($zn,$j,"sort")
+ s ^TMP("RESULT-GRID",$j)="^"_tsgRID_"^"_ro
+ k ^TMP("RESULT-GRID",$j,"SORTED")
+ i Totals="Y" d
+ .s $p(^TMP("RESULT-GRID",$j),"^",1)=$h,$p(^TMP("RESULT-GRID",$j),"^",15)="Totals"
+ .s x="" f  s x=$o(^TMP("RESULT-GRID",$j,"LIST",x)) q:x=""  d
+ ..s epis=$p(^(x),"\",1),sample=$p(^(x),"\",2)
+ ..f j=61,62 s visit(j)=$$seldata^LVBEPVIS(epis,j)
+ ..s ^TMP("RESULT-GRID",$j,"PATIENT",epis)=visit(61)_","_visit(62)
+ .d totals(machine)
+ q 0
+totals(machine,ep,Job) n (machine,ep,Job) s machine=$g(machine),ep=$g(ep),Job=$g(Job),now=$p($g(^TMP("RESULT-GRID",$j)),"^")
+ i '$l(Job) s Job=$j
+ i $l(now) d
+ .s x1="" f  s x1=$o(^TMP("RESULT-GRID",Job,"LIST",x1)) q:x1=""  d
+ ..s epis=$p(^(x1),"\",1),sample=$p(^(x1),"\",2) i $l(ep),ep'=epis q
+ ..i '$$select(machine,sample,epis,"Y") f j=2:1:PLIST d
+ ...s ti=$p(PLIST(j),$c(1),2),res=$p(PLIST(j),$c(1),3) i $l(ti) d
+ ....s (x2,ok)="" f  s x2=$o(^TMP("RESULT-GRID",Job,"TESTSET",x2)) q:x2=""  s ts=$p($g(^(x2)),$c(2),3) i $l(ts) d  q:ok
+ .....s cnt="" f  s cnt=$o(^TTRQi(epis,ts,cnt)) q:cnt=""  i $d(^TTRQi(epis,ts,cnt,ti)) s ok=1 q
+ ....i ok d
+ .....s ^TMP("RESULT-GRID",Job,"TESTITEM",ti,epis)=res
+ .....s ^TMP("RESULT-GRID",Job,"PATIENT",epis,ti)=res
+ .s ti="" f  s ti=$o(^TMP("RESULT-GRID",Job,"TESTITEM",ti)) q:ti=""  d
+ ..s ^(ti)=$p($g(^(ti)),"\",1)
+ ..s (t2,t3,epis)="" f  s epis=$o(^TMP("RESULT-GRID",Job,"TESTITEM",ti,epis)) q:epis=""  d
+ ...i (^(epis)="")!(^(epis)="TF") s t2=t2+1
+ ...s dt=$p($g(^TMP("RESULT-GRID",Job,"PATIENT",epis)),"\")
+ ...s xx=((now-dt)*(24*3600))+($p(now,",",2)-$p(dt,",",2))
+ ...s xx1=$p($g(^TMP("RESULT-GRID",Job,"TESTITEM",ti)),"\")
+ ...i xx1,xx>xx1 s t3=t3+1,$p(^TMP("RESULT-GRID",Job,"PATIENT",epis),"\",2)="Y"
+ ..s $p(^TMP("RESULT-GRID",Job,"TESTITEM",ti),"\",2)=t2
+ ..s $p(^TMP("RESULT-GRID",Job,"TESTITEM",ti),"\",3)=t3
+ q
+ ; select all machine results for sample and Test Item
+allresults(msRID,TestItem) n (msRID,TestItem) s msRID=$g(msRID),TestItem=$g(TestItem)
+ ; find active result
+ s machine=$p(msRID,"||",1),sample=$p(msRID,"||",2)
+ s tiActive=$o(^TMIF(machine,1,sample,"DATA",TestItem,""),-1)
+ s ticnt="" f  s ticnt=$o(^TMIF(machine,1,sample,"DATA",TestItem,ticnt),-1) q:ticnt=""  i $p(^(ticnt),"\",5)="Y" s tiActive=ticnt q
+ i $$open^LVBMIRI(msRID,TestItem)
+ f cnt=1:1 q:$$fetch^LVBMIRI(msRID,TestItem)  s x=$s(tiActive=PLIST(6):"x",1:cnt) f j=1:1:PLIST s $p(res(x),"\",j)=PLIST(j)
+ i $$close^LVBMIRI()
+ s (result,x)="" f j=1:1 s x=$o(res(x)) q:x=""  s $p(result,$c(5),j)=res(x)
+ q result
+ ; update all machine results by value or percentage
+updres(machine,absolute,percent,clear,tcode) n (machine,absolute,percent,clear,tcode)
+ s machine=$g(machine),absolute=$g(absolute),percent=$g(percent),clear=$g(clear),tcode=$g(tcode)
+ i $l(machine),$l(tcode),$l(absolute)!$l(percent)!(clear="Y") d
+ .s decimal="" i '$$select^LVBCTTC(tcode,"Y") s decimal=$e(PLIST(5),2,$l(PLIST(5)))
+ .s epis="" f  s epis=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis)) q:epis=""  d
+ ..s sample="" f  s sample=$o(^TMP("RESULT-GRID",$j,"PATIENT",epis,sample)) q:sample=""  d
+ ...i clear="Y" s err=$$delalltc^LVBMIRI(machine_"||"_sample_"||"_tcode) q
+ ...s nn=0 f  s nn=$o(^TMIF(machine,1,sample,"DATA",tcode,nn)) q:nn=""  d
+ ....s res=$p($g(^TMIF(machine,1,sample,"DATA",tcode,nn)),"\") d
+ .....i $l(percent) s res=$j(res*percent/100,0,decimal) q
+ .....i $l(absolute) s res=res+absolute
+ ....i $l(res) s $p(^TMIF(machine,1,sample,"DATA",tcode,nn),"\")=res
+ ....e  i $$delete^LVBMIRI(machine_"||"_sample_"||"_tcode_"||"_nn)
+ q 0
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(8)=0,%mmmsqld(9)="",%mmmsqld(10)=0,%mmmsqld(11)=""
+ s %mmmsqld(6)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0ABdun
+ s %mmmsqld(14)=$g(^TEPI(%mmmsqld(5)))
+ s %mmmsqld(1)=$p(%mmmsqld(14),"\",15)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(5),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(8)=1,%mmmsqld(9)=$name(^TEPI($p(%mmmsqld(5),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0ACdun
+ s %mmmsqld(17)=$g(^TEPI(%mmmsqld(5)))
+ s %mmmsqld(1)=$p(%mmmsqld(17),"\",15)
+%0ABuncommitted ;
+ s %mmmsqld(2)=%mmmsqld(1)
+ i %mmmsqld(2)'="",$d(^TTAB("PC",%mmmsqld(2)))
+ e  s %mmmsqld(2)="",result="" g %0ACp4
+ s %mmmsqld(22)=$g(^TTAB("PC",%mmmsqld(2)))
+ s result=$p(%mmmsqld(22),"\",2)
+%0ACp4 
+ g:$zu(115,2)=0 %0ACuncommitted i $zu(115,2)=1 l +^TTAB("PC",$p(%mmmsqld(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(10)=1,%mmmsqld(11)=$name(^TTAB("PC",$p(%mmmsqld(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Priority for RowID value: "_%mmmsqld(2) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %mmmsqld(2)'="",$d(^TTAB("PC",%mmmsqld(2)))
+ e  s %mmmsqld(2)="",result="" g %0ADp1
+ s %mmmsqld(27)=$g(^TTAB("PC",%mmmsqld(2)))
+ s result=$p(%mmmsqld(27),"\",2)
+%0ADp1 
+%0ACuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ADdun i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) s %mmmsqld(10)=0 }
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) s %mmmsqld(8)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) } i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(8)=0,%mmmsqld(9)="",%mmmsqld(10)=0,%mmmsqld(11)=""
+ s %mmmsqld(6)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0CBdun
+ s %mmmsqld(14)=$g(^TEPI(%mmmsqld(5)))
+ s %mmmsqld(1)=$p(%mmmsqld(14),"\",15)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(5),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(8)=1,%mmmsqld(9)=$name(^TEPI($p(%mmmsqld(5),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0CCdun
+ s %mmmsqld(17)=$g(^TEPI(%mmmsqld(5)))
+ s %mmmsqld(1)=$p(%mmmsqld(17),"\",15)
+%0CBuncommitted ;
+ s %mmmsqld(2)=%mmmsqld(1)
+ i %mmmsqld(2)'="",$d(^TTAB("PC",%mmmsqld(2)))
+ e  s %mmmsqld(2)="",result="" g %0CCp4
+ s %mmmsqld(22)=$g(^TTAB("PC",%mmmsqld(2)))
+ s result=$p(%mmmsqld(22),"\",2)
+%0CCp4 
+ g:$zu(115,2)=0 %0CCuncommitted i $zu(115,2)=1 l +^TTAB("PC",$p(%mmmsqld(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(10)=1,%mmmsqld(11)=$name(^TTAB("PC",$p(%mmmsqld(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Priority for RowID value: "_%mmmsqld(2) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %mmmsqld(2)'="",$d(^TTAB("PC",%mmmsqld(2)))
+ e  s %mmmsqld(2)="",result="" g %0CDp1
+ s %mmmsqld(27)=$g(^TTAB("PC",%mmmsqld(2)))
+ s result=$p(%mmmsqld(27),"\",2)
+%0CDp1 
+%0CCuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CDdun i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) s %mmmsqld(10)=0 }
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) s %mmmsqld(8)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) } i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+]]></Routine>
+</Export>

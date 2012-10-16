@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR1ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDR1ESP01 ;IG 27/05/98 ;Doctors Reports printing (single test set - normal) - LaPaz
+ ;
+ ; supported calls :
+ ;
+ ; $$print^PRTDR1ESP01(vtsRID,type,DH)
+ ;
+ ; type  : P - print
+ ;         V - view from Enquiry
+ ;           - view from Entry
+ ; DH    : D - Doctor
+ ;         H - Hospital
+print(vtsRID,type,DH) n (vtsRID,type,DH,tsLM,tsWD,dh1,dh2,mismpl) s vtsRID=$g(vtsRID),type=$g(type),DH=$g(DH),dh1=$g(dh1),dh2=$g(dh2),mismpl=$g(mismpl)
+ s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tsLM=$g(tsLM),tsWD=$g(tsWD) k Coag
+ s HISS=""
+ i type="J" s type="",HISS="Y"
+ ; check for margin changes
+ s margin="",%routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Margin^"_%routine i $l($t(@LineRoutine)) x "s margin=$$Margin^"_%routine_"()"
+ s dft=$$seldata^LVBVISTS(vtsRID,42)
+ i $l($p(dft,$c(1))) d  q "Y"
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP7")),"\",1)
+ .i $l(%routine) x "d print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+ s range1="(",range2=")",(flaglow,flaghigh,Alternate)=""
+ k TEST f j=2,3,6,17,26,41 s TEST(j)=$$seldata^LVBCTTS(test,j)
+ s dep=TEST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ i '$$select^MVBCFLAB(1) d
+ .i $l(PLIST(18)) s flaglow=PLIST(18)
+ .i $l(PLIST(19)) s flaghigh=PLIST(19)
+ .i $l(PLIST(20)) s range1=PLIST(20)
+ .i $l(PLIST(21)) s range2=PLIST(21)
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ .i $l(PLIST(69)) s Alternate=PLIST(69)
+ ; process normal test set
+ s rowid=test_"||"_$tr(dh1,"H","L")_"||"_dh2,layout=""
+ s layout=$$seldata^LVBCTTSP(rowid,4)
+ s layout=$p(layout,$c(1)),lan=""
+ i dh1="D" s lan=$$seldata^LVBCTDR(dh2,46)
+ i dh1="H" s lan=$$seldata^LVBCTHOS(dh2,35)
+ i '$l(lan) s lan=$$seldata^LVBEPVIS(epis,161)
+ s lan=$p($g(lan),$c(1))
+ k FORMAT i '$$getit^LVBCTTSF(,vtsRID,"Y",,,layout,,lan) m FORMAT=PLIST
+ k RESULT i '$$results^LVBVISTS(vtsRID,mismpl,$s($l(mismpl):"Y",1:"N"),,"Y") d
+ .f j=1:1:PLIST s x1=$p(PLIST(j),$c(1),2),x2=$p(PLIST(j),$c(1),3) i $l(x1),$l(x2) s RESULT(x1)=x2_$c(1)_$p(PLIST(j),$c(1),5)_$c(1)_$p(PLIST(j),$c(1),22)
+ ; for printing TS layout
+ i '$l(epis) s cnt="" f  s cnt=$o(FORMAT(cnt)) q:cnt=""  d
+ .s tc=$p(FORMAT(cnt),$c(2),10) i $l(tc) d
+ ..i $e($p(FORMAT(cnt),$c(2),18))="S" s RESULT(tc)="Comment"
+ ..i $e($p(FORMAT(cnt),$c(2),18),1,2)="B1" s RESULT(tc)="Reactions"
+ ..i $e($p(FORMAT(cnt),$c(2),18),1,2)="B2" s RESULT(tc)=$o(^TTAB("BB-BG",""))
+ ..i $e($p(FORMAT(cnt),$c(2),18))="X" s RESULT(tc)="Free Text"
+ ..i $e($p(FORMAT(cnt),$c(2),18))="N" s RESULT(tc)="",$p(RESULT(tc),9,$p(FORMAT(cnt),$c(2),19)+1)=""
+ ..i $e($p(FORMAT(cnt),$c(2),18))="V" s RESULT(tc)=$o(^TTAB("BUG",""))
+ ..i $e($p(FORMAT(cnt),$c(2),18))="D" s RESULT(tc)=+$h
+ ..i $e($p(FORMAT(cnt),$c(2),18))="Y" s RESULT(tc)="Y"
+ ; print Authorised by
+ i $$status^LVBVIS1(vtsRID)="A",type'="P" d
+ .i '$$select^LVBVISTS(vtsRID) d
+ ..d ADD^PRTDR00(,"~RES-AUTHORISEDBY")
+ ..d LN^PRTDR00(),ADD^PRTDR00(tsLM+margin,"Validado por "_$p(PLIST(9),$c(1),2)_"  el "_$$extdate2^SSUTIL4(PLIST(7))_"  a las "_$$exttime^SSUTIL4(PLIST(8))),LN^PRTDR00()
+ ..d ADD^PRTDR00(,"~NORMAL")
+ ; print test set header
+ i $l(TEST(17)) d
+ .s tsName=""
+ .i '$l(tsName),$l(lan) d
+ ..s rowid=TEST(2)_"||"_lan
+ ..s tsName=$$seldata^LVBCTTSZ(rowid,3)
+ ..s tsName=$p(tsName,$c(1))
+ .i '$l(tsName) s tsName=$s(TEST(17)="*":TEST(3),1:TEST(17))
+ .d ADD^PRTDR00(,"~RES-TSHEADER")
+ .d LN^PRTDR00(),ADD^PRTDR00(tsLM+margin,tsName),LN^PRTDR00()
+ .d ADD^PRTDR00(,"~NORMAL")
+ ; print Reason
+ s reason=$$seldata^LVBVISTS(vtsRID,58) i $l(reason) d
+ .i '$$select^LVBCTR(reason,"Y"),PLIST(4)="Y",$l(PLIST(6)) d
+ ..d ADD^PRTDR00(,"~NORMAL"),LN^PRTDR00()
+ ..f j=1:1:$l(PLIST(6),"|") d ADD^PRTDR00(tsLM+margin,$p(PLIST(6),"|",j)),LN^PRTDR00()
+ ..d ADD^PRTDR00(,"~NORMAL")
+ ; print test set format
+ s done=1 ;mic
+ s cnt="",(Start,StartPrinted)=1 f  s cnt=$o(FORMAT(cnt)) q:cnt=""  d
+ .s tc=$p(FORMAT(cnt),$c(2),10)
+ . ; Alternate result entered
+ .i type="P",$l(tc),$l(Alternate),$p($g(RESULT(tc)),$c(1))=$p(Alternate,"-") s Start=$p(FORMAT(cnt),$c(2),6)+$s($e($p(FORMAT(cnt),$c(2),18))="A":5,1:"") q
+ . ; no result entered
+ .i $l(tc),'$d(RESULT(tc)) s Start=$p(FORMAT(cnt),$c(2),6)+$s($e($p(FORMAT(cnt),$c(2),18))="A":5,1:"") q
+ . ; non reportable test item
+ .i (type="P")!(type="V"),$p(FORMAT(cnt),$c(2),15)'="Y" s Start=$p(FORMAT(cnt),$c(2),6)+$s($e($p(FORMAT(cnt),$c(2),18))="A":5,1:"") q
+ .i HISS="Y",$p(FORMAT(cnt),$c(2),15)'="Y" s Start=$p(FORMAT(cnt),$c(2),6)+$s($e($p(FORMAT(cnt),$c(2),18))="A":5,1:"") q
+ .i $l(tc),(type="P")!(type="V"),$p(RESULT(tc),$c(1),3)="Y" s Start=$p(FORMAT(cnt),$c(2),6)+$s($e($p(FORMAT(cnt),$c(2),18))="A":5,1:"") q
+ .i type="" d
+ ..i $p(FORMAT(cnt),$c(2),15)'="Y" d ADD^PRTDR00(,"~INVISIBLE") q
+ ..i $l(tc),$p(RESULT(tc),$c(1),3)="Y" d ADD^PRTDR00(,"~INVISIBLE") q
+ . ; print text line
+ .i $p(FORMAT(cnt),$c(2),6)>Start f Start=Start+1:1:$p(FORMAT(cnt),$c(2),6) d LN^PRTDR00() s StartPrinted=Start
+ .i StartPrinted<Start d LN^PRTDR00() s StartPrinted=Start
+ .i $p(FORMAT(cnt),$c(2),5)+margin,$l($p(FORMAT(cnt),$c(2),3)) d
+ ..d ADD^PRTDR00($p(FORMAT(cnt),$c(2),5)+margin,)
+ ..i $l($p(FORMAT(cnt),$c(2),11)) f j=1:1:$l($p(FORMAT(cnt),$c(2),11)) s x=$e($p(FORMAT(cnt),$c(2),11),j) i $l(x) d
+ ...i x="B" d ADD^PRTDR00(,"~BOLD",,"N")
+ ...i x="I" d ADD^PRTDR00(,"~ITALIC",,"N")
+ ...i x="U" d ADD^PRTDR00(,"~UNDERLINE",,"N")
+ ..d ADD^PRTDR00(,$p(FORMAT(cnt),$c(2),3))
+ ..i $l($p(FORMAT(cnt),$c(2),11)) d
+ ...i type="" s x99=0 d  q:x99
+ ....i $p(FORMAT(cnt),$c(2),15)'="Y" d ADD^PRTDR00(,"~INVISIBLE") s x99=1 q
+ ....i $l(tc),$p(RESULT(tc),$c(1),3)="Y" d ADD^PRTDR00(,"~INVISIBLE") s x99=1 q
+ ...d ADD^PRTDR00(,"~NORMAL")
+ . ; print test item
+ .i $l(tc) d
+ ..k result s result=$p(RESULT(tc),$c(1),1),flag=$p(RESULT(tc),$c(1),2) i $l(result) d  i $e($p(FORMAT(cnt),$c(2),18))="C" q
+ ...i $e($p(FORMAT(cnt),$c(2),18))="A" d IA^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="S" d IS^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18),1,2)="B1" d IS^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18),1,2)="B2" d IB2^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="X" d IX^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="N" d IN^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="V" d IV^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="D" d ID^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="Y" d IY^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="C" s Coag(tc)=FORMAT(cnt)
+ ..i $p(FORMAT(cnt),$c(2),8)="M",$d(result)\10=0,result="" d
+ ...i "MN"[$e($p(FORMAT(cnt),$c(2),18)) s result=$j("TF",$p(FORMAT(cnt),$c(2),19))
+ ...e  s result="To follow"
+ .. ; print result
+ ..i $p(FORMAT(cnt),$c(2),7) d
+ ... ; single result
+ ...i $l(result) d  q
+ .... ; print extra info
+ ....i flag="L" d
+ .....i "MN"[$e($p(FORMAT(cnt),$c(2),18)),$l(flaglow) s result=result_" "_flaglow
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....d ADD^PRTDR00(,"~RES-ABNORMAL")
+ ....i flag="H" d
+ .....i "MN"[$e($p(FORMAT(cnt),$c(2),18)),$l(flaghigh) s result=result_" "_flaghigh
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....d ADD^PRTDR00(,"~RES-ABNORMAL")
+ .... i test="Z1",tc="C1007" d ADD^PRTDR00(,"~FONTSIZE=30"),ADD^PRTDR00(,"~BOLD")
+ ....d ADD^PRTDR00(,$c(13)),ADD^PRTDR00($p(FORMAT(cnt),$c(2),7)+margin,result)
+ .... i test="Z1",tc="C1007" d ADD^PRTDR00(,"~NORMAL"),ADD^PRTDR00(,"~FONTSIZE=9")
+ ....i (flag="L")!(flag="H") d
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....d ADD^PRTDR00(,"~NORMAL")
+ ....i "MN"[$e($p(FORMAT(cnt),$c(2),18)) d
+ ..... ; print units
+ .....i $p(FORMAT(cnt),$c(2),12) d
+ ......d
+ .......i type="" s x99=0 d  q:x99
+ ........i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ........i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .......d ADD^PRTDR00(,"~RES-UNITS")
+ ......d ADD^PRTDR00($p(FORMAT(cnt),$c(2),12)+margin,$p(FORMAT(cnt),$c(2),17))
+ ......d
+ .......i type="" s x99=0 d  q:x99
+ ........i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ........i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .......d ADD^PRTDR00(,"~NORMAL")
+ ..... ; print ranges
+ .....i $p(FORMAT(cnt),$c(2),14) d
+ ......d
+ .......i type="" s x99=0 d  q:x99
+ ........i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ........i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .......i $l($p(FORMAT(cnt),$c(2),22)) d ADD^PRTDR00(,"~RES-RR")
+ ......i $l($p(FORMAT(cnt),$c(2),22)),$l($p(FORMAT(cnt),$c(2),23)) d
+ .......i $e($p(FORMAT(cnt),$c(2),22))?1N s $p(FORMAT(cnt),$c(2),22)=$j($p(FORMAT(cnt),$c(2),22),0,$e($p(FORMAT(cnt),$c(2),18),2,4))
+ .......i $e($p(FORMAT(cnt),$c(2),23))?1N s $p(FORMAT(cnt),$c(2),23)=$j($p(FORMAT(cnt),$c(2),23),0,$e($p(FORMAT(cnt),$c(2),18),2,4))
+ .......d ADD^PRTDR00($p(FORMAT(cnt),$c(2),14)+margin,$tr($j(range1_$p(FORMAT(cnt),$c(2),22),$p(FORMAT(cnt),$c(2),19)+$l(range1))_"-"_$p(FORMAT(cnt),$c(2),23)_range2,".",","))
+ ......i $l($p(FORMAT(cnt),$c(2),22)),'$l($p(FORMAT(cnt),$c(2),23)) d
+ .......i $e($p(FORMAT(cnt),$c(2),22))?1N s $p(FORMAT(cnt),$c(2),22)=$j($j($p(FORMAT(cnt),$c(2),22),0,$e($p(FORMAT(cnt),$c(2),18),2,4)),$p(FORMAT(cnt),$c(2),19)+$l(range1))
+ .......d ADD^PRTDR00($p(FORMAT(cnt),$c(2),14)+margin,$tr(range1_$p(FORMAT(cnt),$c(2),22)_range2,".",","))
+ ......i $l($p(FORMAT(cnt),$c(2),22)) d
+ .......i type="" s x99=0 d  q:x99
+ ........i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ........i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .......d ADD^PRTDR00(,"~NORMAL")
+ .... i $e(test)="U",done d
+ ..... s done=0
+ ..... i $$status^LVBVIS1(vtsRID)="A",type="P" s ua=$$seldata^LVBVISTS(vtsRID,9) d ADD^PRTDR00(,"?86 "_ua)
+ ... ; multiline result
+ ...i $d(result)\10 d
+ ....d
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....i (flag="L")!(flag="H") d ADD^PRTDR00(,"~RES-ABNORMAL")
+ ....s x="" f xx=0:1 s x=$o(result(x)) q:x=""  d:xx LN^PRTDR00() d ADD^PRTDR00($p(FORMAT(cnt),$c(2),7)+margin,result(x))
+ ....d
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....i (flag="L")!(flag="H") d ADD^PRTDR00(,"~NORMAL")
+ ... i $e(test)="U",done d
+ .... s done=0
+ .... i $$status^LVBVIS1(vtsRID)="A",type="P" s ua=$$seldata^LVBVISTS(vtsRID,9) d ADD^PRTDR00(,"?86 "_ua)
+ .i type="" d
+ ..i $p(FORMAT(cnt),$c(2),15)'="Y" d ADD^PRTDR00(,"~NORMAL")
+ ..i $l(tc),$p(RESULT(tc),$c(1),3)="Y" d ADD^PRTDR00(,"~NORMAL")
+ ; process BB x-match part
+ i TEST(6)="Y" d
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP4")),"\",1)
+ .i $l(%routine) x "d print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+ ; process coag calender
+ i $d(Coag) d  k Coag
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP6")),"\",1)
+ .i $l(%routine) x "d print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+prend q 0
+]]></Routine>
+</Export>

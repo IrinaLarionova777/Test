@@ -1,0 +1,522 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBBILL3" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBBILL3	; IG 07/10/98 ; Pricing - New
+	;
+	; supported calls:
+	;
+	; $$ext^LVBBILL3(user,dFrom,dTo,epis)
+	;
+Episode(epis,check)	s epis=$g(epis),check=$g(check),flag=""
+	d SetBill^LVBBILL0(epis,)
+	i '$d(^TEPI(epis)) k ^TBIL(9,epis) q
+	; check if patient is PriceAble
+	i '$$PriceAble^LVBCOM02(epis,check) k ^TBIL(9,epis) q
+	; check if not an episode price
+	s ok=1 i check="Y" d
+	.s date=$p($g(^TBIL(9,epis)),"\",1),flag=$p($g(^TBIL(9,epis)),"\",2)
+	.s inpat=$$inpat(epis),pc=$$seldata^LVBEPVIS(epis,9)
+	.i inpat="Y",InpatientsOnce="Y" d
+	..s hosp=$$seldata^LVBEPVIS(epis,65) i '$l($p(hosp,",",1))!'$l($p(hosp,",",2)) q
+	..s mrn=$$seldata^LVBEPVIS(epis,20)
+	..s x1="" f  s x1=$o(^TDEB(mrn,x1)) q:x1=""  d
+	...s x2="" f  s x2=$o(^TDEB(mrn,x1,0,x2)) q:x2=""  i pc=$$seldata^LVBEPVIS(x2,9),hosp=$$seldata^LVBEPVIS(x2,65) d
+	....i $l($p($g(^TBIL(9,x2)),"\",1)),$p($g(^TBIL(9,x2)),"\",1)>date s date=$p($g(^TBIL(9,x2)),"\",1)
+	....i '$l($p($g(^TBIL(9,x2)),"\",1)) d
+	.....i $$seldata^LVBEPVIS(x2,21) q
+	.....s date=$h+1
+	.s date1=$$seldata^LVBEPVIS(epis,14),prompt=$$seldata^LVBEPVIS(epis,50)
+	.i $p(prompt,$c(1))="Y" s flag="P"
+	.s delay=$s($l(delay2)&(inpat="Y"):delay2,1:delay1)
+	.s ok=0 i (date'>($h-delay))!(flag="Y")!(flag="P") d
+	..i $l(dFrom),date1<dFrom q
+	..i $l(dTo),date1>dTo q
+	..s ok=1
+	i ok d
+	.s conn=$$conn(epis)
+	.f j=12,14,20 s VISIT(j)=$$seldata^LVBEPVIS(epis,j)
+	.i '$l(VISIT(20)) d log(epis,"Patient does not have MRN",,"1-MRN") q
+	.i '$l(VISIT(12)) d log(epis,"Patient does not have Date_of_Collection",,"2-DoC") q
+	.i '$l(VISIT(14)) d log(epis,"Patient does not have Date_of_Request",,"3-DoR") q
+	.i VISIT(12)-VISIT(14)>364,VISIT(14)-VISIT(12)>364 d log(epis,"Check Date_of_Request or Date_of_Collection",,"4-DoR DoC") q
+	. ; i VISIT(12)>VISIT(14),VISIT(12)-VISIT(14)>364 d log(epis,"Check Date_of_Request or Date_of_Collection",,"4-DoR DoC") q
+	. ; i VISIT(14)>VISIT(12) d log(epis,"Check Date_of_Request or Date_of_Collection",,"4-DoR DoC") q
+	.i SinglePatient'="Y" d
+	..s ^TMP($zn,$j,10,VISIT(20),VISIT(12),"N",epis)=flag
+	.. ; s ^TMP($zn,$j,10,VISIT(20),VISIT(12),$s(conn="Y":"Y",1:"N"),epis)=flag
+	..s ^TMP($zn,$j,20,VISIT(20),VISIT(12),epis)=flag
+	.e  s ^TMP($zn,$j,10,epis,VISIT(12),"N",epis)=flag
+	q
+ListOfItems(epis)	k SuperSet
+	s test="" f  s test=$o(^TEPI(epis,1,test)) q:test=""  d
+	.s tscnt="" f  s tscnt=$o(^TEPI(epis,1,test,tscnt)) q:tscnt=""  d
+	..s rowid=epis_"||"_test_"||"_tscnt
+	..s SuperSet=$$seldata^LVBVISTS(rowid,32),Rule3Exempt=$$seldata^LVBVISTS(rowid,12),HistoCyto=$$seldata^LVBVISTS(rowid,36),supress=$$seldata^LVBVISTS(rowid,37)
+	..s type=$$seldata^LVBCTTS($p(rowid,"||",2),15),synonym=$$seldata^LVBCTTS($p(rowid,"||",2),4)
+	..s HISTO=0 f j=1:1:$l(HistoCyto,",") i $l($p(HistoCyto,",",j)) s HISTO=1
+	.. ; no charge test set
+	..i $p(type,$c(1))="N" q
+	.. ; supress billing
+	..i $p(supress,$c(1))="Y" q
+	.. ; manual pricing
+	..i $p(type,$c(1))="M" s ^TMP($zn,$j,2,Master)="Manual"
+	..i PAYCODE(9)="Y" s ^TMP($zn,$j,2,Master)="Manual"
+	..i 'HISTO d  q
+	...i $l(SuperSet),'$d(^TTAB("SUPTS",SuperSet,3)) s SuperSet=""
+	... ; Super Set pricing
+	...i $l(SuperSet) d
+	....i $d(SuperSet(SuperSet)) q
+	....s SuperSet(SuperSet)=""
+	....s date1=$o(^TTAB("SUPTS",SuperSet,3,date+1),-1)
+	....i '$l(date1),$p(type,$c(1))'="M" d log(epis,"Super Set <"_SuperSet_"> No item effective date before "_$$extdate2^SSUTIL4(date),,"18-SUPTS") q
+	....i $l(date1) s item="" f  s item=$o(^TTAB("SUPTS",SuperSet,3,date1,item)) q:item=""  d
+	.....s xx=$g(^TTAB("SUPTS",SuperSet,3,date1,item))
+	.....s item1=item i $p(type,$c(1))="R4" s item1=item_"."_epis
+	.....s $p(ListOfItems(item1),"\",1)=$p($g(ListOfItems(item1)),"\",1)+$p(xx,"\",1)
+	.....s $p(ListOfItems(item1),"\",2)=$p($g(ListOfItems(item1)),"\",2)_$s($l($p($g(ListOfItems(item1)),"\",2)):";",1:"")_$p(xx,"\",2)
+	.....i '$p(ListOfItems(item1),"\",3) s $p(ListOfItems(item1),"\",3)=(Rule3Exempt>0)
+	... ; Test Set pricing
+	...i '$l(SuperSet) d
+	....s date1=$o(^TTAB("TS",test,3,date+1),-1)
+	....i '$l(date1),$p(type,$c(1))'="M" d log(epis,"Test Set <"_test_"> No item effective date before "_$$extdate2^SSUTIL4(date),,"18-TS") q
+	....i $l(date1) s item="" f  s item=$o(^TTAB("TS",test,3,date1,item)) q:item=""  d
+	.....s xx=$g(^TTAB("TS",test,3,date1,item))
+	.....s item1=item i $p(type,$c(1))="R4" s item1=item_"."_epis
+	.....i "*"'[$p(xx,"\",3),$p(xx,"\",4)="",$g(^TEPI(epis,1,test,tscnt,"DATA",$p(xx,"\",3)))="" q
+	.....i "*"'[$p(xx,"\",3),$p(xx,"\",3)'="",'$$CheckRes0(epis_"||"_test_"||"_tscnt,$p(xx,"\",3),$p(xx,"\",4),$p(xx,"\",5)) q
+	.....i $p(xx,"\",3)="*",'$$CheckRes1(epis_"||"_test_"||"_tscnt,date1,item) q
+	.....s $p(ListOfItems(item1),"\",1)=$p($g(ListOfItems(item1)),"\",1)+$p(xx,"\",1)
+	.....s $p(ListOfItems(item1),"\",2)=$p($g(ListOfItems(item1)),"\",2)_$s($l($p($g(ListOfItems(item1)),"\",2)):";",1:"")_$p(xx,"\",2)
+	.....i '$p(ListOfItems(item1),"\",3) s $p(ListOfItems(item1),"\",3)=(Rule3Exempt>0)
+	..i HISTO d  q
+	...f j=1:1:$l(HistoCyto,",") s item=$p(HistoCyto,",",j) i $l(item) d
+	....s $p(ListOfItems(item),"\",1)=$p($g(ListOfItems(item)),"\",1)+1
+	....s $p(ListOfItems(item),"\",2)=$p($g(ListOfItems(item)),"\",2)_$s($l($p($g(ListOfItems(item)),"\",2)):";",1:"")_synonym
+	....i '$p(ListOfItems(item),"\",3) s $p(ListOfItems(item),"\",3)=(Rule3Exempt>0)
+	q
+inpat(epis)	n (epis) s result=$$seldata^LVBCTIC($$seldata^LVBEPVIS(epis,18),4)
+	q $p(result,$c(1))
+conn(epis)	n (epis) s result=$$seldata^LVBCTSPL($$seldata^LVBCTDR($$seldata^LVBEPVIS(epis,15),22),4)
+	q $p(result,$c(1))
+ext(user,dFrom,dTo,Epis)	n (user,dFrom,dTo,Epis) s user=$g(user),dFrom=$g(dFrom),dTo=$g(dTo),Epis=$g(Epis)
+	k ^TMP("PRICING",$j),^TMP("NON-PRICING",$j),^TMP($zn,$j)
+	s delay1=$$seldata^MVBCFLAB(1,24),delay2=$$seldata^MVBCFLAB(1,103),SinglePatient=$$seldata^MVBCFLAB(1,105),InpatientsOnce=$$seldata^MVBCFLAB(1,150)
+	; sort episodes
+	i $l(Epis) d Episode(Epis,"N")
+	i '$l(Epis) s epis="" f  s epis=$o(^TBIL(9,epis)) q:epis=""  d Episode(epis,"Y")
+	; price all outstanding patients
+	s Sort1="" f  s Sort1=$o(^TMP($zn,$j,10,Sort1)) q:Sort1=""  d
+	.s xd="" f  s xd=$o(^TMP($zn,$j,10,Sort1,xd)) q:xd=""  d
+	..s date=$p(xd,",",1),ok=1
+	..s Sort2="" f  s Sort2=$o(^TMP($zn,$j,10,Sort1,xd,Sort2)) q:Sort2=""  d
+	...i SinglePatient'="Y" d
+	....s deb=$p(Sort1,",")
+	.... ; check all episodes
+	....s (EpisodeList,DelayedList,InvoicedList,epis)="" f  s epis=$o(^TDEB(deb,date,0,epis)) q:epis=""  d
+	.....i '$$PriceAble^LVBCOM02(epis,$s($l(Epis):"N",1:"")) q
+	.....i '$d(^TMP($zn,$j,20,deb,xd,epis)) d
+	......i $d(^TBIL(9,epis)) s DelayedList=DelayedList_$s($l(DelayedList):" ",1:"")_epis q
+	......s inv=$$seldata^LVBEPVIS(epis,56) i '$l(inv) d  q
+	.......s (stop,event)="" f  s event=$o(^TEPI(epis,6,event),-1)  q:event=""  d  i $l(stop) q
+	........i $p(^(event),"\")="RB" s stop=0 q
+	........i $p(^(event),"\")="AP" s stop=1 i '$l($p($p(^(event),"\",4)," on ",2)) s stop=0
+	.......i 'stop s EpisodeList=EpisodeList_$s($l(EpisodeList):" ",1:"")_epis
+	......s InvoicedList=InvoicedList_$s($l(InvoicedList):" ",1:"")_epis q
+	.... ; check if all episodes ready to be priced
+	....i $l(EpisodeList)!$l(DelayedList)!$l(InvoicedList) d  q
+	.....s epis="" f  s epis=$o(^TMP($zn,$j,10,Sort1,xd,Sort2,epis)) q:epis=""  d
+	......i $l(EpisodeList) d log(epis,"Waiting for episode(s) <"_EpisodeList_">",,"5-WL")
+	......i $l(DelayedList) d log(epis,"Episode(s) <"_DelayedList_"> delayed for pricing",,"6-DL")
+	......i $l(InvoicedList) d log(epis,"Episode(s) <"_InvoicedList_"> already invoiced. Please ReBill. Look at all requests.",,"7-IL")
+	... ; check all episodes information
+	...s epis="" f  s epis=$o(^TMP($zn,$j,10,Sort1,xd,Sort2,epis)) q:epis=""  d
+	....s flag=^(epis)
+	....f j=9,15,20,25,74 s VISIT(j)=$$seldata^LVBEPVIS(epis,j)
+	....i '$l(VISIT(9)) d log(epis,"Patient does not have a payment code",,"8-PC") q
+	....i $$select^LVBCTPC(VISIT(9),"Y") d log(epis,"Payment code <"_VISIT(9)_"> does not exist",,"9-PC") q
+	....i '$l(VISIT(15)) d log(epis,"Patient does not have a doctor",,"10-DR") q
+	....i $$select^LVBCTDR(VISIT(15),"Y") d log(epis,"Doctor <"_VISIT(15)_"> does not exist",,"11-DR") q
+	....i '$l(PLIST(18)) d log(epis,"Doctor <"_VISIT(15)_"> does not have provider number",,"12-DR") q
+	....i $d(^TTAB("BILL-LOC")),'$l(VISIT(74)) d log(epis,"Patient does not have Billing location",,"13-BL") q
+	....i $l(VISIT(25)) s supress=$$seldata^LVBCTVA(VISIT(25),4) i supress="Y" d log(epis,"Billing Supressed by Visit/Action < "_VISIT(25)_" >",,"14-VA") q
+	.... ; multiple Visit Actions
+	....i $$open^LVBVISVA(epis)
+	....f  q:$$fetch^LVBVISVA(epis)  i $p(PLIST(2),$c(1),3)="Y" d log(epis,"Billing Supressed by Visit/Action < "_$p(PLIST(2),$c(1))_" >",,"14-VA") q
+	....i $$close^LVBVISVA()
+	....s da=$$seldata^LVBDEBVI(VISIT(20)_"||"_date_"||"_epis,8),supress=$$seldata^LVBCTDA(da,4)
+	....i supress="Y" d log(epis,"Billing Supressed by Debtor/Action < "_da_" >",,"15-DA") q
+	....s comp=$$epcomp^LVBVIS1(epis)
+	....i '$l(comp) d log(epis,"Doctor <"_VISIT(15)_"> does not have a company",,"16-COM") q
+	....s type=$$seldata^LVBCTPC(VISIT(9),28)
+	....i (type="M")!(type="V") d  i '$l(provider) d log(epis,"Doctor <"_VISIT(15)_"> Provider No is null",,"17-DR") q
+	.....s provider=$$seldata^LVBCTDR(VISIT(15),18)
+	....s ^TMP($zn,$j,0,Sort1_","_Sort2,xd,comp,VISIT(9),epis)=flag
+	....s ^TMP($zn,$j,21,Sort1,xd,Sort2)=""
+	....s ^TMP($zn,$j,50,epis)=Sort1_","_Sort2_"\"_xd_"\"_comp_"\"_VISIT(9)
+	..i 'ok s Sort2="" f  s Sort2=$o(^TMP($zn,$j,21,Sort1,xd,Sort2)) q:Sort2=""  k ^TMP($zn,$j,0,Sort1_","_Sort2,xd)
+	; check Price Inpatients Once Only
+	i InpatientsOnce="Y" d
+	.s Sort="" f  s Sort=$o(^TMP($zn,$j,0,Sort)) q:Sort=""  d
+	..s xd="" f  s xd=$o(^TMP($zn,$j,0,Sort,xd)) q:xd=""  d
+	...s Company="" f  s Company=$o(^TMP($zn,$j,0,Sort,xd,Company)) q:Company=""  d
+	....s pc="" f  s pc=$o(^TMP($zn,$j,0,Sort,xd,Company,pc)) q:pc=""  d
+	.....s epis="" f  s epis=$o(^TMP($zn,$j,0,Sort,xd,Company,pc,epis)) q:epis=""  d
+	......s hosp=$$seldata^LVBEPVIS(epis,65) i '$l($p(hosp,",",1))!'$l($p(hosp,",",2)) q
+	......s mrn=$$seldata^LVBEPVIS(epis,20),list=""
+	......s x1="" f  s x1=$o(^TDEB(mrn,x1)) q:x1=""  d
+	.......s x2="" f  s x2=$o(^TDEB(mrn,x1,0,x2)) q:x2=""  i pc=$$seldata^LVBEPVIS(x2,9),hosp=$$seldata^LVBEPVIS(x2,65) d
+	........i $d(^TMP($zn,$j,50,x2)) q
+	........i '$d(^TMP($zn,$j,50,x2)),$$seldata^LVBEPVIS(x2,21) q
+	........s list=list_$s($l(list):" ",1:"")_x2
+	......i $l(list) d
+	.......d log(epis,"Waiting for episode(s) <"_list_">",,"5-ONCE")
+	.......s x1="" f  s x1=$o(^TDEB(mrn,x1)) q:x1=""  d
+	........s x2="" f  s x2=$o(^TDEB(mrn,x1,0,x2)) q:x2=""  i pc=$$seldata^LVBEPVIS(x2,9),hosp=$$seldata^LVBEPVIS(x2,65) d
+	.........i $d(^TMP($zn,$j,50,x2)) s xx=^(x2) d
+	..........f j=1:1:4 s @("a"_j)=$p(xx,"\",j)
+	..........i $l(a1),$l(a2),$l(a3),$l(a4) k ^TMP($zn,$j,0,a1,a2,a3,a4,x2)
+	; create list of items
+	s Sort="" f  s Sort=$o(^TMP($zn,$j,0,Sort)) q:Sort=""  d
+	.s xd="" f  s xd=$o(^TMP($zn,$j,0,Sort,xd)) q:xd=""  d
+	..s date=$p(xd,",",1),ok=1 f j=2:1:5 k ^TMP($zn,$j,j)
+	..s Company="" f  s Company=$o(^TMP($zn,$j,0,Sort,xd,Company)) q:Company=""  d  q:'ok
+	...s pc="" f  s pc=$o(^TMP($zn,$j,0,Sort,xd,Company,pc)) q:pc=""  d  q:'ok
+	....s gapPC=$$seldata^LVBCTPC(pc,84)
+	....s (Master,MasterFlag)=""
+	....k PAYCODE i '$$select^LVBCTPC(pc,"Y") m PAYCODE=PLIST
+	....s epis="" f  s epis=$o(^TMP($zn,$j,0,Sort,xd,Company,pc,epis)) q:epis=""  d
+	.....s flag=^(epis) i MasterFlag'="P" s MasterFlag=flag
+	.....i '$l(Master) s Master=epis
+	.....m ^TMP($zn,$j,5,Master)=PAYCODE s ^TMP($zn,$j,3,Master)=Company_"\"_pc
+	.....k ListOfItems m ListOfItems=^TMP($zn,$j,2,Master,0)
+	.....d ListOfItems(epis)
+	.....k ^TMP($zn,$j,2,Master,0)
+	.....s item="" f  s item=$o(ListOfItems(item)) q:item=""  s ^TMP($zn,$j,2,Master,0,item)=ListOfItems(item)
+	.....k ListOfItems
+	....i 'ok q
+	....m ^TMP($zn,$j,4,Master)=^TMP($zn,$j,2,Master) k High
+	....s epis="" f  s epis=$o(^TMP($zn,$j,0,Sort,xd,Company,pc,epis)) q:epis=""  s ^TMP($zn,$j,4,Master,1,epis)=""
+	.... ; find Set fee
+	....i $l(PAYCODE(20)),PAYCODE(33)="I" s ^TMP($zn,$j,4,Master,0,PAYCODE(20))="1\"_PAYCODE(21)
+	.... ;
+	.... ; calculating normal amounts
+	.... ;
+	.... ; find Initiation item
+	....s epis="" f  s epis=$o(^TMP($zn,$j,4,Master,1,epis)) q:epis=""  d InitCode(epis)
+	....i 'ok q
+	....s (text,amt)="" f  s amt=$o(High(amt),-1) q:amt=""  d  i $l(text) q
+	.....s epis="" f  s epis=$o(High(amt,epis)) q:epis=""  d  i $l(text) q
+	......i $d(^TMP($zn,$j,4,Master,1,epis)) s text=$p(High(amt,epis),"\",1)_"\"_amt_"\\\"_$p(High(amt,epis),"\",2) q
+	....s ^TMP($zn,$j,2,Master,0)=text
+	.... ; check items
+	....s inpat=$$inpat(Master),conn=$$conn(Master)
+	....k Items,Result m Items=^TMP($zn,$j,4,Master,0)
+	....d ItmCheck(PAYCODE(23),date)
+	....i PAYCODE(7)="Y" d ItmLimit(Master,PAYCODE(23),,inpat)
+	....d ItmCalc(PAYCODE(2),date)
+	.... ; check Medicare conning
+	....i PAYCODE(22)="Y" d
+	..... ; Doctor's Speciality
+	.....i conn'="Y" q
+	..... ; InPatient
+	.....i inpat="Y" q
+	.....d ItmConning()
+	.... ; check Initiation Item exclusion
+	....s check="Y",item="" f  s item=$o(Items(item)) q:item=""  d  q:check="N"
+	.....i '$$select^LVBCTBI($p(item,"."),"Y"),PLIST(10)'="Y" s check="N"
+	....i check="Y" s ^TMP($zn,$j,2,Master,0)=""
+	.... ; add Initiation item
+	....s item=$p(^TMP($zn,$j,2,Master,0),"\",1) i $l(item) d
+	.....s (check,x)="" f  s x=$o(Result(x)) q:x=""  i Result(x) s check="Y" q
+	.....i check="Y" d
+	......s Items(item)="1\\Y" i PAYCODE(7)="Y" d ItmLimit(Master,PAYCODE(23),item,inpat)
+	......i $g(Items(item)) s Result(item)=$p(^TMP($zn,$j,2,Master,0),"\",2,6)
+	.... ;
+	.... ; calculating base amounts
+	.... ;
+	....i $l(gapPC) d
+	.....n Items,Result,High
+	.....k PAYCODE i '$$select^LVBCTPC(gapPC,"Y") m PAYCODE=PLIST
+	.....m ^TMP($zn,$j,50,Master)=PAYCODE
+	..... ; find Initiation item
+	.....s epis="" f  s epis=$o(^TMP($zn,$j,4,Master,1,epis)) q:epis=""  d InitCode(epis,gapPC)
+	.....i 'ok q
+	.....s (text,amt)="" f  s amt=$o(High(amt),-1) q:amt=""  d  i $l(text) q
+	......s epis="" f  s epis=$o(High(amt,epis)) q:epis=""  d  i $l(text) q
+	.......i $d(^TMP($zn,$j,4,Master,1,epis)) s text=$p(High(amt,epis),"\",1)_"\"_amt_"\\\"_$p(High(amt,epis),"\",2) q
+	.....s ^TMP($zn,$j,20,Master,0)=text
+	..... ; check items
+	.....k Items,Result m Items=^TMP($zn,$j,4,Master,0)
+	.....d ItmCheck(PAYCODE(23),date)
+	.....i PAYCODE(7)="Y" d ItmLimit(Master,PAYCODE(23),,inpat)
+	.....d ItmCalc(PAYCODE(2),date)
+	..... ; check Medicare conning
+	.....i PAYCODE(22)="Y" d
+	...... ; Doctor's Speciality
+	......i conn'="Y" q
+	...... ; InPatient
+	......i inpat="Y" q
+	......d ItmConning()
+	..... ; check Initiation Item exclusion
+	.....s check="Y",item="" f  s item=$o(Items(item)) q:item=""  d  q:check="N"
+	......i '$$select^LVBCTBI($p(item,"."),"Y"),PLIST(10)'="Y" s check="N"
+	.....i check="Y" s ^TMP($zn,$j,20,Master,0)=""
+	..... ; add Initiation item
+	.....s item=$p(^TMP($zn,$j,20,Master,0),"\",1) i $l(item) d
+	......s (check,x)="" f  s x=$o(Result(x)) q:x=""  i Result(x) s check="Y" q
+	......i check="Y" d
+	.......s Items(item)="1\\Y" i PAYCODE(7)="Y" d ItmLimit(Master,PAYCODE(23),item,inpat)
+	.......i $g(Items(item)) s Result(item)=$p(^TMP($zn,$j,20,Master,0),"\",2,6)
+	.....k ItemsForGap,ResultForGap m ItemsForGap=Items,ResultForGap=Result
+	....
+	....i ok d
+	.....s item="" f  s item=$o(Result(item)) q:item=""  i $g(Result(item)) s ^TMP($zn,$j,6,Master,item)=Result(item)
+	.....s item="" f  s item=$o(Items(item)) q:item=""  i $g(Items(item)) s ^TMP($zn,$j,7,Master,item)=Items(item)
+	.....s item="" f  s item=$o(ResultForGap(item)) q:item=""  i $g(ResultForGap(item)) d
+	......i '$d(^TMP($zn,$j,6,Master,item)) s $p(^TMP($zn,$j,6,Master,item),"\",2,5)=$p(ResultForGap(item),"\",2,5)
+	......s $p(^TMP($zn,$j,6,Master,item),"\",6)=$p(ResultForGap(item),"\")
+	.. ;
+	..i ok s Master="" f  s Master=$o(^TMP($zn,$j,4,Master)) q:Master=""  d
+	...k PAYCODE m PAYCODE=^TMP($zn,$j,5,Master)
+	...k PAYCODEgap m PAYCODEgap=^TMP($zn,$j,50,Master)
+	...k Result m Result=^TMP($zn,$j,6,Master)
+	...k Items m Items=^TMP($zn,$j,7,Master)
+	...s Company=$p(^TMP($zn,$j,3,Master),"\",1),pc=$p(^TMP($zn,$j,3,Master),"\",2)
+	... ; include GST
+	...d GST(PAYCODE(2),date,$g(PAYCODEgap(2)))
+	...i $g(^TMP($zn,$j,4,Master))'="Manual" d
+	....s (EpisodeList,epis)="" f  s epis=$o(^TMP($zn,$j,4,Master,1,epis)) q:epis=""  i epis'=Master d
+	.....s EpisodeList=EpisodeList_$s($l(EpisodeList):",",1:"")_epis
+	.....i '$$select^LVBEPVIS(epis,"Y") d
+	......i $$LOCK^SSLOCK("Patient",epis,,,,1)
+	......s PLIST(21)=+$h,(PLIST(54),PLIST(55))="",PLIST(87)=Master i $$update^LVBEPVIS(epis)
+	......i $$LOCKCLR^SSLOCK("Patient",epis)
+	......d SetBill^LVBBILL0(epis,)
+	......d events^LVBCOM01(epis,"AP",PLIST(68)_" on "_Master)
+	......s ^TBIL(2,Company,PAYCODE(2),epis)="\\"_MasterFlag k ^TBIL(9,epis)
+	......s ^TMP("PRICING",Company,PAYCODE(2),epis)=""
+	.... ; update Master record
+	....i '$$select^LVBEPVIS(Master,"Y") d
+	.....i $$LOCK^SSLOCK("Patient",Master,,,,1)
+	.....s PLIST(21)=+$h,PLIST(54)=$p(^TMP($zn,$j,2,Master,0),"\",1),PLIST(55)=EpisodeList,PLIST(87)="" i $$update^LVBEPVIS(Master)
+	.....i $$LOCKCLR^SSLOCK("Patient",Master)
+	.....s (Total,item)="" f  s item=$o(Result(item)) q:item=""  i Result(item) d
+	......i $p(Result(item),"\",3) s $p(Result(item),"\",3)="Y"
+	......s Total=Total+Result(item)
+	.....d SetBill^LVBBILL0(Master,.Result)
+	.....d events^LVBCOM01(Master,"AP",PLIST(68)_$s($l(EpisodeList):" incl "_EpisodeList,1:""))
+	.....s ^TBIL(2,Company,PAYCODE(2),Master)=Total_"\"_EpisodeList_"\"_MasterFlag k ^TBIL(9,Master)
+	.....s ^TMP("PRICING",Company,PAYCODE(2),Master)=Total
+	...i $g(^TMP($zn,$j,4,Master))="Manual" d
+	....s ^TBIL(8,Master)=$g(^TBIL(8,Master)) i MasterFlag="P" s ^TBIL(8,Master)=MasterFlag
+	....k ^TBIL(9,Master)
+	.... ; set list of episodes
+	....s epis="" f  s epis=$o(^TMP($zn,$j,4,Master,1,epis)) q:epis=""  i epis'=Master d
+	.....s ^TBIL(8,Master,"EP",epis)="" k ^TBIL(9,epis)
+	.... ; set list of items
+	....s item="" f  s item=$o(Items(item)) q:item=""  s ^TBIL(8,Master,"IT",item)=Items(item)
+	.... ; set list of amounts
+	....s item="" f  s item=$o(Result(item)) q:item=""  i Result(item) s ^TBIL(8,Master,"AM",item)=Result(item)
+	; Print NotPriced report
+	i $d(^TMP("NON-PRICING",$j)) s ROWID=$$START^PRTREP00(user,"","","NPR")
+	k ^TMP("PRICING",$j),^TMP("NON-PRICING",$j),^TMP($zn,$j)
+	q 0
+	; medicare conning
+ItmConning(epis)	n (epis,Result) s epis=$g(epis)
+	s item="" f cnt=0:1 s item=$o(Result(item)) q:item=""
+	i cnt>3 d
+	.m OldResult=Result k Result
+	.s item="" f  s item=$o(OldResult(item)) q:item=""  d
+	..s Rule3Exempt=$p(OldResult(item),"\",3) i Rule3Exempt s Result(item)=OldResult(item) q
+	..s exclude=$$seldata^LVBCTBI(item,8)
+	..i exclude="Y" s Result(item)=OldResult(item) q
+	..i $p(OldResult(item),"\",3)="Y" s Result(item)=OldResult(item) q
+	..s Item(+OldResult(item),item)=""
+	.s (cnt,amt)="" f  s amt=$o(Item(amt),-1) q:amt=""  d  i cnt=3 q
+	..s xitem="" f  s xitem=$o(Item(amt,xitem)) q:xitem=""  s item=$p(xitem,".") d  i cnt=3 q
+	...s cnt=cnt+1
+	...s Result(item)=OldResult(item)
+	.s item="" f  s item=$o(Result(item)) q:item=""  s $p(Result(item),"\",1)=$j(Result(item),0,2)
+	.s item="" f  s item=$o(Result(item)) q:item=""  s $p(Result(item),"\",4)=$p(OldResult(item),"\",4)
+	q
+InitCode(epis,pc)	n (epis,pc,High,Master,ok) s epis=$g(epis),pc=$g(pc)
+	s descr=$$seldata^LVBCTIC($$seldata^LVBEPVIS(epis,18),5)
+	s:'$l(pc) pc=$$seldata^LVBEPVIS(epis,9) s init=$$seldata^LVBEPVIS(epis,18),date=$$seldata^LVBEPVIS(epis,12)
+	i $l(init) d
+	.s date1=$o(^TTAB("IC",init,date+1),-1)
+	.i '$l(date1) d log(Master,"No Initiation item before "_$$extdate2^SSUTIL4(date),,"19-IC") q
+	.s item=$p($g(^TTAB("IC",init,date1)),"\",1)
+	.i '$l(item) d log(Master,"Invalid Iniitiation item <"_item_"> before "_$$extdate2^SSUTIL4(date),,"20-IC") q
+	.s amt=$$amount(item,pc,date)
+	.s High(+amt,epis)=item_"\"_$p(amt,"\",2)
+	q
+	; check items limits and item description
+ItmLimit(Master,Schedule,xITEM,inpat)	n (Master,Schedule,xITEM,inpat,Items)
+	s Master=$g(Master),Schedule=$g(Schedule),xITEM=$g(xITEM),inpat=$g(inpat)
+	s item="" f  s item=$o(Items(item)) q:item=""  d
+	.i $l(xITEM),$p(item,".")'=xITEM q
+	.k descr s descr=$p(Items(item),"\",2),Rule3Exempt=$p(Items(item),"\",3) i Rule3Exempt q
+	.f j=1:1:$l(descr,";") s x=$p(descr,";",j) i $l(x) s descr(x)=$g(descr(x))+1
+	.s (x,descr)="" f  s x=$o(descr(x)) q:x=""  s descr=descr_$s($l(descr):";",1:"")_x i Items(item)>1,descr(x)>1 s descr=descr_" x "_descr(x)
+	.s $p(Items(item),"\",2)=descr
+	.i $$select^LVBCTSHI(Schedule_"||"_$p(item,"."),"Y") q
+	.k ITEM m ITEM=PLIST
+	.s part=1 d ItmLimit1 i $d(Items(item)) s part=2 d ItmLimit2
+	q
+	; check Daily limits
+ItmLimit1	
+	i inpat="Y",item[".",ITEM(8) d  q
+	.k itemX m itemX=ITEM
+	.s ITEM(6)=ITEM(8),ITEM(7)=1 d ItmLimit2
+	.k ITEM m ITEM=itemX
+	i ITEM(5) d
+	.k itemX m itemX=ITEM
+	.s ITEM(3)=ITEM(5),ITEM(4)=1 d ItmLimit2
+	.k ITEM m ITEM=itemX
+	q
+	; check Period limits
+ItmLimit2	i ITEM(3)!((inpat="Y")&ITEM(6)),$l(Master) d
+	.f j=12,20 s VISIT(j)=$$seldata^LVBEPVIS(Master,j)
+	.s date=VISIT(12)-$s((inpat="Y")&ITEM(6):ITEM(7),1:ITEM(4)),(cnt,Next)=""
+	.f  s date=$o(^TDEB(VISIT(20),date)) q:date=""  q:date>VISIT(12)  i $d(^TDEB(VISIT(20),date,0)) d
+	..i Next="" s Next=date
+	..s epis="" f  s epis=$o(^TDEB(VISIT(20),date,0,epis)) q:epis=""  d
+	...s abc=$$seldata^LVBCTPC($$seldata^LVBEPVIS(epis,9),23)
+	...i abc=Schedule,epis'=Master d
+	....s xx=$g(^TEPI(epis,7,$p(item,"."))) i '$l(xx) s xx=$g(^TMP($zn,$j,7,epis,$p(item,".")))
+	....i $l(xx) s cnt=cnt+$s(xx[" x ":$p(xx," x ",2),1:1)
+	.s (x,xSUM)="" f  s x=$o(Items(x)) q:x=""  i $p(x,".")=$p(item,".") s xSUM=xSUM+Items(x)
+	.i cnt,cnt'<$s((inpat="Y")&ITEM(6):ITEM(6),1:ITEM(3)) d log(Master,"Item <"_$p(item,".")_"> LIMIT EXCEEDED - NOT PRICED, Next allowed after "_$$extdate2^SSUTIL4(Next+$s((inpat="Y")&ITEM(6):ITEM(7),1:ITEM(4))),"Y","22-LIM") k Items(item) q
+	.i cnt,cnt+xSUM'<$s((inpat="Y")&ITEM(6):ITEM(6),1:ITEM(3)) d log(Master,"Item <"_$p(item,".")_"> limit reached, No more until "_$$extdate2^SSUTIL4(Next+$s((inpat="Y")&ITEM(6):ITEM(7),1:ITEM(4))),"Y","23-LIM")
+	.i cnt+xSUM>$s((inpat="Y")&ITEM(6):ITEM(6),1:ITEM(3)) d
+	..s (x,xSUM)="" f  s x=$o(Items(x)) q:x=""  i $p(x,".")=$p(item,"."),$p(Items(x),"\",10+part) s xSUM=xSUM+Items(x)
+	..s $p(Items(item),"\",10+part)=1
+	..i cnt+xSUM>$s((inpat="Y")&ITEM(6):ITEM(6),1:ITEM(3)) k Items(item) q
+	..i cnt+xSUM+Items(item)>$s((inpat="Y")&ITEM(6):ITEM(6),1:ITEM(3)) s $p(Items(item),"\",1)=$s((inpat="Y")&ITEM(6):ITEM(6),1:ITEM(3))-cnt-xSUM q
+	.i $p(Items(item),"\",1)>ITEM(3) s $p(Items(item),"\",5)="Y"
+	q
+	; calculating amount by items
+ItmCalc(PayCode,date)	n (PayCode,date,Items,Result,Master) s PayCode=$g(PayCode),date=$g(date)
+	s item="" f  s item=$o(Items(item)) q:item=""  s item1=$p(item,".") d
+	.s amt=$$amount($p(item,"."),PayCode,$s($l(date):date,1:+$h))
+	.s $p(Result(item1),"\",1)=$p($g(Result(item1)),"\",1)+($p(Items(item),"\",1)*$p(amt,"\",1))
+	.s $p(Result(item1),"\",2)=$p(Result(item1),"\",2)_$s($l($p(Result(item1),"\",2)):";",1:"")_$p(Items(item),"\",2)
+	.i $p(Items(item),"\",3) s $p(Result(item1),"\",3)="Y"
+	.s $p(Result(item1),"\",4)=$p(amt,"\",2)
+	.i $p(Items(item),"\",5)="Y" s $p(Result(item1),"\",5)=$p(Items(item),"\",5)
+	.i $l($p(item,".",2)) s $p(Result(item1),"\",6)=$p(Result(item1),"\",6)_$s($l($p(Result(item1),"\",6)):";",1:"")_$p(item,".",2)_"-"_$p(Items(item),"\",2)
+	s item="" f  s item=$o(Result(item)) q:item=""  k descr s descr=$p(Result(item),"\",2) d
+	.f j=1:1:$l(descr,";") s x=$p(descr,";",j) i $l(x) s descr(x)=$g(descr(x))+1
+	.s (x,descr)="" f  s x=$o(descr(x)) q:x=""  s descr=descr_$s($l(descr):";",1:"")_$s(descr(x)>1:$p(x," x "),1:x) i descr(x)>1 s descr=descr_" x "_(descr(x)*$s($p(x," x ",2):$p(x," x ",2),1:1))
+	.s $p(Result(item),"\",2)=descr
+	q
+ItmCheck(sched,date)	n (sched,date,Items) s sched=$g(sched),date=$g(date)
+	s item="" f  s item=$o(Items(item)) q:item=""  i $p(Items(item),"\",1)<1 k Items(item)
+	i $l(sched) d
+	.s item="" f  s item=$o(Items(item)) q:item=""  d check1(item,date)
+	.s item="" f  s item=$o(Items(item)) q:item=""  d check2(item,date)
+	.s item="" f  s item=$o(Items(item)) q:item=""  d check3(item,date)
+	.s item="" f  s item=$o(Items(item)) q:item=""  d check3(item,date)
+	.s item="" f  s item=$o(Items(item)) q:item=""  d check2(item,date)
+	q
+	; check item grouping
+check1(item,date)	n (item,date,sched,Items) s item=$g(item),date=$g(date),quantity=$p(Items(item),"\",1)
+	s dt=$o(^TSCH(sched,"RULE-1",date+1),-1) i $l(dt) d
+	.s xx=$o(^TSCH(sched,"RULE-1",dt,$p(item,"."),quantity-1)) d
+	..i $l(xx) d
+	...s newitem=$p($g(^TSCH(sched,"RULE-1",dt,$p(item,"."),xx)),"\") i item["." s newitem=newitem_"."_$p(item,".",2)
+	...i $l(newitem) d
+	....i newitem=item s $p(Items(newitem),"\",1)=1 q
+	....s $p(Items(newitem),"\",1)=1
+	....s $p(Items(newitem),"\",2)=$p(Items(item),"\",2)
+	....i $l($p($g(^TSCH(sched,"RULE-1",dt,$p(item,"."),xx)),"\",2)) s $p(Items(newitem),"\",2)=$p($g(^TSCH(sched,"RULE-1",dt,$p(item,"."),xx)),"\",2)
+	....i '$p(Items(newitem),"\",3) s $p(Items(newitem),"\",3)=$p(Items(item),"\",3)
+	....k Items(item)
+	..i '$l(xx) d
+	...s xx="" f  s xx=$o(^TSCH(sched,"RULE-1",dt,$p(item,"."),quantity+1),-1) q:xx=""  d
+	....s newitem=$p($g(^TSCH(sched,"RULE-1",dt,$p(item,"."),xx)),"\")
+	....i $l(newitem),newitem'=item d  q
+	.....s $p(Items(newitem),"\",1)=$p($g(Items(newitem)),"\",1)+1
+	.....s $p(Items(newitem),"\",2)=$p(Items(item),"\",2)
+	.....i $l($p($g(^TSCH(sched,"RULE-1",dt,$p(item,"."),xx)),"\",2)) s $p(Items(newitem),"\",2)=$p($g(^TSCH(sched,"RULE-1",dt,$p(item,"."),xx)),"\",2)
+	.....i '$p(Items(newitem),"\",3) s $p(Items(newitem),"\",3)=$p(Items(item),"\",3)
+	.....s $p(Items(item),"\",1)=$p(Items(item),"\",1)-xx,quantity=$p(Items(item),"\",1)
+	.....i 'Items(item) k Items(item)
+	....e  s quantity=xx-1
+	q
+	; check item Xover
+check2(item,date)	n (item,date,sched,Items) s item=$g(item),date=$g(date)
+	s dt=$o(^TSCH(sched,"RULE-2",date+1),-1) i $l(dt) d
+	.s xitem="" f  s xitem=$o(^TSCH(sched,"RULE-2",dt,$p(item,"."),xitem)) q:xitem=""  d
+	..s newitem=xitem i item["." s newitem=newitem_"."_$p(item,".",2)
+	..i $d(Items(newitem)) d
+	...s $p(Items(item),"\",2)=$p(Items(item),"\",2)_";"_$p(Items(newitem),"\",2)
+	...f  q:$p(Items(item),"\",2)'[";;"  s $p(Items(item),"\",2)=$p($p(Items(item),"\",2),";;",1)_";"_$p($p(Items(item),"\",2),";;",2,999)
+	...i '$p(Items(item),"\",3) s $p(Items(item),"\",3)=$p(Items(newitem),"\",3)
+	...k Items(newitem)
+	q
+	; check item coning
+check3(item,date)	n (item,date,sched,Items) s item=$g(item),date=$g(date),newitem=""
+	s dt=$o(^TSCH(sched,"RULE-3",date+1),-1) i $l(dt) d
+	.s xitem="" f  s xitem=$o(^TSCH(sched,"RULE-3",dt,$p(item,"."),xitem)) q:xitem=""  d  i $l(newitem) q
+	..s citem=xitem i item["." s citem=citem_"."_$p(item,".",2)
+	..i $d(Items(citem)) d  i $l(newitem) q
+	...s newitem=$p($g(^TSCH(sched,"RULE-3",dt,$p(item,"."),xitem)),"\") i $l(newitem) d
+	....i item["." s newitem=newitem_"."_$p(item,".",2)
+	....s $p(Items(newitem),"\",1)=1
+	....s $p(Items(newitem),"\",2)=$p(Items(item),"\",2)_";"_$p(Items(citem),"\",2)
+	....f  q:$p(Items(newitem),"\",2)'[";;"  s $p(Items(newitem),"\",2)=$p($p(Items(newitem),"\",2),";;",1)_";"_$p($p(Items(newitem),"\",2),";;",2,999)
+	....i '$p(Items(newitem),"\",3) s $p(Items(newitem),"\",3)=$p(Items(item),"\",3)
+	....i '$p(Items(newitem),"\",3) s $p(Items(newitem),"\",3)=$p(Items(citem),"\",3)
+	....f j=item,citem k Items(j)
+	q
+	; create log file
+log(epis,text,warning,SortType)	n (epis,text,warning,SortType,ok)
+	s epis=$g(epis),text=$g(text),warning=$g(warning),ok=$g(ok),SortType=$g(SortType)
+	s ok=$s(warning="Y":ok,1:0),xSortType=SortType
+	i $l(SortType) d
+	.s %routine=$p($g(^TTAB("REPORT-GENERIC","NPR")),"\",1)
+	.i $l(%routine) s LineRoutine="SortType^"_%routine i $l($t(@LineRoutine)) x "s SortType=$$SortType^"_%routine_"("""_SortType_""")" q
+	.s SortType=" "
+	i '$l(SortType) s SortType=" "
+	s x=$o(^TMP("NON-PRICING",$j,SortType,epis,""),-1)+1,^TMP("NON-PRICING",$j,SortType,epis,x)=$s(warning="Y":"Warning - ",1:"")_text_$c(1)_xSortType
+	q
+	; check result
+CheckRes0(vtsRID,ti,operand,result)	n (vtsRID,ti,operand,result)
+	s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3)
+	s xx=$p($g(^TEPI(epis,1,test,tscnt,"DATA",ti)),"\")
+	i operand="-",xx'<$p(result,","),xx'>$p(result,",",2) q 1
+	i operand'="-",@(""""_xx_""""_operand_""""_result_"""") q 1
+	q 0
+CheckRes1(vtsRID,date1,item)	n (vtsRID,date1,item) s vtsRID=$g(vtsRID),date1=$g(date1),item=$g(item)
+	s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3)
+	s (check,check1,order)="" f  s order=$o(^TTAB("TS",test,3,date1,item,order)) q:order=""  s xx=^(order) d
+	.f j=1:1:5 s @("xx"_j)=$p(xx,"\",j)
+	.i $o(^(order))="" s xx5=""
+	.i $d(^TEPI(epis,1,xx2,tscnt)) s check1=1
+	.s check=check_$$CheckRes0(epis_"||"_xx2_"||"_tscnt,xx1,xx3,xx4)
+	.i $e(check,$l(check)-1)="&" s @("check="_check)
+	.i xx5="AND" s check=check_"&"
+	.i xx5="OR" s check=check_"!"
+	i 'check1 q 1
+	s @("check="_check)
+	q check
+GST(PayCode,date,PayCodeForGap)	n (PayCode,date,Result,ResultForGap) s PayCode=$g(PayCode),date=$g(date),PayCodeForGap=$g(PayCodeForGap)
+	s (sum,item)="" f  s item=$o(Result(item)) q:item=""  i $p(Result(item),"\",4)="Y" s sum=sum+Result(item)
+	s (sumForGap,item)="" f  s item=$o(ResultForGap(item)) q:item=""  i $p(ResultForGap(item),"\",4)="Y" s sumForGap=sumForGap+ResultForGap(item)
+	i $l(sum) s date1=$o(^TTAB("BI",PayCode,"GST",date+1),-1) i $l(date1) d
+	.f j=1:1:3 s @("x"_j)=$p(^TTAB("BI",PayCode,"GST",date1),"\",j)
+	.i $l(x1),$l(x3) s Result(x1)=$j(sum*x3/100,0,2)_"\"_x2_"\\GST"
+	i $l(sumForGap),$l(PayCodeForGap) s date1=$o(^TTAB("BI",PayCodeForGap,"GST",date+1),-1) i $l(date1) d
+	.f j=1:1:3 s @("x"_j)=$p(^TTAB("BI",PayCodeForGap,"GST",date1),"\",j)
+	.i $l(x1),$l(x3) s ResultForGap(x1)=$j(sum*x3/100,0,2)_"\"_x2_"\\GST"
+	q
+amount(item,PayCode,date)	n (item,PayCode,date,Master) s item=$g(item),PayCode=$g(PayCode),date=$g(date),result=""
+	s sched=$$seldata^LVBCTPC(PayCode,23)
+	i $l(sched) s dt=$o(^TSCH(sched,"AMOUNT",PayCode,date+1),-1) i $l(dt) d
+	.s result=$g(^TSCH(sched,"AMOUNT",PayCode,dt,item))
+	.s $p(result,"\",2)=$s($p(result,"\",2)="Y":"N",1:"Y")
+	i $l($g(Master)),$p(result,"\")="" d log(Master,"No fee for pay code "_PayCode_" item "_item_" before "_$$extdate2^SSUTIL4(date),"Y","21-AMOUNT")
+	q result
+]]></Routine>
+</Export>

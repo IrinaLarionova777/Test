@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF155" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF155(mi)  ; ML 27/01/03 ; RapidPoint 400 - Protocol LIS 3
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),eot=$c(4),ack=$c(6),etb=$c(23),fs=$c(28),gs=$c(29),rs=$c(30)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,eot) q:'$l(record)
+ d trace^MIF000(mi,$tr($p(record,etx),etb_fs_gs_rs,"-|^~")_" "_$p(record,etx,2),"H<--M")
+ ; check record validity
+ s chsum=$p(record,etx,2)
+ i $$CHSUM($p(record,etx))'=chsum d trace^MIF000(mi,"Incorrect Checksum - Packet Ignored","H-->M") q
+ d ACK
+ s record=$p(record,etx,1),recid=$p(record,fs)
+ ; process device identity record
+ i recid="ID_REQ" d  q
+ .s str="ID_DATA"_fs_rs_"aMOD"_gs_"LIS"_gs_gs_gs_fs_rs
+ .d SEND(str)
+ i recid="SMP_NEW_AV" d
+ .s str="SMP_REQ"_fs_rs_"aMOD"_gs_$p($p(record,fs,2),gs,2)_gs_gs_gs_fs_"iIID"_gs_$p($p(record,fs,3),gs,2)_gs_gs_gs_fs_"rSEQ"_gs_$p($p(record,fs,4),gs,2)_gs_gs_gs_fs
+ .d SEND(str)
+ ; process result record
+ i (recid="SMP_NEW_DATA")!(recid="SMP_EDIT_DATA") d
+ .s (sample,epis,surname,result,date,time,QC,SATO2,CTHB,PO2)=""
+ .k res s record=$tr(record,rs)
+ .f i=1:1:$l(record,fs) s rec=$p(record,fs,i) d
+ ..s rec=$tr(rec,etb),x1=$p(rec,gs)
+ .. ; ignore all but result data
+ ..i " SMP_NEW_DATA rTYPE rPRIO rMODE rCUP aMOD iIID rSYSTEM iFNAME iSEX iDOB "[x1 q
+ ..i " iUSERP1 iUSERP2 iUSERP3 iUSERP4 iUSERP5 iACC iROOM iDOC iDID iDDATE iDTIME iRDATE iRTIME "[x1 q
+ ..i " iSOURCE iTYPE iOID iMODE iUSERS1 iUSERS2 iUSERS3 iUSERS4 iUSERS5 "[x1 q
+ ..i x1="cO2SAT" s SATO2=$p(rec,gs,2)
+ ..i x1="ctHb(est)" s CTHB=$p(rec,gs,2)
+ ..i x1="mPO2" s PO2=$p(rec,gs,2)
+ ..i x1="rSEQ" s sample=$p(rec,gs,2) q
+ ..i x1="iPID" s epis=$p(rec,gs,2) q
+ ..i x1="rDATE" s date=$p(rec,gs,2) d  q
+ ...s month=$e(date,3,5),date=$e(date,6,9)_$s(month="Jan":"01",month="Feb":"02",month="Mar":"03",month="Apr":"04",month="May":"05",month="Jun":"06",month="Jul":"07",month="Aug":"08",month="Sep":"09",month="Oct":"10",month="Nov":11,1:"12")_$e(date,1,2)
+ ...s date=$$intdate^SSUTIL4(date)
+ ..i x1="rTIME" s time=$$inttime^SSUTIL4($p($p(rec,gs,2),":",1,2)) q
+ ..s result=result_x1_$c(par10)_$p(rec,gs,2)_$c(par10)_$p(rec,gs,4)_$c(par11)
+ .i $l(SATO2),$l(CTHB),$l(PO2) d
+ ..s ctO2=(SATO2*1.39*CTHB+(.0314*PO2))/100
+ ..s result=result_"ctO2"_$c(par10)_ctO2_$c(par11)
+ .i '$l(epis),$l(sample) s epis=sample
+ .i $l(epis),$l(result) d file^MIF000(mi,epis,epis,surname,result,date,time,QC)
+ q
+ ; send string to instrument
+SEND(x) s chsum=$$CHSUM(x)
+ f i=1:1:2 w stx,x,etx,chsum,eot,*-3 d  q:ok
+ .d trace^MIF000(mi,x_" "_chsum,"H-->M")
+ .s ok="" s record=$$read^MIF000(stx,eot,,6) q:'$l(record)
+ .i $p(record,etx)=ack d trace^MIF000(mi,"ACK","H<--M") s ok=1 q
+ .d trace^MIF000(mi,"No Response - Message Rejected","H<--M")
+ q
+ ; send 'ack' to instrument
+ACK s chsum=$$CHSUM(ack)
+ w stx,ack,etx,chsum,eot,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+ ; calculate check sum
+CHSUM(x) s x=$c(2)_x_$c(3)
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+]]></Routine>
+</Export>

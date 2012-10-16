@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF703" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF703(mi) ; ML 13/7/98 ; ROCHE Cobas Amplicor (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),soh=$c(1),lf=$c(10),eot=$c(4)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main ; d IDLE
+ s record=$$read^MIF000(soh,eot)
+ d trace^MIF000(mi,$tr(record,lf,"|"),"H<--M")
+ s block=$p(record,stx,1),block=$p(block," ",3) d:block="00" SCAN q
+ s record=$p(record,stx,2),record=$p(record,etx,1)
+ s (sample,epis,surname,result,date,time,QC)=""
+ f i=1:1:$l(record,lf) s rec=$p(record,lf,i) q:rec=""  d  ;
+ .s line=$e(rec,1,2)
+ .i line>"05",type=1 q
+ .i line>"08",norm'=1 q  ; process 'normal' test results only
+ .s:line="01" epis=$p(rec," ",2) q
+ .s:line="05" type=$p(rec," ",2) q
+ .s:line="07" code=$p(rec," ",2) q
+ .s:line="08" norm=$p(rec," ",2) q
+ .s:line="10" res=$p(rec," ",2) q
+ .s:line="11" flag=$p(rec," ",2) q
+ .s:line="13" date=$$intdate^SSUTIL4($p(rec," ",2)),time=$$inttime^SSUTIL4($p(rec," ",3)) q
+ s result=code_$c(par10)_res_$c(par10)_flag_$c(par11)
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+IDLE ; send idle message to instrument
+ q
+CHSUM(x) ; calculate check sum for string
+ n y,z f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=z#1000
+ q z
+SCAN ; check for loadlist to send to instrument
+ d loadlist^MIF000(mi)
+ s cnt="" f  s cnt=$o(^TMIF(mi,10,cnt)) q:cnt=""  d  ;
+ .s str=^(str) d SEND(str)
+ q
+SAVE(mi) ; extract episode and tests for sending
+ s epis=^TMIF("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMIF("MIF000",$j,"LL","SAMPLE")
+ s (z,test)="" f  s z=$o(^TMIF("MIF000",$j,"LL","TEST",z)) q:z=""  s test=test_$s($l(test):%,1:"")_z
+ d SET(epis,test,sample)
+ q 0
+SET(epis,tests,cup) ; create record to send
+ s cnt=""
+ s str=soh_lf_"15 COBAMPLICOR Host 10"_lf_stx_lf_"01 "
+ s str=str_$$CHSUM(str)_lf_eot_lf
+ s cnt=$o(^TMIF(mi,10,cnt))+1,^TMIF(mi,10,cnt)=str
+]]></Routine>
+</Export>

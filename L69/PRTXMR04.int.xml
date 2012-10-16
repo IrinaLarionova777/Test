@@ -1,0 +1,384 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTXMR04" type="INT" languagemode="0"><![CDATA[
+PRTXMR04 ; IG 01/05/99 ; BloodBank XMatch report - Darwin  ; Compiled June 26, 2000 10:15:46 for Cache for Windows
+ q
+ ; Parameters :  1. Call type
+ ;                       EM - emergency issue  - no patient or request - pack id only
+ ;                       GS - Group specific   - xm request number
+ ;                       XM - Full cross match - xm request number
+ ;                       DI - direct issue
+ ;                       NI - neonate issue
+ ;               2. Request
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j),^TMP("PRTDR00",$j),^TMP("REPORT",$j)
+ k xHEADER d INIT,BODY,PRINT
+ k ^TMP($zn,$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ q
+BODY ; create report
+ d %0Ao 
+ i SQLCODE q
+ s vtsRID=$p(vtsRID,$c(1)),epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2)
+ d %0Bo
+ i SQLCODE q
+ s patbg=$p(patbg,$c(1))
+ d %0Co
+ s bgdesc=$p($g(bgdesc),$c(1))
+ s dep="",tsLM=0
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ s tsWD=80 i '$$select^MVBCFLAB(1) d
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ d ADD^PRTDR00(,$c(27)_"(s7B"),LN^PRTDR00()
+ s ind1=0,prodname="" f  s ind1=$o(^BB("RQ",PAR2,"PK",ind1)) q:ind1=""  d  i $l(prodname) q
+ .s rowid=PAR2_"||"_ind1
+ . d %0Do
+ .i 'SQLCODE d
+ ..s pack=$p(pack,$c(1)),exclude=$p(exclude,$c(1)) i $l(pack),exclude'="Y" d
+ .. d %0Eo 
+ ..i 'SQLCODE,stat'="S" d %0Fo 
+ ; set report header
+ s header=$s(PAR1="DI":prodname,PAR1="NI":"Neonatal Issue",PAR1="GS":"Group Specific Issue",1:prodname_" Compatibility Report")
+ d ADD^PRTDR00(tsLM+20,header),ADD^PRTDR00(,$c(13))
+ s line="",$p(line,"_",$l(header)+1)="" d ADD^PRTDR00(tsLM+20,line),LN^PRTDR00()
+ d ADD^PRTDR00(,$c(27)_"(s0B"),LN^PRTDR00()
+ i $l(bgdesc) d ADD^PRTDR00(tsLM,"GROUP: "_bgdesc)
+ d LN^PRTDR00()
+ i PAR1'="DI",(PAR1'="GS") d ADD^PRTDR00(tsLM,"ANTIBODY SCREEN: "_$$abs(epis,PAR1))
+ f j=1:1:3 d LN^PRTDR00()
+ d ADD^PRTDR00(,$c(27)_"(s7B"),ADD^PRTDR00(,$c(13))
+ d ADD^PRTDR00(tsLM+64,"Time"),LN^PRTDR00()
+ d ADD^PRTDR00(tsLM,"Pack ID")
+ d ADD^PRTDR00(tsLM+10,"Group")
+ d ADD^PRTDR00(tsLM+30,"SIGNATURE")
+ d ADD^PRTDR00(tsLM+45,"SIGNATURE")
+ d ADD^PRTDR00(tsLM+60,"Start/Finish")
+ d ADD^PRTDR00(tsLM+75,"Date")
+ d ADD^PRTDR00(,$c(13))
+ d ADD^PRTDR00(tsLM,"________")
+ d ADD^PRTDR00(tsLM+10,"_____")
+ d ADD^PRTDR00(tsLM+30,"_________")
+ d ADD^PRTDR00(tsLM+45,"_________")
+ d ADD^PRTDR00(tsLM+60,"____________")
+ d ADD^PRTDR00(tsLM+75,"____")
+ d ADD^PRTDR00(,$c(27)_"(s0B")
+ f i=1:1:2 d LN^PRTDR00()
+ s ind1=0,user="" f  s ind1=$o(^BB("RQ",PAR2,"PK",ind1)) q:ind1=""  d
+ .s rowid=PAR2_"||"_ind1
+ . d %0Go
+ .i 'SQLCODE d
+ ..s pack=$p(pack,$c(1)),exclude=$p(exclude,$c(1)),x1=$p(x1,$c(1)),x2=$p(x2,$c(1)) i $l(pack),exclude'="Y" d
+ ... d %0Io 
+ ...i 'SQLCODE,stat'="S" d
+ ....d ADD^PRTDR00(tsLM,packid)
+ ....d ADD^PRTDR00(tsLM+10,bgdesc)
+ ....f i=1:1:2 d LN^PRTDR00()
+ .... ; save product comments
+ ....s ind2=0 f  s ind2=$o(^CT("PR",prod,"REM",ind2)) q:ind2=""  s line=^(ind2) d
+ .....i $l(line) s ^TMP($zn,$j,prod,ind2)=line
+ .... ; save user information
+ ....s user=x1_" on "_$$extdate2^SSUTIL4(x2)
+ ; print request comments
+ d LN^PRTDR00(),LN^PRTDR00()
+ s width=tsWD-tsLM,cnt=""
+ s x=0 f  s x=$o(^BB("RQ",PAR2,"REM",x)) q:x=""  s line=^(x) k s d
+ .s linex=line,(xline,line)=""
+ .s xx="" f  s xx=$p(linex,"}",1),linex=$p(linex,"}",2,99) d  q:linex=""
+ ..s xline=$p(xx,"{",1),text=$p(xx,"{",2)
+ ..i '$$select^BVBCTSTC(text) s text=PLIST(3)
+ ..s line=line_xline_text
+ .f  q:$l(line)'>width  d
+ ..f xx1=1:1 i $l($p(line," ",1,xx1))>width s l1=$p(line," ",1,xx1-1),line=$p(line," ",xx1,$l(line," ")) q
+ ..i l1="" s l1=$e(line,1,width),line=$e(width+1,$l(line))
+ ..d ADD^PRTDR00(tsLM,l1),LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM,line)
+ ; print product comments
+ s width=tsWD-tsLM
+ i $d(^TMP($zn,$j)) f j=1:1:2 d LN^PRTDR00()
+ s prod="" f  s prod=$o(^TMP($zn,$j,prod)) q:prod=""  d
+ .s ind="" f  s ind=$o(^TMP($zn,$j,prod,ind)) q:ind=""  s line=^(ind) d
+ ..f  q:$l(line)'>width  d
+ ...f xx1=1:1 i $l($p(line," ",1,xx1))>width s l1=$p(line," ",1,xx1-1),line=$p(line," ",xx1,$l(line," ")) q
+ ...i l1="" s l1=$e(line,1,width),line=$e(width+1,$l(line))
+ ...d ADD^PRTDR00(tsLM,l1),LN^PRTDR00()
+ ..d ADD^PRTDR00(tsLM,line),LN^PRTDR00()
+ d LN^PRTDR00()
+ i PAR1'="DI" d
+ .d ADD^PRTDR00(,$c(27)_"(s7B"),LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM+15,"UNITS ARE HELD ON CROSSMATCH FOR 48 HOURS ONLY")
+ .d ADD^PRTDR00(,$c(27)_"(s0B"),LN^PRTDR00()
+ .s line="",$p(line,"-",tsWD-tsLM)="" d ADD^PRTDR00(tsLM,line),LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM,"If a serious (Haemolytic) Transfusion Reaction is a possibility: Please "),LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM,"collect and send blood samples, urine and donor units to the laboratory"),LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM,"as soon as possible. Refer to Laboratory Handbook"),LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM,"Note: ")
+ .d ADD^PRTDR00(tsLM+6,"- Administer through a standard giving set with an integral"),LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM+8,"in-line 140-170 micron filter."),LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM+6,"- Do not exceed 37oC when warming blood."),LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM+6,"- Infusion time of each unit should not exceed 4 hours"),LN^PRTDR00()
+ .i PAR1="NI" d
+ ..d ADD^PRTDR00(tsLM,"It is recommended that this uit be transfused through a leucocyte filter."),LN^PRTDR00()
+ ..d ADD^PRTDR00(tsLM,"No further sample is required for crossmatching during the neonatal period unless babe is"),LN^PRTDR00()
+ ..d ADD^PRTDR00(tsLM,"discharged or re-admitted."),LN^PRTDR00()
+ f j=1:1:3 d LN^PRTDR00()
+ i PAR1="XM" d ADD^PRTDR00(tsLM,"Authorised by "_user),LN^PRTDR00()
+ i PAR1="DI" d ADD^PRTDR00(tsLM,"Issued by "_user),LN^PRTDR00()
+ ; create page for printing
+ k PLIST m PLIST=^TMP("PRTDR00",$j,"RESULT") s PLIST=$o(PLIST(""),-1)
+ k ^TMP("PRTDR00",$j)
+ s page=1,^TMP("REPORT",$j,page,"TEST",vtsRID)=""
+ f jLine=1:1:PLIST s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ q
+PRINT ; print report
+ ; xPAR1 - U-User
+ ;         C-Courier
+ ; xPAR2 - User RowID/Courier
+ ; get patient information
+ k VISIT i '$$select^LVBEPVIS(epis) m VISIT=PLIST
+ ; get doctor information
+ s doc=$p(VISIT(15),$c(1)) k DOC i '$$select^LVBCTDR(doc,"Y") m DOC=PLIST
+ s (xPAR1,xPAR2)=""
+ s page="" f  s page=$o(^TMP("REPORT",$j,page)) q:page=""  d
+ . ; print page Header
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ . ; print report
+ .f j=1:1 q:'$d(^TMP("REPORT",$j,page,"TEXT",j))  s xx=^(j) d ADDLINE^PRTREP00(REPID,"PRT",xx)
+ . ; print page Footer
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ q
+ ; check if antibody screen detected
+abs(epis,PAR1) n (epis,PAR1) s abs=$$abs^LVBVIS3(epis),result=""
+ i PAR1="XM" s result=$s(abs="Detected":"Possible atypical red cell antibody detected",1:"No atypical red cell antibodies detected")
+ i PAR1'="XM" s result=abs
+ q result
+ q
+%0AAr1 n num s num=$$numint^%qarzdt(%val,1,"","",1) s:(num="")&(%val'="") %ok=0 s %val=num
+ q  
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(PAR2,$C(1))
+ i %mmmsqld(4)="",$L(PAR2)>1 s %val=$E(PAR2,2,999) d %0AAr1 s %mmmsqld(4)=%val
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(3)'="",$d(^BB("RQ",%mmmsqld(3)))
+ i '$t
+ e  i 1>%mmmsqld(3),%mmmsqld(3)=+%mmmsqld(3)
+ i  g %0ABdun
+ s %mmmsqln=$g(^BB("RQ",%mmmsqld(3)))
+ s vtsRID=$p(%mmmsqln,"^",8)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0BBr1 s patbg=""
+ i $l($g(%mmmsqld(6))) s patbg=$g(^TBBC($g(%mmmsqld(6)),"GP"))
+ q
+%0Bo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Berr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(epis,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(epis,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(7)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(7)'="",$d(^TEPI(%mmmsqld(7)))
+ e  g %0BBdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(7)))
+ s %mmmsqld(6)=$p(%mmmsqln,"\",18)
+ d %0BBr1
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Bc
+%0BBdun 
+%0BAdun 
+%0Bc q
+%0Berr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0BAdun
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Cerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(5)=$P(patbg,$C(1))
+ s:%mmmsqld(5)="" %mmmsqld(5)=$E(patbg,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(4)=$g(%mmmsqld(5))
+ i %mmmsqld(4)="" g %0CBdun
+ s %mmmsqld(7)=""
+%0CBk1 s %mmmsqld(7)=$o(^CT("BG",0,"Code",%mmmsqld(4),%mmmsqld(7)))
+ i %mmmsqld(7)="" g %0CBdun
+ i %mmmsqld(7)'=+%mmmsqld(7) g %0CBdun
+ i %mmmsqld(7)'="",$d(^CT("BG",%mmmsqld(7)))
+ i '$t
+ e  i 1>%mmmsqld(7),%mmmsqld(7)=+%mmmsqld(7)
+ i  g %0CBk1
+ s %mmmsqln=$g(^CT("BG",%mmmsqld(7)))
+ s bgdesc=$p(%mmmsqln,"^",4) s %mmmsqld(3)=$p(%mmmsqln,"^",1)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Cc
+ g %0CBk1
+%0CBdun 
+%0CAdun 
+%0Cc q
+%0Cerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0CAdun
+%0DBs1 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%0Do n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Derr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(rowid,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(rowid,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(6)),"||",1,1),$P(%mmmsqld(9),$C(1))=$p($g(%mmmsqld(6)),"||",2,2)
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(8)'="",$P(%mmmsqld(9),$C(1))'="",$d(^BB("RQ",%mmmsqld(8),"PK",$P(%mmmsqld(9),$C(1))))
+ i '$t
+ e  i 1>$P(%mmmsqld(9),$C(1)),$P(%mmmsqld(9),$C(1))=+$P(%mmmsqld(9),$C(1))
+ i  g %0DBdun
+ s %mmmsqln=$g(^BB("RQ",%mmmsqld(8),"PK",$P(%mmmsqld(9),$C(1))))
+ s pack=$p(%mmmsqln,"^",1) s exclude=$p(%mmmsqln,"^",9)
+ 
+ s %val=$P(exclude,$C(1)) d %0DBs1:%val'="" s $P(exclude,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Dc
+%0DBdun 
+%0DAdun 
+%0Dc q
+%0Derr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0DAdun
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Eerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(pack,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(pack,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(3)'="",$d(^BB("PK",%mmmsqld(3)))
+ i '$t
+ e  i 1>%mmmsqld(3),%mmmsqld(3)=+%mmmsqld(3)
+ i  g %0EBdun
+ s %mmmsqln=$g(^BB("PK",%mmmsqld(3)))
+ s %mmmsqld(6)=$p(%mmmsqln,"^",4)
+ s %mmmsqld(7)=$g(%mmmsqld(6))
+ i %mmmsqld(7)'="",$d(^CT("ST",%mmmsqld(7)))
+ i '$t
+ e  i 1>%mmmsqld(7),%mmmsqld(7)=+%mmmsqld(7)
+ i  s (stat,%mmmsqld(7))="" g %0EBp2
+ s %mmmsqln=$g(^CT("ST",%mmmsqld(7)))
+ s stat=$p(%mmmsqln,"^",1)
+%0EBp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ec
+%0EBdun 
+%0EAdun 
+%0Ec q
+%0Eerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0EAdun
+%0Fo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Ferr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(pack,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(pack,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(3)'="",$d(^BB("PK",%mmmsqld(3)))
+ i '$t
+ e  i 1>%mmmsqld(3),%mmmsqld(3)=+%mmmsqld(3)
+ i  g %0FBdun
+ s %mmmsqln=$g(^BB("PK",%mmmsqld(3)))
+ s %mmmsqld(6)=$p(%mmmsqln,"^",6)
+ s %mmmsqld(7)=$g(%mmmsqld(6))
+ i %mmmsqld(7)'="",$d(^CT("PR",%mmmsqld(7)))
+ i '$t
+ e  i 1>%mmmsqld(7),%mmmsqld(7)=+%mmmsqld(7)
+ i  s (prodname,%mmmsqld(7))="" g %0FBp2
+ s %mmmsqln=$g(^CT("PR",%mmmsqld(7)))
+ s prodname=$p(%mmmsqln,"^",2)
+%0FBp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Fc
+%0FBdun 
+%0FAdun 
+%0Fc q
+%0Ferr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0FAdun
+%0GBs1 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,1,-1,2) q
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Gerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(10)=$P(rowid,$C(1))
+ s:%mmmsqld(10)="" %mmmsqld(10)=$E(rowid,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(14)=$p($g(%mmmsqld(10)),"||",1,1),$P(%mmmsqld(15),$C(1))=$p($g(%mmmsqld(10)),"||",2,2)
+ s %mmmsqld(9)=$g(%mmmsqld(10))
+ i %mmmsqld(14)'="",$P(%mmmsqld(15),$C(1))'="",$d(^BB("RQ",%mmmsqld(14),"PK",$P(%mmmsqld(15),$C(1))))
+ i '$t
+ e  i 1>$P(%mmmsqld(15),$C(1)),$P(%mmmsqld(15),$C(1))=+$P(%mmmsqld(15),$C(1))
+ i  g %0GBdun
+ s %mmmsqln=$g(^BB("RQ",%mmmsqld(14),"PK",$P(%mmmsqld(15),$C(1))))
+ s pack=$p(%mmmsqln,"^",1) s exclude=$p(%mmmsqln,"^",9) s x2=$p(%mmmsqln,"^",6) s %mmmsqld(12)=$p(%mmmsqln,"^",8)
+ 
+ s %val=$P(x2,$C(1)) d %0GBs1:%val'="" s $P(x2,$C(1),2)=%val
+ s %val=$P(exclude,$C(1)) d %0DBs1:%val'="" s $P(exclude,$C(1),2)=%val
+ s %mmmsqld(16)=$p($g(%mmmsqld(12)),"||",1,1)
+ s %mmmsqld(13)=$g(%mmmsqld(12))
+ i %mmmsqld(16)'="",$d(^SSU("SSUSR",1,%mmmsqld(16)))
+ e  s (%mmmsqld(13),x1)="" g %0GBp2
+ s %mmmsqln=$g(^SSU("SSUSR",1,%mmmsqld(16)))
+ s x1=$p(%mmmsqln,"^",2)
+%0GBp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Gc
+%0GBdun 
+%0GAdun 
+%0Gc q
+%0Gerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0GAdun
+%0Io n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Ierr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(10)=$P(pack,$C(1))
+ s:%mmmsqld(10)="" %mmmsqld(10)=$E(pack,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(9)=$g(%mmmsqld(10))
+ i %mmmsqld(9)'="",$d(^BB("PK",%mmmsqld(9)))
+ i '$t
+ e  i 1>%mmmsqld(9),%mmmsqld(9)=+%mmmsqld(9)
+ i  g %0IBdun
+ s %mmmsqln=$g(^BB("PK",%mmmsqld(9)))
+ s packid=$p(%mmmsqln,"^",1) s prod=$p(%mmmsqln,"^",6) s %mmmsqld(12)=$p(%mmmsqln,"^",4) s %mmmsqld(14)=$p(%mmmsqln,"^",8)
+ s %mmmsqld(13)=$g(%mmmsqld(12))
+ i %mmmsqld(13)'="",$d(^CT("ST",%mmmsqld(13)))
+ i '$t
+ e  i 1>%mmmsqld(13),%mmmsqld(13)=+%mmmsqld(13)
+ i  s (stat,%mmmsqld(13))="" g %0IBp2
+ s %mmmsqln=$g(^CT("ST",%mmmsqld(13)))
+ s stat=$p(%mmmsqln,"^",1)
+%0IBp2 
+ s %mmmsqld(15)=$g(%mmmsqld(14))
+ i %mmmsqld(15)'="",$d(^CT("BG",%mmmsqld(15)))
+ i '$t
+ e  i 1>%mmmsqld(15),%mmmsqld(15)=+%mmmsqld(15)
+ i  s (bgdesc,%mmmsqld(15))="" g %0IBp3
+ s %mmmsqln=$g(^CT("BG",%mmmsqld(15)))
+ s bgdesc=$p(%mmmsqln,"^",4)
+%0IBp3 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ic
+%0IBdun 
+%0IAdun 
+%0Ic q
+%0Ierr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0IAdun
+]]></Routine>
+</Export>

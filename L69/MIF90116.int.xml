@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF90116" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF90116(mi) ; ML 1/2/00 ; OLYMPUS AU400 (Bi-Directional) - IDS
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(15),etb=$c(23)
+ s (sample,epis,surname,result,date,time,QC)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,etb_","_etx) q:'$l(record)
+ d trace^MIF000(mi,record,"H<--M")
+ d ACK
+ ; process host query
+ i $e(record,1,2)="R " d  q
+ .k ^TMIF(mi,10)
+ . ; create order to send to instrument
+ .s str="S "_$e(record,5,23)_"    E",epis=$e(record,16,23)
+ .s tg="" s sampid=$e(record,12),samptype=$e(record,11)
+ .i sampid="0",samptype=" " s tg=sampid
+ .i sampid="E" s tg=sampid
+ .i samptype="U" s tg=samptype
+ .d scanone^MIF000(mi,epis,tg)
+ .s (tc,tcx)="" i $d(^TMP("MIF-SINGLE",$j,mi,epis)) d  k ^TMP("MIF-SINGLE",$j,mi,epis)
+ ..s i="" f  s i=$o(^TMP("MIF-SINGLE",$j,mi,epis,i)) q:i=""  s tc=i d  s tcx=tcx_tc
+ ...i $l(tc)=3 s tc=$e(tc,1,2)
+ .s str=str_tcx s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)=str
+ .i $d(^TMIF(mi,10)) d SEND k ^TMIF(mi,10)
+ ; process result record
+ i $e(record,1,2)="D "!($e(record,1,2)="d ")!($e(record,1,2)="DQ")!($e(record,1,2)="DH")!($e(record,1,2)="dH") d  q
+ .s sampid=$e(record,12)
+ .f i=1:1:$l(record,etb) s rec=$p(record,etb,i) d
+ ..q:rec=""  s:$e(rec)=$c(2) rec=$p(rec,stx,2)
+ ..s (sample,epis,surname,result,date,time,QC)=""
+ ..s epis=$tr($e(rec,16,23)," "),cup=$tr($e(rec,25,27)," "),samptype=$e(rec,11),xrec=$e(rec,29,999)
+ ..f  s res=$e(xrec,1,13) d  q:$l(xrec)<13
+ ...s xrec=$e(xrec,14,999)
+ ...s x1=$tr($e(res,1,2)," ")_$s(samptype="U":"U",1:""),x2=$tr($e(res,3,11)," "),x3=$tr($e(res,12,13)," ")
+ ... ; strip flags
+ ...s x3=$tr(x3,"1234567FGHLNPrpx","")
+ ...i sampid="E",x1="96" q
+ ...s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ .. ; extract QC details
+ ..i $e(record,1,2)="DQ" s QC=cup_"\"_epis i '$l(epis) s epis=cup
+ .i $l(epis),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+ ; send 'ack' to instrument
+ACK w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+ ; send string to instrument
+SEND s x="" f  s x=$o(^TMIF(mi,10,x)) q:x=""  d
+ .s str=^(x) f i=1:1:2 d  q:ok
+ ..s ok=""
+ ..w stx,str,etx,*-3 d trace^MIF000(mi,str,"H-->M")
+ ..r *a:5 d trace^MIF000(mi,$s($c(a)=ack:"ACK",$c(a)=nak:"NAK",1:$c(a)),"H<--M")
+ ..i $c(a)=ack s ok=1
+ q
+]]></Routine>
+</Export>

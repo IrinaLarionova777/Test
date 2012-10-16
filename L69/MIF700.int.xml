@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF700" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF700(mi) ; ML 23/6/98 ; ROCHE Cobas Core (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),lf=$c(10),soh=$c(1),start=0
+ s hh=$p($h,",",2),dy=$h-1,(first,line,str)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main d:" BU "[(" "_par9_" ") M2
+ i '$l(line) h 60 d send("09","10 09") s cnt=1 k aa,first
+ s nores=0
+ f  d M1 i nores q
+ q
+M1 s record=$$read^MIF000("",lf) i '$l(record) s nores=1 q
+ i $e(record,1,2)="06" s first=1
+ d trace^MIF000(mi,record,"H<--M") i $g(first)'="" s aa(cnt)=record,cnt=cnt+1
+ i record'=stx g M1
+ f i=cnt:1 s record=$$read^MIF000("",lf) q:record=eot  d trace^MIF000(mi,record,"H<--M") s aa(i)=record i record=eot q
+ i record'=eot s nores=1 q
+ i i<6 s nores=1 q
+ s bc=$e(aa(1),21,22)
+ i bc="00" s nores=1 q
+ i bc="19" s nores=1 q
+ i bc="04" d SRES
+ d send("09","10 09") s cnt=1 k aa,first
+ q
+M2 ; check for data to be sent to instrument
+ i 'start,$p($h,",",2)-hh>30!(hh>$p($h,",",2)) d SCAN s hh=$p($h,",",2)
+ s (line,str)="" i $d(^TMIF(mi,10)) s line=$o(^TMIF(mi,10,line)) i $l(line) s str=^(line) d
+ .d send(10,str) k ^TMIF(mi,10,line)
+ q
+SCAN ; scan for next ten episodes and create tmif(mi,10) for sending to instrument
+ d scanall^MIF000(mi)
+ s (epis,tcch)="" f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  d
+ .s test=" " f  s tcch=$o(^TMP("MIF-SCAN",$j,mi,epis,tcch)) q:tcch=""  d
+ ..i $l(tcch)=2 s test=test_tcch
+ .i test=" " q
+ .s z=$g(^TEPI(epis)),sn=$p(z,"\",1),gn=$p(z,"\",2) k z
+ .s data="50 R "_$e(epis_$j("",9),1,9)_"\"
+ .s data=data_"51 "_$e(sn_" "_gn,1,20)_"\"
+ .s data=data_"52"_test
+ .s cnt=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,cnt)=data
+ q
+SRES ; process results record
+ s (sample,epis,surname,result,date,time,QC)=""
+ s epis=$tr($e(aa(3),4,13)," ")
+ i epis="" s epis=$tr($e(aa(3),16,20)," ","-")
+ i $l(epis)>7 s epis=$e(epis,$l(epis)-6,99)
+ i $e(aa(4),1,2)'=12 q
+ i $e(aa(6),1,2)'="00" q
+ s result=$e(aa(4),4,5)_$c(par10)_$tr($e(aa(6),4,12)," +-")_$c(par11)
+ d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+send(bc,lc) ; send episode data/poll instrument
+ w soh,lf,*-3 d trace^MIF000(mi,"SOH","H-->M")
+ w "06 LABTRAK 2.0     ",bc,lf,*-3 d trace^MIF000(mi,"06 LABTRAK 2.0     "_bc,"H-->M")
+ w stx,lf,*-3 d trace^MIF000(mi,"STX","H-->M")
+ f i=1:1:$l(lc,"\") w $p(lc,"\",i),lf,*-3 d trace^MIF000(mi,$p(lc,"\",i),"H-->M")
+ w etx,lf,eot,lf,*-3 d trace^MIF000(mi,"ETX LF EOT","H-->M")
+ q
+]]></Routine>
+</Export>

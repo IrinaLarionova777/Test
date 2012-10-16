@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF167ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF167ESP01(mi) ; Behring Nephelometer II (AutoHost Bi-Directional) ; QC - Yes
+ ; -------------------------------
+ ; "Cacometro" ;-)
+ ;  Hospital Universitario La Paz
+ ;  Mc_Fly Apr 11, 2003
+ ; ----------------------------------
+ ;  Oct 26, 2005 by Mc_Fly: QC added
+ ; ----------------------------------
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),cr=$c(13),nak=$c(21)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main 
+ s record=$$read^MIF000(stx,etx) q:'$l(record)
+ d trace^MIF000(mi,record,"H<--M")
+ s body=$e(record,1,$l(record)-2)
+ s bcc=$e(record,$l(record)-1)
+ i $$bcc(body)'=bcc d nak q
+ s type=$e(record,1)
+ i type="J" d joblist q
+ i type="D" d result q
+ i type="R" d qc q
+ q
+joblist 
+ s saveepis=$p($$remleft($e(body,2,30)),".")
+ s epis=$$remleft($e(body,2,30))
+ d trace^MIF000(mi,"Ask for "_epis,"H<--M")
+ i $$select^LVBEPVIS(saveepis,"Y")
+ i SQLCODE d ack q  ; Nothing to do
+ s sex=$s(PLIST(5)="M":"M",PLIST(5)="F":"F",1:" ")
+ s dob=$zdate(PLIST(6),8)
+ s dob=$e(dob,7,8)_$e(dob,5,6)_$e(dob,1,4)
+ s urgent="0"
+ s remark="00"
+ s flag=0
+ k ^TMP("MIF-SINGLE",$j)
+ d scanone^MIF000(mi,saveepis)
+ s dilution=0
+ s (tc,test)=""
+ f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,saveepis,tc)) q:tc=""  d
+ . s test=test_$j(tc,2)_dilution
+ k ^TMP("MIF-SINGLE",$j)
+ i test="" d ack q  ; Nothing to do
+ s swack=0
+joblist2 
+ d send("J"_$e(epis_$j("",29),1,29)_dob_sex_urgent_remark_flag_test)
+ i 'swack d ack s swack=1
+ r *answer:10
+ i $c(answer)=ack d trace^MIF000(mi,"<ACK>","H<--M") q
+ i $c(answer)=nak d trace^MIF000(mi,"<NAK>","H<--M") g joblist2
+ d trace^MIF000(mi,"<"_answer_">","H<--M")
+ q  ; Timeout or another
+result 
+ d ack
+ s (sample,saveepis,epis,surname,result,date,time,QC)=""
+ s saveepis=$p($$remleft($e(body,2,30)),".")
+ s epis=$$remleft($e(body,2,30))
+ s tst=$$remright($e(body,31,32))
+ s flag=$$remright($e(body,33,36))
+ s res=+$$remright($e(body,37,51)) ; Is "1.5E+02"
+ s date=$e(body,73,78)
+ s today=$zd($h)
+ s date=$e(date,1,2)_"/"_$e(date,3,4)_"/"_$e(today,7,8)_$e(date,5,6)
+ s date=$zdateh(date,4)
+ s time=$e(body,79,84)
+ s time=$e(time,1,2)_":"_$e(time,3,4)_":"_$e(time,5,6)
+ s time=$ztimeh(time,1)
+ ; process results record
+ s result=tst_$c(par10)_res_$c(par10)_flag_$c(par11)
+ i $e(saveepis,1,5)="ccnef" s QC="\"_saveepis
+ i $l(result) d file^MIF000(mi,sample,saveepis,surname,result,date,time,QC)  
+ q
+qc ; Quality Control
+ d ack
+ ; TODO: Save the quality control
+ q
+bcc(txt) ; CRC
+ n j
+ s j=$zcrc(txt,0)
+ s j=64-(j#64)
+ i j<32 s j=j+64
+ q $c(j)
+remleft(txt) ; Remove left spaces
+ n n
+ f n=$l(txt):-1:0 q:$e(txt,n)'=" "
+ q $e(txt,1,n)
+remright(txt) ; Remove right spaces
+ n n,v
+ f n=1:1:$l(txt) q:$e(txt,n)'=" "
+ s v=$e(txt,n,$l(txt))
+ i v=" " s v=""
+ q v
+send(str) ; send string to instrument
+ n bcc
+ s bcc=$$bcc(str)
+ w stx,str,bcc,cr,etx,*-3
+ d trace^MIF000(mi,str,"H-->M")
+ q
+ack ; Send ACK to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"<ACK>","H-->M")
+ q
+nak ; Send NAK to instrument
+ w nak,*-3
+ d trace^MIF000(mi,"<NAK>","H-->M")
+ q
+]]></Routine>
+</Export>

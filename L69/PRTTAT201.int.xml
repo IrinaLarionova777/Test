@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTTAT201" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTTAT201 ; ML 06/11/2002 ; TURN AROUND TIME OUTLIERS
+ q
+ ; Parameters :  1. Test Set Group
+ ;               2. Test Set Code
+ ;               3. Expected Turn Around Time (minutes)
+ ;               4. Date From
+ ;               5. Date To
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Turn Around Time Outliers Report"
+ s line=2,xHEADER(line)=""
+ i $l(PAR1) d
+ .s line=line+1,xHEADER(line)="Test Set Group : "_tsgrp
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR2) d
+ .s line=line+1,xHEADER(line)="Test Set : "_ts
+ .s line=line+1,xHEADER(line)=""
+ s line=line+1,xHEADER(line)="Expected Turn Around Time : "_PAR3_" minutes"
+ s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,PAR4,PAR5),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ i $l(PAR1) s tsgrp=$p(^TTAB("GR",PAR1),"\")_"("_PAR1_")"
+ i $l(PAR2) s ts=$p(^TTAB("TS",PAR2),"\")_"("_PAR2_")"
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+BODY ; create temporary printing file
+ s tests=","
+ i $l(PAR1) d
+ .k PLIST i '$$getall^LVBCTTWT(PAR1)
+ .f i=1:1:PLIST s ts=$p(PLIST(i),$c(2),3) s tests=tests_ts_","
+ i $l(PAR2) s tests=tests_PAR2_","
+ ; check dates - 1. collection
+ ;               6. received
+ f index=1,6 d
+ .s date=PAR4-1 f  s date=$o(^TDAY(index,date)) q:date=""  q:date>PAR5  d
+ ..s status="" f  s status=$o(^TDAY(index,date,status)) q:status=""  d
+ ...s epis="" f  s epis=$o(^TDAY(index,date,status,epis)) q:epis=""  d
+ ....s detail=$g(^TEPI(epis))
+ ....s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  q:tests'[(","_ts_",")  d
+ .....s seq="" f  s seq=$o(^TEPI(epis,1,ts,seq)) q:seq=""  d
+ ......s collected=$p(detail,"\",10)_","_($p(detail,"\",11)*60),received=$p(detail,"\",32)_","_($p(detail,"\",33)*60)
+ ......s authorised=$p(^TEPI(epis,1,ts,seq),"\",4)_","_($p(^TEPI(epis,1,ts,seq),"\",5)*60) s:authorised=",0" authorised=""
+ ......s ^TMP($zn,$j,"Process",epis,ts,seq)=collected_"\"_received_"\"_authorised
+ ; check authorised date
+ s date=PAR4-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR5  d
+ .s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ ..s detail=$g(^TEPI(epis))
+ ..s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  q:tests'[(","_ts_",")  d
+ ...s seq="" f  s seq=$o(^TEPIi("AUTHORISED",date,epis,ts,seq)) q:seq=""  d
+ ....q:$d(^TMP($zn,$j,"Process",epis,ts,seq))
+ ....s collected=$p(detail,"\",10)_","_($p(detail,"\",11)*60),received=$p(detail,"\",32)_","_($p(detail,"\",33)*60)
+ ....s authorised=$p(^TEPI(epis,1,ts,seq),"\",4)_","_($p(^TEPI(epis,1,ts,seq),"\",5)*60)
+ ....s ^TMP($zn,$j,"Process",epis,ts,seq)=collected_"\"_received_"\"_authorised
+ ; check delta's - received & collected
+ ;               - authorised & received
+ s delta=PAR3*60
+ s epis="" f  s epis=$o(^TMP($zn,$j,"Process",epis)) q:epis=""  d
+ .s ts="" f  s ts=$o(^TMP($zn,$j,"Process",epis,ts)) q:ts=""  d
+ ..s seq="" f  s seq=$o(^TMP($zn,$j,"Process",epis,ts,seq)) q:seq=""  d
+ ...s detail=^TMP($zn,$j,"Process",epis,ts,seq),loc=$p(^TEPI(epis),"\",20) s:loc="" loc=" "
+ ...s coll=$p(detail,"\",1),recd=$p(detail,"\",2),auth=$p(detail,"\",3)
+ ...s collected=($p(coll,",")*86400)+$p(coll,",",2)
+ ...s received=($p(recd,",")*86400)+$p(recd,",",2)
+ ...s:auth="" auth=$h
+ ...s authorised=($p(auth,",")*86400)+$p(auth,",",2)
+ ...i received-collected>delta s ^TMP($zn,$j,"Delta",loc,epis,"RC")=(received-collected)/60
+ ...i authorised-received>delta s ^TMP($zn,$j,"Delta",loc,epis,"AR",ts,seq)=(authorised-received)/60
+ q
+PRINT ; print report
+ k xxx,PLIST
+ s loc="" f  s loc=$o(^TMP($zn,$j,"Delta",loc)) q:loc=""  d
+ .s location="" i '$$select^LVBHOSP(loc) s location=PLIST(3) k PLIST
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","~BOLD")
+ .d ADDLINE^PRTREP00(REPID,"PRT","~ITALIC")
+ .d ADDLINE^PRTREP00(REPID,"PRT","?1  "_$s(loc'=" ":loc,1:"No Location"))
+ .d ADDLINE^PRTREP00(REPID,"PRT","?13 "_$s(loc'=" ":location,1:""))
+ .d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL")
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .s epis="" f  s epis=$o(^TMP($zn,$j,"Delta",loc,epis)) q:epis=""  d
+ ..k PLIST i $$select^LVBEPVIS(epis) q
+ ..s xxx(1)=$g(^TMP($zn,$j,"Delta",loc,epis,"RC"))
+ ..i '$d(^TMP($zn,$j,"Delta",loc,epis,"AR")) d  q
+ ...d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+ ..s ts="" f  s ts=$o(^TMP($zn,$j,"Delta",loc,epis,"AR",ts)) q:ts=""  d
+ ...s seq="" f  s seq=$o(^TMP($zn,$j,"Delta",loc,epis,"AR",ts,seq)) q:seq=""  d
+ ....s xxx(2)=ts,xxx(3)=""
+ ....s authorised=$p(^TMP($zn,$j,"Process",epis,ts,seq),"\",3)
+ ....i authorised'="" s xxx(3)=$$extdate2^SSUTIL4($p(authorised,","))_"  "_$$exttime^SSUTIL4($p(authorised,",",2))
+ ....s xxx(4)=^TMP($zn,$j,"Delta",loc,epis,"AR",ts,seq)
+ ....d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="TAT2"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

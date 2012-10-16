@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBMIRH3" type="INT" languagemode="0"><![CDATA[
+LVBMIRH3 ; IG 6/5/98 ; LVB Control data access for MIRH MIF_MachineResultHeader  ; Compiled June 8, 2000 18:14:34 for Cache for Windows
+ ;
+ ; supported calls :
+ ;
+ ; $$authall^LVBMIRH3(mi,tsgrp)
+ ;
+ ;
+authall(mi,tsgrp) ;authorise all machine results
+ n (mi,tsgrp)
+ q:mi="" 0
+ s tsgrp=$g(tsgrp)
+ k ^TMP("MVB",$j)
+ ;get list of test sets for machine
+ d testsetc^LVBMIRH(tsgrp)
+ s sample="" f  s sample=$o(^TMIF(mi,1,sample)) q:sample=""  d
+ .s epis=$p($g(^TMIF(mi,1,sample)),"\") k result
+ .s tc="" f  s tc=$o(^TMIF(mi,1,sample,"DATA",tc)) q:tc=""  s cnt=0 f  s cnt=$o(^TMIF(mi,1,sample,"DATA",tc,cnt)) q:cnt=""  d
+ ..s res=$p($g(^TMIF(mi,1,sample,"DATA",tc,cnt)),"\")
+ ..q:res=""  s result(tc)=res
+ .s ts="" f  s ts=$o(^TMP("MVB",$j,"TS",ts)) q:ts=""  d
+ .;only auto athorise
+ ..i $p($g(^TTAB("TS",ts)),"\",20)'="Y" q
+ ..;get test set row from visit (not authorised)
+ ..s ts1=$$getnats(epis,ts) q:ts1=""
+ ..;check mandatory results and valid data for numeric result
+ ..i $$chkmand(mi,sample,ts,epis,.result) s ok=61 q
+ ..s tc="" f  s tc=$o(^TMP("MVB",$j,"TS",ts,tc)) q:tc=""  i $g(result(tc))'="" d
+ ...i $$setres(epis_"||"_ts1,tc,result(tc),type) s ok=100 q
+ ...i $$delalltc^LVBMIRI(mi_"||"_sample_"||"_tc)
+ ...i $d(^TMIF(mi,1,sample))<10,$$delete(mi_"||"_sample)
+ ..i 'ok,'$$select^LVBVISTS(epis_"||"_ts1,"Y") d
+ ...s PLIST(4)=+$H,PLIST(5)=$p($H,",",2),PLIST(6)=user
+ ...s PLIST(7)=+$H,PLIST(8)=$p($H,",",2),PLIST(9)=user
+ ...i $$update^LVBVISTS(PLIST(1))
+ k ^TMP("MVB",$j)
+ q 0
+ ;
+setres(epists,tc,result) ;create result for test set
+ n (epists,tc,result)
+ ;check if result already exists
+ s exist='$$select^LVBVISTD(epists_"||"_tc)
+ i exist s PLIST(3)=result,ok=$$update^LVBVISTD(epists_"||"_tc)
+ ;insert result
+ i 'exist d
+ .k PLIST s PLIST(2)=tc,PLIST(3)=result
+ .s ok=$$insert^LVBVISTD(epists)
+ q ok
+ ;
+testsetc(mi) ;create reverse index from testset to test code
+ n (mi)
+ k ^TMP("MVB",$j,"TS")
+ s tc="" f  s tc=$o(^TMIF(mi,2,tc)) q:tc=""  d
+ .s ts="" f  s ts=$o(^TMIF(mi,2,tc,0,ts)) q:ts=""  s s=^(ts) d
+ ..s ^TMP("MVB",$j,"TS",ts,tc)=s
+ q
+getnats(epis,ts) ;get not authorised test set for visit
+ n (epis,ts)
+ s found=0,cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  q:found  s s=^(cnt) d
+ .i '$p(s,"\",4) s found=cnt
+ i found q ts_"||"_found
+ q ""
+ ;
+chkmand(mi,sample,ts,epis,result) ;check if all mandatory data items have results
+ n (mi,sample,ts,epis,result)
+ s found=0
+ s tc="" f  s tc=$o(^TMP("MVB",$j,"TS",ts,tc)) q:tc=""  q:found  s s=^(tc) d
+ .i s["Y",'$d(result(tc)) s ^TMP("MVB",$j,"Fail",tc,"REQ")="",found=1 q
+ .i $d(result(tc)) s res=result(tc) i $$val(epis,tc,res,type) s found=1 q
+ q found
+ ;
+ ;        
+val(epis,tc,result) ;validate result
+ ;0-valid,1-not valid
+ n (epis,tc,result)
+ q:epis="" 0
+ q:tc="" 0
+ q:result="" 0
+ s epdata=$g(^TEPI(epis)),ur=$p(epdata,"\",18),date=$p(epdata,"\",10)
+ s spec=$p(epdata,"\",3),age=$p(epdata,"\",25),pregn=$p(epdata,"\",34)
+ s tcdata=$g(^TTAB("TC",tc)),resform=$p(tcdata,"\",3)
+ s deltabs=$p(tcdata,"\",8),deltperc=$p(tcdata,"\",9),deltdays=$p(tcdata,"\",10)
+ ;only numeric result
+ i $e(resform)'["N" q 0
+ q:spec="" 0
+ ;check ranges by age
+ s age0=$o(^TTAB("TC",tc,0,spec,age-.1))
+ i $l(age0) d  i flag s ^TMP("MVB",$j,"Fail",tc,"R")=result q flag
+ .s flag=0
+ .s range=^TTAB("TC",tc,0,spec,age0)
+ .s lr=$p(range,"\",3),hr=$p(range,"\",4)
+ .;get different ranges for pregnant
+ .i pregn["Y" d
+ ..s lr=$p(range,"\",11),hr=$p(range,"\",12)
+ .;if no auto ranges , cant check
+ .i hr="",lr="" s flag=1 q
+ .i hr'="",result>hr s flag=1
+ .i lr'="",result<lr s flag=1
+ ;check all prevous visits
+ i deltabs="",deltperc="" q 0
+ s date0=date+1,found=0,visfound=0
+ f  s date0=$o(^TDEB(ur,date0),-1) q:date0=""  q:date0<(date-deltdays)  q:found  d
+ .s ep="" f  s ep=$o(^TDEB(ur,date0,0,ep)) q:ep=""  d
+ ..q:ep=epis  q:visfound
+ ..;check only most recent visit
+ ..s visfound=1
+ ..s ts="" f  s ts=$o(^TEPI(ep,1,ts)) q:ts=""  s cnt="" f  s cnt=$o(^TEPI(ep,1,ts,cnt)) q:cnt=""  d
+ ...i '$d(^TEPI(ep,1,ts,cnt,tc)) q
+ ...s res=$g(^TEPI(ep,1,ts,cnt,tc)),dela=res-result,delp=$s(result:res-result/result*100,1:0)
+ ...i deltabs,dela>0,dela>deltabs s found=1 s ^TMP("MVB",$j,"Fail",tc,"DA")=result q
+ ...i deltabs,dela<0,dela<-deltabs s found=1 s ^TMP("MVB",$j,"Fail",tc,"DA")=result q
+ ...i deltperc,delp>0,delp>deltperc s found=1 s ^TMP("MVB",$j,"Fail",tc,"DP")=result q
+ ...i deltperc,delp<0,delp<-deltperc s found=1 s ^TMP("MVB",$j,"Fail",tc,"DP")=result q
+ q found 
+]]></Routine>
+</Export>

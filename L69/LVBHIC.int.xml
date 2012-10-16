@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBHIC" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBHIC ; IG 24/07/96 ; CREATING HIC FILES
+ ;
+ ; supported calls :
+ ;
+ ; $$getall^LVBHIC()
+ ; $$claim^LVBHIC(PayCode,InvoiceBatch,ClaimNumber)
+ ; $$trans^LVBHIC()
+ ;
+getall() n (PLIST) k PLIST
+ s x="" f cnt=0:1 s x=$o(^TMP("HIC",$j,"STATUS",x)) q:x=""  s PLIST(cnt)=^(x)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP("HIC",$j,"STATUS")
+ q 0
+claim(PayCode,InvoiceBatch,ClaimNumber) n (PayCode,InvoiceBatch,ClaimNumber) k ^TMP($zn,$j,100)
+ s PayCode=$p($g(PayCode),$c(1)),InvoiceBatch=$g(InvoiceBatch),ClaimNumber=$g(ClaimNumber)
+ i '$$select^LVBCTPC(PayCode,"Y") d
+ .f j=1:1:PLIST S PLIST(j)=$p($g(PLIST(j)),$c(1))
+ .k PAYCODE m PAYCODE=PLIST
+ .K ^TMCBi(1,ClaimNumber),^TMCBi(2,ClaimNumber)
+ .S ^TMCBi(1,ClaimNumber)=PayCode_"\"_InvoiceBatch
+ .i '$$select^LVBINVB(PayCode_"||"_InvoiceBatch)
+ .s episode="" f  s episode=$o(^TMCB(PayCode,InvoiceBatch,episode)) q:episode=""  d
+ ..s x1=$p(^TEPI(episode),"\",1),^TMP($zn,$j,100,x1,episode)=""
+ .s x1="" f  s x1=$o(^TMP($zn,$j,100,x1)) q:x1=""  d
+ ..s episode="" f  s episode=$o(^TMP($zn,$j,100,x1,episode)) q:episode=""  d
+ ...i $$CT007^at345(episode,PayCode_"||"_InvoiceBatch)="Y" q
+ ... ; Medicare
+ ...i PAYCODE(28)="M" d CLAIM1
+ ... ; VA
+ ...i PAYCODE(28)="V" d CLAIM2
+ .i '$$select^LVBINVB(PayCode_"||"_InvoiceBatch) s PLIST(8)=+$h i $$update^LVBINVB(PayCode_"||"_InvoiceBatch)
+ k ^TMP($zn,$j,100)
+ q 0
+DATE(date,format) ; $horolog to external date
+ s date=$$extdate2^SSUTIL4(date)
+ i format=1 s date=$tr(date,"/","")
+ i format=2 s date=$p(date,"/",1)_$p(date,"/",2)_$e($p(date,"/",3),3,4)
+ i format=3 s date=$p(date,"/",3)_$p(date,"/",2)_$p(date,"/",1)
+ q date
+CLAIM1 n (PayCode,InvoiceBatch,ClaimNumber,episode) k EPISODE i $$select^LVBEPVIS(episode,"Y") q
+ m EPISODE=PLIST s rowid=EPISODE(15),provider=""
+  ;---&SQL(SELECT CTDR_ProviderNumber INTO :provider FROM CT_Doctor WHERE CTDR_RowID=:rowid)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, provider, rowid
+ Do %0Ao
+ s provider=$p(provider,$c(1)),(NI,IT)="" f  s IT=$o(^TEPI(episode,7,IT)) q:IT=""  d
+ .s Z=^(IT),Z1=$p(Z,"\"),Z2=$p(Z,"\",2) i Z s NI=NI+1,NI(NI)=IT_"\"_Z
+ s NI=$$NUM(+NI,2),EPISODE(8)=$tr(EPISODE(8)," ")
+ f j=6 s EPISODE(j)=$$DATE(EPISODE(j),1)
+ s provider=$$NUM($E(provider,1,$L(provider)-2),6)_$$TXT($E(provider,$L(provider)-1,$L(provider)),2)
+ s PatientDetails=$$TXT(EPISODE(3),18)_$$TXT(EPISODE(4),12)_" "_$$TXT(EPISODE(6),8)_$$TXT(EPISODE(5),1)_$$TXT(EPISODE(34),17)_$$NUM(EPISODE(36),4)
+ s LCC="" i '$$select^LVBCTCC(EPISODE(27),"Y") s LCC=PLIST(10) i $l(PLIST(13)),EPISODE(12)<PLIST(13) s LCC=PLIST(14)
+ i $e(LCC,1,4)="LCC-" s LCC=$e(LCC,5,99)
+ i LCC["-" s LCC=$p(LCC,"-",2)
+ i $L(LCC)>3 s LCC=$e(LCC,$l(LCC)-2,$l(LCC))
+ f J=1:1:NI d
+ .i (J-1)#14=0 s L=$o(^TMP($zn,$j,"HIC-M",ClaimNumber,""),-1)+1 d
+ ..s ^TMCBi(1,ClaimNumber,L)=episode
+ ..i '$l(EPISODE(8)) s ^TMP($zn,$j,"HIC-M",ClaimNumber,L)="*VP00"_$$DATE(EPISODE(14),2)_provider_" "_PatientDetails_$j("",9)
+ ..i $l(EPISODE(8)) S ^TMP($zn,$j,"HIC-M",ClaimNumber,L)="*VM00"_$$DATE(EPISODE(14),2)_provider_" "_$$NUM(EPISODE(8),10)_$$TXT(EPISODE(4),12)_$j("",8)
+ ..s ^TMP($zn,$j,"HIC-M",ClaimNumber)=PayCode_"\"_InvoiceBatch
+ .s LL=$O(^TMP($zn,$j,"HIC-M",ClaimNumber,L,""),-1)+1
+ .s ^TMP($zn,$j,"HIC-M",ClaimNumber,L,LL)="*I"_$$NUM($p(NI(J),"\"),5)_$$DATE(EPISODE(12),2)_$$NUM($p(NI(J),"\",2)*100,7)_" "_$$TXT(LCC,3)_" "
+ .s ^TMCBi(1,ClaimNumber,L,LL)=$P(NI(J),"\",1,2)
+ .s ^TMP($zn,$j,"HIC-M",ClaimNumber,L)=$e(^TMP($zn,$j,"HIC-M",ClaimNumber,L),1,3)_$$NUM(J-1#14+1,2)_$e(^TMP($zn,$j,"HIC-M",ClaimNumber,L),6,999)
+ q
+CLAIM2 n (PayCode,InvoiceBatch,ClaimNumber,episode) k EPISODE i $$select^LVBEPVIS(episode,"Y") q
+ m EPISODE=PLIST s rowid=EPISODE(15)
+ s EPISODE(8)=$s($l($tr(EPISODE(23)," ")):EPISODE(23),1:$tr(EPISODE(8)," ")),provider=""
+  ;---&SQL(SELECT CTDR_ProviderNumber INTO :provider FROM CT_Doctor WHERE CTDR_RowID=:rowid)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, provider, rowid
+ Do %0Co
+ s provider=$p(provider,$c(1)),(NI,IT)="" f  s IT=$o(^TEPI(episode,7,IT)) q:IT=""  d
+ .s Z=^(IT),Z1=$p(Z,"\"),Z2=$p(Z,"\",2) i Z s NI=NI+1,NI(NI)=IT_"\"_Z
+ s NI=$$NUM(+NI,2)
+ f j=6 s EPISODE(j)=$$DATE(EPISODE(j),1)
+ s provider=$$NUM($E(provider,1,$L(provider)-2),6)_$$TXT($E(provider,$L(provider)-1,$L(provider)),2)
+ s PatientDetails=$$TXT(EPISODE(3),18)_$$TXT(EPISODE(4),12)_" "_$$TXT(EPISODE(6),8)_$$TXT(EPISODE(5),1)_$$TXT(EPISODE(34),17)_$$NUM(EPISODE(36),4)
+ s rowid=EPISODE(27),LCC=""
+  ;---&SQL(SELECT CTCC_LicenceNumber INTO :LCC FROM CT_CentreCode WHERE CTCC_RowID=:rowid)
+   ;--- ** SQL PUBLIC Variables: LCC, SQLCODE, rowid
+ Do %0Eo
+ s LCC=$p($g(LCC),$c(1))
+ i $e(LCC,1,4)="LCC-" s LCC=$e(LCC,5,99)
+ i LCC["-" s LCC=$p(LCC,"-",2)
+ i $L(LCC)>3 s LCC=$e(LCC,$l(LCC)-2,$l(LCC))
+ f J=1:1:NI d
+ .i (J-1)#14=0 s L=$o(^TMP($zn,$j,"HIC-VA",ClaimNumber,""),-1)+1 d
+ ..s ^TMCBi(1,ClaimNumber,L)=episode
+ ..s XXX=$s($l($tr(EPISODE(23)," ")):$tr(EPISODE(23)," "),1:$tr(EPISODE(8)," "))
+ ..i '$l(XXX) s ^TMP($zn,$j,"HIC-VA",ClaimNumber,L)="*VP00"_$$DATE(EPISODE(14),2)_provider_" "_PatientDetails_$j("",9)
+ ..i $l(XXX) S ^TMP($zn,$j,"HIC-VA",ClaimNumber,L)="*VV00"_$$DATE(EPISODE(14),2)_provider_" "_$$TXT(XXX,10)_$$TXT(EPISODE(4),12)_$j("",8)
+ ..s ^TMP($zn,$j,"HIC-VA",ClaimNumber)=PayCode_"\"_InvoiceBatch
+ .s LL=$O(^TMP($zn,$j,"HIC-VA",ClaimNumber,L,""),-1)+1
+ .s ^TMP($zn,$j,"HIC-VA",ClaimNumber,L,LL)="*I"_$$NUM($p(NI(J),"\"),5)_$$DATE(EPISODE(12),2)_$$NUM($p(NI(J),"\",2)*100,7)_" "_$$TXT(LCC,3)_$J("",16)
+ .s ^TMCBi(1,ClaimNumber,L,LL)=$P(NI(J),"\",1,2)
+ .s ^TMP($zn,$j,"HIC-VA",ClaimNumber,L)=$e(^TMP($zn,$j,"HIC-VA",ClaimNumber,L),1,3)_$$NUM(J-1#14+1,2)_$e(^TMP($zn,$j,"HIC-VA",ClaimNumber,L),6,999)
+ q
+TXT(X1,X2)      Q $E($E(X1,1,X2)_$J("",X2),1,X2)
+NUM(X1,X2)      Q $E(X1+(10**X2),2,X2+1)
+trans() ; CREATE CLAIM-FILE
+ S (FILE1,FILE2)=""
+ ; Medicare
+ I $D(^TMP($ZN,$J,"HIC-M")) S FILE1=$$TRANS1()
+ ; VA
+ I $D(^TMP($ZN,$J,"HIC-VA")) S FILE2=$$TRANS2()
+ k ^TMP($ZN,$J)
+ Q FILE1_","_FILE2
+TRANS1() N X1,X2,X3,FILE,XDATE,J
+ S X1="" F  S X1=$O(^TMP($ZN,$J,"HIC-M",X1)) Q:X1=""  I $D(^(X1))>1 D
+ .f j=1,2 s @("xx"_j)=$p(^TMP($ZN,$J,"HIC-M",X1),"\",j)
+ .s pathProvider="" i '$$select^LVBINVB(xx1_"||"_xx2) s pathProvider=$p(PLIST(5),$c(1))
+ .S (X2,X4)="" F J=0:1 S X2=$O(^TMP($ZN,$J,"HIC-M",X1,X2)) Q:X2=""  D
+ ..S X3="" F  S X3=$O(^TMP($ZN,$J,"HIC-M",X1,X2,X3)) Q:X3=""  S X4=X4+$E(^(X3),14,20)
+ .S XDATE=$$DATE(+$H,2)
+ .S pathProvider=$$NUM($E(pathProvider,1,$L(pathProvider)-2),6)_$$TXT($E(pathProvider,$L(pathProvider)-1,$L(pathProvider)),2)
+ .S L=$O(^TMP($ZN,$J,"CLAIM",X1,""),-1)+1
+ .S ^TMP($ZN,$J,"CLAIM",X1,L)="*C"_$$NUM(J,2)_$$TXT(X1,5)_"@"_XDATE_pathProvider_pathProvider_$$NUM(X4,8)_$J("",5)
+ .S X2="" F  S X2=$O(^TMP($ZN,$J,"HIC-M",X1,X2)) Q:X2=""  D
+ ..S L=$O(^TMP($ZN,$J,"CLAIM",X1,""),-1)+1
+ ..S ^TMP($ZN,$J,"CLAIM",X1,L)=^TMP($ZN,$J,"HIC-M",X1,X2)
+ ..S XEPA13=$E(^TMP($ZN,$J,"HIC-M",X1,X2),12,19)
+ ..S X3="" F  S X3=$O(^TMP($ZN,$J,"HIC-M",X1,X2,X3)) Q:X3=""  D
+ ...I $E(pathProvider,1,6)'=$E(XEPA13,1,6) D  Q
+ ....S L=$O(^TMP($ZN,$J,"CLAIM",X1,""),-1)+1
+ ....S ^TMP($ZN,$J,"CLAIM",X1,L)=^TMP($ZN,$J,"HIC-M",X1,X2,X3)
+ ...I $E(pathProvider,1,6)=$E(XEPA13,1,6) D  Q
+ ....S L=$O(^TMP($ZN,$J,"CLAIM",X1,""),-1)+1
+ ....S ^TMP($ZN,$J,"CLAIM",X1,L)=$E(^TMP($ZN,$J,"HIC-M",X1,X2,X3),1,20)_"Y"_$E(^TMP($ZN,$J,"HIC-M",X1,X2,X3),22,25)
+ S LAST=$E($P($G(^CF("LAB",1,"HIC")),"^",4)+1001,2,6)
+ S TRAKID=$P($G(^CF("LAB",1,"HIC")),"^",5)
+ ; get outbound file directory
+ S DIR=$P($G(^CF("LAB",1,"HIC")),"^",3) F J="/","\" I DIR[J,$E(DIR,$L(DIR))'=J S DIR=DIR_J
+ S FILE=DIR_TRAKID_"."_LAST,$P(^CF("LAB",1,"HIC"),"^",4)=+LAST
+ S X1="" F CLMN=0:1 S X1=$O(^TMP($ZN,$J,"CLAIM",X1)) Q:X1=""
+ S XDATE=$$DATE(+$H,2)
+ O FILE:"WNS"
+ U FILE W "*TP"_$E(1000+CLMN,2,4)_XDATE_"TP"_TRAKID_$J("",8)_"M "_$J("",8)
+ S X1="" F  S X1=$O(^TMP($ZN,$J,"CLAIM",X1)) Q:X1=""  D
+ .S X2="" F  S X2=$O(^TMP($ZN,$J,"CLAIM",X1,X2))  Q:X2=""  W ^(X2)
+ C FILE
+ Q FILE
+TRANS2() N X1,X2,X3,FILE,XDATE,J
+ S X1="" F  S X1=$O(^TMP($ZN,$J,"HIC-VA",X1)) Q:X1=""  I $D(^(X1))>1 D
+ .f j=1,2 s @("xx"_j)=$p(^TMP($ZN,$J,"HIC-VA",X1),"\",j)
+ .s pathProvider="" i '$$select^LVBINVB(xx1_"||"_xx2) s pathProvider=$p(PLIST(5),$c(1))
+ .S (X2,X4)="" F J=0:1 S X2=$O(^TMP($ZN,$J,"HIC-VA",X1,X2)) Q:X2=""  D
+ ..S X3="" F  S X3=$O(^TMP($ZN,$J,"HIC-VA",X1,X2,X3)) Q:X3=""  S X4=X4+$E(^(X3),14,20)
+ .S XDATE=$$DATE(+$H,2)
+ .S pathProvider=$$NUM($E(pathProvider,1,$L(pathProvider)-2),6)_$$TXT($E(pathProvider,$L(pathProvider)-1,$L(pathProvider)),2)
+ .S L=$O(^TMP($ZN,$J,"CLAIM",X1,""),-1)+1
+ .S ^TMP($ZN,$J,"CLAIM",X1,L)="*C"_$$NUM(J,2)_$$TXT(X1,5)_"@"_XDATE_pathProvider_pathProvider_$$NUM(X4,8)_$J("",5)
+ .S X2="" F  S X2=$O(^TMP($ZN,$J,"HIC-VA",X1,X2)) Q:X2=""  D
+ ..S L=$O(^TMP($ZN,$J,"CLAIM",X1,""),-1)+1
+ ..S ^TMP($ZN,$J,"CLAIM",X1,L)=^TMP($ZN,$J,"HIC-VA",X1,X2)
+ ..S XEPA13=$E(^TMP($ZN,$J,"HIC-VA",X1,X2),12,19)
+ ..S X3="" F  S X3=$O(^TMP($ZN,$J,"HIC-VA",X1,X2,X3)) Q:X3=""  D
+ ...I $E(pathProvider,1,6)'=$E(XEPA13,1,6) D  Q
+ ....S L=$O(^TMP($ZN,$J,"CLAIM",X1,""),-1)+1
+ ....S ^TMP($ZN,$J,"CLAIM",X1,L)=^TMP($ZN,$J,"HIC-VA",X1,X2,X3)
+ ...I $E(pathProvider,1,6)=$E(XEPA13,1,6) D  Q
+ ....S L=$O(^TMP($ZN,$J,"CLAIM",X1,""),-1)+1
+ ....S ^TMP($ZN,$J,"CLAIM",X1,L)=$E(^TMP($ZN,$J,"HIC-VA",X1,X2,X3),1,20)_"Y"_$E(^TMP($ZN,$J,"HIC-VA",X1,X2,X3),22,25)
+ S LAST=$E($P($G(^CF("LAB",1,"HIC")),"^",4)+1001,2,6)
+ S TRAKID=$P($G(^CF("LAB",1,"HIC")),"^",5)
+ ; get outbound file directory
+ S DIR=$P($G(^CF("LAB",1,"HIC")),"^",3) F J="/","\" I DIR[J,$E(DIR,$L(DIR))'=J S DIR=DIR_J
+ S FILE=DIR_TRAKID_"."_LAST,$P(^CF("LAB",1,"HIC"),"^",4)=+LAST
+ S X1="" F CLMN=0:1 S X1=$O(^TMP($ZN,$J,"CLAIM",X1)) Q:X1=""
+ S XDATE=$$DATE(+$H,2)
+ O FILE:"WNS"
+ U FILE W "*TP"_$E(1000+CLMN,2,4)_XDATE_"TP"_TRAKID_$J("",8)_"V "_$J("",8)
+ S X1="" F  S X1=$O(^TMP($ZN,$J,"CLAIM",X1)) Q:X1=""  D
+ .S X2="" F  S X2=$O(^TMP($ZN,$J,"CLAIM",X1,X2))  Q:X2=""  W ^(X2)
+ C FILE
+ Q FILE
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(rowid)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(12)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s provider=$p(%mmmsqld(12),"\",3)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTAB("DR",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("DR",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Doctor for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(17)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s provider=$p(%mmmsqld(17),"\",3)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(rowid)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0CBdun
+ s %mmmsqld(12)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s provider=$p(%mmmsqld(12),"\",3)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TTAB("DR",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("DR",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Doctor for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0CCdun
+ s %mmmsqld(17)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s provider=$p(%mmmsqld(17),"\",3)
+%0CBuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Eerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(rowid)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("CC",%mmmsqld(3)))
+ e  g %0EBdun
+ s %mmmsqld(12)=$g(^TTAB("CC",%mmmsqld(3)))
+ s LCC=$p(%mmmsqld(12),"\",8)
+ g:$zu(115,2)=0 %0EBuncommitted i $zu(115,2)=1 l +^TTAB("CC",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("CC",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_CentreCode for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("CC",%mmmsqld(3)))
+ e  g %0ECdun
+ s %mmmsqld(17)=$g(^TTAB("CC",%mmmsqld(3)))
+ s LCC=$p(%mmmsqld(17),"\",8)
+%0EBuncommitted ;
+ s SQLCODE=0 g %0Ec
+%0ECdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0EBdun 
+%0EAdun 
+%0Ec s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Eerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ec
+]]></Routine>
+</Export>

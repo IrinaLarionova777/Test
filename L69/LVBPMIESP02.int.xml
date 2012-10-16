@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPMIESP02" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBPMIESP02 ; PMI Interface OMI
+ ; --------------------------------
+ ;  PMI Interface
+ ;  Hospital Municipal de Badalona
+ ;  June 20, 2003 by Mc_Fly
+ ;  Trakhealth BCN
+ ; --------------------------------
+ q
+START(idhospital) 
+ s $zt="err^"_$zn
+ n (idhospital)
+ ; Now, only for OMI
+ i idhospital'="M" q
+ ; ----------------------------------------------
+ s destination="753"
+ s debug=0
+ ; ----------------------------------------------
+ s (err,warn)=0
+ i $$select^MVBCFSM(1) q
+ s path=PLIST(34)
+ i path="" q
+ i $e(path,$l(path))'="\" s path=path_"\"
+ s path=path_"OMI\PET\"
+ s find="c*.ok"
+ f  s flagfile=$zsearch(path_find) q:flagfile=""  d
+ . d openfile
+ . i err w "*** Programa abortat ***",! d close q
+ . d load
+ . d close
+ q
+close 
+ c logfile
+ i warn=0,err=0 d erase q
+ i $$select^MVBCFLAB(1) q
+ s ip=PLIST(11)
+ s from=PLIST(17)
+ s to="cvilaplana"
+ i warn s subject="AVISOS amb l'interficie d'OMI"
+ i err s subject="ERROR amb l'interficie d'OMI"
+ k message
+ s message(1)="Si us plau, reviseu el fitxer de log de l'interficie"
+ s message(2)="#attach "_file
+ s message(3)="#attach "_logfile
+ ;SEND(smtpdomain,from,to,subject,message,%timeout,%GMTOffset,owndomain,%smtpport,%displayfrom,%displayto)
+ s x=$$SEND^%wldsmtp(ip,from,to,subject,.message)
+ d erase
+ q
+erase 
+ s x=$zf(-1,"DEL "_flagfile)
+ ; TODO s x=$zf(-1,"DEL "_logfile)
+ s x=$zf(-1,"DEL "_file)
+ q
+load 
+ w "*** Carrega del fitxer ***",!
+ s i=""
+ f  s i=$o(^TMP($zn,$j,"file",i)) q:i=""  d type
+ s today=$p($h,",",1)
+ s now=$p($h,",",2)
+ k PLIST
+ s PLIST(2)=idhospital   ; HOS_HospitalCode_DR
+ s PLIST(3)=$p($h,",",1) ; HOS_Date
+ s PLIST(4)=$p($h,",",2) ; HOS_Time
+ s PLIST(5)=file         ; HOS_FileName
+ w "**************************",!
+ w "Marcant lectura de fitxer",!
+ i debug zw PLIST w "d update^LVBHOS(",idhospital,")",!
+ d update^LVBHOS(idhospital)
+ i debug w "SQLCODE=",SQLCODE,!
+ w "Finalitzat el ",$zd($h,4)," a les ",$zt($p($h,",",2))
+ q
+type 
+ s reg=^(i)
+ s type=$p(reg,"|",1)
+ i type="H" d header q
+ i type="P" d patient q  
+ i type="C" d comment q
+ i type="OBR" d order q
+ i type="L" q
+ d seterr("Tipus desconegut "_type)
+ q
+header 
+ s ori=$p(reg,"|",5)
+ s dest=$p(reg,"|",10)   
+ q
+patient 
+ s his=$p(reg,"|",3)
+ ;;;s his=idhospital_his
+ s surname=$p($p(reg,"|",6),"^",1)
+ s givenname=$p($p(reg,"|",6),"^",2)
+ s dob=$p(reg,"|",8)
+ s sex=$p(reg,"|",9)
+ s comment=""
+ s swnewpat=1
+ q
+setpat 
+ s trakdoctor=""
+ i doctor'="" s trakdoctor=^TMP($zn,$j,"doctor",doctor)
+ s swnewpat=0
+ k PLIST
+ s PLIST(2)=his             ; HOSP_DebtorNumber
+ s PLIST(3)=request         ; HOSP_Visit
+ s PLIST(4)=givenname       ; HOSP_GivenName
+ s PLIST(5)=surname         ; HOSP_Surname
+ s PLIST(7)=$zdateh(dob,8)  ; HOSP_DOB
+ s PLIST(8)=sex             ; HOSP_Sex_DR
+ s PLIST(15)="O600"         ; HOSP_Location_DR
+ s PLIST(17)=trakdoctor     ; HOSP_DoctorReferring_DR
+ i comment'="" s comment="DIAGNÒSTIC:"_$tr(comment,"|","!")_" @@"
+ i comment'="" s $p(PLIST(23),"|",119)=comment        ; HOSP_ExtraInfo
+ ; Create a new patient
+ i debug d wsep zw PLIST
+ w "Insertem ",his," ",request,!
+ i debug w "s SQLCODE=$$insert^LVBHOSP("_idhospital_")",!
+ s SQLCODE=$$insert^LVBHOSP(idhospital)
+ w "SQLCODE=",SQLCODE,!
+ i SQLCODE'=0 d
+ . w "Actualitzem ",his," ",request,!
+ . i debug w "s SQLCODE=$$update^LVBHOSP("_idhospital_"||"_his_"||"_request_")",!
+ . s SQLCODE=$$update^LVBHOSP(idhospital_"||"_his_"||"_request)
+ . w "SQLCODE=",SQLCODE,!        
+ q
+comment 
+ s comment=$p(reg,"|",4)
+ q
+order 
+ s request=$p($p(reg,"|",3),"^",2)
+ s test=$p($p(reg,"|",5),"^",1)
+ s doctor=$p(reg,"|",17)
+ i test="" d seterr("El pacient "_his_" no te un registre de prova en blanc") q
+ s traktest=$g(^TMP($zn,$j,"test",test))
+ i traktest="" d seterr("El pacient "_his_", prova "_test_" no té equivalència") q
+ i swnewpat d setpat
+ k PLIST
+ s PLIST(2)=traktest                         ; HOSPT_TestSet_DR
+ s PLIST(3)=1                                ; HOSPT_Counter
+ i debug d wsep zw PLIST
+ s count=$o(^THOS(idhospital,"PATIENT",his,request,"TS",traktest,""),-1)
+ i count'="" d
+ . w "Borrem prova ",his," ",request," ",traktest,!
+ . i debug w "s SQLCODE=$$delete^LVBHOSPT("_idhospital_"||"_his_"||"_request_"||"_traktest_"||"_count_")",!
+ . s SQLCODE=$$delete^LVBHOSPT(idhospital_"||"_his_"||"_request_"||"_traktest_"||"_count)
+ . w "SQLCODE=",SQLCODE,!
+ w "Insertem prova ",his," ",request," ",traktest,!
+ i debug w "s SQLCODE=$$insert^LVBHOSPT("_idhospital_"||"_his_"||"_request_")",!
+ s SQLCODE=$$insert^LVBHOSPT(idhospital_"||"_his_"||"_request)
+ w "SQLCODE=",SQLCODE,!
+ q
+openfile 
+ k ^TMP($zn,$j)
+ s find=""
+ s file=$p(flagfile,".",$l(flagfile,".")-1)_".cor"
+ s logfile=path_"LOG\"_$zd($h,8)_$tr($zt($p($h,",",2)),":")_".log"
+ s old=$zu(68,40,1) ; disable the <ENDOFFILE>
+ o logfile:"WNS"
+ u logfile
+ w "Inici ",$zd($h,4)," a les ",$zt($p($h,",",2)),!
+ w "Llegint el fitxer...",!
+ o file:"R"
+ u file
+ f n=1:1 r line  q:$zeof=-1  s ^TMP($zn,$j,"file",n)=line
+ c file
+ u logfile
+ w "Fi",!
+ i $zu(68,40,old) ; Restore old configutarion
+ w "Verificant el fitxer...",!
+ s (pat,tot)=0
+ s swend=0
+ s n=""
+ f  s n=$o(^TMP($zn,$j,"file",n)) q:n=""  d
+ . s tot=tot+1
+ . s line=^(n)
+ .
+ . i $e(line)="H" d  q
+ .. i $p($p(line,"|",10),"^",1)'=destination d seterr("El destí del fitxer no és l'esperat",1,n)
+ .
+ . i $e(line)="P" s pat=pat+1 q
+ . i $e(line)="C" q
+ . 
+ . i $e(line)="L" d  q
+ .. i $p(line,"|",4)'=pat d seterr("Fitxer incomplert: No hi han els pacients esperats",0,n)
+ .. i $p(line,"|",5)'=tot d seterr("Fitxer incomplert: No hi han les linies esperades",0,n)
+ .. s swend=1
+ .
+ . i $e(line,1,3)="OBR" d  q
+ .. s test=$p($p(line,"|",5),"^",1)
+ .. s doctor=$p(line,"|",17)
+ .. i test="" d seterr("No hi ha codi de prova",0,n) q
+ .. i doctor="" d seterr("No hi ha codi de metge",0,n) q
+ .. 
+ .. s ^TMP($zn,$j,"test",test)=""
+ .. s ^TMP($zn,$j,"doctor",doctor)=""
+ .
+ . d seterr("Codi ("_$e(line,1,5)_") desconegut",0,n)
+ i 'swend d seterr("Fitxer sense finalitzar",0)
+ w "Fi",!
+ w "Verificant els test codes...",!
+ s test=""
+ f  s test=$o(^TMP($zn,$j,"test",test)) q:test=""  d
+ . s traktest=""
+ . 
+ . i debug w "s SQLCODE=$$select^LVBHOSTS("_idhospital_"||"_test_")",!
+ . s SQLCODE=$$select^LVBHOSTS(idhospital_"||"_test)
+ . i debug w "SQLCODE=",SQLCODE,!
+ . i SQLCODE=0 s traktest=$p(PLIST(3),$c(1),1)
+ . i debug w "traktest=",traktest,!
+ .
+ . i traktest'="" s ^TMP($zn,$j,"test",test)=traktest q
+ . 
+ . i debug w "s SQLCODE=$$selskip^LVBCTTS("_test_")",!
+ . s SQLCODE=$$selskip^LVBCTTS(test)
+ . i debug w "SQLCODE=",SQLCODE,!
+ . 
+ . i SQLCODE'=0 d seterr("ATENCIO: No hi ha un codi pel test de l'hospital "_test) q
+ . s ^TMP($zn,$j,"test",test)=test
+ w "Fi",!
+ w "Verificant els codis de metges...",!
+ s doctor=""
+ f  s doctor=$o(^TMP($zn,$j,"doctor",doctor)) q:doctor=""  d
+ . s trakdoctor=""
+ . 
+ . i debug w "s SQLCODE=$$select^LVBHOSCD("_idhospital_"||"_doctor_")",!
+ . s SQLCODE=$$select^LVBHOSCD(idhospital_"||"_doctor)
+ . i debug w "SQLCODE=",SQLCODE,!
+ . i SQLCODE=0 s trakdoctor=$p(PLIST(3),$c(1),1)
+ . i debug w "trakdoctor=",trakdoctor,!
+ . 
+ . i trakdoctor'="" s ^TMP($zn,$j,"doctor",doctor)=trakdoctor q
+ . 
+ . i debug w "s SQLCODE=$$selskip^LVBCTDR("_doctor_")",!
+ . s SQLCODE=$$selskip^LVBCTDR(doctor)
+ . i debug w "SQLCODE=",SQLCODE,!
+ . 
+ . i SQLCODE'=0 d seterr("ATENCIO: No hi ha un codi pel metge de l'hospital "_doctor) q
+ . s ^TMP($zn,$j,"doctor",doctor)=doctor
+ w "Fi",!        
+ q
+wsep 
+ w "-------------------------------------------------",!
+ q
+seterr(txt,error,nline) 
+ s error=+$g(error)
+ u logfile
+ i $d(nline) w "Linia ",n,": "
+ w txt,!
+ i error s err=1
+ i 'error s warn=1
+ q
+err D BACK^%ETN
+ q
+purge 
+ ;Use it for delete the THOS global
+ s idhospital="M"
+ s (deb,epi)=""
+ f  s deb=$o(^THOS(idhospital,"PATIENT",deb)) q:deb=""  d
+ . f  s epi=$o(^THOS(idhospital,"PATIENT",deb,epi)) q:epi=""  d
+ .. s SQLCODE=$$delete^LVBHOSP(idhospital_"||"_deb_"||"_epi)
+ q
+]]></Routine>
+</Export>

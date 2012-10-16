@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF105PHI01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF105PHI01(mi) ; ML 08/06/01 ; J & J Vitros Analyser (Bi-Directional) - Philippines - Philippine Heart Centre
+ s mi=$g(mi) i '$l(mi) q
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s soh=$c(1),cr=$c(13)
+ s start=0,hh=$p($h,",",2),dy=+$h-1
+ s (sample,epis,surname,result,date,time,QC,OldRecord)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main i 'start d
+ .i " B L "[(" "_par9_" "),$d(^TMIF(mi,10)) d
+ ..f  d strTYPE("START") d READ q:type="Y"  q:type="E"  q:type=""
+ ..i type="Y" d SEND
+ .i " B "[(" "_par9_" "),$p($h,",",2)-hh>60!(hh>$p($h,",",2)) d SCAN s hh=$p($h,",",2)
+ .i " L "[(" "_par9_" ") d loadlist^MIF000(mi)
+ d READ q:'$l(record)  q:seq=""
+ i $l(record)-1'=len d ACK("N") q
+ i $$CHSUM($e(record,1,len))'=chsum d ACK("N") q
+ i type="S" d ACK("Y") s start=1 q
+ i (type="F")!(type="Z") d
+ .i $l(epis),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ .d ACK("Y") s (sample,epis,surname,result,date,time,QC)=""
+ i type="D" d ACK("Y") d  q
+ .i record'=OldRecord s OldRecord=record d RES
+ i type="B" d ACK("Y") s start=0 q
+ i type="N" s start=0 q
+ q
+SCAN ; send all available episodes
+ d scanall^MIF000(mi)
+ s epis="" f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  d
+ .k test s tc="" f  s tc=$o(^TMP("MIF-SCAN",$j,mi,epis,tc)) q:tc=""  s test(tc)=""
+ .d SET("","")
+ q
+SAVE(mi) ; create loadlist records
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+ s tray=^TMP("MIF000",$j,"LL","TRAY")
+ k test s tc="" f  s tc=$o(^TMP("MIF000",$j,"LL","TEST",tc)) q:tc=""  s test(tc)=""
+ d SET(sample,tray) s tray=""
+ q 0
+SET(order,tray) ; set order to be sent to instrument
+ s order=$g(order),tray=$g(tray)
+ s test="",cup=$c(32+order) s:cup="#" cup="##"
+ s tc="" f  s tc=$o(test(tc)) q:tc=""  s tcx=$e(tc),fld=$e(tc,2),test=test_tcx i tcx="#" s test=test_tcx
+ i $l(test) d
+ .i $l(tray) s data="D|"_$e(tray_$j("",15),1,15)
+ .e  s data="D"
+ .s data=data_$e(epis_$j("",15),1,15)_$s(fld'="":fld,1:1)_"0"_cup_"1.000"_test_"]"
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)=data
+ q
+SEND ; send string to instrument
+ s sq=sq+1 f  d strTYPE("FBEG") d READ q:type="Y"  q:type="E"
+ i type="Y" d
+ .s ord="" f i=1:1 s ord=$o(^TMIF(mi,10,ord)) q:ord=""  s rec=^(ord) d  q:type="E"  q:type=""
+ ..s rec=$c(i+33)_rec,rec=$c($l(rec)+33)_rec
+ ..s chsum=$$CHSUM(rec)
+ ..s sq=sq+1 f  w soh,rec,chsum,cr,*-3 d  q:type="Y"  q:type=""
+ ...d trace^MIF000(mi,rec_chsum,"H-->M")
+ ...f  d READ q:type=""  q:type="Y"
+ ..i type="Y" k ^TMIF(mi,10,ord)
+ i type="Y" s sq=sq+1 f  d strTYPE("FEND") d READ q:type="Y"  q:type="E"
+ i type="Y" s sq=sq+1 f  d strTYPE("FINISH") d READ q:type="Y"  q:type="E"
+ q
+RES ; process result record
+ i epis'="" s data=datap_data
+ e  s epis=$tr($e(data,26,40)," "),fld=$tr($e(data,41)," "),data=$e(data,50,9999)
+ s:$e(epis,$l(epis))="Z" epis=$e(epis,1,$l(epis)-1)
+ f j=1:1:$l(data,"}")-1 s datax=$p(data,"}",j) d
+ .s error=$e(datax,12),error=$f("01234567ABC",error)-1,error=$p("|HI|LO|**|>|<|PF|SR|F2|F3|NQ|","|",error),err=error
+ .i err="PF" s err=$p($e(datax,14,21),"}",1)
+ .i error'="<",(error'=">") s error=""
+ .s result=result_$e(datax,1)_$s(fld'="":fld,1:"")_$c(par10)_error_$tr($e(datax,2,10)," ")_$c(par10)_err_$c(par11)
+ s datap=$p(data,"}",$l(data,"}"))
+ q
+strTYPE(str) ; send string to instrument
+ i str="START" s sq=32,record="# S"
+ i str="FINISH" s record="#"_$c(sq)_"B"
+ i str="FBEG" s record="*"_$c(sq)_"FSFILEXX"
+ i str="FEND" s record="#"_$c(sq)_"Z"
+ s chsum=$$CHSUM(record)
+ w soh,record,chsum,cr,*-3
+ d trace^MIF000(mi,record_chsum,"H-->M")
+ q
+ACK(x) ; send 'ack' to instrument
+ n record s record="#"_seq_x
+ s chsum=$$CHSUM(record)
+ w soh,record,chsum,cr,*-3
+ d trace^MIF000(mi,record_chsum,"H-->M")
+ q
+READ ; read in string from instrument
+ s (type,chsum,len,seq,date,r)=""
+ s record=$$read^MIF000(soh,cr) q:'$l(record)
+ d trace^MIF000(mi,record,"H<--M")
+ s len=$a(record)-32
+ s seq=$e(record,2),type=$e(record,3),chsum=$e(record,len+1),data=$e(record,4,len)
+ f  q:'$f(data,"##",0)  s data=$p(data,"##")_"#"_$p(data,"##",2,999)
+ q
+CHSUM(x) ; calculate check sum
+ s sum=0 f j=1:1:$l(x) s sum=sum+$a(x,j)
+ s sum=$zb(sum+($zb(sum,192,1)/64),63,1)
+ q $c(sum+32)
+NEXTTRAY(tray) ; calculate next tray number
+ s atray=$e(tray,1,$l(tray)-1),btray=$e(tray,$l(tray))
+ i btray="D" s atray=atray+1,btray="A"
+ e  s btray=$c($a(btray)+1)
+ s tray=atray_btray
+ q tray
+]]></Routine>
+</Export>

@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCOM02" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCOM02 ; IG 29/4/98 ; Common routines
+ ;
+ ; supported calls:
+ ;
+ ; $$invoice^LVBCOM02(invoice)
+ ; $$check^LVBCOM02(RowID,table,insert)
+ ; $$checkBB^LVBCOM02(RowID,table)
+ ; $$AlreadyPriced^LVBCOM02(epis,mrn,date)
+ ; $$PriceAble^LVBCOM02(epis)
+ ; $$RebillEpisode^LVBCOM02(epis)
+ ; $$newgroup^LVBCOM02(RowID)
+ ; $$delete^LVBCOM02(RowID,table,FIELD)
+ ; $$ErrorLog^LVBCOM02(type,index,message)
+ ;
+ErrorLog(type,index,message) n (type,index,message)
+ s type=$g(type),index=$g(index),message=$g(message)
+ i $l(type),$l(index) s x=$o(^TMPlog(type,index,""),-1)+1,^TMPlog(type,index,x)=message
+ q
+invoice(invoice) n (invoice,PLIST) k PLIST s invoice=$g(invoice)
+ s x1=$p(invoice,"-",1),x2=$p(invoice,"-",2),x3=$p(invoice,"-",3)
+ i $l(x1),$l(x2),$l(x3) d
+ .s ep="" f  s ep=$o(^TMCB(x1,x2,ep)) q:ep=""  i $p(^(ep),"\",2)=x3 s PLIST=$g(PLIST)+1,PLIST(PLIST)=ep
+ q 0
+RebillEpisode(epis,MRN) n (epis,MRN,PLIST) s epis=$g(epis),MRN=$g(MRN) k ^TMP($zn,$j)
+ i $l(epis) d
+ .i $p($g(^TRBL(+$h,epis)),"\",4)="Y" q
+ .s ^TMP($zn,$j,1,epis)=""
+ .s mrn=$$seldata^LVBEPVIS(epis,20),date=$$seldata^LVBEPVIS(epis,12) i $l(MRN) s mrn=MRN
+ .i $l(mrn),$l(date) s ep="" f  s ep=$o(^TDEB(mrn,date,0,ep)) q:ep=""  s ^TMP($zn,$j,1,ep)=""
+ . ; only check episodes to rebill
+ .i $l(MRN) s ep="" f  s ep=$o(^TMP($zn,$j,1,ep)) q:ep=""  s x=$o(^TMP($zn,$j,2,""),-1)+1,^TMP($zn,$j,2,x)=ep
+ . ; rebill episodes
+ .i '$l(MRN) s ep="" f  s ep=$o(^TMP($zn,$j,1,ep)) q:ep=""  d
+ ..k PLIST s PLIST(2)=+$h,PLIST(3)=ep,(PLIST(4),PLIST(5))=$p(^TEPI(ep),"\",7)
+ ..s invoice=$$seldata^LVBEPVIS(ep,57),x1=$$seldata^LVBEPVIS(epis,18),x2=$$seldata^LVBEPVIS(epis,27)
+ ..i $l($p(invoice,"||",1)),$p(invoice,"||",1)'=PLIST(4) s (PLIST(4),PLIST(5))=$p(invoice,"||",1)
+ ..s PLIST(6)=$$epcomp^LVBVIS1(ep),PLIST(8)=$p(invoice,"||",2),PLIST(12)=x1,PLIST(13)=x2
+ ..s PLIST=$o(PLIST(""),-1)
+ ..i $d(^TRBL(+$h,ep)) s x=$o(^TMP($zn,$j,2,""),-1)+1,^TMP($zn,$j,2,x)=ep_"\"_$$update^LVBBIRB((+$h)_"||"_ep)
+ ..i '$d(^TRBL(+$h,ep)) s x=$o(^TMP($zn,$j,2,""),-1)+1,^TMP($zn,$j,2,x)=ep_"\"_$$insert^LVBBIRB()
+ k PLIST m PLIST=^TMP($zn,$j,2) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ; check if patient already priced
+AlreadyPriced(epis,mrn,date) n (epis,mrn,date) s epis=$g(epis),mrn=$g(mrn),date=$g(date),ok=0
+ i $l(epis) s mrn=$$seldata^LVBEPVIS(epis,20),date=$$seldata^LVBEPVIS(epis,12)
+ i $l(mrn),$l(date) s x="" f  s x=$o(^TDEB(mrn,date,0,x)) q:x=""  s result=$$seldata^LVBEPVIS(x,21) i $l(result) s ok=100 q
+ q ok
+ ; check if patient can be priced
+PriceAble(epis,check) n (epis,check) s epis=$g(epis),check=$g(check),ok=""
+ i $l(epis) d
+ . ; check patient type
+ .i '$l(ok) s pt=$p(^TEPI(epis),"\",44) i pt>0 s ok=0
+ . ; check Payment Code
+ .i '$l(ok) s PayCode=$p(^TEPI(epis),"\",7) i $l(PayCode),$d(^TTAB("BI",PayCode)) d
+ ..s pcType=$p(^(PayCode),"\",2) i pcType="C" s pcPercent=$p(^(PayCode),"\",3) i 'pcPercent s ok=0
+ . ; check TestSets
+ .i '$l(ok) s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ .. ; no charge TS
+ ..i $p(^TTAB("TS",ts),"\",13)="N" q
+ ..s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  s xx=^(cnt) d
+ ... ; no charge TS
+ ...i $p(xx,"\",34)="Y" q
+ ... ; check Reason
+ ...s reason=$p(xx,"\",52) i $l(reason),$p($g(^TTAB("CTR",reason)),"\",4)'="Y" q
+ ...s $p(ok,$c(1),1)=$p(ok,$c(1),1)+1
+ ... ; already Authorised
+ ...i check="N" s $p(ok,$c(1),2)=$p(ok,$c(1),2)+1 q
+ ...i $p(xx,"\",31)="A" s $p(ok,$c(1),2)=$p(ok,$c(1),2)+1 q
+ ... ; charge only
+ ...i $p(^TTAB("TS",ts),"\",13)="C" s $p(ok,$c(1),2)=$p(ok,$c(1),2)+1 q
+ q ok
+ ; check all changes
+check(RowID,table,insert) n PLIST,plist,J,XRES,epis,except,%e k %e m %e=%old
+ s RowID=$g(RowID),table=$g(table),SQLCODE=0,epis=$p(RowID,"||",1)
+ ; set exceptions
+ s except(49,4)=""
+ f j=1:1:11 s except(186,j)=""
+ f j=3,8 k except(186,j)
+ f j=1:1:40 s except(46,j)=""
+ f j=4,5,7,8,10:1:13,21,22,29,35:1:37 k except(46,j)
+ ;
+ s J="" f  s J=$o(%d(J)) q:J=""  d
+ .i $d(except(table,J)) q
+ .i $p(%d(J),$c(1),1)'="" s $p(XRES(J),$c(1),2)=$p(%d(J),$c(1),1)
+ .i $d(%d(J))\10 s $p(XRES,$c(1),2)="",$p(XRES,$c(1),3)=1 d
+ ..s j="" f  s j=$o(%d(J,j)) q:j=""  s $p(XRES(J),$c(1),2)=$p(XRES(J),$c(1),2)_$tr($p(%d(J,j),$c(1))," ")
+ s J="" f  s J=$o(%e(J)) q:J=""  d
+ .i $d(except(table,J)) q
+ .s $p(XRES(J),$c(1),1)=$p(%e(J),$c(1),1)
+ .i $d(%e(J))\10 s ($p(XRES,$c(1),1),arrayXRES(J))="",$p(XRES,$c(1),3)=1 d
+ ..s j="" f  s j=$o(%e(J,j)) q:j=""  s $p(XRES(J),$c(1),1)=$p(XRES(J),$c(1),1)_$tr($p(%e(J,j),$c(1))," ")
+ ..s j="" f  s j=$o(%e(J,j)) q:j=""  s arrayXRES(J)=arrayXRES(J)_$c(10,13)_$p(%e(J,j),$c(1))
+ s J="" f  s J=$o(XRES(J)) q:J=""  d
+ .i table=42," 11 13 62 "[(" "_J_" "),$p(XRES(J),$c(1),2)?1.5N s $p(XRES(J),$c(1),2)=$p(XRES(J),$c(1),2)*60
+ .i table=46," 5 8 22 25 "[(" "_J_" "),$p(XRES(J),$c(1),2)?1.5N s $p(XRES(J),$c(1),2)=$p(XRES(J),$c(1),2)*60
+ .i $p(XRES(J),$c(1),1)=$p(XRES(J),$c(1),2) k XRES(J) q
+ .i $p(XRES(J),$c(1),1)="",$$seldata^MVBCFLAB(1,163)'="Y" k XRES(J) q
+ ; test set was entered
+ i table=46,$g(insert)="Y" k XRES s $p(XRES(3),$c(1),1)=%d(3),$p(XRES(3),$c(1),2)="...Test Added..."
+ ; result was deauthorised
+ i table=46,$d(XRES(7)),$d(XRES(8)) d
+ .i $l($p(XRES(7),$c(1),1)) s $p(XRES(3),$c(1),1)=%d(3),$p(XRES(3),$c(1),2)="...Test DeAuthorised..."
+ .k XRES(7),XRES(8)
+ ; result was authorised
+ i table=46,$d(XRES(7)),$d(XRES(8)) d
+ .i $l($p(XRES(7),$c(1),2)) s $p(XRES(3),$c(1),1)=%d(3),$p(XRES(3),$c(1),2)="...Test Authorised..."
+ .k XRES(7),XRES(8)
+ ; result was sent to PA
+ i table=46,$d(XRES(21)),$d(XRES(22)) d
+ .i $l($p(XRES(21),$c(1),2)) s $p(XRES(3),$c(1),1)=%d(3),$p(XRES(3),$c(1),2)="...Test sent to Pathologist Attention..."
+ .k XRES(7),XRES(8)
+ ; result has changed status entry
+ i table=46,$d(XRES(45)) d
+ .i $p(XRES(45),$c(1),2)="Y" s $p(XRES(3),$c(1),1)=%d(3),$p(XRES(3),$c(1),2)="...Test is placed on Hold..."
+ .i $p(XRES(45),$c(1),1)="Y" s $p(XRES(3),$c(1),1)=%d(3),$p(XRES(3),$c(1),2)="...Test is taken off Hold..."
+ .i $p(XRES(45),$c(1),2)="R" s $p(XRES(3),$c(1),1)=%d(3),$p(XRES(3),$c(1),2)="...Test is set to be Reviewed..."
+ .i $p(XRES(45),$c(1),1)="R" s $p(XRES(3),$c(1),1)=%d(3),$p(XRES(3),$c(1),2)="...Test has been Reviewed..."
+ .k XRES(7),XRES(8)
+ ; result was changed on VISTD
+ i table=47,$d(XRES(3)) d
+ .s xd(1)=%d(1),xd(2)=%d(2) f j=1,2 i $l(xd(j),"||")=4 s xd(j)=$p(xd(j),"||",1,2)_"("_$$seldata^LVBCTTS($p(xd(j),"||",2),4)_")||"_$p(xd(j),"||",3,4)_"("_$$seldata^LVBCTTC($p(xd(j),"||",4),14)_")"
+ .s $p(XRES(3),$c(1),1)=xd(1)_"-"_$p(XRES(3),$c(1),1),$p(XRES(3),$c(1),2)=xd(2)_"-"_$p(XRES(3),$c(1),2)
+ .i $d(arrayXRES(3)) s arrayXRES(3)=xd(1)_"-"_arrayXRES(3)
+ ; comment was changed on VISTD
+ i table=47,$d(XRES(4)) d
+ .s xd(1)=%d(1),xd(2)=%d(2) f j=1,2 i $l(xd(j),"||")=4 s xd(j)=$p(xd(j),"||",1,2)_"("_$$seldata^LVBCTTS($p(xd(j),"||",2),4)_")||"_$p(xd(j),"||",3,4)_"("_$$seldata^LVBCTTC($p(xd(j),"||",4),14)_")"
+ .s $p(XRES(4),$c(1),1)=xd(1)_"-"_$p(XRES(4),$c(1),1),$p(XRES(4),$c(1),2)="...Changed...",$p(XRES(4),$c(1),3)=""
+ .i $d(arrayXRES(4)) s arrayXRES(4)=xd(1)_"-"_arrayXRES(4)
+ ; result was changed on MIRI
+ i table=186,$d(XRES(3)) d
+ .i $p(XRES(3),$c(1),1)'="" s $p(XRES(3),$c(1),1)=%d(2)_"-"_$p(XRES(3),$c(1),1),$p(XRES(3),$c(1),2)=%d(2)_"-"_$p(XRES(3),$c(1),2)
+ .i $d(arrayXRES(3)) s arrayXRES(3)=%d(2)_"-"_arrayXRES(3)
+ ; active flag was changed on MIRI
+ i table=186,$d(XRES(8)) d
+ .s $p(XRES(8),$c(1),1)=%d(2)_"-"_$p(XRES(8),$c(1),1),$p(XRES(8),$c(1),2)=%d(2)_"-"_$p(XRES(8),$c(1),2)
+ .i $d(arrayXRES(8)) s arrayXRES(8)=%d(2)_"-"_arrayXRES(8)
+ i table=46,$p($g(XRES(3)),$c(1),1)'=%d(3) s $p(XRES(3),$c(1),1)=%d(3)_$s($d(XRES(3)):" - "_$p(XRES(3),$c(1),1),1:"")
+ s tableName=$p($$tableName^SSUTIL4(table),$c(1))
+ i $l(tableName) s J="" f  s J=$o(XRES(J)) q:J=""  d
+ .n (XRES,arrayXRES,J,RowID,table,tableName,epis)
+ .i $p(XRES(J),$c(1),3) q
+ .k PLIST
+ .s PLIST(3)=+$h,PLIST(4)=$p($h,",",2),PLIST(5)=$$user^MVBSSUSR($j)
+ .s xx=$$fieldName^SSUTIL4(tableName,J) i '$l($p(xx,$c(1),2)) q
+ .i $l($p(xx,$c(1),2)),$d(^oddDEF(tableName,"a",$p(xx,$c(1),2),44)) q  ; skip calculated fields
+ .i $l($p(xx,$c(1),2)) s PLIST(6)=$p(xx,$c(1),3)
+ .i $g(PLIST(6))="" s PLIST(6)=table_"|"_J
+ .s PLIST(7)=$p(XRES(J),$c(1),1),PLIST(8)=$p(XRES(J),$c(1),2)
+ .i $l(PLIST(7)) d
+ ..i $g(^oddDEF(tableName,"a",$p(xx,$c(1),2),5))="%Time" s PLIST(7)=$$exttime^SSUTIL4(PLIST(7)) q
+ ..i $$UPPER^SSUTIL4($p(xx,$c(1),2))["TIME",PLIST(7)?1.5N s PLIST(7)=$$exttime^SSUTIL4(PLIST(7)) q
+ ..i $g(^oddDEF(tableName,"a",$p(xx,$c(1),2),5))="%Date" s PLIST(7)=$$extdate2^SSUTIL4(PLIST(7)) q
+ .. //i $d(^oddDEF(tableName,"a",$p(xx,$c(1),2),"P","DISPLAYLIST")) s x="s x=##Class("_tableName_")."_$p(xx,$c(1),2)_"LogicalToDisplay("""_PLIST(7)_""")" x x s PLIST(7)=x q
+ ..i $d(^oddDEF(tableName,"a",$p(xx,$c(1),2),"P","DISPLAYLIST")) s x=$$InvokeMethod^%apiOBJ(tableName,,$p(xx,$c(1),2)_"LogicalToDisplay",PLIST(7))
+ .i $l(PLIST(8)) d
+ ..i $g(^oddDEF(tableName,"a",$p(xx,$c(1),2),5))="%Time" s PLIST(8)=$$exttime^SSUTIL4(PLIST(8)) q
+ ..i $$UPPER^SSUTIL4($p(xx,$c(1),2))["TIME",PLIST(8)?1.5N s PLIST(8)=$$exttime^SSUTIL4(PLIST(8)) q
+ ..i $g(^oddDEF(tableName,"a",$p(xx,$c(1),2),5))="%Date" s PLIST(8)=$$extdate2^SSUTIL4(PLIST(8)) q
+ .. //i $d(^oddDEF(tableName,"a",$p(xx,$c(1),2),"P","DISPLAYLIST")) s x="s x=##Class("_tableName_")."_$p(xx,$c(1),2)_"LogicalToDisplay("""_PLIST(8)_""")" x x s PLIST(8)=x q
+ ..i $d(^oddDEF(tableName,"a",$p(xx,$c(1),2),"P","DISPLAYLIST")) s x=$$InvokeMethod^%apiOBJ(tableName,,$p(xx,$c(1),2)_"LogicalToDisplay",PLIST(8))
+ .i $d(arrayXRES(J)) s PLIST(7)=arrayXRES(J)
+ .s PLIST(9)=$p($g(^TMP("FUNCTION",$j)),$c(1),2),PLIST(10)=$p($g(^TMP("FUNCTION",$j)),$c(1),1)
+ .s PLIST=$o(PLIST(""),-1)
+ .s SQLCODE=$$insert^LVBVISHS(epis)
+ q SQLCODE
+ ;  find new group
+newgroup(RowID) n (RowID) s RowID=$g(RowID),result=""
+ i $l(RowID) s xx=$o(^TEPI(RowID,"HISTORY",""),-1) i $l(xx) s result=$p($g(^TEPI(RowID,"HISTORY",xx)),"\",7)
+ s result=result+1
+ q result
+ ; check deleted records
+delete(RowID,table,FIELD) n PLIST,plist,J,XRES,epis,FL,%e k %e m %e=%old
+ s RowID=$g(RowID),table=$g(table),(stop,SQLCODE)=0,(mx,XRES)="",epis=$p(RowID,"||",1)
+ s tableName=$p($$tableName^SSUTIL4(table),$c(1))
+ f J=1:1 s FL=$p(FIELD,"^",J) q:FL=""  d  i stop q
+ .i XRES="",$d(%e(FL)) s XRES=$p(%e(FL),$c(1),1) d
+ ..i table=180 s XRES="",mx=$p(RowID,"||",2) f j=1:1:$l(%e(FL),"~") s XRES=XRES_$s($l(XRES):"~",1:"")_$p(%e(FL),"\",2,3)
+ ..i table=47 i $l(XRES) s XRES=%e(2)_"-"_XRES
+ ..i table=651 i $l(XRES) s XRES="Billing Activity-"_XRES
+ ..i table=216 i $l(XRES) s XRES=%e(2)_"-"_%e(3)
+ .n (XRES,FL,RowID,table,tableName,epis,mx)
+ .i $l(XRES) d  i SQLCODE s stop=1
+ ..k PLIST
+ ..s PLIST(3)=+$h,PLIST(4)=$p($h,",",2),PLIST(5)=$$user^MVBSSUSR($j)
+ ..s xx=$$fieldName^SSUTIL4(tableName,FL)
+ ..i $l($p(xx,$c(1),2)) s PLIST(6)=$p(xx,$c(1),3)
+ ..i $g(PLIST(6))="" s PLIST(6)=table_"|"_FL
+ ..s PLIST(7)=XRES,PLIST(8)="...Deleted..." i $l(mx) s PLIST(8)=PLIST(8)_" from "_mx
+ ..i table=46 s PLIST(8)="...Test Deleted..."
+ ..s PLIST(9)=$p($g(^TMP("FUNCTION",$j)),$c(1),2),PLIST(10)=$p($g(^TMP("FUNCTION",$j)),$c(1),1)
+ ..s PLIST=$o(PLIST(""),-1)
+ ..s SQLCODE=$$insert^LVBVISHS(epis)
+ q SQLCODE
+ ; check all changes
+checkBB(RowID,table) n PLIST,plist,J,XRES,epis,except
+ s RowID=$g(RowID),table=$g(table),SQLCODE=0,unitID=$p(RowID,"||",1,2)
+ s tableName=$p($$tableName^SSUTIL4(table),$c(1))
+ s J="" f  s J=$o(%d(J)) q:J=""  d
+ .i $d(except(table,J)) q
+ .i $p(%d(J),$c(1),1)'="" s $p(XRES(J),$c(1),2)=$p(%d(J),$c(1),1)
+ .i $p(%d(J),$c(1),2)'="" s $p(XRES(J),$c(1),2)=$p(%d(J),$c(1),2)
+ .i $d(%d(J))\10 s $p(XRES,$c(1),2)="",$p(XRES,$c(1),3)=1 d
+ ..s j="" f  s j=$o(%d(J,j)) q:j=""  s $p(XRES(J),$c(1),2)=$p(XRES(J),$c(1),2)_$tr($p(%d(J,j),$c(1))," ")
+ s J="" f  s J=$o(%e(J)) q:J=""  d
+ .i $d(except(table,J)) q
+ .i $p(%e(J),$c(1),1)'="" s $p(XRES(J),$c(1),1)=$p(%e(J),$c(1),1)
+ .i $p(%e(J),$c(1),2)'="" s $p(XRES(J),$c(1),1)=$p(%e(J),$c(1),2)
+ .i $d(%e(J))\10 s $p(XRES,$c(1),1)="",$p(XRES,$c(1),3)=1 d
+ ..s j="" f  s j=$o(%e(J,j)) q:j=""  s $p(XRES(J),$c(1),1)=$p(XRES(J),$c(1),1)_$tr($p(%e(J,j),$c(1))," ")
+ s J="" f  s J=$o(XRES(J)) q:J=""  d
+ .i $p(XRES(J),$c(1),1)=$p(XRES(J),$c(1),2) k XRES(J) q
+ .i $p(XRES(J),$c(1),1)="" k XRES(J) q
+ s J="" f  s J=$o(XRES(J)) q:J=""  d
+ .n (XRES,J,RowID,table,tableName,unitID)
+ .i $p(XRES(J),$c(1),3) q
+ .k PLIST
+ .s PLIST(3)=+$h,PLIST(4)=$p($h,",",2),PLIST(5)=$$user^MVBSSUSR($j)
+ .s xx=$$fieldName^SSUTIL4(tableName,J)
+ .i $l($p(xx,$c(1),2)),$d(^oddDEF(tableName,"a",$p(xx,$c(1),2),44)) q  ; skip calculated fields
+ .i $l($p(xx,$c(1),2)) s PLIST(6)=$p(xx,$c(1),3)
+ .i $g(PLIST(6))="" s PLIST(6)=table_"|"_J
+ .s PLIST(7)=$p(XRES(J),$c(1),1),PLIST(8)=$p(XRES(J),$c(1),2)
+ .s PLIST(9)=$p($g(^TMP("FUNCTION",$j)),$c(1),2),PLIST(10)=$p($g(^TMP("FUNCTION",$j)),$c(1),1)
+ .s PLIST=$o(PLIST(""),-1)
+ .s SQLCODE=$$insert^LVBBBPH(unitID)
+ q SQLCODE
+]]></Routine>
+</Export>

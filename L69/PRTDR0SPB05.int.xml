@@ -1,0 +1,406 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR0SPB05" type="INT" languagemode="0"><![CDATA[
+PRTDR0SPB05   ;SPARM; Doctor's Report HEADER ;ÊÄË Êèðîâ;@gol;
+ q
+ ;
+ ; MAXLINE = 67
+ ;----------------------------------------------------------------------------------------               
+IN ; Numeric  ;IN^PRTDR00 - Left Allignment for Numeric
+ n (result,tc,FORMAT,cnt)
+ i $d(^TTAB("RC",result)) s result(1)=$p(^(result),"\",1),result="" q
+ s Flag="" i "<>+-"[$e(result) s Flag=$e(result),result=$e(result,2,$l(result))
+ i (result?1.N.E)!(result?1"."1.N.E) s result=+result
+ i (result'?.N.1".".N)!(result="")!(result=".") q
+ i $l(Flag),"<>+-"'[Flag q
+ s result=$j(result,0,$e($p(FORMAT(cnt),$c(2),18),2,4))
+ s result=Flag_result
+ q       
+ ; add to margin - îòñòóï ñëåâà äëÿ øàáëîíà
+Margin() i $G(type)="V" q 0
+ q 0
+ ; set 'maxline'
+MaxLines(report,PAR2) d INIT 
+ q
+ ; reset printer at end of report run
+Reset(par2) n (REPID,par2)
+ i $e($$CR(par2),1,2)="A5" d ADD^PRTREP00(REPID,"PRT",$c(27)_"E")
+ q
+ ; client specific parameters
+INIT s MaxLine=67 i $e($$CR(PAR2),1,2)="A5" s MaxLine=17  
+ i $G(PAR1)="F" S MaxLine=60             ;fax
+ q
+CR(CR) n (CR) s xCR=CR,result="A4" i xCR["-FAX-" s xCR=$p(CR,"-FAX-",1)
+ i '$$select^LVBCTCR(xCR),$e($p(PLIST(4),$c(1)),1,2)="A5" s result="A5" 
+ q result
+ ;----------------------------------------------------------------------------------------               
+ ; create normal layouts
+Create1(vtsRID,cum,group,cOrder) 
+ s DH=dh1,PrintTestHeader=1
+ s type="P" i '$$SINGLE^PRTDR00(vtsRID,type,cum,,DH,group,cOrder),PLIST d
+ .s BodyLength=$g(Breaks) k cPartialHeader
+ .s TestHeader=0 f j=1:1:HEADER i HEADER(j)="!" s TestHeader=TestHeader+1
+ .s TestBody=0 f j=1:1:PLIST i PLIST(j)="!",j<PLIST s TestBody=TestBody+1
+ .s test=$p(vtsRID,"||",2),StopSplit=$$seldata^LVBCTTS(test,25)
+ .s Start="Y",NewPage=ForceNewPage f jLine=1:1:PLIST d
+ ..i $o(^TMP("REPORT",$j,""))="" s NewPage=1
+ ..i 'NewPage,jLine=1,StopSplit="Y",PageLine+TestHeader+TestBody+2>MaxLine s NewPage=1
+ ..i 'NewPage,jLine=1,BodyLength,StopSplit="T",PageLine+TestHeader+BodyLength+1>MaxLine s NewPage=1
+ ..i 'NewPage,$d(Breaks(jLine)),PageLine+TestHeader+Breaks(jLine)>MaxLine s NewPage=1
+ ..i (jLine=1)!NewPage d
+ ...i 'NewPage d OldPage^PRTDR00(vtsRID)
+ ...i NewPage d NewPage^PRTDR00(vtsRID) d PrintPageHeader s PrintDepHeader=1 d PrintDepHeader    ;@gol
+ ..i Start="Y" d  s Start="N"
+ ...i REPORT(5)="Y" d PrintDepHeader
+ ...d PrintSection^PRTDR00("H")
+ ...d PrintTestHeader^PRTDR00(1)
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ..i PLIST(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i jLine=PLIST q
+ ..i NewPage s x="" f  s x=$o(PartialHeader(x)) q:x=""  i jLine>$p(PartialHeader(x),",",1),jLine<$p(PartialHeader(x),",",2) k cPartialHeader m cPartialHeader=PartialHeader(x)
+ .i $d(COMMENTS) f jLine=1:1 q:'$d(COMMENTS(jLine))  d
+ ..i NewPage d NewPage^PRTDR00(vtsRID)
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=COMMENTS(jLine)
+ ..i COMMENTS(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1
+ .d CheckLastPage^PRTDR00
+ ;----------------------------------------------------------------------------------------       
+ ; print multiple reports - Ïðîñìîòð íàêîïëåííûõ ðåçóëüòàòîâ (äèíàìèêè)
+ ; Ôîðìèðóåì ìàññèâ ^TMP("PRTDR00",$j,"EPISODE-LIST",group,testset)=EpisodeList
+CumView(type,CumType,user,pc) n (type,CumType,user,pc,PLIST) s type=$g(type),CumType=$g(CumType),user=$g(user),pc=$g(pc)
+ s zn="PRTDR00" 
+ k EPISODELIST
+ k ^TMP(zn,$j,"ViewList"),^TMP(zn,$j,"ViewList-Report") m ^TMP(zn,$j,"ViewList")=PLIST
+ s viewcnt="" f  s viewcnt=$o(^TMP(zn,$j,"ViewList",viewcnt)) q:viewcnt=""  d
+ . s test=$p(^(viewcnt),$c(1),1),EpisodeList=$p(^(viewcnt),$c(1),2),group=$p(^(viewcnt),$c(1),3)
+ . s epis=$p(EpisodeList,","),tscnt=$o(^TEPI(epis,1,test,"")),vtsRID=epis_"||"_test_"||"_tscnt
+ . s EPISODELIST(group,test)=EpisodeList        ;add new massive @gol
+ m ^TMP(zn,$j,"EPISODE-LIST")=EPISODELIST       ;add new massive @gol
+ i $d(EPISODELIST) do
+ . i $$SINGLE^PRTDR00(vtsRID,type,$s(CumType="H":"FC",1:"C"),EpisodeList,,group)
+ . d clearBreaks^PRTDR00
+ . i $$view^LVBVISEV(vtsRID,user,pc)
+ . f j=1:1:HEADER s cnt=$o(^TMP(zn,$j,"ViewList-Report",""),-1)+1 s ^TMP(zn,$j,"ViewList-Report",cnt)=HEADER(j)
+ . f j=1:1:PLIST s cnt=$o(^TMP(zn,$j,"ViewList-Report",""),-1)+1 s ^TMP(zn,$j,"ViewList-Report",cnt)=PLIST(j)
+ . f j=1:1 q:'$d(COMMENTS(j))  s cnt=$o(^TMP(zn,$j,"ViewList-Report",""),-1)+1 s ^TMP(zn,$j,"ViewList-Report",cnt)=COMMENTS(j)
+ k PLIST m PLIST=^TMP(zn,$j,"ViewList-Report") k ^TMP(zn,$j,"ViewList"),^TMP(zn,$j,"ViewList-Report")
+ s PLIST=$o(PLIST(""),-1)
+ s Lines=0 f j=1:1:PLIST s PLIST(j)=$tr(PLIST(j),"^",$c(28)) i PLIST(j)="!" s Lines=Lines+1
+ q Lines
+ ;----------------------------------------------------------------------------------------       
+ ; print header
+Header(page,par1,par2) n (page,par1,par2,VISIT,DOC,HOSP,REPID)     ; par1="F\VANJA-FAX-3287122-Äîíöîâà Åëåíà Þðüåâíà" ; par2="U\al"
+ i par1'="F" d ADD^PRTREP00(REPID,"PRT","#")  
+ s (copyto,copyfrom,specimen)="",epis=$p(VISIT(2),$c(1))
+ ; find copy-to
+ i $p($G(VISIT(15)),$c(1))=$p($G(DOC(2)),$c(1)) d
+ .i $$open^LVBVISDC(epis)
+ .f  q:$$fetch^LVBVISDC(epis)  s copyto=copyto_$s($l(copyto):", ",1:"")_$p(PLIST(4),$c(1))
+ .i $$close^LVBVISDC()
+ ; find copy-to
+ i $d(HOSP),$p(VISIT(22),$c(1))=$p(HOSP(2),$c(1)) d
+ .i $$open^LVBVISDC(epis)
+ .f  q:$$fetch^LVBVISDC(epis)  s copyto=copyto_$s($l(copyto):", ",1:"")_$p(PLIST(4),$c(1))
+ .i $$close^LVBVISDC()
+ ; find copy-from
+ i $d(DOC),$p($G(VISIT(15)),$c(1))'=$p($G(DOC(2)),$c(1)) d
+ .i '$$select^LVBCTDR($p($G(VISIT(15)),$c(1)),"Y") s copyfrom=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3))
+ i $d(HOSP),$p(VISIT(22),$c(1))'=$p(HOSP(2),$c(1)) d
+ .i '$$select^LVBCTDR($p(VISIT(15),$c(1)),"Y") s copyfrom=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3))
+ ; format Doctor's address
+ i $d(DOC) d Address(DOC(9),DOC(10),DOC(11),DOC(12),DOC(13),.dAddress)   ;àäðåñ âðà÷à
+ i $d(HOSP) d Address(HOSP(4),HOSP(5),HOSP(6),HOSP(7),HOSP(8),.hAddress)
+ ; format Patient's address
+ d Address(VISIT(32),VISIT(33),VISIT(34),VISIT(35),VISIT(36),.pAddress)  ;àäðåñ ïàöèåíòà
+ s dob="-" i $l(VISIT(6)) s dob=$$extdate2^SSUTIL4(VISIT(6))    ;äàòà ðîæä.  (Íåèçâåñòåí)
+ s sex="-" i $l(VISIT(5)) s sex=$p(VISIT(5),$c(1),2)            ;ïîë         (Íåèçâåñòåí)
+ s age="-" i $l(VISIT(26)) s age=$p(VISIT(26),$c(1))            ;âîçðàñò     (Íåèçâåñòåí)
+ S PayCode=$G(VISIT(9))                                         ;êîä îïëàòû
+ s cl1=$p(VISIT(53),"|",1),cl2=$p(VISIT(53),"|",2)              ;êëèíè÷åñêèå ïðèìå÷àíèÿ
+ i $l(cl1)>60 s N=$l($e(cl1,1,60)," ")-1,cl1=$p(cl1," ",1,N),cl2=$p($p(VISIT(53),"|",1)," ",N+1,99)_$s($l(cl2):" "_cl2,1:"")
+ i $l(cl2)>60 s N=$l($e(cl2,1,60)," ")-1,cl2=$p(cl2," ",1,N)
+ s xCR=$$CR(par2)
+ ;i par1="F" d Header6 q  ;fax
+ i $e(xCR,2)=4 d Header4
+ i $e(xCR,2)=5 d Header5
+ q
+ ;----------------------------------------------------------------------------------------               
+ ; print header - format A4
+Header4   ;
+ k ^PR(REPID,"HDR")  
+ S STAT=$P($G(^TTAB("REPORT-GENERIC","DREP0")),"\",2)
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"E")          
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"&l0O")
+ d NORMAL("HDR")
+ ;D STAT^PRTREP00(REPID,STAT)             ;íàñòðîéêà ôîðìàòà, øðèôòà (A4||P||9)
+ ;---
+ s line="",$p(line,"_",100)="" 
+ S YH=100,YStep=100  ; øàã ñòðîêè
+ s Margin=55         ; check for margin changes - îòñòóï ñëåâà
+ ;
+ ; íàèìåíîâàíèå ëàáîðàòîðèè
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"(s7h0S")  
+ D ADD^PRTREP00(REPID,"HDR","~BOLD")
+ d Line("HDR",1000,YH,"Êëèíèêî-äèàãíîñòè÷åñêàÿ ëàáîðàòîðèÿ")
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"(s10h0S")    
+ d Line("HDR",3800,YH,"ÔÃÓ ""ÏÎÌÖÝÊÏÊÈÔÄÏ""")  
+ ;
+ ; ðåêâèçèòû ëàáîðàòîðèè
+ S YH=YH+YStep           
+ D ADD^PRTREP00(REPID,"HDR","~NORMAL")
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"(s15h0S") 
+ d Line("HDR",$G(Margin),YH,"610027 ã.Êèðîâ")
+ S YH=YH+YStep           
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"(s15h0S") 
+ D ADD^PRTREP00(REPID,"HDR","~NORMAL")   
+ d Line("HDR",$G(Margin),YH,"óë.Ïðîëåòàðñêàÿ ä.38")
+ d Line("HDR",4400,YH,"Òåë/Ôàêñ : (8332) 67-57-86")
+ ; ðàçäåëèòåëüíàÿ ñòðîêà
+ d ADD^PRTREP00(REPID,"HDR",$C(27)_"(s12h0S")                    
+ D ADD^PRTREP00(REPID,"HDR","~BOLD")
+ d Line("HDR",$G(Margin),YH+(YStep/2),line)       
+ ;---
+ S YH=YH+YStep+YStep  
+ ; ÔÈÎ ïàöèåíòà  / ÔÈÎ íàïðàâë.âðà÷à (ñòðàõîâàÿ êîìïàíèÿ)        
+ d ADD^PRTREP00(REPID,"HDR",$C(27)_"(s11h0S")                          
+ d Line("HDR",$G(Margin),YH,"Ïàöèåíò"),Line("HDR",700+$G(Margin),YH,":")
+ d Line("HDR",3000,YH,"Îò÷åò äëÿ :")
+ ;
+ d NORMAL("PRT")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s11h0S")  
+ D ADD^PRTREP00(REPID,"PRT","~BOLD")
+ d Line("PRT",900+$G(Margin),YH,$$NameFormat^LVBCOM03("PT","",VISIT(4),VISIT(3)))
+ d Line("PRT",3850,YH,$$NameFormat^LVBCOM03("DR",DOC(26),DOC(4),DOC(3)))
+ ; ïîë ïàöèåíòà
+ S YH=YH+YStep   
+ d ADD^PRTREP00(REPID,"HDR",$C(27)_"(s12h0S")                          
+ d Line("HDR",$G(Margin),YH,"Ïîë"),Line("HDR",700+$G(Margin),YH,":")
+ D ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s11h0S") 
+ d Line("PRT",900+$G(Margin),YH,$p($G(VISIT(5)),$c(1),2))    
+ ; êîä îïëàòû
+ i $P($G(PayCode),$C(1),1)'=$G(DOC(2)) d
+ . d Line("HDR",3000,YH,"Ïëàòåëüùèê:")        
+ . d Line("PRT",3850,YH,$P(PayCode,$c(1),2))      
+ . ;? åñëè âðà÷ âõîäèò â ãðóïïó
+ ; âîçðàñò
+ S YH=YH+YStep   
+ d Line("HDR",$G(Margin),YH,"Âîçðàñò"),Line("HDR",700+$G(Margin),YH,":")     
+ d Line("PRT",900+$G(Margin),YH,$G(age))               
+ ; ìåñòîïîëîæåíèå ïàöèåíòà (îòäåëåíèå)
+ ;I $G(VISIT(66))'="" D
+ . d Line("HDR",3000,YH,"Ìåñòî çàá.:")        
+ . d Line("PRT",3850,YH,$p($G(VISIT(66)),$c(1),2))  
+ ; àäðåñ ïàöèåíòà
+ d  ;i $D(pAddress) d  
+ . S YH=YH+YStep  
+ . d Line("HDR",$G(Margin),YH,"Àäðåñ"),Line("HDR",700+$G(Margin),YH,":")
+ . f j=1:1:2 i $G(pAddress(j))'="" s:j=2 YH=YH+YStep d Line("PRT",900+$G(Margin),YH,pAddress(j))      
+ ; êëèíè÷.ïðèìå÷àíèÿ
+ I $G(VISIT(53))'="" Do 
+ . S YH=YH+YStep 
+ . d Line("HDR",$G(Margin),YH,"Êëèí.ïðèì."),Line("HDR",700+$G(Margin),YH,":")
+ . s Clin=VISIT(53) 
+ . s fl=0 f i=1:1:$L(Clin,"|") s Clin0=$S($G(Clin0)'="":$G(Clin0)_"; ",1:"")_$P(Clin,"|",i)
+ . D RSMas(Clin0,70,"MClin")  ;#780-äëèíà ñòðîêè êîììåíòàðèÿ
+ . f j=1:1:$O(MClin(""),-1) S Clin=$G(MClin(j)) Do
+ .. S:fl YH=YH+YStep
+ .. d Line("PRT",900+$G(Margin),YH,Clin) s fl=1
+ . S YH=YH+(YStep*0.5) 
+ ; ñïèñîê íàçíà÷åíèé
+ S YH=YH+YStep   
+ d Line("HDR",$G(Margin),YH,"Íàá.òåñòîâ"),Line("HDR",700+$G(Margin),YH,":")
+ s ST1=VISIT(68) D RSMas(ST1,70,"Mtest") k ST1  ;#70-äëèíà ñòðîêè ñïèñêà íàáîðîâ
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s12h0S") 
+ S fl=0,xxx=0 f j=1:1:$O(Mtest(""),-1) S ST1=$G(Mtest(j)) Do  q:xxx=1    ;@gol (ïå÷àòàåì òîëüêî 1 ñòðîêó äëÿ ñïèñêà íàáîðîâ òåñòîâ)
+ . S:fl YH=YH+YStep
+ . if $O(Mtest(""),-1)>1 s ST1=ST1_" ..."
+ . d Line("PRT",900+$G(Margin),YH,ST1) S fl=1
+ . s xxx=xxx+1
+ ;---
+ S YH=YH+(YStep*1.5)    
+ ; Ëàá.íîìåð
+ d Line("HDR",$G(Margin),YH,"Ëàá.íîìåð"),Line("HDR",700+$G(Margin),YH,":")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s11h0S") 
+ D ADD^PRTREP00(REPID,"PRT","~BOLD")
+ d Line("PRT",900+$G(Margin),YH,VISIT(2)) 
+ D ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s11h0S") 
+           
+ ; Äàòà çàáîðà
+ d Line("HDR",1550,YH,"Äàòà çàáîðà:") 
+ d Line("PRT",2350,YH,$$extdate2^SSUTIL4(VISIT(12)))         
+ ; Òåêóùàÿ äàòà ïå÷àòè     
+ d Line("HDR",3200,YH,"Äàòà/âðåìÿ ïå÷àòè:")  
+ d Line("PRT",4400,YH,$$dt("",""))                   
+ ; ðàçäåëèòåëüíàÿ ñòðîêà
+ d Line("HDR",$G(Margin),YH+(YStep*0.5),line) 
+ ;---
+ S YH=YH+(YStep*2.5)     
+ d ADD^PRTREP00(REPID,"HDR",$C(27)_"(s9h0S") 
+ d Line("HDR",1900,YH,"Ðåçóëüòàòû èññëåäîâàíèé")  
+ ; ïîäïèñü
+ d ADD^PRTREP00(REPID,"HDR",$C(27)_"(s12h0s0B")  
+ d Line("HDR",2800,7700,"Âðà÷  ________________")   
+ ;---
+ ;óñòàíàâëèâàåì øðèôò è ïîçèöèþ (ñòðîêó) äëÿ íà÷àëà ïå÷àòè ðåçóëüòàòîâ ïî øàáëîíàì íàáîðîâ òåñòîâ
+ S YH=YH+YStep     
+ D NORMAL("PRT")
+ D Line("PRT",0,YH,"")   
+ q
+ ;-------------------------------------------------------------------------------------
+Header5  ;Ôîðìàò À5
+ d Header4
+ q
+ ;-------------------------------------------------------------------------------------  
+PrintPageHeader  ;Ïå÷àòàåì äîïîëíèòåëüíóþ ñòðîêó (~øàïêà òàáëèöû) 
+ q
+ ;----------------------------------------------------------------------------------------               
+ ; print department header
+PrintDepHeader i PrintDepHeader d  s PrintDepHeader=0
+ . n (dep,page,PageLine,tsLM,margin,lan) s (print,name)=""
+ . s name=$P($G(^TTAB("DEP",dep)),"\",1)
+ . s print=$P($G(^TTAB("DEP",dep)),"\",5) 
+ . d:print="Y"
+ .. ;íàèìåíîâàíèå îòäåëà = ïîëíîå íàèìåíîâàíèå îòäåëà (çàïèñàíî â "Ïåðåâîäå") äëÿ LabTesta
+ .. i $D(^TTAB("DEP",dep,"LAN")) s nameLAN=$G(^TTAB("DEP",dep,"LAN",1))
+ .. s:$G(nameLAN)'="" name=$G(nameLAN)
+ .. s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ .. i $d(^TMP("REPORT",$j,page,"TEST")) s ^TMP("REPORT",$j,page,"TEXT",x)="!",x=x+1,PageLine=PageLine+1
+ .. s ^TMP("REPORT",$j,page,"TEXT",x)="~BOLD"
+ .. ;s x=x+1,^TMP("REPORT",$j,page,"TEXT",x)="~ITALIC"
+ .. ;s x=x+1,^TMP("REPORT",$j,page,"TEXT",x)=$c(13)
+ .. s x=x+1,^TMP("REPORT",$j,page,"TEXT",x)=$j("",25)_$g(name)
+ .. s x=x+1,^TMP("REPORT",$j,page,"TEXT",x)="~NORMAL"
+ .. s x=x+1,^TMP("REPORT",$j,page,"TEXT",x)=$c(13)
+ .. s x=x+1,^TMP("REPORT",$j,page,"TEXT",x)="!"
+ .. s PageLine=PageLine+1
+ q
+ ;-------------------------------------------------------------------------------------          
+ ; Tests to Follow - ôîðìèðóåì ñïèñîê íàáîðîâ òåñòîâ êòð. åøå íå ðàçðåøåíû
+TTF(epis,list) n (epis,list) s epis=$g(epis),list=$g(list),result=""
+ k printed
+ f n=1:1:$l(list,",") s tscnt=$p(list,",",n) q:tscnt=""  d
+ . s ts=$p(tscnt,"||",2),cnt=$p(tscnt,"||",3)
+ . i $l(ts),$l(cnt) s printed(ts,cnt)=""
+ s sep=""
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . ; do not look at empty tests
+ . i '$d(^TTAB("TS",ts,0)) q
+ . ; do not look at non printable tests
+ . s (ok,x)="" f  s x=$o(^TTAB("TS",ts,0,x)) q:x=""  i $p(^(x),"\",8)'="",$p(^(x),"\",13)="Y" s ok=1 q
+ . i ok s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ .. i $d(printed(ts,cnt)) q
+ .. s rowid=epis_"||"_ts_"||"_cnt,status=""
+ .. i $$status^LVBVIS1(epis_"||"_ts_"||"_cnt)'="A" d
+ ... s result=result_sep_$p(^TTAB("TS",ts),"\",2),sep="; ",cnt=9999
+ q result
+ ;-------------------------------------------------------------------------------------          
+ ; print orginal reported date and time
+datechk(epis) n (epis) s epis=$g(epis),(date,time,result)=""
+ i $$open^LVBVISTS(epis,,"Y")
+ f  q:$$fetch^LVBVISTS(epis,,"Y")  i $l(PLIST(7)) d
+ .i '$l(date) s date=PLIST(7),time=PLIST(8) q
+ .i PLIST(7)>date s date=PLIST(7),time=PLIST(8) q
+ .i PLIST(7)=date,PLIST(8)>time s date=PLIST(7),time=PLIST(8) q
+ i $$close^LVBVISTS()
+ i $l(date) s result=$$dt(date,time)
+ q result
+dt(date,time) n (date,time) s date=$g(date),time=$g(time),result=""
+ I 'date&'time s date=$P($h,","),time=$p($h,",",2)
+ s result=$$extdate2^SSUTIL4(date)_" "_$e(time\3600+100,2,3)_":"_$e(time\60#60+100,2,3)
+ q result
+ ;----------------------------------------------------------------------------------------               
+ ; print footer
+Footer(page,par1,par2) n (page,par1,par2,REPID,VISIT,list)
+ s xCR=$$CR(par2)
+ i par1="F" do  q   ;fax
+ . i $o(^TMP("REPORT",$j,page))="" d
+ .. d LN,LN
+ .. i $p(VISIT(29),$c(1))="F" d ADD^PRTREP00(REPID,"PRT"," *** Çàêëþ÷èòåëüíûé îò÷åò ***") q
+ .. i $p(VISIT(29),$c(1))'="F" d
+ ... d ADD^PRTREP00(REPID,"PRT"," *** Ïðîìåæóòî÷íûé îò÷åò ***") 
+ ... s TTF=$$TTF(VISIT(2)) i $l(TTF) d
+ .... d LN,ADD^PRTREP00(REPID,"PRT"," "_TTF_" : Ñëåäóþò")
+ . i $o(^TMP("REPORT",$j,page))'="" d ADD^PRTREP00(REPID,"PRT"," Ïðîäîëæåíèå ñëåäóåò...")
+ ; print
+ i $o(^TMP("REPORT",$j,page))="" d
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s13h0s0B")
+ .i $p(VISIT(29),$c(1))="F" d
+ ..i $e(xCR,2)=4 d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a0h7700V")  
+ ..i $e(xCR,2)=5 d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a2000h3000V")
+ ..d ADD^PRTREP00(REPID,"PRT","*** Çàêëþ÷èòåëüíûé îò÷åò ***") 
+ .i $p(VISIT(29),$c(1))'="F" d
+ ..i $e(xCR,2)=4 d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a0h7700V")  
+ ..i $e(xCR,2)=5 d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a2000h2920V")
+ ..d ADD^PRTREP00(REPID,"PRT","*** Ïðîìåæóòî÷íûé îò÷åò ***") 
+ .. ;--- to follow --- ñïèñîê íàáîðîâ òåñòîâ äëÿ êòð. åøå íå áûëè ðàñïå÷àòàíû îò÷åòû ---
+ .. s TTF=$$TTF(VISIT(2),list) i $l(TTF) d
+ ... s TTF=TTF_" : Ñëåäóþò"
+ ... D RSMas(TTF,70,"Mtest")
+ ... s j="" f  s j=$O(Mtest(j)) q:j=""  S ttf=$G(Mtest(j)) i ttf'="" d 
+ .... i $e(xCR,2)=4 d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a50h"_(7450+(j*100))_"V")       
+ .... i $e(xCR,2)=5 d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a2000h"_(2900+(j*100))_"V")
+ .... d ADD^PRTREP00(REPID,"PRT",ttf)  
+ i $o(^TMP("REPORT",$j,page))'="" d
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s13h0s0B") 
+ .i $e(xCR,2)=4 d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a0h7700V")   
+ .i $e(xCR,2)=5 d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a2300h3000V")
+ .d ADD^PRTREP00(REPID,"PRT","Ïðîäîëæåíèå ñëåäóåò...")
+ ; èçìåíÿåì øðèôò íà áîëåå ìåëêèé, íàïðèìåð 8
+ D ADD^PRTREP00(REPID,"PRT","~FONTSIZE=8")
+ D ADD^PRTREP00(REPID,"PRT",$C(13))
+ ; íóìåðàöèÿ ñòðàíèö
+ s nump="Ñòð. "_page_"/"_$o(^TMP("REPORT",$j,""),-1)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a5150h7700V"_nump)      
+ ; äàòà ïå÷àòè
+ ;d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4800h7420V"_$$dt(+$h,$p($h,",",2)))    
+ q
+ ;-----------------------------------------------------------------------------------------------
+LN  d ADD^PRTREP00(REPID,"PRT","! ") q   
+Line(razdel,x,y,str) ;äîáàâèòü ñòðîêó â ñîîòâåòñòâóþùèé ðàçäåë
+ S razdel=$G(razdel,"HDR")
+ S x=$G(x,50),y=$G(y,100),str=$G(str)
+ d ADD^PRTREP00(REPID,razdel,$C(27)_"&a"_x_"h"_y_"V"_str_$C(27))   
+ I razdel="HDR" S MasHDR(str)=y
+ q
+STAT(razdel)  ;îïèñàíèå ôîðìàòà è øðèôòà (A4||P||9) äëÿ îò÷åòà ( PRT-main; HDR-header&footer )
+ S razdel=$G(razdel,"PRT")
+ new rep,razm  s rep=$S(razdel="PRT":"DREP1",1:"DREP0")
+ s razm=+$P($P($G(^TTAB("REPORT-GENERIC",rep)),"\",2),"||",3)
+ s:razm=0 razm=$S(razdel="PRT":9,1:10)
+ q razm
+ ;
+NORMAL(razdel) ;óñòàíîâêà øðèôòà Normal è ðàçìåðà øðèôòà èç îïèñàíèÿ "Íàñòðîéêà îò÷åòîâ"
+ S razdel=$G(razdel,"PRT")
+ D ADD^PRTREP00(REPID,razdel,"~NORMAL")                                
+ D ADD^PRTREP00(REPID,razdel,"~FONT-COURIER")
+ D ADD^PRTREP00(REPID,razdel,"~FONT-FIXED")
+ D ADD^PRTREP00(REPID,razdel,"~FONTSIZE="_$$STAT(razdel))
+ D ADD^PRTREP00(REPID,razdel,$c(13))
+ q
+ ;-----------------------------------------------------------------------------------------------
+Address(x1,x2,x3,x4,x5,Address) 
+ n (x1,x2,x3,x4,x5,Address) s x1=$g(x1),x2=$g(x2),x3=$g(x3),x4=$g(x4),x5=$g(x5)
+ s StrAddr=""
+ i $l(x1) s StrAddr=x1
+ i $l(x2) s StrAddr=$s($l(StrAddr):StrAddr_", ",1:"")_x2
+ i $l(x3) s StrAddr=$s($l(StrAddr):StrAddr_", ",1:"")_x3
+ i $l(x4) s StrAddr=$s($l(StrAddr):StrAddr_", ",1:"")_x4
+ i $l(x5) s StrAddr=$s($l(StrAddr):StrAddr_", ",1:"")_x5
+ d RSMas(StrAddr,80,"RSMas")
+ m Address=RSMas
+ q
+RSMas(Str,Rz,Mas) ;Ðàçáèòü ñòðîêó Str íà îòäåëüíûå ïîäñòðîêè ñ îãðàíè÷åíîé äëèíîé Rz è çàïèñàòü â ìàññèâ RSMas
+ S Str=$G(Str) q:Str=""                      ;èñõîäíàÿ ñòðîê
+ S Rz=+$G(Rz) q:Rz=0                         ;äëèíà
+ S Mas=$G(Mas,"RSMas")   Kill @Mas           ;ìàññèâ äëÿ ôîðìèðîâàíèÿ ïîäñòðîê
+ New test,cnt,i,ddd,fl,mas
+ s Str=$TR(Str,","," ")
+ S cnt=1,fl=0 For i=1:1 Do  q:fl  q:cnt>100
+ . i $l(Str)<Rz s @Mas@(cnt)=Str s fl=1 q
+ . s mas=$E(Str,1,Rz),ddd=$L(mas," ")-1
+ . i ddd>0 s mas=$P(mas," ",1,ddd),@Mas@(cnt)=mas,cnt=cnt+1 s Str=$P(Str," ",ddd+1,$L(Str," ")) 
+ . i ddd=0 s mas=$E(mas,1,Rz),@Mas@(cnt)=mas,cnt=cnt+1 s Str=$E(Str,Rz+1,$L(Str))
+ q 
+ ;
+]]></Routine>
+</Export>

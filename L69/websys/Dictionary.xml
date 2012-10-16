@@ -1,0 +1,432 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="websys.Dictionary">
+<ClassType>persistent</ClassType>
+<CompileAfter>websys.ComponentXRef</CompileAfter>
+<ProcedureBlock>0</ProcedureBlock>
+<Super>%Library.Persistent</Super>
+<TimeCreated>60218,47035.085145</TimeCreated>
+
+<Parameter name="EXTENTSIZE">
+<Default>6893</Default>
+</Parameter>
+
+<Index name="UniquePhraseIndex">
+<Description>
+Uniqueness index for property Phrase</Description>
+<Extent>0</Extent>
+<IdKey>0</IdKey>
+<PrimaryKey>0</PrimaryKey>
+<Properties>Phrase</Properties>
+<Unique>1</Unique>
+</Index>
+
+<Property name="Phrase">
+<Type>%Library.String</Type>
+<Final>0</Final>
+<Calculated>0</Calculated>
+<Collection/>
+<MultiDimensional>0</MultiDimensional>
+<Private>0</Private>
+<Relationship>0</Relationship>
+<Required>0</Required>
+<SqlComputed>0</SqlComputed>
+<Transient>0</Transient>
+<Parameter name="MAXLEN" value="200"/>
+<Parameter name="TRUNCATE" value="1"/>
+</Property>
+
+<Method name="AddItem">
+<Description>
+Add a phrase to the dictionary if it is not already there.</Description>
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec>caption:%Library.String</FormalSpec>
+<Private>0</Private>
+<ReturnType>%Library.Boolean</ReturnType>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ n itm,id
+ s id=0
+ ; Try and find it
+ &SQL(	SELECT ID
+ INTO :id
+ FROM websys.Dictionary
+ WHERE Phrase =:caption
+ )
+ i 'SQLCODE q id
+ ; Insert it if it's not there
+ i SQLCODE {
+ s itm=##Class(websys.Dictionary).%New()
+ s itm.Phrase=caption
+ d itm.%Save()
+ s id=itm.%Id()
+ d itm.%Close()
+ }
+ q id
+]]></Implementation>
+</Method>
+
+<Method name="Build">
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec>langid:%Library.String=""</FormalSpec>
+<Private>0</Private>
+<ReturnType>%Library.Status</ReturnType>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ n t
+ ;
+ d ..BuildMenus(langid)
+ ;
+ d ..BuildComponents(langid)
+ ;
+ q $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="BuildComponent">
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec>cmpid:%Library.String,langid:%Library.String</FormalSpec>
+<Private>0</Private>
+<ReturnType>%Library.Status</ReturnType>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ n t,cmp,itm,j
+ ;
+ ; Don't ever kill ^websys.TranslationD("COMP",langid,comp) as it may have layout specific translations
+ ;
+ s cmp=##Class(websys.Component).%OpenId(cmpid,0)
+ i cmp {
+ f j=1:1:cmp.Items.Count() {
+ s itm=cmp.Items.GetAt(j)
+ i itm.Caption'="" {
+ i 'itm.Hidden {
+ d ..BuildItem("COMP",langid,cmpid,itm.Name,itm.Caption)
+ }
+ }
+ }
+ f j=1:1:cmp.TableItems.Count() {
+ s itm=cmp.TableItems.GetAt(j)
+ i itm.Caption'="" {
+ i 'itm.Hidden {
+ d ..BuildItem("COMP",langid,cmpid,itm.Name,itm.Caption)
+ }
+ }
+ }
+ f j=1:1:cmp.Messages.Count() {
+ s itm=cmp.Messages.GetAt(j)
+ d ..BuildItem("COMP",langid,cmpid,itm.Code,itm.Description)
+ }
+
+ d cmp.%Close()
+ }
+
+ ; Mark component for recompile
+ d ##Class(websys.ComponentXRef).MakeDirtyComponent(cmpid)
+
+ q $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="BuildComponents">
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec>langid:%Library.String</FormalSpec>
+<Private>0</Private>
+<ReturnType>%Library.Status</ReturnType>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ n t,cmpid
+ ;
+ ; Don't ever kill ^websys.TranslationD("COMP",langid,comp) as it may have layout specific translations
+ ;
+ ; Process all Components
+ s cmpid="" f  {
+ s cmpid=$o(^websys.ComponentD(cmpid))
+ i cmpid="" q
+
+ //process a single language if specified, else process all languages
+ i langid {
+ d ..BuildComponent(cmpid,langid)
+ } else {
+ s langid=0 f  {
+ s langid=$o(^SS("LAN",langid)) 
+ i langid=""  q
+
+ d ..BuildComponent(cmpid,langid)
+ }
+ }
+ }
+
+ q $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="BuildItem">
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec>type:%Library.String,langid:%Library.String,objectid:%Library.String,name:%Library.String,caption:%Library.String</FormalSpec>
+<Private>0</Private>
+<ReturnType>%Library.Status</ReturnType>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ n t,id,trans
+
+ ; get the translatebale item id from the dictionary
+ s id=..AddItem(caption)
+
+ if id'="" {
+ // add to selected language, or add to all languages
+ i langid {
+ ; get the translation from websys.DictionaryTranslated
+ s trans=##Class(websys.DictionaryTranslated).GetItem(langid,id)
+ i trans="" s trans=caption
+ ; add the translation to the translation table
+ d ##Class(websys.Translation).AddItem(type,langid,objectid,name,trans,0)
+ } else {
+ s langid=0 f  {
+ s langid=$o(^SS("LAN",langid))
+ i langid="" q
+ ; get the translation from websys.DictionaryTranslated
+ s trans=##Class(websys.DictionaryTranslated).GetItem(langid,id)
+ i trans="" s trans=caption
+ ; add the translation to the translation table
+ d ##Class(websys.Translation).AddItem(type,langid,objectid,name,trans,0)
+ }	
+ }
+ }
+ q $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="BuildMenu">
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec>mnuid:%Library.String,langid:%Library.String</FormalSpec>
+<Private>0</Private>
+<ReturnType>%Library.Status</ReturnType>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ n t,mnu,trans
+
+ s mnu=##Class(websys.Menu).%OpenId(mnuid,0)
+
+ i mnu {
+ i mnu.Caption'="" {
+
+ d ..BuildItem("MENU",langid,mnuid,mnu.Name,mnu.Caption)
+ ; and add to the translation table of the parent
+ i mnu.SubMenuOf d ..BuildItem("MENU",langid,mnu.SubMenuOf.%Id(),mnu.Name,mnu.Caption)
+ }
+ d mnu.%Close()
+ }
+
+ q $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="BuildMenus">
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec>langid:%Library.String=""</FormalSpec>
+<Private>0</Private>
+<ReturnType>%Library.Status</ReturnType>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ n t,mnuid
+ ;
+ ; Clear down existing tables
+ i langid {
+ k ^websys.TranslationD("MENU",langid)
+ } else {
+ k ^websys.TranslationD("MENU")
+ }
+ ;
+ ; Process all menus
+ s mnuid="" f  {
+ s mnuid=$o(^websys.MenuD(mnuid))
+ i mnuid="" q
+
+ //process a single language if specified, else process all languages
+ i langid {
+ d ..BuildMenu(mnuid,langid)
+ } else {
+ s langid=0 f  {
+ s langid=$o(^SS("LAN",langid)) 
+ i langid=""  q
+
+ d ..BuildMenu(mnuid,langid)
+ }
+ }
+ }
+
+ ; Mark for recompile
+ i langid {
+ d ##Class(websys.ComponentXRef).MakeDirtyLanguage(langid)
+ } else {
+ d ##Class(websys.ComponentXRef).MakeDirtyAll()
+ }
+ q $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="Kill">
+<Description>
+Delete dictionary and translations</Description>
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec/>
+<Private>0</Private>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ k ^websys.DictionaryD,^websys.DictionaryI
+ d ##Class(websys.DictionaryTranslated).Kill()
+ d ##Class(websys.Translation).Kill()
+ q
+]]></Implementation>
+</Method>
+
+<Method name="ResetComponent">
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec>cmpid:%Library.String,langid:%Library.String</FormalSpec>
+<Private>0</Private>
+<ReturnType>%Library.Status</ReturnType>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ i cmpid,langid {
+	 k ^websys.TranslationD("COMP",langid,cmpid)
+	 //log 51464 - allow context specific translations for webcommon.Report.Custom component
+	 if cmpid=1906 {
+		 s cmpcontx="1906R"
+		 f  {
+			 s cmpcontx=$o(^websys.TranslationD("COMP",langid,cmpcontx))
+			 q:cmpcontx=""
+			 q:$e(cmpcontx,1,5)'="1906R"
+			 k ^websys.TranslationD("COMP",langid,cmpcontx)
+		 }
+	 }
+ }
+
+ d ..BuildComponent(cmpid,langid)
+
+ q $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="XXXBuild">
+<Description>
+Build the dictionary with a list of tranlatable items
+E.g. Captions</Description>
+<Final>0</Final>
+<ClassMethod>1</ClassMethod>
+<CodeMode>code</CodeMode>
+<FormalSpec/>
+<Private>0</Private>
+<ReturnType>%Library.Status</ReturnType>
+<SqlProc>0</SqlProc>
+<Implementation><![CDATA[
+ n j,cmp,cmpid,rs,itm,id,trans
+ n mnu,mnuid
+ ;
+ ; Do this to make sure we get the untranslated captions
+ n t
+ ;
+ s rs=##Class(%ResultSet).%New("websys.Component:Extent")
+ d rs.Execute()
+ f  q:'rs.Next()  d
+ . s cmpid=rs.GetData(1)
+ . s cmp=##Class(websys.Component).%OpenId(cmpid,0)
+ . i cmp d
+ . . ; Items
+ . . f j=1:1:cmp.Items.Count() d
+ . . . s itm=cmp.Items.GetAt(j)
+ . . . i itm.Caption="" q
+ . . . i itm.Hidden q
+ . . . ; If the item exists then update the translation tables (if it didn't exist how could there be translation ??)
+ . . . s id=..AddItem(itm.Caption)
+ . . . if id'="" d
+ . . . . s langid=0 f  s langid=$o(^SS("LAN",langid)) q:langid=""  d
+ . . . . . s trans=##Class(websys.DictionaryTranslated).GetItem(langid,id)
+ . . . . . i trans="" s trans=itm.Caption 
+ . . . . . d ##Class(websys.Translation).AddItem("COMP",langid,cmpid,itm.Name,trans,0)
+ . . ;
+ . . ; Table Items
+ . . f j=1:1:cmp.TableItems.Count() d
+ . . . s itm=cmp.TableItems.GetAt(j)
+ . . . i itm.Caption="" q
+ . . . i itm.Hidden q
+ . . . s id=..AddItem(itm.Caption)
+ . . . if id'="" d
+ . . . . s langid=0 f  s langid=$o(^SS("LAN",langid)) q:langid=""  d
+ . . . . . s trans=##Class(websys.DictionaryTranslated).GetItem(langid,id)
+ . . . . . i trans="" s trans=itm.Caption
+ . . . . . d ##Class(websys.Translation).AddItem("COMP",langid,cmpid,itm.Name,trans,0)
+ . . ;
+ . . ; Messages
+ . . f j=1:1:cmp.Messages.Count() d
+ . . . s itm=cmp.Messages.GetAt(j)
+ . . . s id=..AddItem(itm.Description)
+ . . . if id'="" d
+ . . . . s langid=0 f  s langid=$o(^SS("LAN",langid)) q:langid=""  d
+ . . . . . s trans=##Class(websys.DictionaryTranslated).GetItem(langid,id)
+ . . . . . i trans="" s trans=itm.Description
+ . . . . . d ##Class(websys.Translation).AddItem("COMP",langid,cmpid,itm.Code,trans,0)
+ . d cmp.%Close()
+ d rs.%Close()
+ ;
+ ; And then the menus
+ s rs=##Class(%ResultSet).%New("websys.Menu:Extent")
+ d rs.Execute()
+ f  q:'rs.Next()  d
+ . s mnuid=rs.GetData(1)
+ . s mnu=##Class(websys.Menu).%OpenId(mnuid,0)
+ . i mnu.Caption="" d mnu.%Close() q
+ . s id=..AddItem(mnu.Caption)
+ . if id'="" d
+ . . s langid=0 f  s langid=$o(^SS("LAN",langid)) q:langid=""  d
+ . . . s trans=##Class(websys.DictionaryTranslated).GetItem(langid,id)
+ . . . i trans="" s trans=mnu.Caption
+ . . . d ##Class(websys.Translation).AddItem("MENU",langid,mnuid,mnu.Name,trans,0)
+ . . . i mnu.SubMenuOf d
+ . . . . d ##Class(websys.Translation).AddItem("MENU",langid,mnu.SubMenuOf.%Id(),mnu.Name,trans,0)
+ . d mnu.%Close()
+ . s langid=0 f  s langid=$o(^SS("LAN",langid)) q:langid=""  d ##Class(websys.ComponentXRef).MakeDirtyLanguage(langid)
+ d rs.%Close()
+ q $$$OK
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^websys.DictionaryD</DataLocation>
+<DefaultData>DictionaryDefaultData</DefaultData>
+<IdLocation>^websys.DictionaryD</IdLocation>
+<IndexLocation>^websys.DictionaryI</IndexLocation>
+<StreamLocation>^websys.DictionaryS</StreamLocation>
+<Data name="DictionaryClassName">
+<Attribute>%%CLASSNAME</Attribute>
+<Structure>node</Structure>
+<Subscript>0</Subscript>
+</Data>
+<Data name="DictionaryDefaultData">
+<Structure>listnode</Structure>
+<Value name="1">
+<Value>Phrase</Value>
+</Value>
+</Data>
+<Property name="Phrase"/>
+</Storage>
+</Class>
+</Export>

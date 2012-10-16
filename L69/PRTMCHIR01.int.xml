@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTMCHIR01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTMCHIR01 ; IG 07/10/98 ; MEDICARE HIC - Rejection/Payment receive
+ q
+ ; Parameters : None
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j),^TMP("EDI",$j)
+ ; get inbound file directory
+ i '$$select^LVBCTPCT("HIC") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .m CTPCT=PLIST
+ s HICdir=$tr(CTPCT(6),$c(16,17,18),"^\|")
+ s x=$s(HICdir["\":"\",1:"/") i $e(HICdir,$l(HICdir))'=x s HICdir=HICdir_x
+ s HICdir=HICdir_x_CTPCT(5)_".*"
+ ; MS-DOS based system
+ i $zf(-1,"DIR "_HICdir_" /B > ""edi.txt""")
+ ; UNIX based system
+ ;i $zf(-1,"ls "_HICdir_" > ""edi.txt""")
+ s $zt="Error1^"_$zn
+ s FILE="edi.txt"
+ o FILE:("RS"::$c(10,13))
+ f  u FILE r x s xFILE=$p(x," ",$l(x," ")) i xFILE[".",$l(xFILE) s ^TMP($zn,$j," ",xFILE)=""
+END1 c FILE
+END2 s $zt="Error2^"_$zn
+ s xxFILE=$o(^TMP($zn,$j," ","")) i $l(xxFILE) d
+ .s x=$s(HICdir["\":"\",1:"/"),xFILE=$p(HICdir,x,1,$l(HICdir,x)-1)_x_xxFILE
+ .s x=$o(^TMP("EDI",$j,"LOG",""),-1)+1,^TMP("EDI",$j,"LOG",x)="Processing file <"_xFILE_">..."
+ .o xFILE:("RS"::$c(10,13)):1 e  q
+ .s Error="" f  d
+ ..s MESS=$$read(1) i $p(MESS,$c(1)) s Error=10 d Log(Error) q
+ ..s MESS=$p(MESS,$c(1),2) i MESS'="*" q
+ ..s MESS=$$read(1) i $p(MESS,$c(1)) s Error=10 d Log(Error) q
+ ..s MESS="*"_$p(MESS,$c(1),2)
+ ..i MESS="*A" d  k:Error ^TMP("EDI",$j,"REPORT-A",xxFILE) q
+ ...s MESS=$$read(98) i $p(MESS,$c(1)) s Error=10 d Log(Error) q
+ ...s MESS=$p(MESS,$c(1),2)
+ ...s MESS="*A"_MESS,^TMP("EDI",$j,"REPORT-A",xxFILE)=MESS
+ ...f j=1:1:$tr($e(MESS,3,5)," ") d  i Error q
+ ....s MESS=$$read(100) i $p(MESS,$c(1)) s Error=10 d Log(Error) q
+ ....s MESS=$p(MESS,$c(1),2)
+ ....i $e(MESS,1,2)'="*P" s Error=2 d Log(Error) q
+ ....s xLine=$o(^TMP("EDI",$j,"REPORT-A",xxFILE,""),-1)+1,^TMP("EDI",$j,"REPORT-A",xxFILE,xLine)=MESS
+ ....f i=1:1:$tr($e(MESS,3,4)," ") d  i Error q
+ .....s MESS=$$read(40) i $p(MESS,$c(1)) s Error=10 d Log(Error) q
+ .....s MESS=$p(MESS,$c(1),2)
+ .....i $e(MESS,1,2)'="*C" s Error=3 d Log(Error) q
+ .....s x=$o(^TMP("EDI",$j,"REPORT-A",xxFILE,xLine,""),-1)+1,^TMP("EDI",$j,"REPORT-A",xxFILE,xLine,x)=MESS
+ ..i MESS="*S" d  k:Error ^TMP("EDI",$j,"REPORT-S",xxFILE) q
+ ...s MESS=$$read(98) i $p(MESS,$c(1)) s Error=10 d Log(Error) q
+ ...s MESS=$p(MESS,$c(1),2)
+ ...s MESS="*S"_MESS,^TMP("EDI",$j,"REPORT-S",xxFILE)=MESS
+ ...f jj=1:1:$tr($e(MESS,3,5)," ") d  i Error q
+ ....s MESS=$$read(60) i $p(MESS,$c(1)) s Error=10 d Log(Error) q
+ ....s MESS=$p(MESS,$c(1),2)
+ ....i $e(MESS,1,2)'="*X" s Error=2 d Log(Error) q
+ ....s CLAIMID=$e(MESS,7,11),^TMP("EDI",$j,"REPORT-S",xxFILE,CLAIMID)=MESS
+ ....f i=1:1:$tr($e(MESS,3,6)," ") d  i Error q
+ .....s MESS=$$read(83) i $p(MESS,$c(1)) s Error=10 d Log(Error) q
+ .....s MESS=$p(MESS,$c(1),2)
+ .....i $e(MESS,1,2)'="*E" s Error=3 d Log(Error) q
+ .....s x=$o(^TMP("EDI",$j,"REPORT-S",xxFILE,CLAIMID,""),-1)+1,^TMP("EDI",$j,"REPORT-S",xxFILE,CLAIMID,x)=MESS
+ s $zt=""
+ ; print payments reports
+ s xFILE="" f  s xFILE=$o(^TMP("EDI",$j,"REPORT-A",xFILE)) q:xFILE=""  i $$START^PRTREP00(USER,"",xFILE,"MCHIRA")
+ ; print exceptions reports
+ s xFILE="" f  s xFILE=$o(^TMP("EDI",$j,"REPORT-S",xFILE)) q:xFILE=""  i $$START^PRTREP00(USER,"",xFILE,"MCHIRS")
+ q
+read(xx) s (result,ok)="" u xFILE f j=1:1:xx r *x:1 d  i ok q
+ .i  s result=result_$c(x)
+ .e  s ok=100
+ q ok_$c(1)_result
+ ; Error log
+Error1 i $ze["ENDOFFILE" g END1
+ d BACK^%ETN
+ q
+ ; Error log
+Error2 i $ze'["ENDOFFILE" d BACK^%ETN q
+ s x=$o(^TMP("EDI",$j,"LOG",""),-1)+1,^TMP("EDI",$j,"LOG",x)="Finish processing file <"_xFILE_">..."
+ c xFILE k ^TMP($zn,$j," ",xxFILE)
+ ; Move the file
+ s x=$s(HICdir["\":"\",1:"/"),xFILEN=x_$p(xFILE,x,$l(xFILE,x))
+ ; MS-DOS based system
+ i '$zf(-1,"copy "_xFILE_" "_$p(HICdir,x,1,$l(HICdir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN),$zf(-1,"del "_xFILE)
+ ; UNIX based system
+ ;i $zf(-1,"mv "_xFILE_" "_$p(HICdir,x,1,$l(HICdir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN)
+ g END2
+ ; Error log
+Log(xx) n (xFILE,xx)
+ s x=$o(^TMP("EDI",$j,"LOG",""),-1)+1,^TMP("EDI",$j,"LOG",x)="ERROR Reading TRANSMISSION FILE < "_xFILE_" > FROM HIC..."
+ i xx=1 s x=$o(^TMP("EDI",$j,"LOG",""),-1)+1,^TMP("EDI",$j,"LOG",x)="Error code < 1 > - BILL STATEMENT HEADER RECORD INCORRECT..."
+ i xx=2 s x=$o(^TMP("EDI",$j,"LOG",""),-1)+1,^TMP("EDI",$j,"LOG",x)="Error code < 2 > - BILL CLAIM STATEMENT RECORD INCORRECT..."
+ i xx=3 s x=$o(^TMP("EDI",$j,"LOG",""),-1)+1,^TMP("EDI",$j,"LOG",x)="Error code < 3 > - BILL CLAIM EXCEPTION RECORD INCORRECT..."
+ i xx=10 s x=$o(^TMP("EDI",$j,"LOG",""),-1)+1,^TMP("EDI",$j,"LOG",x)="Error code < 10 > - TIMEOUT ERROR..."
+ q
+]]></Routine>
+</Export>

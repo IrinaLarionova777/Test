@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPRINT" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBPRINT ; IG 20/6/98 ; Print controller for M to VB
+ ;
+ ; supported calls
+ ;
+ ; $$open^LVBPRINT(ReportId,Type,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBPRINT(ReportId,Type,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBPRINT(Type)
+ ; $$get^LVBPRINT(ReportId,TYPE)
+ ;
+ ; ROWID=REPORT IDENTIFIER
+ ; TYPE= One of "HDR","PRT","FTR" (Header,Body,Trailer)
+open(ROWID,TYPE,p2,p3,p4,p5,p6,p7,p8,p9) K LINE(TYPE) S LINE(TYPE)=0
+ Q 0
+ ;
+fetch(ROWID,TYPE,p2,p3,p4,p5,p6,p7,p8,p9) N CNT,LINECNT,LINEFEED,OLDLINE,MSGSIZE,LINESREQ
+ S ROWID=$P(ROWID,$C(1),1)
+ S ROWID=$P(ROWID,"||",1)
+ K PLIST
+ ; Complete
+ I LINE(TYPE)="" Q 100
+ ; 
+ S LINESREQ=10000
+ ;
+ S LINEFEED="",OLDLINE="",LINECNT=0,MSGSIZE=0
+ ; 1000 to avoid max array,
+ ; 15000 to keep within MVB Message size
+ ; if ROWID not passed , get ^TMP("PRT",$j)
+ i ROWID'="" d
+ .F CNT=1:1:1000 S LINE(TYPE)=$O(^PR(ROWID,TYPE,LINE(TYPE))) Q:LINE(TYPE)=""  D  Q:LINECNT'<LINESREQ  Q:MSGSIZE>15000
+ .. S PLIST(CNT)=$TR($G(^PR(ROWID,TYPE,LINE(TYPE))),"^",$c(16))
+ .. S MSGSIZE=MSGSIZE+$L(PLIST(CNT))+1 ;(+1 for ^ delimiter)
+ .. I ($E(PLIST(CNT))="#")!($E(PLIST(CNT))="!") S LINEFEED=CNT,LINECNT=LINECNT+1,OLDLINE=LINE(TYPE)
+ ;
+ i ROWID="" d
+ .F CNT=1:1:1000 S LINE(TYPE)=$O(^TMP("PRT",$J,TYPE,LINE(TYPE))) Q:LINE(TYPE)=""  D  Q:LINECNT'<LINESREQ  Q:MSGSIZE>15000
+ .. S PLIST(CNT)=$TR($G(^TMP("PRT",$J,TYPE,LINE(TYPE))),"^",$c(16))
+ .. S MSGSIZE=MSGSIZE+$L(PLIST(CNT))+1 ;(+1 for ^ delimiter)
+ .. I ($E(PLIST(CNT))="#")!($E(PLIST(CNT))="!") S LINEFEED=CNT,LINECNT=LINECNT+1,OLDLINE=LINE(TYPE)
+ ;
+ ; check if it's a full printed line
+ S PLIST=$O(PLIST(""),-1)
+ I LINEFEED'="" S PLIST=LINEFEED,LINE(TYPE)=OLDLINE
+ ; Emulate SQL
+ Q 0
+ ;
+close(TYPE) I $L($G(TYPE)) K LINE(TYPE) k ^TMP("PRT",$j,TYPE)
+ Q 0
+ ; get formated report lines to print to a local printer/fax
+ ; report name is <xx>_RowID_<.txt>
+ ; TYPE : LOCAL-Local
+ ;        FAX-Fax
+ ;        VIEW-View
+ ; fax  : fax number and recipient
+ ; dROWID
+get(REPORT,TYPE,fax,dROWID) n (REPORT,TYPE,fax,dROWID)
+ s REPORT=$g(REPORT),TYPE=$g(TYPE),fax=$g(fax),dROWID=$g(dROWID),(file,result)=""
+ ; local printer
+ i TYPE="LOCAL" s pathDB=$$seldata^MVBCFSM(1,45),pathVB=$$seldata^MVBCFSM(1,30) d
+ .f j="\","/" i pathDB[j s:$e(pathDB,$l(pathDB))'=j pathDB=pathDB_j
+ .f j="\","/" i pathVB[j s:$e(pathVB,$l(pathVB))'=j pathVB=pathVB_j
+ .s path=$s($l(pathDB):pathDB,1:pathVB)
+ .i $l(path) s file="xx"_REPORT_".local"
+ .i $l(file) s value=$$print^SSPRINT(REPORT,"LOCAL",path_file) d update^SSPRINQ1(dROWID,value) i 'value s result=pathVB_file
+ ; fax
+ i TYPE="FAX" s pathDB=$$seldata^MVBCFSM(1,46),pathVB=$$seldata^MVBCFSM(1,31) d
+ .f j="\","/" i pathDB[j s:$e(pathDB,$l(pathDB))'=j pathDB=pathDB_j
+ .f j="\","/" i pathVB[j s:$e(pathVB,$l(pathVB))'=j pathVB=pathVB_j
+ .s path=$s($l(pathDB):pathDB,1:pathVB)
+ .i $l(path) d
+ ..f j="\","/" i path[j s:$e(path,$l(path))'=j path=path_j
+ ..s file="xx"_REPORT_".fax"
+ .i $l(file) s value=$$print^SSPRINT(REPORT,"FAX",path_file,fax) d update^SSPRINQ1(dROWID,value) i 'value s result=pathVB_file
+ ; view
+ i TYPE="VIEW" s pathDB=$$seldata^MVBCFSM(1,45),pathVB=$$seldata^MVBCFSM(1,30) d
+ .f j="\","/" i pathDB[j s:$e(pathDB,$l(pathDB))'=j pathDB=pathDB_j
+ .f j="\","/" i pathVB[j s:$e(pathVB,$l(pathVB))'=j pathVB=pathVB_j
+ .s path=$s($l(pathDB):pathDB,1:pathVB)
+ .i $l(path) s file="xx"_REPORT_".view"
+ .i $l(file) s value=$$print^SSPRINT(REPORT,"FAX",path_file) d update^SSPRINQ1(dROWID,value) i 'value s result=pathVB_file
+ q result
+]]></Routine>
+</Export>

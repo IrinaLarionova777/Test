@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR2SPB02" type="INT" languagemode="0"><![CDATA[
+PRTDR2SPB02   ;SPARM; Doctors Reports printing (single test set - antibiotic panel) - SPARM ;MEDLAB Int;@gol;
+ ;
+ ; supported calls :
+ ;
+ ; $$print^PRTDR201(vtsRID,type,DH)
+ ;
+ ; type  : P - print
+ ;         V - view from Enquiry
+ ;           - view from Entry
+ ; DH    : D - Doctor
+ ;         H - Hospital
+print(vtsRID,type,DH) ;n (vtsRID,type,DH,tsLM,tsWD) s vtsRID=$g(vtsRID),type=$g(type),DH=$g(DH)
+ n (vtsRID,type,DH,tsLM,tsWD,dh1,dh2,mismpl,PAR1)
+ s vtsRID=$g(vtsRID),type=$g(type),DH=$g(DH),dh1=$g(dh1),dh2=$g(dh2),mismpl=$g(mismpl)
+ s test=$p(vtsRID,"||",2),ColWidth=9,ColLeft=50,tsLM=$g(tsLM),tsWD=$g(tsWD)      ;ColLeft - øèðèíà ñòîëáöà äëÿ àíòèáèîòèêîâ
+ ;
+ ; check for margin changes
+ s margin="",%routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Margin^"_%routine i $l($t(@LineRoutine)) x "s margin=$$Margin^"_%routine_"()"
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .s tsLM=PLIST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ i '$$select^MVBCFLAB(1) d
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ k ^TMP($zn,$j,"ANT")
+ k FORMAT i '$$getit^LVBCTTSF(test,,"Y") m FORMAT=PLIST
+ ;
+ ;------------ îïðåäåëåíèå ÿçûêà äëÿ ïå÷àòè îò÷åòà -------------
+ i dh1="D",$l(dh2) s lan=$p($g(^TTAB("DR",$P(dh2,$C(1)))),"\",25)    ;ÿçûê äëÿ âðà÷à
+ i dh1="H",$l(dh2) s lan=$p($g(^TTAB("RH",$P(dh2,$C(1)))),"\",31)    ;ÿçûê äëÿ ìåñòîïîëîæåíèÿ
+ i $g(lan)="",$g(epis)'="" s lan=$p($g(^TEPI(epis)),"\",61)  ;ÿçûê äëÿ ïàöèåíòà
+ i $g(lan)="" s lan=$P($G(^CF("SM",1)),"^",10)               ;ÿçûê ïî óìîë÷. äëÿ ñèñòåìû
+ s lan=$p($g(lan),$c(1))
+ ;-------------------------------------
+ ;
+ ; print an antibiotic panel
+ s x1="" f  s x1=$o(FORMAT(x1)) q:x1=""  i $p(FORMAT(x1),$c(2),18)="V" d
+ .s rowid=vtsRID_"||"_$p(FORMAT(x1),$c(2),10)
+ .i '$$select^LVBVISTD(rowid),$l(PLIST(3)) d
+ ..i '$$select^LVBCTBUG(PLIST(3),"Y") d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...s cnt=$o(^TMP($zn,$j,"ANT",0,""),-1)+1,^TMP($zn,$j,"ANT",0,cnt)=$s($l(PLIST(3))<ColWidth:PLIST(3),1:PLIST(2))
+ ...i $$open^LVBVISTA(rowid)
+ ...f  q:$$fetch^LVBVISTA(rowid)  d
+ ....i $l(PLIST(2)),$l(PLIST(3)) d
+ .....i $l(type),PLIST(4)'="Y" q
+ .....f j=2:1:6 s $p(^TMP($zn,$j,"ANT",0,cnt,$p(PLIST(2),$c(1))),$c(2),j)=PLIST(j)
+ ...i $$close^LVBVISTA()
+ ... ; check if there is a reportable antibiotic
+ ...i $d(^TMP($zn,$j,"ANT",0,cnt))\10=0 k ^TMP($zn,$j,"ANT",0,cnt)
+ ...s (ok,ant)="" f  s ant=$o(^TMP($zn,$j,"ANT",0,cnt,ant)) q:ant=""  d  i ok
+ ....i $l(type),$p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),4)'="Y" q
+ ....s ok=1
+ ...i 'ok k ^TMP($zn,$j,"ANT",0,cnt)
+ ; 
+ ; sort antibiotics
+ s ColNum=0
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,"ANT",0,cnt)) q:cnt=""  d
+ .s ^TMP($zn,$j,"ANT",99,cnt)=ColNum,ColNum=ColNum+1
+ .s ant="" f  s ant=$o(^TMP($zn,$j,"ANT",0,cnt,ant)) q:ant=""  d
+ ..s seq=$p($g(^TTAB("ANT",ant)),"\",2) s:seq'="" seq=+seq
+ ..s ^TMP($zn,$j,"ANT",1,+seq,ant,cnt)=""
+ i '$d(^TMP($zn,$j,"ANT",0)) q 0
+ d LN^PRTDR00(),LN^PRTDR00()             ;äîï.ïðîïóñê ñòðîê ïåðåä ïå÷àòüþ ïàíåëè àíòèáèîòèêîâ
+ d ADD^PRTDR00(,"~RES-ABP"),ADD^PRTDR00(,$c(13))
+ ;
+ ; print header panel
+ d ADD^PRTDR00(tsLM+margin,$S(lan=1:"Àíòèáèîòèê/Êóëüòóðà",1:"Antibiotic/Culture:"))  ;if lan=1 then "Ðóññêèé ÿçûê"
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,"ANT",0,cnt)) q:cnt=""  d
+ .s name=^TMP($zn,$j,"ANT",0,cnt)        ;ñîêðàùåííîå íàèìåíîâàíèå ìèêðîîðãàíèçìà
+ .s ColNum=^TMP($zn,$j,"ANT",99,cnt)
+ .d ADD^PRTDR00(tsLM+ColLeft+(ColWidth*ColNum)+margin,"   "_cnt)  ;name  ;"Organism "_cnt)
+ d LN^PRTDR00()
+ d ADD^PRTDR00(tsLM+margin,"-------------------") s line="",$p(line,"-",ColWidth-1)=""
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,"ANT",0,cnt)) q:cnt=""  d
+ .d ADD^PRTDR00(tsLM+ColLeft+(ColWidth*(cnt-1))+margin,line)  ;"--"_cnt_"--")  ;_line)
+ d LN^PRTDR00()
+ s lineRZD="",$P(lineRZD,".",ColLeft)=""
+ s seq="" f  s seq=$o(^TMP($zn,$j,"ANT",1,seq)) q:seq=""  d
+ .s ant="" f  s ant=$o(^TMP($zn,$j,"ANT",1,seq,ant)) q:ant=""  d
+ ..s cnt="" f first=0:1 s cnt=$o(^TMP($zn,$j,"ANT",1,seq,ant,cnt)) q:cnt=""  d
+ ...s ColNum=^TMP($zn,$j,"ANT",99,cnt)
+ ...s antibiotik=$p($p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),2),$c(1),2)  
+ ...i 'first d ADD^PRTDR00(tsLM+margin,$E(antibiotik_lineRZD,1,ColLeft))
+ ... ; non printable/viewable antibiotics
+ ...i $l(type),$p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),4)'="Y" q
+ ... ; print result
+ ...s (code,result)=$p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),3)
+ ...i $p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),4)'="Y" s result=result_" NR"
+ ...i $G(result)="" s result="-"
+ ...i $l(result) d
+ ....i $G(code)="S" d ADD^PRTDR00(,"~BOLD")
+ ....s result="  "_result
+ ....d ADD^PRTDR00(tsLM+ColLeft+(ColWidth*(cnt-1))+margin,result)
+ ....d ADD^PRTDR00(,"~NORMAL")
+ ..d LN^PRTDR00()
+ d ADD^PRTDR00(,"~NORMAL"),ADD^PRTDR00(,$c(13))
+ d LN^PRTDR00()
+ d ADD^PRTDR00(tsLM+margin,$S(lan=1:"Êîììåíò:  S = ×óâñòâèòåëüíûé  I = Óìåðåííî óñòîé÷èâûé  R = Óñòîé÷èâûé",1:"Comment:  S = Sensitive  I = Intermediate  R = Resistant"))
+ d LN^PRTDR00()         
+ k ^TMP($zn,$j,"ANT")
+ q 0
+]]></Routine>
+</Export>

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF109THAI02" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF109THAI02(mi) ; ML 30/6/98 ; BIOMERIEUX Vitek - Thailand BGH
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),eot=$c(4),enq=$c(5),gs=$c(29),rs=$c(30)
+ s ti="E9999",tb(1)="E9901",tb(2)="E9902",tb(3)="E9903"
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 e  d SCAN q
+ i $c(R)=enq d
+ .d receive(R),send(ack)
+ .s record=$tr($$read^MIF000(rs,gs),rs) q:'$l(record)
+ .d trace^MIF000(mi,$h_" : "_record,"H<--M"),send(ack)
+ .i $p(record,"|")="mtrsl" d
+ ..s (sample,epis,surname,result,result1,result2,date,time,QC,TS)=""
+ ..i '$l(epis) f j=1:1:$l(record,"|") i $e($p(record,"|",j),1,2)="ci" s epis=$tr($e($p(record,"|",j),3,99),"     ") d  q
+ ...i $l(epis),$d(^TMIF(mi,19,epis)) s TS=$p(^TMIF(mi,19,epis),"||",2),epis=$p(^TMIF(mi,19,epis),"||")
+ ..i '$l(epis) f j=1:1:$l(record,"|") i $e($p(record,"|",j),1,2)="pi" s epis=$tr($e($p(record,"|",j),3,99),"     ") d  q
+ ...i $l(epis),$d(^TMIF(mi,19,epis)) s TS=$p(^TMIF(mi,19,epis),"||",2),epis=$p(^TMIF(mi,19,epis),"||")
+ ..s orgCh="" f j=1:1:$l(record,"|") i $e($p(record,"|",j),1,2)="t1" s orgCh="ORG"_$tr($e($p(record,"|",j),3,99)," ")_TS q
+ .. ; vitek results
+ ..f j=1:1:$l(record,"|") i $e($p(record,"|",j),1,2)="o1" s result1=$tr($e($p(record,"|",j),3,99)," ")_$c(par10) q
+ ..i $l(epis),$l(result1) s result=result1 d  q
+ ...f j1=1:1:$l(record,"|") d
+ ....i $e($p(record,"|",j1),1,2)="a1" s result=result_$tr($e($p(record,"|",j1),3,99)," ")_$c(par28) d
+ .....s stop=0,xx="" f j2=j1+1:1:$l(record,"|") d  q:stop
+ ......i $e($p(record,"|",j2),1,2)="a3" s xx=$tr($e($p(record,"|",j2),3,99)," ")
+ ......i $e($p(record,"|",j2),1,2)="a4" s stop=1,result=result_$tr($e($p(record,"|",j2),3,99)," ")_$c(par28)_xx_$c(par27)
+ ......i $e($p(record,"|",j2),1,2)="a1" s stop=1
+ ......i $e($p(record,"|",j2),1,2)="ra" s stop=1
+ ...d file^MIF000(mi,sample,epis,surname,"ABC"_$c(par10)_"Y",date,time,QC)
+ ...i $l(orgCh) s $p(result,$c(par10),3)=orgCh
+ ...d fileant^MIF000(mi,sample,epis,result)
+ .. ; ba results
+ ..f j=1:1:$l(record,"|") i $e($p(record,"|",j),1,2)="tb" s result2=$tr($e($p(record,"|",j),3,99)," ") q
+ ..s codeT=$s($e(result2,1,3)="SAB":"TB1",$e(result2,1,3)="SPB":"TB3",$e(result2,1,3)="SNB":"TB2",1:"")
+ ..s codeR=$s($l(codeT):codeT_"R",1:"")
+ ..i $l(epis),$l(codeT) d
+ ...s result=result_codeT_$c(par10)_result2_$c(par11)
+ ...f j1=1:1:$l(record,"|") d
+ ....i $e($p(record,"|",j1),1,2)="rj" d
+ .....s result=result_codeR_$c(par10)_$tr($e($p(record,"|",j1),3,99)," ")_$c(par11)
+ .....d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+SCAN ;
+ s tg="" f  s tg=$o(^TMIF(mi,"TG",tg)) q:tg=""  d
+ .d scanall^MIF000(mi,tg)
+ .s epis="" f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  d
+ ..s stop=1
+ ..s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  i $d(^TMIF(mi,0,ts)) d  q:'stop
+ ...s ba=0 f j=1,2 i $d(^TTAB("TC",tb(j),1,ts)) s ba=1 q
+ ...s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d  q:'stop
+ ....i ba d  q:'stop
+ .....f j=1,2 i $d(^TEPI(epis,1,ts,tscnt,"DATA",tb(j))) s stop=0 q
+ ....s stop=0
+ ..i 'stop d SEND(epis)
+ q
+SEND(epis) s epis=$g(epis)
+ d send(enq)
+ s stop=1 f j=1:1:2 r *x:5 i $c(x)=ack s stop=0 q
+ d receive(x)
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  i $d(^TMIF(mi,0,ts)) d
+ .s ba=0 f j=1,2 i $d(^TTAB("TC",tb(j),1,ts)) s ba=1 q
+ .s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d
+ ..s (data1,data2)=""
+ ..i ba d  i '$l(data2) s $p(^TMIF(mi,20,epis),"\",2)="" q
+ ...f j=1,2 i $d(^TEPI(epis,1,ts,tscnt,"DATA",tb(j))) d
+ ....s data2=data2_"tb"_$p(^TEPI(epis,1,ts,tscnt,"DATA",tb(j)),"\")_"|"
+ ..s xx=$$new(epis_"||"_ts_"||"_tscnt) i xx d
+ ...s data1="mtrsl|pi"_$tr($$mrn^LVBEPVIS(epis),"-")_"|si|ci"_xx_"|x1"_epis_"|"
+ ...s data=data1_data2
+ ...i 'stop d
+ ....d send(stx)
+ ....w rs_data,*-3 d trace^MIF000(mi,$h_" : "_"RS"_data,"H-->M")
+ ....w gs_$$CHSUM(rs_data_gs),*-3
+ ....d trace^MIF000(mi,$h_" : "_"GS"_$$CHSUM(rs_data_gs),"H-->M")
+ ....s stop=1 f j=1:1:2 r *x:5 i $c(x)=ack s stop=0 q
+ ....d receive(x)
+ ....i 'stop d send(etx)
+ d send(eot)
+ q
+new(vts) s vts=$g(vts)
+ f j=1:1:3 s @("x"_j)=$p(vts,"||",j)
+ s xx=$p($g(^TEPI(x1,1,x2,x3,"DATA",ti)),"\")
+ i '$l(xx) d
+ .s xx=$$next("^CF(""VITEK-CNT"")")#1000000 i $l(xx) d
+ ..s ^TMIF(mi,19,xx)=vts
+ ..s ^TEPI(x1,1,x2,x3,"DATA",ti)=xx
+ q xx
+next(glo) n a
+ l +@glo
+ s a=$g(@glo)+1,@glo=a
+ l -@glo
+ q a
+CHSUM(x) s x=$g(x),sum=0
+ f j=1:1:$l(x) s sum=sum+$a(x,j)
+ q $zh(sum#256\16)_$zh(sum#256#16)
+send(aa) s aa=$g(aa)
+ w aa,*-3 d trace^MIF000(mi,$h_" : "_$s(aa=ack:"ACK",aa=stx:"STX",aa=enq:"ENQ",aa=eot:"EOT",aa=etx:"ETX",1:$a(aa)),"H-->M")
+ q
+receive(aa) s aa=$g(aa)
+ d trace^MIF000(mi,$h_" : "_$s($c(aa)=ack:"ACK",$c(aa)=stx:"STX",$c(aa)=enq:"ENQ",$c(aa)=eot:"EOT",$c(aa)=etx:"ETX",1:aa),"H<--M")
+ q
+]]></Routine>
+</Export>

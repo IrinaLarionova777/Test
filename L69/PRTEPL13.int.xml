@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTEPL13" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTEPL13 ; IG 21/1/99 ; episode patient label - Launceston
+ q
+ ; Parameters :  1. Episode number
+ ;               2. Label code
+ ;               3. Quantity (not in use)
+ ;               4. PC-name
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) K ^TMP($ZN,$J)
+ d INIT,BODY
+ i '$l(PAR2) d
+ .k ^TMP("WS",$j) m ^TMP("WS",$j)=^TMP($zn,$j,"REPORT")
+ .s label="" f  s label=$o(^TMP("WS",$j,label)) q:label=""  d
+ ..d START^PRTREP00(USER,,PAR1_"\"_label,"EPL")
+ .k ^TMP("WS",$j)
+ i $l(PAR2) d PRINT
+CREND i '$$select^LVBPRPR(REPID) S PLIST(12)=PAR2_"-"_PAR1,PLIST(9)="M" I $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ Q
+BODY ; create temporary printing file
+ i $l(PAR2) d
+ .i $$open^LVBVISTS(PAR1)
+ .f  q:$$fetch^LVBVISTS(PAR1)  s ts=$p(PLIST(3),$c(1)),vtsRID=$p(PLIST(1),$c(1)) d
+ ..s (label,max)=""
+ ..s label=$$seldata^LVBCTTS(ts,23),max=$$seldata^LVBCTLB(label,4)
+ ..s label=$p(label,$c(1)),max=$p(max,$c(1))
+ ..i PAR2'=label q
+ ..i $l(label),max d
+ ...s xxLABEL=$s(max>1:label,1:label_" "_vtsRID)
+ ...s ^TMP($zn,$j,"REPORT",xxLABEL,ts)=$g(^TMP($zn,$j,"REPORT",xxLABEL,ts))+1
+ ...s ^TMP($zn,$j,"REPORT",xxLABEL)=max
+ .i $$close^LVBVISTS()
+ .s label="" f  s label=$o(^TMP($zn,$j,"REPORT",label)) q:label=""  d
+ ..s max=^TMP($zn,$j,"REPORT",label),^TMP($zn,$j,"REPORT",label)=""
+ ..s (cnt,ts)="" f  s ts=$o(^TMP($zn,$j,"REPORT",label,ts)) q:ts=""  d
+ ...i label'[" " s cnt=cnt+^(ts) q
+ ...s cnt=^(ts),xx=cnt\max s:cnt#max xx=xx+1 s ^TMP($zn,$j,"REPORT",label)=xx
+ ..i label'[" " s xx=cnt\max s:cnt#max xx=xx+1 s ^TMP($zn,$j,"REPORT",label)=xx
+ i '$l(PAR2) d
+ .i $$open^LVBVISTS(PAR1)
+ .f  q:$$fetch^LVBVISTS(PAR1)  s ts=$p(PLIST(3),$c(1)),vtsRID=$p(PLIST(1),$c(1)) d
+ ..s label=""
+ ..s label=$$seldata^LVBCTTS(ts,23),max=$$seldata^LVBCTLB(label,4)
+ ..s label=$p(label,$c(1))
+ ..i $l(label),max s ^TMP($zn,$j,"REPORT",label)=""
+ .i $$close^LVBVISTS()
+ q
+PRINT s label="" f  s label=$o(^TMP($zn,$j,"REPORT",label)) q:label=""  s cnt=^(label) i cnt d
+ . ; micro labels
+ .i $e(label)="M" d
+ ..s vtsRID=$p(label," ",2),epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3)
+ ..s synonym=$$seldata^LVBCTTS(test,4)
+ ..s date=$$seldata^LVBEPVIS(epis,10)
+ ..s (stop,ws,wsN,seq)="" f  s ws=$o(^TEPI(epis,"WS",ws)) q:ws=""  d  q:stop
+ ...f  s wsN=$o(^TEPI(epis,"WS",ws,wsN)) q:wsN=""  d  q:stop
+ ....i $d(^TWKS(ws,2,wsN,"EP",epis,"TEST",test,tscnt)) s stop=1,seq=^TWKS(ws,2,wsN,"EP",epis)
+ ..i $l(ws),$l(wsN),'$l(seq) d
+ ...s (seq,ep)="" f  s ep=$o(^TWKS(ws,2,wsN,"EP",ep)) q:ep=""  i ^(ep)>seq s seq=^(ep)
+ ...s seq=seq+1,^TWKS(ws,2,wsN,"EP",epis)=seq
+ ...s x1="" f  s x1=$o(^TWKS(ws,2,wsN,"EP",epis,"TEST",x1)) q:x1=""  d
+ ....s (ok,x)="" f  s x=$o(^TTAB("TS",x1,0,x)) q:x=""  i $p(^(x),"\",8)="E0125" s ok=1 q
+ ....i ok s x2="" f  s x2=$o(^TWKS(ws,2,wsN,"EP",epis,"TEST",x1,x2)) q:x2=""  d
+ .....s ^TEPI(epis,1,x1,x2,"DATA","E0125")=ws_" "_wsN_" "_seq
+ ..f j=1:1:cnt d
+ ...D ADD^SSPRINT(REPID,"PRT","^XA")
+ ...D ADD^SSPRINT(REPID,"PRT","^LH30,30")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,0^B3N,N,40,N,N^FD"_epis_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,70^AD,N,12^FD"_synonym_"^FS")
+ ...i $l(ws),$l(wsN) D ADD^SSPRINT(REPID,"PRT","^FO0,100^AB,N,16^FD"_ws_" "_wsN_" "_seq_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,140^AD,N,12^FD"_$$extdate2^SSUTIL4(date)_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,170^AB,N,16^FD"_epis_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^XZ")
+ . ; new micro label
+ .i $e(label)="A" d
+ ..s vtsRID=$p(label," ",2),epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3)
+ ..s synonym=$$seldata^LVBCTTS(test,4)
+ ..s date=$$seldata^LVBEPVIS(epis,10),name1=$$seldata^LVBEPVIS(epis,3),name2=$$seldata^LVBEPVIS(epis,4)
+ ..s (stop,ws,wsN,seq)="" f  s ws=$o(^TEPI(epis,"WS",ws)) q:ws=""  d  q:stop
+ ...f  s wsN=$o(^TEPI(epis,"WS",ws,wsN)) q:wsN=""  d  q:stop
+ ....i $d(^TWKS(ws,2,wsN,"EP",epis,"TEST",test,tscnt)) s stop=1,seq=^TWKS(ws,2,wsN,"EP",epis)
+ ..i $l(ws),$l(wsN),'$l(seq) d
+ ...s (seq,ep)="" f  s ep=$o(^TWKS(ws,2,wsN,"EP",ep)) q:ep=""  i ^(ep)>seq s seq=^(ep)
+ ...s seq=seq+1,^TWKS(ws,2,wsN,"EP",epis)=seq
+ ...s x1="" f  s x1=$o(^TWKS(ws,2,wsN,"EP",epis,"TEST",x1)) q:x1=""  d
+ ....s (ok,x)="" f  s x=$o(^TTAB("TS",x1,0,x)) q:x=""  i $p(^(x),"\",8)="E0125" s ok=1 q
+ ....i ok s x2="" f  s x2=$o(^TWKS(ws,2,wsN,"EP",epis,"TEST",x1,x2)) q:x2=""  d
+ .....s ^TEPI(epis,1,x1,x2,"DATA","E0125")=ws_" "_wsN_" "_seq
+ ..f j=1:1:cnt d
+ ...D ADD^SSPRINT(REPID,"PRT","^XA")
+ ...D ADD^SSPRINT(REPID,"PRT","^LH30,30")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,0^B3N,N,40,N,N^FD"_epis_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,70^AD,N,12^FD"_synonym_"^FS")
+ ...i $l(ws),$l(wsN) D ADD^SSPRINT(REPID,"PRT","^FO0,97^AB,N,16^FD"_ws_" "_wsN_" "_seq_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,134^AD,N,12^FD"_$$extdate2^SSUTIL4(date)_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,161^AB,N,16^FD"_epis_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,188^AB,N,16^FD"_name1_" "_$e(name2)_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^XZ")
+ .i $e(label)="S" d
+ ..s vtsRID=$p(label," ",2)
+ ..s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3)
+ ..s synonym=$$seldata^LVBCTTS(test,4)
+ ..s specimen=$$seldata^LVBCTSPE($$seldata^LVBVISTS(vtsRID,47),3)
+ ..i $$select^LVBEPVIS(epis,"Y")
+ ..k VISIT m VISIT=PLIST
+ ..s Pname=VISIT(3)_", "_VISIT(4)
+ ..f j=1:1:cnt d
+ ...D ADD^SSPRINT(REPID,"PRT","^XA")
+ ...D ADD^SSPRINT(REPID,"PRT","^LH30,30")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,20^AD,N,12^FD"_Pname_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,50^AD,N,10^FDDOB:"_$$extdate2^SSUTIL4(VISIT(6))_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,75^AD,N,15^FD"_synonym_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,110^AD,N,15^FD"_epis_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,145^AD,N,10^FD"_specimen_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,170^AD,N,10^FDDOC:"_$$extdate2^SSUTIL4(VISIT(12))_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^XZ")
+ .i $e(label)="B" d
+ ..s Lcode=$p(label," ",1),vtsRID=$p(label," ",2),Lname=""
+ ..s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3)
+ ..s synonym=$$seldata^LVBCTTS(test,4)
+ ..s Lname=$$seldata^LVBCTLB(Lcode,3)
+ ..i $$select^LVBEPVIS(epis,"Y")
+ ..k VISIT m VISIT=PLIST
+ ..s Pname=VISIT(3)_", "_VISIT(4)
+ ..f j=1:1:cnt d
+ ...D ADD^SSPRINT(REPID,"PRT","^XA")
+ ...D ADD^SSPRINT(REPID,"PRT","^LH30,30")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,20^AD,N,12^FD"_Pname_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,52^AD,N,15^FD"_epis_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,99^AD,N,15^FD"_synonym_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,133^AD,N,10^FD"_Lname_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,165^AD,N,15^FD"_$$extdate2^SSUTIL4(VISIT(12))_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^XZ")
+ .i $e(label)="T" d
+ ..s Lcode=$p(label," ",1),vtsRID=$p(label," ",2),Lname=""
+ ..s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3)
+ ..s Lname=$$seldata^LVBCTLB(Lcode,3)
+ ..i $$select^LVBEPVIS(epis)
+ ..f j=1:1:50,52:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k VISIT m VISIT=PLIST
+ ..s Pname=VISIT(3)_", "_VISIT(4)
+ ..f j=1:1:cnt d
+ ...D ADD^SSPRINT(REPID,"PRT","^XA")
+ ...D ADD^SSPRINT(REPID,"PRT","^LH30,30")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,20^AD,N,13^FDColl.Date : "_$$extdate2^SSUTIL4(VISIT(12))_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,50^AD,N,13^FD"_$p(VISIT(51),$c(1),2)_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,80^AD,N,13^FDVisit No  : "_Lname_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,110^AD,N,13^FDRego No : ^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO110,105^AD,N,15^FD"_$p(VISIT(65),",",2)_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,145^AD,N,13^FD"_Pname_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^FO0,180^AD,N,13^FDD.O.B.    : "_$$extdate2^SSUTIL4(VISIT(6))_"^FS")
+ ...D ADD^SSPRINT(REPID,"PRT","^XZ")
+ q
+LN d ADD^SSPRINT(REPID,"PRT","!")
+ q         
+]]></Routine>
+</Export>

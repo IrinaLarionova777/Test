@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPITOUTESP04" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBPITOUTESP04 ; MIC 2/11/2003 ; CREATE PIT FORMAT FILE - ECHEVARNE
+ ; supported calls:
+ ;
+ ; create^LVBPITOUTESP04
+ ; ---------------------------------
+ q
+create ;
+ n
+ d BUCLE^A
+ l +^TEDI("OUT-DATA")
+ k ^TMP($zn,$j,1)
+ s (dat,pat,hos,epis,table,rowid,x)=""
+ s env=$o(^TEDI("OUT-DATA","PIT",""),-1)+1
+ f  s dat=$o(^TEDI("OUT",dat)) q:dat=""  d
+ . f  s pat=$o(^TEDI("OUT",dat,"HOSP",pat)) q:pat=""  d
+ .. f  s hos=$o(^TEDI("OUT",dat,"HOSP",pat,hos)) q:hos=""  d
+ ... f  s epis=$o(^TEDI("OUT",dat,"HOSP",pat,hos,epis)) q:epis=""  d
+ .... l +^DBLock("Patient",epis):0 e  q
+ .... f  s table=$o(^TEDI("OUT",dat,"HOSP",pat,hos,epis,table)) q:table=""  d
+ ..... f  s rowid=$o(^TEDI("OUT",dat,"HOSP",pat,hos,epis,table,rowid)) q:rowid=""  d
+ ...... f  s x=$o(^TEDI("OUT",dat,"HOSP",pat,hos,epis,table,rowid,x)) q:x=""  d
+ ....... s reg=$g(^(x)) s typmov=$p(reg,"\",3) ;s typmov=$p(^(x),"\",3)
+ ....... k ^TEDI("OUT",dat,"HOSP",pat,hos,epis,table,rowid,x)
+ ....... I table=46 i pat'="CIMA"&(pat'="SRAF")&(pat'="TEKNON")&(pat'="DOSMA") q:"-Add-Del-"'[("-"_typmov_"-")
+ ....... I table=46 i (pat="DOSMA") q:table=42  q:"-Add-Del-Auth-DeAuth-"'[("-"_typmov_"-")
+ ....... s ^TMP($zn,$j,1,epis)=""
+ ....... Q:pat="T1"
+ ....... I pat="TEKNON" D  q
+ ........ ;Anular para cuando se dan de alta desde teknon
+ ........ ;i table=42 i typmov="Add" k ^ESP04TEKP("OUT",dat,"HOSP",pat,hos,epis,table,rowid,x) q
+ ........ ;Si no se modifican alguno de los campos ha enviar termina
+ ........ ;No enviem nomes demografics a Teknon Mc_Fly
+ ........ ;i table=42 i ",17,100,12,3,99,4,5,6,134,112,150,88,119,126,"'[(","_$p(reg,"\",1)_",") q
+ ........ ;i table=42 s ^ESP04TEKNON(epis,"P")=""
+ ........ i table=46,typmov="Add" s ^ESP04TEKNON(epis,"P",$P(rowid,"||",2))=typmov
+ ........ i table=46,typmov="Del" s ^ESP04TEKNON(epis,"B",$P(rowid,"||",2))=typmov
+ ........ i table=46,typmov="Auth" s ^ESP04TEKNON(epis,"R",$P(rowid,"||",2))=typmov
+ ....... I pat="DOSMA" D  q
+ ........ ;i table=42 s ^ESP04DOSMA(epis,"P")=""
+ ........ i table=46,typmov="Add" s ^ESP04DOSMA(epis,"A",$P(rowid,"||",2))=typmov
+ ........ i table=46,typmov="Del" s ^ESP04DOSMA(epis,"B",$P(rowid,"||",2))=typmov
+ ........ i table=46,typmov="Auth" s ^ESP04DOSMA(epis,$S($D(^TMIF("DOSMA",16,epis,"DeAuth",$P(rowid,"||",2))):"Z",1:"R"),$P(rowid,"||",2))=typmov D
+ ......... K ^TMIF("DOSMA",16,epis,"DeAuth",$P(rowid,"||",2))
+ ........ i table=46,typmov="DeAuth" s ^TMIF("DOSMA",16,epis,"DeAuth",$P(rowid,"||",2))=typmov
+ ....... ;EL RESTO ES PARA EL STANDART
+ ....... ;Anular para cuando se dan de alta desde teknon
+ ....... ;i table=42 i typmov="Add" k ^ESP04TEKP("OUT",dat,"HOSP",pat,hos,epis,table,rowid,x) q
+ ....... ;Si no se modifican alguno de los campos ha enviar termina
+ ....... i table=42,typmov="Edit" q  ;SAN RAFAEL NO MODIFICA DATOS DE LA PETICION
+ ....... i table=42 i ",7,6,26,5,150,127,126,125,15,134,27,23,89,8,146,140,143,142,141,144,139,147,138,135,136,133,132,131,145,134,148,149,"'[(","_$p(reg,"\",1)_",") q
+ ....... i table=46,typmov="Add" s ^ESP04STAND(pat,epis,"P")=""
+ ....... i table=46,typmov="Del" s ^ESP04STAND(pat,epis,"P")=""
+ ....... i table=46 s ^ESP04STAND(pat,epis,"R",$P(rowid,"||",2),x)=typmov
+ .... l -^DBLock("Patient",epis)
+ s env=$zts
+ f  s epis=$o(^TMP($zn,$j,1,epis)) q:epis=""  d
+ . k REG
+ . i $$Gen(epis,.REG) q  ; falta veure si es torna a deixar pendent o no
+ . s idx=$o(^TEDI("OUT-DATA","PIT",env,""),-1)+1 m ^TEDI("OUT-DATA","PIT",env,idx)=REG
+ . s ^TEDI("OUT-DATA","PIT",env,idx)=$h
+ k ^TMP($zn,$j,1)
+ l -^TEDI("OUT-DATA")
+ q
+receive(REG,PLIST) ;
+ n (REG,PLIST)
+ s sep="#"
+ s cnt=""
+ f  s cnt=$o(REG(cnt)) q:cnt=""!(cnt>5)  d
+ . d @cnt s reg=REG(cnt) d UNREG
+ q
+Gen(epis,REG) ;
+ n (epis,REG)
+ s sep="#",MAL=0
+ i $$select^LVBEPVIS(epis) s REG="DELETED" q 1
+ k REG
+ F I=1:1:5 D @I s:I=1&($e(PLIST(2),1,4)="JOB_") $p(idx,",",1)=45 D REG S REG(I)=reg
+ ;llista ts
+ k ^TMP($zn,$j,2)
+ s (ts,tsc)="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . i ts'="Z9999" i '$d(^trak2eche("TS",ts)) S MAL=1 s ^incident(epis,$o(^incident(epis,""),-1)+1)="Prueba "_ts_" no tiene equivalencia a Mumps" q
+ . f  s tsc=$o(^TEPI(epis,1,ts,tsc)) q:tsc=""  d
+ .. s sts=$P(^TEPI(epis,1,ts,tsc),"\",29)
+ .. s tse=$g(^trak2eche("TS",ts))
+ .. q:tse=""
+ .. s stse=""
+ .. i sts'="" d
+ ... s stse=$g(^trak2eche("TG",sts))
+ ... i stse="" S MAL=1 s ^incident(epis,$o(^incident(epis,""),-1)+1)="Perfil "_sts_" no tiene equivalencia a Mumps" q
+ .. f i=1:1:$l(tse,",") d
+ ... s tsew=$p(tse,",",i)
+ ... s tsec=$p(tsew,"|",1)
+ ... s tses=$p(tsew,"|",2)
+ ... i '$l(tses) s tses=stse
+ ... s ^TMP($zn,$j,2,tsec)=tses
+ s REG(6)=""
+ f  s ts=$o(^TMP($zn,$j,2,ts)) q:ts=""  d
+ . s sts=^TMP($zn,$j,2,ts)
+ . s REG(6)=REG(6)_","_ts_$s(sts="":"",1:"|"_sts)
+ i $l(REG(6)) s $e(REG(6),1,1)=""
+ f i=1:1:5 i $tr(REG(i),sep,"")="" k REG(i)
+ s i=""
+ f  s i=$o(REG(i)) q:i=""  d
+ . f  q:$e(REG(i),$l(REG(i)))'=sep  s $e(REG(i),$l(REG(i)))=""
+ k ^TMP($zn,$j,2)
+ q MAL
+ ;q $d(^incident(epis))
+REG ;construir registres
+ n cnt,i,f,val k reg
+ f cnt=1:1:$l(idx,",") d
+ . s i=$p(idx,",",cnt)
+ . q:'i
+ . s f=$p(fmt,",",cnt)
+ . s val=$g(PLIST(i))
+ . i i=78,$g(PLIST(164))'="" S val=$p($g(^TTAB("CTCN",PLIST(164))),"\",2)
+ . i i=999,$g(PLIST(164))'="" S val=$p($g(^TTAB("CTCN",PLIST(164))),"\",1)
+ . i f="F" q
+ . i f="D",val s val=$zd(val,8)
+ . i f="DE" d
+ .. s val=$g(PLIST($p(i,"|",1)))
+ .. i val s val=$zd(val,8) q
+ .. s val=$g(PLIST($p(i,"|",2)))
+ . i f="C1" s val=$p(val,$c(1),1)
+ . i f="C2" s val=$p(val,$c(1),1) ;MODIFICAR PER ENVIAR CODIG ABANS 2
+ . i f="CC" d   ;Special CCC
+ .. s val=$p(val,$c(1)) q:val=""
+ .. s val=$p($g(^TTAB("CC",val)),"\",8)
+ . s $p(reg,sep,cnt)=$tr(val,"|#","  ")
+ q
+UNREG ;desmuntar registres
+ n cnt,i,f,val
+ f cnt=1:1:$l(idx,",") d
+ . s i=$p(idx,",",cnt)
+ . q:'i
+ . s f=$p(fmt,",",cnt)
+ . s val=$p(reg,"#",cnt)
+ . i i=125,val="" q  ; sols envio ***ull***
+ . i f="F" q
+ . i f="D",val s val=$zdh(val,8)
+ . i f="T",val s val=$zt(val,2)
+ . i f="CC" q
+ . i f="DE",val d  q
+ .. i val<200 s PLIST($p(i,"|",2))=val q
+ .. s PLIST($p(i,"|",1))=$zdh(val,8)
+ .. S val=$zdh(val,8)
+ .. ;S EDAD=+$h-FNAC,EDAD=$E(EDAD,1,2)
+ .. S mEDAD=+$h-val,mEDAD=$S(mEDAD<365:+("."_mEDAD),1:mEDAD/365) S:mEDAD>1 mEDAD=$P(mEDAD,".",1) s PLIST($p(i,"|",2))=mEDAD
+ . s PLIST(i)=val
+ . i i=999,PLIST(164)'="" I '($D(^TTAB("CTCN",PLIST(164)))) d
+ .. ;s ^TTAB("CTCN",PLIST(164))=$S(PLIST(114)="":".",1:PLIST(114))_"\"_$S(PLIST(78)="":".",1:PLIST(78))
+ .. S PLIST(78)="",PLIST(164)=""
+ q
+UNREGVAC ;desmuntar registres Y LOS DEGA HA VACIO
+ n cnt,i,f,val
+ f cnt=1:1:$l(idx,",") d
+ . s i=$p(idx,",",cnt)
+ . q:'i
+ . s f=$p(fmt,",",cnt)
+ . s val=""
+ . s PLIST(i)=val
+ Q
+ ;registres
+ ;registre comu
+1 s idx="2,12,20,3,99,4,5,6|26,7,32,34,35,43,66,74,22,15,0,0,112,119,5,126,82,81,8,83,9,100"
+ s fmt="A,D,C1,A,A,A,C2,DE,C2,A,A,A,A,C1,C1,C1,C1,F,F,A,A,C1,A,A,A,A,A,C2,A"
+ q
+ ;registre renfe
+2 s idx="76,77"
+ s fmt="A,A"
+ q
+ ;registre FREMAP
+3 s idx="78,164,60,114,999"
+ s fmt="A,A,A,A,A"
+ q
+ ;registre MUTUA UNIVERSAL
+4 s idx="0,94,112,113,125"
+ s fmt="A,C1,A,A,C1"
+ q
+ ;registre FACTURACIO
+5 s idx="89,143,146,140,23,141,142,144,138,136,145,149,132,133,131,148,11,137,147,135"
+ s fmt="A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,A,T,A,A,A"
+ q
+ ;llista ts
+6 s idx=""
+ s fmt=""
+ q
+ ;resultats
+7 s idx=""
+ s fmt=""
+ q
+]]></Routine>
+</Export>

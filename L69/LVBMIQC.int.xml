@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBMIQC" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBMIQC ; IG 5/5/98; LVB Control data access for MIQC MIF_MachineQC
+ ;
+ ; supported caMIQCs:
+ ;
+ ; $$update^LVBMIQC(ROWID)
+ ; $$select^LVBMIQC(ROWID)
+ ; $$open^LVBMIQC(par,skip,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBMIQC(par,skip,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBMIQC(par,skip,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBMIQC(par,skip,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBMIQC()
+ ; $$getall^LVBMIQC(par,skip)
+ ;
+  ;---&sql(DECLARE MIQC CURSOR FOR SELECT * FROM MIF_MachineQC
+   ;---         WHERE MIQC_ParRef = :par)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, par
+ ;
+open(par,skip,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par),skip=$g(skip)
+ i skip'="Y" d
+ . ; create new records
+ .i $l(par) d
+ ..s x1="" f  s x1=$o(^TTQCi("TYPE","M",par,x1)) q:x1=""  d
+ ... ;---s x2="" &SQL(SELECT QCM_Levels INTO :x2 FROM QC_Material WHERE QCM_RowID=:x1)
+  ... ;--- ** SQL PUBLIC Variables: SQLCODE, x1, x2
+ ...s x2="" Do %0Co
+ ...s x2=$p(x2,$c(1))
+ ...f j=1:1:x2 s ^TMIF(par,"QC",x1,j)=$g(^TMIF(par,"QC",x1,j))
+ ...f  s x2=$o(^TMIF(par,"QC",x1,x2)) q:x2=""  k ^TMIF(par,"QC",x1,x2)
+ . ; delete old records
+ .i $l(par) d
+ ..s x1="" f  s x1=$o(^TMIF(par,"QC",x1)) q:x1=""  i '$d(^TTQCi("TYPE","M",par,x1)) k ^TMIF(par,"QC",x1)
+  ;---&SQL(OPEN MIQC)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %MIQC0o
+ q 0
+ ;
+fetch(par,skip,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par),skip=$g(skip) K PLIST
+  ;---&SQL(FETCH MIQC INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Fo
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(par,skip,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par),skip=$g(skip) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(par,skip) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(par,skip,p2,p3,p4,p5,p6,p7,p8,p9) N (par,skip,PLIST) s par=$g(par),skip=$g(skip) K ^TMP($zn,$j)
+ i $$open(par,skip)
+ f cnt=1:1 Q:$$fetch(par,skip)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+close()  ;---&SQL(CLOSE MIQC)
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %MIQC0c
+ q 0
+ ;
+select(RowID) k PLIST s RowID=$g(RowID)
+  ;---&sql( SELECT * INTO :PLIST() FROM MIF_MachineQC WHERE MIQC_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ Do %0Ho
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ;
+update(RowID) d pre("Y") s RowID=$g(RowID)
+  ;---&sql(UPDATE MIF_MachineQC VALUES :PLIST() WHERE MIQC_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ Do %0Jo
+ I 'SQLCODE Q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; Adjust certain fields
+pre(xUpdate) d PreSQL^SSUTIL4()
+ q
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("")
+ ;
+ I $G(PLIST(2))'="",$G(PLIST(3))'="" D
+ .K plist M plist=PLIST K PLIST
+ .s X="" f  s X=$o(^TTQC(plist(2),"LOT",X)) q:X=""  i $p(^(X),"\",6)="Y" q
+ .S SQLCODE=$$select^LVBQCMLL(plist(2)_"||"_X_"||"_plist(3))
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(3)=X K plist
+ I $G(PLIST(2))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBQCM(plist(2))
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)_$C(1)_PLIST(6)
+ .K PLIST M PLIST=plist S PLIST(2)=X K plist
+ q
+ ; list all materials
+getall(par,skip) n (par,skip,PLIST) k ^TMP($zn,$j) s par=$g(par),skip=$g(skip)
+ i $$open(par,skip)
+ f cnt=1:1 q:$$fetch(par,skip)  d
+ .s str="" f j=1:1:PLIST s $p(str,$c(28),j)=PLIST(j)
+ .s ^TMP($zn,$j,0,cnt)=$p(PLIST(1),$c(1))_$c(2)_$p(PLIST(3),$c(1))_$c(2)_$c(2)_str
+ i $$close()
+ k PLIST m PLIST=^TMP($zn,$j,0)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+%MIQC0o s $zt="%MIQC0E" s SQLCODE=$s($g(%MIQC0c):-101,1:0) q:SQLCODE'=0  s %MIQC0d(11)=0 s %MIQC0d(12)=0,%MIQC0d(13)=""
+ s %MIQC0d(8)=$g(par)
+ s %MIQC0c=1 q
+%MIQC0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %MIQC0c,%MIQC0d,%MIQC0E,%MIQC0l,%MIQC0n,%MIQC0R,%MIQC0Z q
+%0Afirst 
+ ; asl MOD# 2
+ s %MIQC0d(1)=%MIQC0d(8)
+ i %MIQC0d(1)="" g %0ABdun
+ s %MIQC0d(3)=""
+%0ABk1 s %MIQC0d(3)=$o(^TMIF(%MIQC0d(1),"QC",%MIQC0d(3)))
+ i %MIQC0d(3)="" g %0ABdun
+ s %MIQC0d(4)=""
+%0ABk2 s %MIQC0d(4)=$o(^TMIF(%MIQC0d(1),"QC",%MIQC0d(3),%MIQC0d(4)))
+ i %MIQC0d(4)="" g %0ABk1
+ s %MIQC0d(20)=$g(^TMIF(%MIQC0d(1),"QC",%MIQC0d(3),%MIQC0d(4)))
+ s %MIQC0d(5)=$p(%MIQC0d(20),"\",1) s %MIQC0d(6)=$p(%MIQC0d(20),"\",2) s %MIQC0d(7)=$p(%MIQC0d(20),"\",3)
+ s %MIQC0d(2)=(%MIQC0d(1))_"||"_(%MIQC0d(3))_"||"_(%MIQC0d(4))
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TMIF($p(%MIQC0d(2),"||",1),"QC",$p(%MIQC0d(2),"||",2),$p(%MIQC0d(2),"||",3))#"S":$zu(115,4) i $t { s %MIQC0d(12)=1,%MIQC0d(13)=$name(^TMIF($p(%MIQC0d(2),"||",1),"QC",$p(%MIQC0d(2),"||",2),$p(%MIQC0d(2),"||",3)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.MIF_MachineQC for RowID value: "_%MIQC0d(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %MIQC0d(10)=$p(%MIQC0d(2),"||"),%MIQC0d(3)=$p(%MIQC0d(2),"||",2),%MIQC0d(4)=$p(%MIQC0d(2),"||",3)
+ i %MIQC0d(10)'="",%MIQC0d(3)'="",%MIQC0d(4)'="",$d(^TMIF(%MIQC0d(10),"QC",%MIQC0d(3),%MIQC0d(4)))
+ e  g %0ACdun
+ s %MIQC0d(27)=$g(^TMIF(%MIQC0d(10),"QC",%MIQC0d(3),%MIQC0d(4)))
+ s %MIQC0d(5)=$p(%MIQC0d(27),"\",1) s %MIQC0d(6)=$p(%MIQC0d(27),"\",2) s %MIQC0d(7)=$p(%MIQC0d(27),"\",3)
+ s %MIQC0d(1)=$p(%MIQC0d(2),"||")
+%0ABuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %MIQC0d(11)=%MIQC0d(11)+1,%ROWCOUNT=%MIQC0d(11),%ROWID=%MIQC0d(2),%MIQC0c=10 q
+%MIQC0f i '$g(%MIQC0c) { s SQLCODE=-102 q  } i %MIQC0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%MIQC0d(11))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%MIQC0d(11),%MIQC0c=100 q  } g %0Afirst:%MIQC0c=1
+%0ACdun i $zu(115,2)=1,$g(%MIQC0d(12))=1 { l -@%MIQC0d(13) s %MIQC0d(12)=0 }
+ g %0ABk2
+%0ABdun 
+%0AAdun 
+ s %ROWCOUNT=%MIQC0d(11),SQLCODE=100,%MIQC0c=100 q
+%MIQC0c i '$g(%MIQC0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%MIQC0d(11)),1:0)
+ i $zu(115,2)=1,$g(%MIQC0d(12))=1 { l -@%MIQC0d(13) } k %MIQC0c,%MIQC0d,%MIQC0E,%MIQC0l,%MIQC0n,%MIQC0R,%MIQC0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %MIQC0c=100 q
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(x1)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTQC(%mmmsqld(3)))
+ e  g %0CBdun
+ s %mmmsqld(10)=$g(^TTQC(%mmmsqld(3)))
+ s x2=$p(%mmmsqld(10),"\",2)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TTQC($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTQC($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.QC_Material for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTQC(%mmmsqld(3)))
+ e  g %0CCdun
+ s %mmmsqld(13)=$g(^TTQC(%mmmsqld(3)))
+ s x2=$p(%mmmsqld(13),"\",2)
+%0CBuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+%0Fo d %MIQC0f q:SQLCODE'=0
+ s PLIST(0)=%MIQC0d(1),PLIST(1)=%MIQC0d(2),PLIST(2)=%MIQC0d(3),PLIST(3)=%MIQC0d(4),PLIST(4)=%MIQC0d(5),PLIST(5)=%MIQC0d(6),PLIST(6)=%MIQC0d(7)
+ q
+%0Ho n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Herr" s %mmmsqld(12)=0,%mmmsqld(13)=""
+ s %mmmsqld(9)=$g(RowID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(1)=%mmmsqld(9)
+ s %mmmsqld(11)=$p(PLIST(1),"||"),PLIST(2)=$p(PLIST(1),"||",2),PLIST(3)=$p(PLIST(1),"||",3)
+ i %mmmsqld(11)'="",PLIST(2)'="",PLIST(3)'="",$d(^TMIF(%mmmsqld(11),"QC",PLIST(2),PLIST(3)))
+ e  g %0HBdun
+ s %mmmsqld(20)=$g(^TMIF(%mmmsqld(11),"QC",PLIST(2),PLIST(3)))
+ s PLIST(4)=$p(%mmmsqld(20),"\",1) s PLIST(5)=$p(%mmmsqld(20),"\",2) s PLIST(6)=$p(%mmmsqld(20),"\",3)
+ s PLIST(0)=$p(PLIST(1),"||")
+ g:$zu(115,2)=0 %0HBuncommitted i $zu(115,2)=1 l +^TMIF($p(PLIST(1),"||",1),"QC",$p(PLIST(1),"||",2),$p(PLIST(1),"||",3))#"S":$zu(115,4) i $t { s %mmmsqld(12)=1,%mmmsqld(13)=$name(^TMIF($p(PLIST(1),"||",1),"QC",$p(PLIST(1),"||",2),$p(PLIST(1),"||",3)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.MIF_MachineQC for RowID value: "_PLIST(1) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(11)=$p(PLIST(1),"||"),PLIST(2)=$p(PLIST(1),"||",2),PLIST(3)=$p(PLIST(1),"||",3)
+ i %mmmsqld(11)'="",PLIST(2)'="",PLIST(3)'="",$d(^TMIF(%mmmsqld(11),"QC",PLIST(2),PLIST(3)))
+ e  g %0HCdun
+ s %mmmsqld(27)=$g(^TMIF(%mmmsqld(11),"QC",PLIST(2),PLIST(3)))
+ s PLIST(4)=$p(%mmmsqld(27),"\",1) s PLIST(5)=$p(%mmmsqld(27),"\",2) s PLIST(6)=$p(%mmmsqld(27),"\",3)
+ s PLIST(0)=$p(PLIST(1),"||")
+%0HBuncommitted ;
+ s SQLCODE=0 g %0Hc
+%0HCdun i $zu(115,2)=1,$g(%mmmsqld(12))=1 { l -@%mmmsqld(13) s %mmmsqld(12)=0 }
+%0HBdun 
+%0HAdun 
+%0Hc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(12))=1 { l -@%mmmsqld(13) } q
+%0Herr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Hc
+%0Jo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Jerr" s %mmmsqld(7)=0 s %mmmsqld(8)=""
+ s %mmmsqld(3)=$g(RowID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2),%mmmsqld(6)=$p(%mmmsqld(2),"||",3)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",$d(^TMIF(%mmmsqld(4),"QC",%mmmsqld(5),%mmmsqld(6)))
+ e  g %0JBdun
+ s %mmmsqld(15)=$$%getlock^User.MIFMachineQC.T1(%mmmsqld(2)) i '%mmmsqld(15) s SQLCODE=-110 g %0Jc
+ ; asl MOD# 3
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2),%mmmsqld(6)=$p(%mmmsqld(2),"||",3)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",$d(^TMIF(%mmmsqld(4),"QC",%mmmsqld(5),%mmmsqld(6)))
+ e  g %0JCdun
+ k %data
+ f icol=0:1:6 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.MIFMachineQC.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(7))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(15)=1 %ReleaseLock^User.MIFMachineQC.T1(%mmmsqld(2)) g %0Jc
+%0JCdun 
+ d:%mmmsqld(15)=1 %ReleaseLock^User.MIFMachineQC.T1(%mmmsqld(2)) g:SQLCODE<0 %0Jc
+%0JBdun 
+%0JAdun 
+%0Jc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(7)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Jerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(15))=1 %ReleaseLock^User.MIFMachineQC.T1(%mmmsqld(2)) g %0Jc
+]]></Routine>
+</Export>

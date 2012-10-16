@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTREC05" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTREC05 ; ML 03/03/00 ; RECEIPTS - WESTPATH SERVICES
+ q
+ ; Parameters :  1. Receipt Number
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ d INIT,BODY,PRINT
+CREND i '$$select^LVBPRPR(REPID) S PLIST(12)=$g(bs)_"-"_PAR1
+ i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ q
+ ; create temporary printing file
+BODY s epis="" i '$$select^LVBRCPT(PAR1) d
+ .f j=1:1:PLIST s PLIST(j)=$p($g(PLIST(j)),$c(1))
+ .k REC m REC=PLIST
+ .i '$$select^LVBCRBL(REC(8)) d
+ ..f j=1:1:PLIST s PLIST(j)=$p($g(PLIST(j)),$c(1))
+ ..k crLINE m crLINE=PLIST
+ .. ; get single episodes
+ ..i $l(crLINE(3)),crLINE(7) i '$l(epis) s epis=crLINE(3)
+ .. ; get episode from multiple episodes
+ ..i $$open^LVBCRBLB(REC(8))
+ ..i '$$fetch^LVBCRBLB(REC(8)) s epis=$p(PLIST(2),$c(1))
+ ..i $$close^LVBCRBLB()
+ ; update receipt
+ i REC(3)="" d
+ .s REC(3)=+$h,REC(4)=$p($h,",",2)
+ .k PLIST m PLIST=REC i $$update^LVBRCPT(PAR1) 
+ i $l(epis),'$$select^LVBEPVIS(epis,"Y") d
+ .s ^TMP($zn,$j,"REPORT",epis,"CREDIT-NOW")=crLINE(7)
+ .s xx1=$p(PLIST(57),"||",1),xx2=$p(PLIST(57),"||",2)
+ .s ^TMP($zn,$j,"REPORT",epis)=xx1_"-"_xx2
+ .s credit="" i $l(PLIST(87)) s epis=PLIST(87)
+ .s deb=$$seldata^LVBEPVIS(epis,20),date=$$seldata^LVBEPVIS(epis,12),list=$$seldata^LVBEPVIS(epis,55)
+ .s list=epis_","_list f jMaster=1:1:$l(list,",") s ep=$p(list,",",jMaster) i $l(ep) d
+ ..s rowid=deb_"||"_date_"||"_ep
+ ..i $$open^LVBDEBVT(rowid)
+ ..f  q:$$fetch^LVBDEBVT(rowid)  d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...k TRAN m TRAN=PLIST
+ ...i TRAN(5)="JOURNAL",'$$select^LVBJOU(TRAN(2)) s credit=credit-PLIST(14)
+ ...i TRAN(5)="CREDIT",$l(TRAN(2),"||")=2,'$$select^LVBCRBL(TRAN(2)) s credit=credit-PLIST(16)
+ ...i TRAN(5)="CREDIT",$l(TRAN(2),"||")=3,'$$select^LVBCRBLB(TRAN(2)) s credit=credit-PLIST(9)
+ ..i $$close^LVBDEBVT()
+ .i credit s ^TMP($zn,$j,"REPORT",epis,"CREDIT-TOTAL")=credit
+ Q
+PRINT ; print report
+ d QDR
+ s max=20
+ s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",epis))  q:epis=""  d
+ .s xx1=$p(^(epis),"-",1),xx2=$p(^(epis),"-",2) d PATH(xx1,xx2)
+ .k VISIT q:$$select^LVBEPVIS(epis,"Y")  m VISIT=PLIST k PLIST
+ .s name=$$NameFormat^LVBCOM03("PT",$p(VISIT(7),$c(1),2),VISIT(4),VISIT(3),VISIT(99),VISIT(100),VISIT(101))
+ .d ITEM,ADDRESS,PHEAD
+ .s (line,nextpg,item)=""
+ .f  s item=$o(^TMP($zn,$j,"REPORT",epis,"ITEM",item)) q:item=""  d
+ ..s det=^(item),amt=$p(det,"\",1),desc=$p(det,"\",2)
+ .. ; check item desc length
+ ..s x="" s xdesc=desc k desc s desc=xdesc
+ ..i $l(desc)<23 s desc(1)=desc
+ ..i $l(desc)>22 d
+ ...f j=1:1:$l(desc,";") i $l($p(desc,";",1,j))>22 s x=x+1,desc(x)=$p(desc,";",1,j-1),(desc,desc(x+1))=$p(desc,";",j,999) q:$l(desc)'>22
+ ..d ADD^PRTREP00(REPID,"PRT","?10 "_desc(1))
+ ..d ADD^PRTREP00(REPID,"PRT","?42 "_item)
+ ..d ADD^PRTREP00(REPID,"PRT","?74 "_$j(amt,7,2)),LN s line=line+1
+ ..f i=2:1 q:'$d(desc(i))  d ADD^PRTREP00(REPID,"PRT","?10 "_desc(i)),LN s line=line+1
+ ..i line=18,$o(^TMP($zn,$j,"REPORT",epis,"ITEM",item))'="" d
+ ...d LN,ADD^PRTREP00(REPID,"PRT","?61 Continued over..")
+ ...s nextpg=1 d PHEAD s (line,nextpg)=""
+ .s lcc="" i '$$select^LVBCTIC($p(VISIT(18),$c(1)),"Y"),PLIST(7)="Y",'$$select^LVBCTCC($p(VISIT(27),$c(1)),"Y") s lcc=$s($l(PLIST(13))&(VISIT(12)<PLIST(13)):PLIST(14),1:PLIST(10))
+ .i $l(lcc) d
+ ..d LN,LN s line=line+2
+ ..d ADD^PRTREP00(REPID,"PRT","?10 SCP No: "_lcc)
+ .f i=1:1:18-line d LN
+ .f i=1:1:2 d LN
+ .s tot=$g(^TMP($zn,$j,"REPORT",epis,"TOT")),credit=$g(^TMP($zn,$j,"REPORT",epis,"CREDIT-TOTAL"))
+ .s current=$g(^TMP($zn,$j,"REPORT",epis,"CREDIT-NOW"))
+ .d ADD^PRTREP00(REPID,"PRT","?74 "_$j(current,7,2)),LN
+ .d ADD^PRTREP00(REPID,"PRT","?74 "_$j(tot-credit,7,2)),LN,LN
+ .s drtab=81-$l(drprov)_"   ",pathtab=81-$l(pathprv)_"   ",drtab=$e(drtab,1,3),pathtab=$e(pathtab,1,3)
+ .d ADD^PRTREP00(REPID,"PRT","?26 "_drdet),ADD^PRTREP00(REPID,"PRT","?"_drtab_drprov),LN
+ .d ADD^PRTREP00(REPID,"PRT","?26 "_pathdr),ADD^PRTREP00(REPID,"PRT","?"_pathtab_pathprv)
+ q
+PHEAD ; print patient details
+ d ADD^PRTREP00(REPID,"PRT","#")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(3@")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0p12h0s0b5T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a0h50V")
+ f i=1:1:10 d LN
+ d ADD^PRTREP00(REPID,"PRT","?12 "_name),LN
+ f i=1:1:4 i $l(ADDRESS(i)) d ADD^PRTREP00(REPID,"PRT","?12 "_ADDRESS(i)) i i'=4 d LN
+ f i=1:1:3 i '$l(ADDRESS(i)) d LN
+ d ADD^PRTREP00(REPID,"PRT","?73 "_$$extdate2^SSUTIL4(+$h))
+ f i=1:1:3 d LN
+ d ADD^PRTREP00(REPID,"PRT","?23 "_$$extdate2^SSUTIL4(VISIT(14)))
+ d ADD^PRTREP00(REPID,"PRT","?50 "_$$extdate2^SSUTIL4(VISIT(12)))
+ d ADD^PRTREP00(REPID,"PRT","?73 "_epis),LN
+ d DOC
+ f i=1:1:3 d LN
+ q
+ITEM ; extract billing items for episode
+ s (item,amt,amount,det)=""
+ f  s item=$o(^TEPI(epis,7,item)) q:item=""  d
+ .s det=^(item),amount=amount+$p(det,"\")
+ .s ^TMP($zn,$j,"REPORT",epis,"ITEM",item)=det
+ s ^TMP($zn,$j,"REPORT",epis,"TOT")=amount
+ q
+DOC ; extract referring doctor details
+ s (drdet,drprov)=""
+ q:$$select^LVBCTDR(VISIT(15))  m DOC=PLIST k PLIST
+ s drdet=$$NameFormat^LVBCOM03("DR",DOC(26),$e(DOC(4)),DOC(3),DOC(49),DOC(50),DOC(51)),drprov="Prov No: "_DOC(18)
+ q
+ADDRESS ; if billing address different to actual address use billing address
+ k ADDRESS s ADDRESS(1)=VISIT(42)
+ f  q:$e(ADDRESS(1))'=" "  s ADDRESS(1)=$e(ADDRESS(1),2,99)
+ f j=2:1:6 s ADDRESS(j)=VISIT(j+35)
+ i '$l(ADDRESS(2)) f j=2:1:6 s ADDRESS(j)=VISIT(j+30)
+ i ADDRESS(3)'="",ADDRESS(4)="",ADDRESS(3)'[ADDRESS(6) s ADDRESS(3)=ADDRESS(3)_" "_ADDRESS(6)
+ i ADDRESS(4)'="",ADDRESS(4)'[ADDRESS(6) s ADDRESS(4)=ADDRESS(4)_" "_ADDRESS(5)_" "_ADDRESS(6)
+ f i=1:1:4 q:i=4  s:ADDRESS(i)="" ADDRESS(i)=ADDRESS(i+1),ADDRESS(i+1)=""
+ q
+PATH(xx1,xx2)    ; extract pathology doctor details
+ s (pathdr,pathprv)=""
+ i '$$select^LVBINVB(xx1_"||"_xx2) s pathdr=$p(PLIST(10),$c(1),2),pathprv="Prov No: "_PLIST(5)
+ q
+LN ; add line to report
+ d ADD^PRTREP00(REPID,"PRT","!")
+ q
+QDR ; set header
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"E")
+ s x="" f  s x=$o(^SS("QDR","WPS-REC",x)) q:x=""  d ADD^PRTREP00(REPID,"HDR",^(x))
+ q         
+]]></Routine>
+</Export>

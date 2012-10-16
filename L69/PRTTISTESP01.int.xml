@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTTISTESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTTISTESP01 ; ML 22/12/98 ; TEST ITEM STATISTICS
+ q
+ ; Parameters :  1. Date From
+ ;               2. Date To
+ ;               3. Department
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ ;d ADDLINE^PRTREP00(REPID,"HDR",$c(27)_"(9U") ; windows char codes
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Estadisticas por elemento de prueba (Test Item Statistics)"
+ s line=2,xHEADER(line)="Elementos de Prueba con resultados validados entre las fechas seleccionadas"
+ s line=3,xHEADER(line)="Departmento : "_$s($l(PAR3):DEP(3),1:"Todos los Departamentos")
+ s line=4,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,PAR1,PAR2),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ i $l(PAR3) i '$$select^LVBCTDEP(PAR3,"Y") k DEP m DEP=PLIST
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+BODY ; create temporary printing file
+ k ^TMP($zn,$j,"CHECKDUP")
+ s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
+ .s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ ..s ts=PAR3 f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  d
+ ...i $l(PAR3),($e(ts)'=PAR3) q
+ ...i $zcvt($e($p($g(^TTAB("TS",ts)),"\",33),1,1),"U")="S" q  ; marcados para no contabilizar
+ ...s dept=$e(ts) s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
+ ....s tc="" f  s tc=$o(^TEPI(epis,1,ts,tscnt,"DATA",tc)) q:tc=""  d
+ .....s res=$P(^TEPI(epis,1,ts,tscnt,"DATA",tc),"\",1)
+ .....; No tengo en cuenta los items con resultado "No Muestra"
+ .....;i res="OTRO" q   <= Poner una linea por cada condicion
+ .....i res="NM" q
+ .....s welcan=$P(^TTAB("TC",tc),"\",24)
+ .....i $zcvt($e($p($g(^TTAB("TC",tc)),"\",18),1,1),"U")="S" q  ; marcados para no contabilizar
+ .....i $p($g(^TTAB("TC",tc)),"\",6)="Y",$d(^TMP($zn,$j,"CHECKDUP",epis,tc)) q  ; solo uno x episodio
+ .....s ^TMP($zn,$j,"REPORT",dept,tc,ts)=$g(^TMP($zn,$j,"REPORT",dept,tc,ts))+1
+ .....s mult=1
+ .....i welcan'="",welcan'=0 s mult=welcan
+ .....s ^TMP($zn,$j,"REPORT",dept,tc)=$g(^TMP($zn,$j,"REPORT",dept,tc))+mult
+ .....i $p($g(^TTAB("TC",tc)),"\",6)="Y" s ^TMP($zn,$j,"CHECKDUP",epis,tc)=""
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s total=0
+ .s dept="" f  s dept=$o(^TMP($zn,$j,"REPORT",dept)) q:dept=""  d
+ ..s totaldep=0
+ ..i '$l(PAR3) d
+ ...i '$$select^LVBCTDEP(dept) m DEP=PLIST k PLIST
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...d ADDLINE^PRTREP00(REPID,"PRT","~BOLD")
+ ...d ADDLINE^PRTREP00(REPID,"PRT","~ITALIC")
+ ...d ADDLINE^PRTREP00(REPID,"PRT","?5  "_dept_" - "_DEP(3))
+ ...d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL")
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...k DEP
+ ..s tc="" f  s tc=$o(^TMP($zn,$j,"REPORT",dept,tc)) q:tc=""  d
+ ...s xxx(1)=tc,xxx(3)=^(tc) i '$$select^LVBCTTC(tc,"Y") s xxx(2)=$p(PLIST(3),$c(1))
+ ...s totaldep=totaldep+xxx(3)
+ ...s total=total+xxx(3)
+ ...s welcan=$P(^TTAB("TC",tc),"\",24) i (welcan="")!(welcan=0) s welcan=1
+ ...s xxx(7)=welcan
+ ...s ts="" f  s ts=$o(^TMP($zn,$j,"REPORT",dept,tc,ts)) q:ts=""  d
+ ....s xxx(4)=ts,xxx(6)=^(ts) i '$$select^LVBCTTS(ts,"Y") s xxx(5)=$p(PLIST(3),$c(1))
+ ....d PRINT^PRTREP00(,.N) k xxx
+ ..d PRINT^PRTREP00(,.N) k xxx
+ ..s xxx(2)="Total Departamento"
+ ..s xxx(3)=totaldep
+ ..d PRINT^PRTREP00(,.N) k xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .;total
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d PRINT^PRTREP00(,.N) k xxx
+ .s xxx(2)="Total"
+ .s xxx(3)=total
+ .d PRINT^PRTREP00(,.N) k xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="TIST"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

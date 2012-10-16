@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF300THAI01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF300THAI01(mi) ; ML 4/6/98 ; BECKMAN Synchron CX3 Delta (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s soh=$c(1),ack=$c(6),enq=$c(5),eot=$c(4),stx=$c(2),etx=$c(3),nak=$c(21),chk=0,del=","
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:15
+ q:R'=1  k res
+ w $s(chk=0:ack,1:etx),*-3 d trace^MIF000(mi,$s(chk:"ACK",1:"ETX"),"H-->M")
+ s chk=$s(chk=0:1,1:0)
+ s stop=0 f  r *R q:R=4  q:R=1  d  i stop q
+ .s record="" f  r *X s record=record_$c(X) q:X=10
+ .s record=$c(R)_record i $e(record)'="[",record["[" f  q:$e(record)="["  s record=$e(record,2,999)
+ .d trace^MIF000(mi,record,"H<--M")
+ .d chkrec I 'ok w nak,*-3 d trace^MIF000(mi,"NAK","H-->M")
+ .w $s(chk=0:ack,1:etx),*-3 d trace^MIF000(mi,$s(chk:"ACK",1:"ETX"),"H-->M")
+ .s chk=$s(chk=0:1,1:0)
+ .s record=$p($p(record,"]",1),"[",2),str=$e($p(record,del,2),2,3)
+ .i str="01" d A1
+ .i str="02" d A2
+ q
+chkrec ; check value of check sum received is the same as the one calculated
+ s ok=$$chsum($p(record,"]",1)_"]")=$e($p(record,"]",2),1,2)
+ i $$chsum($P(record,"]",1)_"]")="0",$e($p(record,"]",2),1,2)="00" S ok=1
+ q
+chsum(x) ; calculate check sum for record received
+ S t=0 f j=1:1:$l(x) S t=t+$a(x,j)
+ s t=256-(t#256)
+ s t=$e("0123456789ABCDEF",t\16+1)_$e("0123456789ABCDEF",t#16+1)
+ q t
+A1 ; request received from instrument
+ s fun=+$p(record,del,3)
+ i fun'=6 q
+ f i=1:1:7 s epis=$tr($p(record,del,3+i)," ") i epis'="" d BUILD
+ q
+A2 ; result received from instrument
+ s fun=+$p(record,del,3),date=$p(record,del,4),time=$p(record,del,5)
+ s record=$p(record,",",11,999)
+ i fun=1 d  q
+ .s (sample,epis,surname,res,date,time,qc)=""
+ .s (res,qc)="",epis=$tr($p(record,",",3)," "),sample=epis
+ s date=$$intdate^SSUTIL4($e(date,3,4)_"/"_$e(date,1,2)_"/"_$e(date,5,6)),time=$$inttime^SSUTIL4($e(time,1,2)_":"_$e(time,3,4))+$e(time,5,6)
+ i fun=5,epis'="" d file^MIF000(mi,sample,epis,surname,res,date,time,qc) q
+ i fun'=3 q
+ i $p(record,",",6)["#" q
+ i $p(record,",",6)["*" q
+ s res=res_$tr($p(record,",",1)_$c(par10)_$p(record,",",6)," ")_$c(par11)
+ q
+send(z) ; Send request to CX3A
+ f j=1:1:6 w eot,*-3,soh,*-3 r *R:10 i R=6 q
+ i R'=6 q
+ s chksum=$$chsum(z)
+ w z,chksum,$c(13,10),*-3 d trace^MIF000(mi,z_chksum,"H-->M")
+ r *R
+ w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ r *chk:5 d trace^MIF000(mi,$s(chk=6:"ACK",chk=3:"ACK",1:"NAK"),"H<--M") s stop=1
+ q
+BL(a,b) ; pad field out to correct length
+ q $e(a_$j("",b),1,b)_","
+BUILD ; build record to send to instrument
+ d scanone^MIF000(mi,epis)
+ k PLIST i $$select^LVBEPVIS(epis)
+ f j=3,4,5,6,12,15,19,20,27 s @("epa"_(j-2))=$p(PLIST(j),$c(1))
+ k PLIST s epa3=$p(epa3,$c(1),1)
+ S r="[ 0,701,01, 0, 0,0,RO,SE,"_$$BL(epis,11)_$$BL("",20)_$$BL("",25)_$$BL("",25)
+ s r=r_$$BL("",18)_$$BL("",15)_" ,"_$$BL(epa18,12)_$$BL("",18)
+ s xx=$$extdate2^SSUTIL4(epa10)
+ s r=r_$p(xx,"/",1)_$p(xx,"/",2)_$e($p(xx,"/",3),3,4)_","
+ f j=4,20,3,1,6,1,25,7,4,4,6 s r=r_$$BL("",j)
+ k tst s tc="" f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  i tc'?." " s tst($$BL(tc,4))=""
+ s tst="" f cnt=0:1 s tst=$o(tst(tst)) q:tst=""
+ s r=r_$e(cnt+1000,2,4)
+ s tst="" f  s tst=$o(tst(tst)) q:tst=""  s r=r_","_tst_"0"
+ s r=r_"]"
+ d send(r)
+ q
+]]></Routine>
+</Export>

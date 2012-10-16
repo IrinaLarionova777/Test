@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF200HBO01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF200HBO01(mi) ; VL050601 ; Sebia Phoresis (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),eot=$c(4),ack=$c(6)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+ ; 6 types of messages
+ ; MSG1 Worklist request (or Total request)
+ ; MSG2 Transfer OK (ACK)
+ ; MSG3 demographic data of a single patient
+ ; MSG4 Transfer error (NACK)
+ ; MSG5 Result data of single patient
+ ; MSG6 Query request (or Partial request of a single patient by patient ID number)
+Main s record=$$read^MIF000(stx,etx) i '$l(record) q
+ d trace^MIF000(mi,record,"H<--M")
+ ; slow interface response to prevent loss of 'ack' on analyser side
+ h 1 d ACK
+ s (sample,epis,surname,result,date,time,QC)=""
+ ; MSG1 - 11 bytes
+ ; STX 1,1 Analysis program code 2,1 Start sample number 3,4 End sample number 7,4
+ i $l(record)=11 d MSG1 ; downloading a worklist in worklist mode from the host
+ ; MSG2 - 3 bytes
+ ; STX 1,1 ACK 2,1 ETX 3,1
+ ; MSG3 - 247 bytes
+ ; STX 1,1 Analysis program code 2,1 Sample number 3,4 Patient ID number 7,15 Patient Name  22,30 DOB 52,8
+ ; Sex 60,1 Age 61,3 Dept 64,20 Sample date 84,8 Concentration 92,5 Free 1 97,30 Free 2 127,30 Free 3 157,30
+ ; Free 4 187,30 EXT or EOT 247,1
+ ; MSG4 - 3 bytes
+ ; STX 1,1 NACK 2,1 ETX 3,1
+ ; Result from machine
+ ; MSG5 - 791 bytes without optional fields, 1242 bytes for a curve of 300 dots
+ ; STX 1,1 Program Code 2,1 Sample Number 3,4 Patient ID Code 7,15 Patient Name 22,30 DOB 52,8
+ ; Sex 60,1 Age 61,3 Dept 64,20 Sample Date 84,8 Concentration 92,5 UoConc 97,8 Oper ID 255,3
+ ; Date Analy 258,8 Number of Fractions 266,2
+ ; 
+ i $l(record)>790 d MSG5 ; uploading the results to the host
+ ; MSG6 - 18 bytes
+ ; STX 1,1 Program Code 2,1 Patient ID number 3,15 ETX 18,1
+ i $l(record)=18 d MSG6 ; downloading a worklist in query mode from the host (query by patient id)
+ ; file result
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+MSG1 
+ q       
+MSG5 
+ w stx,ack,etx,*-3
+ d trace^MIF000(mi,"ACK","H->M")
+ s record=$$read^MIF000(stx,etx) i '$l(record) q
+ d trace^MIF000(mi,record,"H<--M")
+ s sample=$e(record,3,4)
+ s epis=$tr($e(record,7,15)," "),surname=$tr($e(record,22,30)," ")
+ s date=$e(record,258,8),date=$$intdate^SSUTIL4(date)
+ s numberoffractions=+$e(record,266,2)
+ s data=$e(record,268,200)
+ f j=0:numberoffractions-1  d
+ .s code=$tr($e(data,j*10,10)," "),res=$tr($e(data,j*5+100,5)," "),conc=$tr($e(data,j*5+150,5)," ")
+ .s result=result_code_$c(par10)_res_$c(par10)_conc_$c(par11)
+ w stx,ack,etx,*-3
+ d trace^MIF000(mi,"ACK","H->M")
+ q
+MSG6 
+ w stx,ack,etx,*-3
+ d trace^MIF000(mi,"ACK","H->M")
+ s record=$$read^MIF000(stx,etx) i '$l(record) q
+ d trace^MIF000(mi,record,"H<--M")
+ s sample=$e(record,3,4)
+ s epis=$tr($e(record,7,15)," "),surname=$tr($e(record,22,30)," ")
+ s date=$e(record,84,8),date=$$intdate^SSUTIL4(date)
+ q
+Send(str) ; send string to instrument
+ w stx,str,etx,*-3
+ d trace^MIF000(mi,str,"H-->M")
+ q
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

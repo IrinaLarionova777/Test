@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="CLNBQBUILD03" type="INT" languagemode="0"><![CDATA[
+CLNBQBUILD03(swfull)
+	; +-----------------+
+	; | Binary Queries  |
+	; | Rebuild QC cube |
+	; +-----------------+
+	;  Nov 21, 2006 by Mc_Fly
+	;  TrakHealth BCN
+	; 
+	; swfull=2 k ^BQD(cube) + swfull=1
+	; swfull=1, scan ^TTQC
+	; swfull=0, scan only ^TMPBQ(cube,mat,seq,code,wsma,tc,lev,dat,run)
+	; 
+	; Tables/globals affected:
+	; QC_MLTTestCodeLevelData   ^TTQC(mat,"LOT",seq,"TYPE",code,wsma,"TEST",tc,"DATA",lev,dat,run)
+	;
+	; Code Tables:
+	; 
+	s $zt="err^CLNBQAUX"
+	n (swfull)
+	s isajob=$zjob\2#2
+	s swfull=+$g(swfull)
+	s cube=3
+	l +^BQD(cube,$s(swfull>0:"full",1:"partial")):5 e  q
+	d setmess^CLNBQAUX("*** Starting swfull="_swfull_" ***")
+	d DISABLE^%NOJRN
+	i $zu(68,25,1) ; Batch status
+ 
+	i swfull=2 k ^BQD(cube) s swfull=1
+	
+	d setmess^CLNBQAUX("Rebuilding... Done=0/0")
+	s zhini=$zh,zhnow=zhini
+	s (mat,seq,code,wsma,tc,lev,dat,run)="",(cur,changed)=0
+	i swfull f  s mat=$o(^TTQC(mat)) q:mat=""  d
+	. f  s seq=$o(^TTQC(mat,"LOT",seq)) q:seq=""  d
+	.. f  s code=$o(^TTQC(mat,"LOT",seq,"TYPE",code)) q:code=""  d
+	... f  s wsma=$o(^TTQC(mat,"LOT",seq,"TYPE",code,wsma)) q:wsma=""  d
+	.... f  s tc=$o(^TTQC(mat,"LOT",seq,"TYPE",code,wsma,"TEST",tc)) q:tc=""  d
+	..... f  s lev=$o(^TTQC(mat,"LOT",seq,"TYPE",code,wsma,"TEST",tc,"DATA",lev)) q:lev=""  d
+	...... f  s dat=$o(^TTQC(mat,"LOT",seq,"TYPE",code,wsma,"TEST",tc,"DATA",lev,dat)) q:dat=""  d
+	....... f  s run=$o(^TTQC(mat,"LOT",seq,"TYPE",code,wsma,"TEST",tc,"DATA",lev,dat,run)) q:run=""  d doit
+	i 'swfull f  s mat=$o(^TMPBQ(cube,mat)) q:mat=""  d
+	. f  s seq=$o(^TMPBQ(cube,mat,seq)) q:seq=""  d
+	.. f  s code=$o(^TMPBQ(cube,mat,seq,code)) q:code=""  d
+	... f  s wsma=$o(^TMPBQ(cube,mat,seq,code,wsma)) q:wsma=""  d
+	.... f  s tc=$o(^TMPBQ(cube,mat,seq,code,wsma,tc)) q:tc=""  d
+	..... f  s lev=$o(^TMPBQ(cube,mat,seq,code,wsma,tc,lev)) q:lev=""  d
+	...... f  s dat=$o(^TMPBQ(cube,mat,seq,code,wsma,tc,lev,dat)) q:dat=""  d
+	....... f  s run=$o(^TMPBQ(cube,mat,seq,code,wsma,tc,lev,dat,run)) q:run=""  d
+	........ l +^TMPBQ(cube,mat,seq,code,wsma,tc,lev,dat,run) k ^TMPBQ(cube,mat,seq,code,wsma,tc,lev,dat,run) l -^TMPBQ(cube,mat,seq,code,wsma,tc,lev,dat,run) d doit
+	d end^CLNBQAUX
+	q
+doit
+	i $zh-zhnow>60 s zhnow=$zh d setmess^CLNBQAUX("Rebuilding... Done="_changed_"/"_cur)
+	k make
+	s cur=cur+1
+	; ***** Level 8 *****
+	s r=$g(^TTQC(mat,"LOT",seq,"TYPE",code,wsma,"TEST",tc,"DATA",lev,dat,run))
+	s rowid=mat_"||"_seq_"||"_code_"||"_wsma_"||"_tc_"||"_lev_"||"_dat_"||"_run
+	d make(rowid,1,,mat)
+	d make(rowid,2,,seq)
+	d make(rowid,3,,code)
+	d make(rowid,4,,wsma)
+	d make(rowid,5,,tc)
+	d make(rowid,6,,lev)
+	d make(rowid,7,,dat)
+	d make(rowid,8,,run)
+	d make(rowid,9,,$p(r,"\",1)) ; Value
+	d make(rowid,10,,$p(r,"\",2)) ; Flag excluded
+	d make(rowid,11,,$p(r,"\",4)) ; Time
+	d make(rowid,13,,$p(r,"\",5)) ; Violated rule
+	d make(rowid,14,,$p(r,"\",3)) ; User
+	s destc="" i $l(tc),destc=$p($g(^TTAB("TC",tc)),"\",1)
+	;;d make(rowid,??,,destc) ; TestItem description
+ 
+	; No podem fer-ho a nivell 2 per que mata els indexos de tot el ^BQD(3,0,rowid_min
+	s r=$g(^TTQC(mat,"LOT",seq))
+	d make(rowid,12,,$p(r,"\",1)) ; Lot number
+	
+	s ord=""
+	f  s ord=$o(^TTQC(mat,"LOT",seq,"TYPE",code,wsma,"COM",ord)) q:ord=""  d
+	. s r=$g(^TTQC(mat,"LOT",seq,"TYPE",code,wsma,"COM",ord))
+	. d make(rowid,15,,$p(r,"\",1)) ;Date
+	. d make(rowid,16,,$p(r,"\",2)) ; Time
+	. d make(rowid,17,,$p(r,"\",3)) ; Comment User
+	. s com=0
+	. f  s com=$o(^TTQC(mat,"LOT",seq,"TYPE",code,wsma,"COM",ord,com)) q:com=""  d
+	.. s r=$g(^(com))
+	.. f x=1:1:$l(r,$c(13,10)) s txt=$p(r,$c(13,10),x) d make(rowid,18,,txt) ; Comment
+	
+	d save^CLNBQAUX
+	q
+make(rowid,field,val1,val2)
+	n o,double,v,rf
+	i '$$enabled(field) q
+	s rf=^BQC(cube,2,field)
+	s type=$p(rf,"\",3),double=$p(rf,"\",5)
+	i type="ALF"!(type="FAL") s val2=$$UPPER^SSUTIL4(val2)
+	i $$isanum^CLNBQAUX(val2) s val2=+val2 ; Because there are results nn.0
+	i '$l(val2) q
+	i type="FAL" s val2=" "_val2 ; Force Alpha, not tested
+	s v=$e(val2,1,200) ; For avoid <subscript> errors
+	i double d  i '$l(val1) q
+	. i $$isanum^CLNBQAUX(val1) s val1=+val1 q
+	. s val1=$e($$UPPER^SSUTIL4(val1),1,200)
+	i double s v=v_"\"_val1
+	s o=$o(make(" "_rowid,field,""),-1)+1
+	s make(" "_rowid,field,o)=v
+	q
+enabled(field)
+	q +$p($g(^BQZ(cube,2,field)),"\",2)
+ 
+]]></Routine>
+</Export>

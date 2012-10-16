@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBVISTH" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBVISTH ; IG 5/5/98 ; LVB Control data access for EP_VisitTestSetHistory
+ ;
+ ; supported calls:
+ ;
+ ; $$insert^LVBVISTH(par)
+ ; $$result^LVBVISTH(ROWID,type)
+ ; $$select^LVBVISTH(ROWID)
+ ; $$seldata^LVBVISTH(ROWID,data)
+ ; $$open^LVBVISTH(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBVISTH(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBVISTH(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBVISTH(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBVISTH()
+ ; $$getall^LVBVISTH(par,p1)
+ ;
+  ;---&sql(DECLARE VISTH CURSOR FOR SELECT * FROM EP_VisitTestSetHistory
+   ;---         WHERE VISTH_ParRef = :par)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, par
+open(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par)
+  ;---&SQL(OPEN VISTH)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %VISTH0o
+ q 0
+ ;
+fetch(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par) k PLIST
+  ;---&SQL(FETCH VISTH INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Eo
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(par) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) N (parPLIST) s par=$g(par) K ^TMP($zn,$j)
+ i $$open(par)
+ f cnt=1:1 Q:$$fetch(par)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+close()  ;---&SQL(CLOSE VISTH)
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %VISTH0c
+ q 0
+ ; tiData : 1 - Test Item
+ ;          2 - Result
+ ;          4 - Supress report
+ ;          7 - Instrument
+ ;         11 - Repeat required
+ ;         14 - Antibiotics : 1 - Antibiotic
+ ;							  2 - Result
+ ;							  3 - Reportable
+ ;							  4 - MIC
+ ;							  5 - mm
+ ;							  6 - Panel
+ ;							  7 - Restricted
+ ;							  8 - Sequence
+ ;         15 - Comments
+result(RowID,type) n (RowID,type,PLIST) s RowID=$G(RowID),type=$g(type) k PLIST,^TMP($zn,$j)
+ f j=1:1:4 s x(j)=$p(RowID,"||",j)
+ i type="OLD" d
+ .m ^TMP($zn,$j)=^TEPI(x(1),1,x(2),x(3),"History",x(4))
+ . ; retrieve data
+ .s (data,ti)="" f  s ti=$o(^TMP($zn,$j,"DATA",ti)) q:ti=""  d
+ ..s format=$$seldata^LVBCTTC(ti,5)
+ ..s tiData=ti_"("_$$seldata^LVBCTTC(ti,14)_")"_$c(28)_$tr($g(^TMP($zn,$j,"DATA",ti)),"\",$c(28))
+ ..i format="D",$l($p(tiData,$c(28),2)) s $p(tiData,$c(28),2)=$$extdate2^SSUTIL4($p(tiData,$c(28),2))
+ ..i format="T",$l($p(tiData,$c(28),2)) s $p(tiData,$c(28),2)=$$exttime^SSUTIL4($p(tiData,$c(28),2))
+ ..s (ant,j)="" f  s j=$o(^TMP($zn,$j,"DATA",ti,"ANT",j)) q:j=""  s ant=ant_$s($l(ant):"|",1:"")_j_"\"_^(j)
+ ..i $l(ant) s $p(tiData,$c(28),14)=ant
+ ..s comm="" f j=1:1 q:'$d(^TMP($zn,$j,"DATA",ti,"REM",j))  s comm=comm_$s($l(comm):"|",1:"")_^(j)
+ ..i $l(comm) s $p(tiData,$c(28),15)=comm
+ ..s data=data_$s($l(data):$c(2),1:"")_tiData
+ .s x=$o(PLIST(""),-1)+1,PLIST(x)="DATA"_$c(2)_data
+ i type="NEW" d
+ .s x(4)=$o(^TEPI(x(1),1,x(2),x(3),"History",x(4)))
+ .i $l(x(4)) m ^TMP($zn,$j)=^TEPI(x(1),1,x(2),x(3),"History",x(4))
+ .i '$l(x(4)) m ^TMP($zn,$j)=^TEPI(x(1),1,x(2),x(3)) k ^TMP($zn,$j,"History")
+ . ; retrieve data
+ .s (data,ti)="" f  s ti=$o(^TMP($zn,$j,"DATA",ti)) q:ti=""  d
+ ..s format=$$seldata^LVBCTTC(ti,5)
+ ..s tiData=ti_"("_$$seldata^LVBCTTC(ti,14)_")"_$c(28)_$tr($g(^TMP($zn,$j,"DATA",ti)),"\",$c(28))
+ ..i format="D",$l($p(tiData,$c(28),2)) s $p(tiData,$c(28),2)=$$extdate2^SSUTIL4($p(tiData,$c(28),2))
+ ..i format="T",$l($p(tiData,$c(28),2)) s $p(tiData,$c(28),2)=$$exttime^SSUTIL4($p(tiData,$c(28),2))
+ ..s (ant,j)="" f  s j=$o(^TMP($zn,$j,"DATA",ti,"ANT",j)) q:j=""  s ant=ant_$s($l(ant):"|",1:"")_j_"\"_^(j)
+ ..i $l(ant) s $p(tiData,$c(28),14)=ant
+ ..s comm="" f j=1:1 q:'$d(^TMP($zn,$j,"DATA",ti,"REM",j))  s comm=comm_$s($l(comm):"|",1:"")_^(j)
+ ..i $l(comm) s $p(tiData,$c(28),15)=comm
+ ..s data=data_$s($l(data):$c(2),1:"")_tiData
+ .s x=$o(PLIST(""),-1)+1,PLIST(x)="DATA"_$c(2)_data
+ k ^TMP($zn,$j)
+ q 0
+select(RowID,skip) S RowID=$G(RowID),skip=$g(skip) k PLIST
+  ;---&sql( SELECT * INTO :PLIST() FROM EP_VisitTestSetHistory WHERE VISTH_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ Do %0Go
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; select data by code and field No
+seldata(ROWID,data) n (ROWID,data) s ROWID=$g(ROWID),data=$g(data),result=""
+ i $l(ROWID) d  q result
+ .f j=1:1:4 s x(j)=$p(ROWID,"||",j)
+ .i $l(x(1)),$l(x(2)),$l(x(3)),$l(x(4)),data=6 s result=$p($g(^TEPI(x(1),1,x(2),x(3),"History",x(4))),"\",4) q
+ .i '$$select(ROWID,"Y") s result=$g(PLIST(data))
+ q result
+ ;
+insert(par,oldData) d pre("N") s PLIST(0)=$g(par) K PLIST(1)
+ i $g(PLIST(2))="" s PLIST(2)=$o(^TEPI($p(par,"||",1),1,$p(par,"||",2),$p(par,"||",3),"History",""),-1)+1
+  ;---&sql(INSERT INTO EP_VisitTestSetHistory VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Jo
+ I 'SQLCODE d  q $$select(%ROWID)
+ .s x="" f  s x=$o(oldData(x)) q:x=""  m ^TEPI($p(par,"||",1),1,$p(par,"||",2),$p(par,"||",3),"History",PLIST(2),x)=oldData(x)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$G(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; Adjust certain fields
+pre(xUpdate) d PreSQL^SSUTIL4()
+ q
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("")
+ i $g(skip)="Y" q
+ ;
+ f J=5 i $g(PLIST(J))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$selrow^MVBSSUSR(plist(J),"Y")
+ .s X="" i 'SQLCODE s X=PLIST(2)_$c(1)_PLIST(3)
+ .k PLIST m PLIST=plist s PLIST(J)=X k plist
+ f j1=6,7 s x=$g(PLIST(j1)) d
+ .f j2=4,7,20,21,24,27,44,49,55,59,62,68,71,75,78,80 i $l($p(x,$c(2),j2)) s $p(x,$c(2),j2)=$$extdate2^SSUTIL4($p(x,$c(2),j2))
+ .f j2=5,8,16,22,25,34,50,60,63,69,72,76,79,81 i $p(x,$c(2),j2) s $p(x,$c(2),j2)=$$exttime^SSUTIL4($p(x,$c(2),j2))
+ .s PLIST(j1)=x
+ q 
+getall(par) n (par,PLIST) k ^TMP($zn,$j) s par=$g(par)
+ i $$open(par)
+ f cnt=1:1 q:$$fetch(par)  d
+ .s str="" f j=1:1:PLIST s $p(str,$c(28),j)=PLIST(j)
+ .s ^TMP($zn,$j,cnt)=$p(PLIST(1),$c(1))_$c(2)_$p(PLIST(3),$c(1))_$c(2)_$p(PLIST(2),$c(1))_$c(2)_str
+ i $$close()
+ k PLIST m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+ q
+%0ABr1 n PLIST
+ s %VISTH0d(8)=""
+ f j=1:1:3 s @("x"_j)=$p($g(%VISTH0d(1)),"||",j)
+ i $l(x1),$l(x2),$l(x3) d
+ .s x4=$o(^TEPI(x1,1,x2,x3,"History",$g(%VISTH0d(3))))
+ .i x4'="" s %VISTH0d(8)=$$seldata^LVBVISTH($g(%VISTH0d(1))_"||"_x4,6)
+ .i x4="",'$$select^LVBVISTS($g(%VISTH0d(1)),"Y") f j=1:1:PLIST s $p(%VISTH0d(8),$c(2),j)=PLIST(j)
+ q
+%VISTH0o s $zt="%VISTH0E" s SQLCODE=$s($g(%VISTH0c):-101,1:0) q:SQLCODE'=0  s %VISTH0d(14)=0 s %VISTH0d(15)=0,%VISTH0d(16)=""
+ s %VISTH0d(9)=$g(par)
+ s %VISTH0c=1 q
+%VISTH0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %VISTH0c,%VISTH0d,%VISTH0E,%VISTH0l,%VISTH0n,%VISTH0R,%VISTH0Z q
+%0Afirst 
+ ; asl MOD# 2
+ s %VISTH0d(1)=%VISTH0d(9)
+ s %VISTH0d(11)=$p(%VISTH0d(1),"||"),%VISTH0d(12)=$p(%VISTH0d(1),"||",2),%VISTH0d(13)=$p(%VISTH0d(1),"||",3)
+ i %VISTH0d(11)="" g %0ABdun
+ i %VISTH0d(12)="" g %0ABdun
+ i %VISTH0d(13)="" g %0ABdun
+ s %VISTH0d(3)=""
+%0ABk1 s %VISTH0d(3)=$o(^TEPI(%VISTH0d(11),1,%VISTH0d(12),%VISTH0d(13),"History",%VISTH0d(3)))
+ i %VISTH0d(3)="" g %0ABdun
+ s %VISTH0d(26)=$g(^TEPI(%VISTH0d(11),1,%VISTH0d(12),%VISTH0d(13),"History",%VISTH0d(3)))
+ s %VISTH0d(4)=$p(%VISTH0d(26),"\",1) s %VISTH0d(5)=$p(%VISTH0d(26),"\",2) s %VISTH0d(6)=$p(%VISTH0d(26),"\",3) s %VISTH0d(7)=$p(%VISTH0d(26),"\",4)
+ s %VISTH0d(2)=(%VISTH0d(11))_"||"_(%VISTH0d(12))_"||"_(%VISTH0d(13))_"||"_(%VISTH0d(3))
+ s %VISTH0d(1)=$p(%VISTH0d(2),"||",1,3)
+ d %0ABr1
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TEPI($p(%VISTH0d(2),"||",1),1,$p(%VISTH0d(2),"||",2),$p(%VISTH0d(2),"||",3),"History",$p(%VISTH0d(2),"||",4))#"S":$zu(115,4) i $t { s %VISTH0d(15)=1,%VISTH0d(16)=$name(^TEPI($p(%VISTH0d(2),"||",1),1,$p(%VISTH0d(2),"||",2),$p(%VISTH0d(2),"||",3),"History",$p(%VISTH0d(2),"||",4)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitTestSetHistory for RowID value: "_%VISTH0d(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %VISTH0d(11)=$p(%VISTH0d(2),"||"),%VISTH0d(12)=$p(%VISTH0d(2),"||",2),%VISTH0d(13)=$p(%VISTH0d(2),"||",3),%VISTH0d(3)=$p(%VISTH0d(2),"||",4)
+ i %VISTH0d(11)'="",%VISTH0d(12)'="",%VISTH0d(13)'="",%VISTH0d(3)'="",$d(^TEPI(%VISTH0d(11),1,%VISTH0d(12),%VISTH0d(13),"History",%VISTH0d(3)))
+ e  g %0ACdun
+ s %VISTH0d(36)=$g(^TEPI(%VISTH0d(11),1,%VISTH0d(12),%VISTH0d(13),"History",%VISTH0d(3)))
+ s %VISTH0d(4)=$p(%VISTH0d(36),"\",1) s %VISTH0d(5)=$p(%VISTH0d(36),"\",2) s %VISTH0d(6)=$p(%VISTH0d(36),"\",3) s %VISTH0d(7)=$p(%VISTH0d(36),"\",4)
+ s %VISTH0d(1)=$p(%VISTH0d(2),"||",1,3)
+ d %0ABr1
+%0ABuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %VISTH0d(14)=%VISTH0d(14)+1,%ROWCOUNT=%VISTH0d(14),%ROWID=%VISTH0d(2),%VISTH0c=10 q
+%VISTH0f i '$g(%VISTH0c) { s SQLCODE=-102 q  } i %VISTH0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%VISTH0d(14))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%VISTH0d(14),%VISTH0c=100 q  } g %0Afirst:%VISTH0c=1
+%0ACdun i $zu(115,2)=1,$g(%VISTH0d(15))=1 { l -@%VISTH0d(16) s %VISTH0d(15)=0 }
+ g %0ABk1
+%0ABdun 
+%0AAdun 
+ s %ROWCOUNT=%VISTH0d(14),SQLCODE=100,%VISTH0c=100 q
+%VISTH0c i '$g(%VISTH0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%VISTH0d(14)),1:0)
+ i $zu(115,2)=1,$g(%VISTH0d(15))=1 { l -@%VISTH0d(16) } k %VISTH0c,%VISTH0d,%VISTH0E,%VISTH0l,%VISTH0n,%VISTH0R,%VISTH0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %VISTH0c=100 q
+%0Eo d %VISTH0f q:SQLCODE'=0
+ s PLIST(0)=%VISTH0d(1),PLIST(1)=%VISTH0d(2),PLIST(2)=%VISTH0d(3),PLIST(3)=%VISTH0d(4),PLIST(4)=%VISTH0d(5),PLIST(5)=%VISTH0d(6),PLIST(6)=%VISTH0d(7),PLIST(7)=%VISTH0d(8)
+ q
+%0GBr1 n PLIST
+ s PLIST(7)=""
+ f j=1:1:3 s @("x"_j)=$p($g(PLIST(0)),"||",j)
+ i $l(x1),$l(x2),$l(x3) d
+ .s x4=$o(^TEPI(x1,1,x2,x3,"History",$g(PLIST(2))))
+ .i x4'="" s PLIST(7)=$$seldata^LVBVISTH($g(PLIST(0))_"||"_x4,6)
+ .i x4="",'$$select^LVBVISTS($g(PLIST(0)),"Y") f j=1:1:PLIST s $p(PLIST(7),$c(2),j)=PLIST(j)
+ q
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Gerr" s %mmmsqld(15)=0,%mmmsqld(16)=""
+ s %mmmsqld(10)=$g(RowID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(1)=%mmmsqld(10)
+ s %mmmsqld(12)=$p(PLIST(1),"||"),%mmmsqld(13)=$p(PLIST(1),"||",2),%mmmsqld(14)=$p(PLIST(1),"||",3),PLIST(2)=$p(PLIST(1),"||",4)
+ i %mmmsqld(12)'="",%mmmsqld(13)'="",%mmmsqld(14)'="",PLIST(2)'="",$d(^TEPI(%mmmsqld(12),1,%mmmsqld(13),%mmmsqld(14),"History",PLIST(2)))
+ e  g %0GBdun
+ s %mmmsqld(26)=$g(^TEPI(%mmmsqld(12),1,%mmmsqld(13),%mmmsqld(14),"History",PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(26),"\",1) s PLIST(4)=$p(%mmmsqld(26),"\",2) s PLIST(5)=$p(%mmmsqld(26),"\",3) s PLIST(6)=$p(%mmmsqld(26),"\",4)
+ s PLIST(0)=$p(PLIST(1),"||",1,3)
+ d %0GBr1
+ g:$zu(115,2)=0 %0GBuncommitted i $zu(115,2)=1 l +^TEPI($p(PLIST(1),"||",1),1,$p(PLIST(1),"||",2),$p(PLIST(1),"||",3),"History",$p(PLIST(1),"||",4))#"S":$zu(115,4) i $t { s %mmmsqld(15)=1,%mmmsqld(16)=$name(^TEPI($p(PLIST(1),"||",1),1,$p(PLIST(1),"||",2),$p(PLIST(1),"||",3),"History",$p(PLIST(1),"||",4)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitTestSetHistory for RowID value: "_PLIST(1) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(12)=$p(PLIST(1),"||"),%mmmsqld(13)=$p(PLIST(1),"||",2),%mmmsqld(14)=$p(PLIST(1),"||",3),PLIST(2)=$p(PLIST(1),"||",4)
+ i %mmmsqld(12)'="",%mmmsqld(13)'="",%mmmsqld(14)'="",PLIST(2)'="",$d(^TEPI(%mmmsqld(12),1,%mmmsqld(13),%mmmsqld(14),"History",PLIST(2)))
+ e  g %0GCdun
+ s %mmmsqld(36)=$g(^TEPI(%mmmsqld(12),1,%mmmsqld(13),%mmmsqld(14),"History",PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(36),"\",1) s PLIST(4)=$p(%mmmsqld(36),"\",2) s PLIST(5)=$p(%mmmsqld(36),"\",3) s PLIST(6)=$p(%mmmsqld(36),"\",4)
+ s PLIST(0)=$p(PLIST(1),"||",1,3)
+ d %0GBr1
+%0GBuncommitted ;
+ s SQLCODE=0 g %0Gc
+%0GCdun i $zu(115,2)=1,$g(%mmmsqld(15))=1 { l -@%mmmsqld(16) s %mmmsqld(15)=0 }
+%0GBdun 
+%0GAdun 
+%0Gc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(15))=1 { l -@%mmmsqld(16) } q
+%0Gerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Gc
+%0Jo n %i,icol,ir
+ f icol=0:1:7 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.EPVisitTestSetHistory.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Jo
+]]></Routine>
+</Export>

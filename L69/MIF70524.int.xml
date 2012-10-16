@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF70524" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF70524(mi) ; ML 23/6/98 ; ROCHE Cobas Integra 400 (Bi-Directional) ; QC - Yes
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),soh=$c(1),lf=$c(10),eot=$c(4),start=""
+ i $$start^MIF000() q
+ s delay=30 f  h delay d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s delay=30 i '$l(start) d START
+ i $l(start) d:par9="L" loadlist^MIF000(mi) d:par9="B" Request d SEND
+ s record=$$read^MIF000(soh,eot,"N") i '$l(record) q
+ s start=$p($p(record,stx,1),lf,2)
+ s block=$e($p($p(record,stx,1),lf,2),21,22)
+ d trace^MIF000(mi,$tr(record,lf,"|"),"H<--M")
+ s (sample,epis,surname,result,date,time,QC)=""
+ ; result/qc block
+ i block="04"!(block="03") d
+ .s xx=$p($p(record,stx,2),etx,1),(xTest,xResult)=""
+ .f j=1:1:$l(xx,lf) s x1=$p(xx,lf,j) i $l(x1) d
+ ..s line=$e(x1,1,2)
+ .. ; result line
+ ..i line="00" s xResult=$tr($e(x1,4,12)," "),x=$e(x1,14,16) i x d
+ ... ; ignore results greater than 20 characters in length
+ ...i $p(x,"+",2)>20!($p(x,"-",2)>20) s xResult="" q
+ ...i x>0 f i=1:1:x s xResult=xResult*10
+ ...i x<0 f i=1:1:(-x) s xResult=xResult/10
+ .. ; qc date/time line
+ ..i line="01" s date=+$h,time=$tr($e(x1,3,8)," "),time=$$inttime^SSUTIL4(time)
+ .. ; qc ID line
+ ..i line="02" s QC="\"_$tr($e(x1,3,99)," "),epis=$tr($e(x1,3,99)," ")
+ .. ; test ID line
+ ..i line="55" s xTest=$tr($e(x1,4,6)," ")
+ .. ; patient ID line
+ ..i line="53" s (epis,sample)=$tr($e(x1,3,19)," ")
+ .i $l(xTest),$l(xResult) s result=xTest_$c(par10)_xResult_$c(par11)
+ .i $l(epis),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC) s delay=1
+ q
+Request  ; Request for information from Cobas Integra
+ s message=soh_lf_"14 COBAS INTEGRA    60"_lf_stx_lf_"40 1"_lf
+ s message=message_etx_lf_eot_lf
+ w message,*-3 h 2
+ d trace^MIF000(mi,$tr(message,lf,"|"),"H-->M")
+ s record=$$read^MIF000(soh,eot,"N") i '$l(record) q
+ d trace^MIF000(mi,$tr(record,lf,"|"),"H<--M")
+ s start=$p($p(record,stx,1),lf,2)
+ s block=$e($p($p(record,stx,1),lf,2),21,22)
+ i block="62" d
+ .s xx=$p($p(record,stx,2),etx,1)
+ .f j=1:1:$l(xx,lf) s x1=$p(xx,lf,j) i $l(x1) s line=$e(x1,1,2) i line="42" d
+ ..s epis=$tr($e(x1,13,27)," "),spc=$e(x1,29,31),tray=$tr($e(x1,4,6)," ") i $l(epis) d
+ ...k ^TMP("MIF-SINGLE",$j)
+ ...d scanone^MIF000(mi,epis)
+ ...i tray'=8 f i=655,552,652,528,128,228 k ^TMP("MIF-SINGLE",$j,mi,epis,i)
+ ...i tray=8 d
+ ....i $d(^TMP("MIF-SINGLE",$j,mi,epis,655)) d  q
+ ..... ;k ^TMP("MIF-SINGLE",$j,mi,epis)
+ .....s ^TMP("MIF-SINGLE",$j,mi,epis,552)=""
+ .....s ^TMP("MIF-SINGLE",$j,mi,epis,652)=""
+ ....i $d(^TMP("MIF-SINGLE",$j,mi,epis,528)) d  q
+ ..... ;k ^TMP("MIF-SINGLE",$j,mi,epis)
+ .....s ^TMP("MIF-SINGLE",$j,mi,epis,128)=""
+ .....s ^TMP("MIF-SINGLE",$j,mi,epis,228)=""
+ ....k ^TMP("MIF-SINGLE",$j,mi,epis)
+ ...s tc="" f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ ....i tray=6," 31 "'[(" "_tc_" ") q
+ ....i tray=8," 655 552 652 528 128 228 "'[(" "_tc_" ") q
+ ....i tray=10," 601 602 603 534 167 "'[(" "_tc_" ") q
+ ....i tray'=10," 601 602 603 534 167 "[(" "_tc_" ") q
+ ....s ^TMIF(mi,10,epis,tc)=""
+ ...k ^TMP("MIF-SINGLE",$j)
+ ...i $d(^TMIF(mi,10,epis)) s ^TMIF(mi,10,epis)=spc_"\"_tray
+ q
+SAVE(mi) ; save loadlist records
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s suffix=^TMP("MIF000",$j,"LL","SUFFIX"),suffix=$p(suffix,$c(1),1)
+ s tc="" f  s tc=$o(^TMP("MIF000",$j,"LL","TEST",tc)) q:tc=""  s ^TMIF(mi,10,epis_suffix,tc)=""
+ q 0
+START ; send start/polling message to instrument
+ s message=soh_lf_"14 COBAS INTEGRA    00"_lf_stx_lf_etx_lf_eot_lf
+ w message,*-3 h 2
+ d trace^MIF000(mi,$tr(message,lf,"|"),"H-->M")
+ q
+SEND ; send data to instrumet
+ i $d(^TMIF(mi,10)) d  q
+ .s epis="" f  s epis=$o(^TMIF(mi,10,epis)) q:epis=""  d  q
+ ..s spc=$p(^(epis),"\",1)
+ ..s message=soh_lf_"14 COBAS INTEGRA    40"_lf_stx_lf
+ ..s message=message_"50 "_$e(epis_$j("",15),1,15)_lf
+ ..k VISIT i '$$select^LVBEPVIS(epis,"Y") m VISIT=PLIST
+ ..s sex=$s($g(VISIT(5))="M":"M",$g(VISIT(5))="F":"F",1:"X")
+ ..s dob="00/00/0000" i $g(VISIT(6))'="" s dob=$$extdate2^SSUTIL4(VISIT(6))
+ ..s name=$e($$NameFormat^LVBCOM03("PT","",$g(VISIT(4)),$g(VISIT(3)))_$j("",31),1,31)
+ ..s message=message_"51 "_dob_" "_sex_" "_name_lf
+ ..s message=message_etx_lf_eot_lf
+ ..w message,*-3 h 2
+ ..d trace^MIF000(mi,$tr(message,lf,"|"),"H-->M")
+ ..s record=$$read^MIF000(soh,eot,"N") i $l(record) d
+ ...s start=$p($p(record,stx,1),lf,2)
+ ...s block=$e($p($p(record,stx,1),lf,2),21,22)
+ ...i block'="00" d trace^MIF000(mi,$tr(record,lf,"|"),"H<--M")
+ ...i record[(lf_"96 12"_lf) d
+ ....s message=soh_lf_"14 COBAS INTEGRA    42"_lf_stx_lf
+ ....s message=message_"50 "_$e(epis_$j("",15),1,15)_lf
+ ....s sex=$s($g(VISIT(5))="M":"M",$g(VISIT(5))="F":"F",1:"X")
+ ....s dob="00/00/0000" i $g(VISIT(6))'="" s dob=$$extdate2^SSUTIL4(VISIT(6))
+ ....s name=$e($$NameFormat^LVBCOM03("PT","",$g(VISIT(4)),$g(VISIT(3)))_$j("",31),1,31)
+ ....s message=message_"51 "_dob_" "_sex_" "_name_lf
+ ....s message=message_etx_lf_eot_lf
+ ....w message,*-3 h 2
+ ....d trace^MIF000(mi,$tr(message,lf,"|"),"H-->M")
+ ....s record=$$read^MIF000(soh,eot,"N")
+ ...s message=soh_lf_"14 COBAS INTEGRA    10"_lf_stx_lf
+ ...s message=message_"50 "_$e(epis_$j("",15),1,15)_lf
+ ...s message=message_"53 "_$e(epis_$j("",15),1,15)_" 00/00/0000 "_spc_lf
+ ...s message=message_"54   0  0 A"_lf
+ ...s tc="" f  s tc=$o(^TMIF(mi,10,epis,tc)) q:tc=""  s message=message_"55 "_$j(tc,3)_lf
+ ...s message=message_etx_lf_eot_lf
+ ...w message,*-3 h 2
+ ...d trace^MIF000(mi,$tr(message,lf,"|"),"H-->M")
+ ...s record=$$read^MIF000(soh,eot,"N") i $l(record) d
+ ....s start=$p($p(record,stx,1),lf,2)
+ ....s block=$e($p($p(record,stx,1),lf,2),21,22)
+ ....i block'="00" d trace^MIF000(mi,$tr(record,lf,"|"),"H<--M")
+ ....i record[(lf_"96 22"_lf) d
+ .....s message=soh_lf_"14 COBAS INTEGRA    10"_lf_stx_lf
+ .....s message=message_"50 "_$e(epis_$j("",15),1,15)_lf
+ .....s message=message_"53 "_$e(epis_$j("",15),1,15)_" 00/00/0000 "_spc_lf
+ .....s tc="" f  s tc=$o(^TMIF(mi,10,epis,tc)) q:tc=""  s message=message_"55 "_$j(tc,3)_lf
+ .....s message=message_etx_lf_eot_lf
+ .....w message,*-3 h 2
+ .....d trace^MIF000(mi,$tr(message,lf,"|"),"H-->M")
+ ..k ^TMIF(mi,10,epis)
+ i '$d(^TMIF(mi,10)) d  q
+ .s message=soh_lf_"14 COBAS INTEGRA    09"_lf_stx_lf_"10 01"_lf_etx_lf_eot_lf
+ .w message,*-3 h 2
+ .d trace^MIF000(mi,$tr(message,lf,"|"),"H-->M")
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LBACKGR03" type="INT" languagemode="0" generated="1"><![CDATA[
+LBACKGR03 ; BackGround Job - 03 - background over-night job
+ q
+ ;  
+DOIT(zn,job,DATE,TIME) s zn=$g(zn),job=$g(job),DATE=$g(DATE),TIME=$g(TIME)
+ l +^TMP(zn,job,"DOIT03"):0 e  q
+ s zt=$zt,$zt="ERROR^"_$zn
+ s $p(^TMP(zn,job,"DOIT03",DATE),"^",1)="START : "_$h
+ ; check for passwords expiry
+ i '$$select^MVBCFSM(1) d
+ .k CFSM m CFSM=PLIST i CFSM(13) d
+ ..i $$open^MVBSSUSR()
+ ..f  q:$$fetch^MVBSSUSR()  d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...i " issaak trak "[(" "_PLIST(1)_" ") q
+ ...i $h-PLIST(23)>CFSM(13) s PLIST(22)="Y" i $$update^MVBSSUSR(PLIST(1))
+ ..i $$close^MVBSSUSR()
+ ; clear temporary files
+ l +^TMPclean
+ s x1="" f  s x1=$o(^TMP(x1)) q:x1=""  d
+ .s x2="" f  s x2=$o(^TMP(x1,x2)) q:x2=""  i '$d(^$JOB(x2)) k ^TMP(x1,x2)
+ s x1="" f  s x1=$o(^TMP(zn,job,x1)) q:x1=""  d
+ .s x2="" f  s x2=$o(^TMP(zn,job,x1,x2)) q:x2=""  i x2+3<DATE k ^TMP(zn,job,x1,x2)
+ l -^TMPclean
+ k ^mtemp,^mtemp0,^CacheTemp
+ ; clear .view files
+ f ext=".view",".pdf" d
+ .s dir=$$seldata^MVBCFSM(1,45) i '$l(dir) s dir=$$seldata^MVBCFSM(1,30)
+ .s dir=$tr(dir,$c(17),"\"),x=$s(dir["\":"\",1:"/") i $e(dir,$l(dir))'=x s dir=dir_x
+ .s dir=dir_"*"_ext
+ . ; MS-DOS based system
+ .i $zf(-1,"DIR "_dir_" /B > ""toDelete.txt""")
+ . ; UNIX based system
+ . ;i $zf(-1,"ls "_dir_" > ""toDelete.txt""")
+ .s file="toDelete.txt"
+ .o file:"WAS" u file w "End_Of_File",! c file
+ .o file:("RS"::$c(10,13))
+ .f  u file r x q:x="End_Of_File"  s xfile=$p(x," ",$l(x," ")) i xfile[".",$l(xfile) s ^TMP($zn,$j,"FileName",xfile)=""
+ .c file
+ .s file="" f  s file=$o(^TMP($zn,$j,"FileName",file)) q:file=""  i $zf(-1,"DEL "_file)
+ ; clear outstanding WARD reports
+ k ^TRPT("WARD")
+ ; clear already authorised indexes
+ k ^TEPIi("STATUS-TEST","A"),^TEPIi("STATUS-EPISODE","A")
+ ; clear ^TMOVE log file
+ s x1="" f  s x1=$o(^TMOVE("TEMP-IN",x1)) q:x1=""  d
+ .s x2="" f  s x2=$o(^TMOVE("TEMP-IN",x1,x2)) q:x2=""  d
+ ..s x3="" f  s x3=$o(^TMOVE("TEMP-IN",x1,x2,x3)) q:x3=""  d
+ ...s (stop,x4)="" f  s x4=$o(^TMOVE("TEMP-IN",x1,x2,x3,x4)) q:x4=""  d  i stop q
+ ....s xx=$g(^(x4)) i $p(xx,$c(1),3)+3>$h s stop=1 q
+ ....k ^TMOVE("TEMP-IN",x1,x2,x3,x4)
+ s x1="" f  s x1=$o(^TMOVE("TEMP-OUT",x1)) q:x1=""  d
+ .s x2="" f  s x2=$o(^TMOVE("TEMP-OUT",x1,x2)) q:x2=""  d
+ ..s x3="" f  s x3=$o(^TMOVE("TEMP-OUT",x1,x2,x3)) q:x3=""  d
+ ...s (stop,x4)="" f  s x4=$o(^TMOVE("TEMP-OUT",x1,x2,x3,x4)) q:x4=""  d  i stop q
+ ....s xx=$g(^(x4)) i $p(xx,$c(1),3)+3>$h s stop=1 q
+ ....k ^TMOVE("TEMP-OUT",x1,x2,x3,x4)
+ s (stop,x1)="" f  s x1=$o(^TMOVE("ErrorLog",x1)) q:x1=""  d  i stop q
+ .s xx=$g(^(x1)) i $p(xx,"\",5)+3>$h s stop=1 q
+ .k ^TMOVE("ErrorLog",x1)
+ ; clear ^TMPlog log file
+ s (x1,stop)="" f  s x1=$o(^TMPlog("log",x1)) q:x1=""  d  i stop q
+ .i $g(^TMPlog("log",x1))+3'<$h s stop=1 q
+ .k ^TMPlog("log",x1)
+ ; clear ^AUDIT log file
+ s x1="" f  s x1=$o(^AUDIT(x1)) q:x1=""  d
+ .s (x2,stop)="" f  s x2=$o(^AUDIT(x1,x2)) q:x2=""  d  i stop q
+ ..i $p($g(^(x2)),"\",3)+180'<$h s stop=1 q
+ ..k ^AUDIT(x1,x2)
+ ; clear ^DBLock log file
+ s x1="" f  s x1=$o(^DBLock(x1)) q:x1=""  d
+ .s x2="" f  s x2=$o(^DBLock(x1,x2)) q:x2=""  d
+ ..i $d(^(x2))#10,$p(^(x2),"^",3)+3<$h k ^DBLock(x1,x2)
+ ..s x3="" f  s x3=$o(^DBLock(x1,x2,x3)) q:x3=""  d
+ ...i $d(^(x3))#10,$p(^(x3),"^",3)+3<$h k ^DBLock(x1,x2,x3)
+ ; clear empty reports
+ s x="" f  s x=$o(^PR(x)) q:x=""  d
+ .i '$d(^PR(x,"PRT")),$$delete^LVBPRPR($p(x,"||",1))
+ .i '$d(^PR(x,1,"DEST")),$$delete^LVBPRPR($p(x,"||",1))
+ ; clear reports
+ I $$open^LVBPRPR()
+ F  Q:$$fetch^LVBPRPR()  D
+ .F J=1:1:PLIST I $D(PLIST(J)) S PLIST(J)=$P(PLIST(J),$C(1))
+ .K REPORT M REPORT=PLIST
+ .i '$L(REPORT(13)) s REPORT(13)=10
+ . ; delete report which errored out
+ .I REPORT(6)="E" D  Q
+ ..I $$delete^LVBPRPR($p(REPORT(1),"||",1))
+ . ; delete report which expired
+ .I REPORT(6)="P" D  Q
+ ..i $L(REPORT(4)),$L(REPORT(13)),REPORT(4)+REPORT(13)<$H,$$delete^LVBPRPR($p(REPORT(1),"||",1))
+ . ; delete report which is more then 10 days old
+ .I REPORT(6)'="P" D  Q
+ ..i REPORT(2)+REPORT(13)<$H,$$delete^LVBPRPR($p(REPORT(1),"||",1))
+ I $$close^LVBPRPR()
+ ; check Machines to purge
+ i $$open^LVBMIMP()
+ f  q:$$fetch^LVBMIMP()  i +$p(PLIST(26),$c(1))'="0",$$purge^LVBMIRH($p(PLIST(1),$c(1)),$h-$p(PLIST(26),$c(1)))
+ i $$close^LVBMIMP()
+ ; clear Machine pending file
+ i $$open^LVBMIMP()
+ f  q:$$fetch^LVBMIMP()  d
+ .s mi=$p(PLIST(2),$c(1))
+ .s epis="" f  s epis=$o(^TMPmif(mi,20,epis)) q:epis=""  s x1=$p($g(^(epis)),"\",1) i $h-$p(x1,",",1)>30 k ^TMPmif(mi,20,epis)
+ .s epis="" f  s epis=$o(^TMIF(mi,20,epis)) q:epis=""  d
+ ..s ok=1 f j=1,2 s @("x"_j)=$p($g(^(epis)),"\",j)
+ ..i $h-$p(x1,",",1)>30 k ^TMIF(mi,20,epis) q
+ ..i $p(x1,",",1)>$p(x2,",",1) s ok=0
+ ..e  i $p(x1,",",1)=$p(x2,",",1),$p(x1,",",2)>$p(x2,",",2) s ok=0
+ ..i ok,$h-$p(x1,",",1)>3 m ^TMPmif(mi,20,epis)=^TMIF(mi,20,epis) k ^TMIF(mi,20,epis)
+ i $$close^LVBMIMP()
+ ; clear machine logs
+ i $$open^LVBMIMP()
+ f  q:$$fetch^LVBMIMP()  d
+ .s mi=$p(PLIST(2),$c(1))
+ .s epis="" f  s epis=$o(^TMIF(mi,15,epis)) q:epis=""  d
+ ..s xx=$g(^(epis))
+ ..i xx,$h-xx>30 k ^TMIF(mi,15,epis)
+ ..i 'xx s ts="" f  s ts=$o(^TMIF(mi,15,epis,ts)) q:ts=""  d
+ ...s xx=$g(^(ts)) i xx,$h-xx>30 k ^TMIF(mi,15,epis,ts)
+ .s epis="" f  s epis=$o(^TMIF(mi,16,epis)) q:epis=""  d
+ ..s ts="" f  s ts=$o(^TMIF(mi,16,epis,ts)) q:ts=""  d
+ ...s xx=$g(^(ts)) i xx,$h-xx>30 k ^TMIF(mi,16,epis,ts)
+ .s epis="" f  s epis=$o(^TMIF(mi,17,epis)) q:epis=""  d
+ ..s xx=$g(^(epis)) i xx,$h-xx>30 k ^TMIF(mi,17,epis)
+ i $$close^LVBMIMP()
+ ; set InActive Doctors
+ i '$$select^MVBCFLAB(1),PLIST(83) d
+ .k ^TMP($zn,$j,"Active Doctors")
+ .s dt=$h-PLIST(83) f  s dt=$o(^TDAY(1,dt)) q:dt=""  d
+ ..s ep="" f  s ep=$o(^TDAY(1,dt,0,ep)) q:ep=""  d
+ ...i '$d(^TEPI(ep)) k ^TDAY(1,dt,0,ep) q
+ ...s doc=$p(^TEPI(ep),"\",13) i $l(doc) s ^TMP($zn,$j,"Active Doctors",doc)=""
+ ...s x="" f  s x=$o(^TEPI(ep,5,x)) q:x=""  d
+ ....s doc=$p(^TEPI(ep,5,x),"\",1) i $l(doc) s ^TMP($zn,$j,"Active Doctors",doc)=""
+ .s doc="" f  s doc=$o(^TTAB("DR",doc)) q:doc=""  d
+ ..s start=$$seldata^LVBCTDR(doc,21) i $l(start),start'<($h-PLIST(83)) q
+ ..i '$d(^TMP($zn,$j,"Active Doctors",doc)) s $p(^TTAB("DR",doc,0),"\",10)="N"
+ .k ^TMP($zn,$j,"Active Doctors")
+ ; purge sent files >3 days old
+ f j="PIT","HL7","HL7MD" d
+ .s x1="" f  s x1=$o(^TEDI("SENT-DATA",j,x1)) q:x1=""  d
+ ..s x2="" f  s x2=$o(^TEDI("SENT-DATA",j,x1,x2)) q:x2=""  i $h-^(x2)>3 k ^TEDI("SENT-DATA",j,x1,x2)
+ ; purge trace files >3 days old
+ s x1=""  f  s x1=$o(^TEDI("TRACE",x1)) q:x1=""  d
+ .s x2=""  f  s x2=$o(^TEDI("TRACE",x1,x2)) q:x2=""  i $h-x2>3 k ^TEDI("TRACE",x1,x2)
+ ; clear daybook tape print queue
+ s date=+$h,epis="" f  s epis=$o(^THIRi("BLOCK-PRINT",epis)) q:epis=""  d
+ .i $$select^LVBEPVIS(epis,"Y") k ^THIRi("BLOCK-PRINT",epis) q
+ .i date-$p(PLIST(10),$c(1))>14 k ^THIRi("BLOCK-PRINT",epis)
+ ; BB expiry packs
+ s rowid=1,xx1=$$seldata^MVBCFLAB(rowid,53),xx2=$$seldata^MVBCFLAB(rowid,84)
+ i $l(xx1),$l(xx2) d
+ .f jj="IN-1","IN-0" d
+ ..k PLIST
+ ..i $$open^LVBBBP("","","","Y","","","","","",$c(1)_"Y"_($h-1)_$c(1,1,1,1)_jj)
+ ..f  q:$$fetch^LVBBBP("","","","Y","","","","","",$c(1)_"Y"_($h-1)_$c(1,1,1,1)_jj)  d
+ ...k plist m plist=PLIST
+ ...i '$$sellast^LVBBBPT(PLIST(1)),$p(PLIST(3),$c(1))=xx1 q
+ ...k PLIST m PLIST=plist
+ ...s rowid=PLIST(1)
+ ... ;---s loc="" &SQL(SELECT BBP_do_Location_DR INTO :loc FROM BBP_PackDetails WHERE BBP_RowID=:rowid)
+  ... ;--- ** SQL PUBLIC Variables: SQLCODE, loc, rowid
+ ...s loc="" Do %0Ao
+ ...s loc=$p(loc,$c(1))
+ ...k PLIST
+ ...s PLIST(3)=xx1
+ ...s PLIST(4)=$p($h,",",1)
+ ...s PLIST(5)=$p($h,",",2)
+ ...s PLIST(6)=""
+ ...s PLIST(7)="Auto Expiry"
+ ...s PLIST(8)=""
+ ...s PLIST(9)=""
+ ...s PLIST(10)=xx2
+ ...s PLIST(11)=loc
+ ...s PLIST(12)=""
+ ...s PLIST=$o(PLIST(""),-1) i $$insert^LVBBBPT(rowid)
+ ..i $$close^LVBBBP()
+ ; BB revert to stock packs
+ s rowid=1,xx1=$$seldata^MVBCFLAB(rowid,58),xx2=$$seldata^MVBCFLAB(rowid,85),xx3=$$seldata^MVBCFLAB(rowid,86)
+ i $l(xx1),$l(xx2),$l(xx3) d
+ .f jj="IN-1","IN-0" d
+ ..k PLIST
+ ..i $$open^LVBBBP("","","","Y","","","","","",$c(1,1,1,1,1)_jj)
+ ..f  q:$$fetch^LVBBBP("","","","Y","","","","","",$c(1,1,1,1,1)_jj)  d
+ ... ; not in a vts
+ ...i '$l(PLIST(12)) q
+ ...s rowid1=$p(PLIST(12),$c(1))_"||"_PLIST(1)
+ ...i $$select^LVBVISTE(rowid1) q
+ ...i PLIST(8)>$h q
+ ...i PLIST(8)=(+$h),PLIST(9)>$p($h,",",2) q
+ ...s rowid2=PLIST(2)_"||"_PLIST(3)
+ ... ;---s (loc,autologous)="" &SQL(SELECT BBP_Autologous,BBP_do_Location_DR INTO :autologous,:loc FROM BBP_PackDetails WHERE BBP_RowID=:rowid2)
+  ... ;--- ** SQL PUBLIC Variables: SQLCODE, autologous, loc, rowid2
+ ...s (loc,autologous)="" Do %0Co
+ ...s loc=$p(loc,$c(1)),autologous=$p(autologous,$c(1))
+ ...k PLIST
+ ...s PLIST(3)=xx1
+ ...s PLIST(4)=$p($h,",",1)
+ ...s PLIST(5)=$p($h,",",2)
+ ...s PLIST(6)=""
+ ...s PLIST(7)="Auto Revert to Stock"
+ ...s PLIST(8)=$s(autologous="Y":$$mrn^LVBEPVIS($p(rowid1,"||")),1:"")
+ ...s PLIST(9)=""
+ ...s PLIST(10)=$s(autologous="Y":xx3,1:xx2)
+ ...s PLIST(11)=loc
+ ...s PLIST(12)=""
+ ...s PLIST=$o(PLIST(""),-1) i $$insert^LVBBBPT(rowid2)
+ ..i $$close^LVBBBP()
+ ; check automatic VQ's
+ k test
+ s ts="" f  s ts=$o(^TTAB("TS",ts)) q:ts=""  s xx=$$seldata^LVBCTTS(ts,71) i $l(xx) d
+ .f j=1:1:$l(xx,",") s x1=$p($p(xx,",",j),"-",1),x2=$p($p(xx,",",j),"-",2),x3=$p($p(xx,",",j),"-",3) i $l(x1),$l(x2) s test(ts,x1)=x2_"\"_x3
+ .s test(ts)=""
+ s ts="" f  s ts=$o(test(ts)) q:ts=""  d
+ .f st="C","E" d
+ ..s ep="" f  s ep=$o(^TEPIi("STATUS-TEST",st,ts,ep)) q:ep=""  d
+ ...s cnt="" f  s cnt=$o(^TEPIi("STATUS-TEST",st,ts,ep,cnt)) q:cnt=""  d
+ ....s vts=ep_"||"_ts_"||"_cnt
+ ....s last=$o(^TEPI(ep,1,ts,cnt,"QUEUE","VQ",""),-1),Queue=""
+ ....i '$$select^LVBVISTQ(vts_"||VQ||"_last) s Queue=$p(PLIST(10),$c(1))
+ ....s date=$h-$$seldata^LVBVISTS(vts,24)
+ ....s x=$o(test(ts,date),-1)
+ ....i $l(x),$p(test(ts,x),"\",1)'=Queue d
+ ..... ; close current queue
+ .....k PLIST i $l(last),'$$select^LVBVISTQ(vts_"||VQ||"_last) d
+ ......s PLIST(7)=+$h,PLIST(8)=$p($h,",",2),PLIST(9)="trak"
+ ......i $$update^LVBVISTQ(vts_"||VQ||"_last)
+ ..... ; create new queue
+ .....i '$$refer^LVBVISTQ(vts,$p(test(ts,x),"\"),"trak"),$l($p(test(ts,x),"\",2)),$$START^PRTREP00(,,vts,$p(test(ts,x),"\",2))
+ ; clear THOS logfile
+ s hos="" f  s hos=$o(^THOS(hos)) q:hos=""  d
+ .s last=$o(^THOS(hos,"DONE",""),-1)-10000
+ .i last>0 s cnt="" f  s cnt=$o(^THOS(hos,"DONE",cnt)) q:cnt=""  q:cnt>last  k ^THOS(hos,"DONE",cnt)
+ ; over night reports
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","ONR")),"\",1) i $l(%routine) x "d ^"_%routine
+ s $p(^TMP(zn,job,"DOIT03",DATE),"^",2)="FINISH : "_$h
+ l -^TMP(zn,job,"DOIT03")
+ s $zt=zt
+ q
+ERROR d BACK^%ETN
+ s $zt=$g(zt)
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(8)=0,%mmmsqld(9)=""
+ s %mmmsqld(4)=$g(rowid)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",$d(^TBBP(%mmmsqld(6),%mmmsqld(7)))
+ e  g %0ABdun
+ s %mmmsqld(13)=$g(^TBBP(%mmmsqld(6),%mmmsqld(7)))
+ s loc=$p(%mmmsqld(13),"\",8)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TBBP($p(%mmmsqld(3),"||",1),$p(%mmmsqld(3),"||",2))#"S":$zu(115,4) i $t { s %mmmsqld(8)=1,%mmmsqld(9)=$name(^TBBP($p(%mmmsqld(3),"||",1),$p(%mmmsqld(3),"||",2)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.BBP_PackDetails for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",$d(^TBBP(%mmmsqld(6),%mmmsqld(7)))
+ e  g %0ACdun
+ s %mmmsqld(17)=$g(^TBBP(%mmmsqld(6),%mmmsqld(7)))
+ s loc=$p(%mmmsqld(17),"\",8)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) s %mmmsqld(8)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(10)=0,%mmmsqld(11)=""
+ s %mmmsqld(6)=$g(rowid2)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ s %mmmsqld(8)=$p(%mmmsqld(5),"||"),%mmmsqld(9)=$p(%mmmsqld(5),"||",2)
+ i %mmmsqld(8)'="",%mmmsqld(9)'="",$d(^TBBP(%mmmsqld(8),%mmmsqld(9)))
+ e  g %0CBdun
+ s %mmmsqld(15)=$g(^TBBP(%mmmsqld(8),%mmmsqld(9)))
+ s autologous=$p(%mmmsqld(15),"\",20) s loc=$p(%mmmsqld(15),"\",8)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TBBP($p(%mmmsqld(5),"||",1),$p(%mmmsqld(5),"||",2))#"S":$zu(115,4) i $t { s %mmmsqld(10)=1,%mmmsqld(11)=$name(^TBBP($p(%mmmsqld(5),"||",1),$p(%mmmsqld(5),"||",2)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.BBP_PackDetails for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(8)=$p(%mmmsqld(5),"||"),%mmmsqld(9)=$p(%mmmsqld(5),"||",2)
+ i %mmmsqld(8)'="",%mmmsqld(9)'="",$d(^TBBP(%mmmsqld(8),%mmmsqld(9)))
+ e  g %0CCdun
+ s %mmmsqld(19)=$g(^TBBP(%mmmsqld(8),%mmmsqld(9)))
+ s autologous=$p(%mmmsqld(19),"\",20) s loc=$p(%mmmsqld(19),"\",8)
+%0CBuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) s %mmmsqld(10)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+]]></Routine>
+</Export>

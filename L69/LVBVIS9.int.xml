@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBVIS9" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBVIS9 ; IG 2/6/98 ; Visit selection routines
+ ;
+ ; supported calls:
+ ;
+ ; $$open^LVBVIS9(user,type,exe,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBVIS9(user,type,exe,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBVIS9(user,type,exe,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBVIS9()
+ ;
+ ; type - VQ-Verif or Queue
+ ;        WQ-Work Queue
+ ;        RQ-ReadOnly Queue
+ ; exe  - BB-BB packs
+ ;          -patients
+open(user,type,exe,p3,p4,p5,p6,p7,p8,p9) n (user,type,exe) k ^TMP($zn,$j,"LIST",type) s user=$g(user),type=$g(type),exe=$g(exe)
+ i $$open^MVBSUVQ(user,"Y")
+ f  q:$$fetch^MVBSUVQ(user,"Y")  s xx=$p(PLIST(2),$c(1)) i $d(^TEPIi("QUEUE",type,xx)) d
+ .s x1="" f  s x1=$o(^TEPIi("QUEUE",type,xx,x1)) q:x1=""  d
+ ..  ;---&sql(SELECT EPVIS_StatusPatient INTO :xxx FROM EP_VisitNumber WHERE EPVIS_RowID=:x1)
+  ..  ;--- ** SQL PUBLIC Variables: SQLCODE, x1, xxx
+ .. Do %0Ao
+ ..s xxx=$p(xxx,$c(1))
+ ..i exe="BB",xxx'=9 q
+ ..i exe'="BB",xxx=9 q
+ ..s x2="" f  s x2=$o(^TEPIi("QUEUE",type,xx,x1,x2)) q:x2=""  d
+ ...s x3="" f  s x3=$o(^TEPIi("QUEUE",type,xx,x1,x2,x3)) q:x3=""  d
+ ....s rowid=x1_"||"_x2_"||"_x3,ValUser=$$ValUser^LVBVIS14(user,rowid) i (ValUser=60)!(ValUser=100) q
+ ....s prio=$$priority^LVBVISTS(rowid) i prio="" s prio=" "
+ ....s x4="" f  s x4=$o(^TEPIi("QUEUE",type,xx,x1,x2,x3,x4)) q:x4=""  d
+ ..... ; Referral
+ .....i $p(^(x4),"\")="Y" d
+ ......s ^TMP($zn,$j,"LIST",type,xx,1)=$g(^TMP($zn,$j,"LIST",type,xx,1))+1
+ ......s ^TMP($zn,$j,"LIST",type,xx,1,x1_"||"_x2_"||"_x3)=x1_"||"_x2_"||"_x3_"||"_type_"||"_x4
+ .....s ^TMP($zn,$j,"LIST",type,xx,0,prio)=$g(^TMP($zn,$j,"LIST",type,xx,0,prio))+1
+ .....s ^TMP($zn,$j,"LIST",type,xx,0,prio,x1_"||"_x2_"||"_x3)=x1_"||"_x2_"||"_x3_"||"_type_"||"_x4
+ i $$close^MVBSUVQ()
+ s x="" f  s x=$o(^TMP($zn,$j,"LIST",type,x)) q:x=""  d
+ .i '$$select^LVBCTVQ(x) s ^TMP($zn,$j,"LIST",type,x)=PLIST(2)_$c(1)_PLIST(3)_$c(1)_PLIST(4)
+ s ^TMP($zn,$j,"LIST",type)=""
+ q 0
+ ; PLIST - 1-Verif.Queue
+ ;         2-Total Tests
+ ;         3-Referral Tests
+ ;         4..-Tests by priority
+fetch(user,type,exe,p3,p4,p5,p6,p7,p8,p9) n (user,type,exe,PLIST) s user=$g(user),type=$g(type),exe=$g(exe),SQLCODE=100
+ s line=$g(^TMP($zn,$j,"LIST",type)),line=$o(^TMP($zn,$j,"LIST",type,line))
+ i $l(line) d
+ .s SQLCODE=0,^TMP($zn,$j,"LIST",type)=line k PLIST
+ .s PLIST(1)=$g(^TMP($zn,$j,"LIST",type,line))
+ .s (total,x)="" f j=4:1 s x=$o(^TMP($zn,$j,"LIST",type,line,0,x)) q:x=""  s total=total+^(x),PLIST(j)=x_$c(1)_^(x)
+ .s PLIST(2)=total
+ .s PLIST(3)=$g(^TMP($zn,$j,"LIST",type,line,1))
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(user,type,exe,p3,p4,p5,p6,p7,p8,p9) s user=$g(user),type=$g(type),exe=$g(exe) k ^TMP($zn,$j,1)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(user,type,exe) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,1,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,1,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j,1) k ^TMP($zn,$j,1)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+close() k ^TMP($zn,$j,"LIST")
+ q 0
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(x1)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3)))
+ s xxx=$p(%mmmsqld(10),"\",44)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3)))
+ s xxx=$p(%mmmsqld(13),"\",44)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+]]></Routine>
+</Export>

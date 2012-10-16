@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNUK02" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTCLNUK02	; IG 07/10/98 ; Health Authority Cytology File
+	q
+	; Parameters :  1. Start Date
+	;               2. End Date
+	;
+CREATE(REPID,PAR,USER,%msql)	; Create report
+	; 
+	; Modified Dec 2007 to:
+	;   1. use a sequence number in the report header (uses a global seed)
+	;   2. transalte result codes of "00" to "  "  (spaces)
+	;                                    Ian (dec 2007)
+	n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+	d INIT
+	d BODY
+	d FILE
+	;
+CREND	k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+	q
+add(pc)	s pc=$tr($g(pc)," ") i $l(pc) s ^CLN("CLNUK02",pc)=""
+	q 0
+delete(pc)	s pc=$tr($g(pc)," ") i $l(pc) k ^CLN("CLNUK02",pc)
+	q 0
+getall()	k PLIST 
+	s pc="" f j=1:1 s pc=$o(^CLN("CLNUK02",pc)) q:pc=""  s PLIST(j)=pc
+	s PLIST=$o(PLIST(""),-1)
+	q 0
+	; ====
+INIT	; initialise parameters
+	f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+	d H^PRTREP00(PAR10,$zn)
+	s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+	q
+	; =====
+BODY	; create temporary printing file
+	s StartDate=$tr($zd($p(PAR,$c(1),1),4),"/")
+	s EndDate=$tr($zd($p(PAR,$c(1),2),4),"/")
+	s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
+	. s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+	. . s dr=$$seldata^LVBEPVIS(epis,15) i $l(dr) s pc=$tr($$seldata^LVBCTDR(dr,13)," ")
+	. . i $l(pc) s sort=$s($d(^CLN("CLNUK02",pc)):1,1:2)
+	. . i '$l(pc) s sort=2
+	. . f ts="G0100" i $d(^TEPIi("AUTHORISED",date,epis,ts)) d
+	. . . s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
+	. . . . s vts=epis_"||"_ts_"||"_tscnt
+	. . . . s ^TMP($zn,$j,"REPORT",sort,date,vts)=""
+	. . . . s an=""
+	. . . . f  s an=$o(^THIR(epis,an)) q:an=""  d  
+	. . . . . i $e(an)="L",$d(^THIR(epis,an,"TEST",vts)) s ^TMP($zn,$j,"REPORT",sort,date,vts,an)=""
+	. . . . . q
+	. . . . q
+	. . . q
+	. . q
+	. q
+	;break
+	q
+	;====
+FILE	; create file
+	i $d(^TMP($zn,$j,"REPORT")) d
+	. s sort="" f  s sort=$o(^TMP($zn,$j,"REPORT",sort)) q:sort=""  d
+	. . ; 
+	. . s date="" f  s date=$o(^TMP($zn,$j,"REPORT",sort,date)) q:date=""  d
+	. . . s dir=$$seldata^MVBCFSM(1,35)
+	. . . f j="/","\" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+	. . . s dir=dir_"onewaylink"
+	. . . f j="/","\" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+	. . . ;
+	. . . ;
+	. . . s County=$s(sort=1:"Suffolk",1:"Norfolk")
+	. . . s file=dir_County_$tr($$extdate2^SSUTIL4(date),"/")_".txt"
+	. . . ;
+	. . . ; ========================= Amendment #1 Begin ============================
+	. . . ; 
+	. . . ; Keep a count of the report numbers for the report header
+	. . . s ReportNumber=$i(^TIND("PRTCLNUK02","Counter",County))
+	. . . i ReportNumber>99999 s (ReportNumber,^TIND("PRTCLNUK02","Counter",County))=ReportNumber
+	. . . f  q:$l(ReportNumber)>4  s ReportNumber="0"_ReportNumber
+	. . . ;
+	. . . o file:("WNS")
+	. . . ; 
+	. . . ; Incorporate report number in file header
+	. . . u file w "*H*N"_ReportNumber_$tr($$extdate3^SSUTIL4(date),"/")_$tr($$extdate3^SSUTIL4(date),"/")_$j("",179),!
+	. . . ; 
+	. . . ; ========================= Amendment #1 End ============================
+	. . . ; 
+	. . . ; 
+	. . . s count=0
+	. . . s vts=""
+	. . . f  s vts=$o(^TMP($zn,$j,"REPORT",sort,date,vts)) q:vts=""  d
+	. . . . s epis=$p(vts,"||",1),ts=$p(vts,"||",2),tscnt=$p(vts,"||",3) i '$$select^LVBEPVIS(epis) d
+	. . . . . k EPVIS m EPVIS=PLIST
+	. . . . . s an="" f  s an=$o(^TMP($zn,$j,"REPORT",sort,date,vts,an)) q:an=""  d
+	. . . . . . i '$$select^LVBHIVAC(epis_"||"_an) d
+	. . . . . . . k HIVAC m HIVAC=PLIST
+	. . . . . . . u file
+	. . . . . . . w $e(EPVIS(8)_$j("",14),1,14)
+	. . . . . . . w $e($tr($p(HIVAC(2),$c(1),2),"L")_$j("",8),1,8)
+	. . . . . . . w $tr($$extdate3^SSUTIL4(EPVIS(12)),"/")
+	. . . . . . . w $e(EPVIS(3)_$j("",20),1,20)
+	. . . . . . . w $e(EPVIS(4)_$j("",20),1,20)
+	. . . . . . . s mrn=$p(EPVIS(20),$c(1)),alias=EPVIS(3) i $l(mrn) d
+	. . . . . . . . s al=""
+	. . . . . . . . f  s al=$o(^TDEBi(mrn,"ALIAS",al)) q:al=""  i al'=$$ALPHAUP^SSUTIL4(EPVIS(3)) s alias=al q
+	. . . . . . . . q
+	. . . . . . . ;
+	. . . . . . . w $e(alias_$j("",20),1,20)
+	. . . . . . . w $tr($$extdate2^SSUTIL4(EPVIS(6)),"/")
+	. . . . . . . w $j("",8)
+	. . . . . . . w $e($p($g(^TEPI(epis,1,ts,tscnt,"DATA","G0001")),"\"))
+	. . . . . . . w $e($p($g(^TEPI(epis,1,ts,tscnt,"DATA","G0071")),"\"))
+	. . . . . . . s xx="",x=$p($g(^TEPI(epis,1,ts,tscnt,"DATA","G0003")),"\")
+	. . . . . . . i $l(x),'$$select^LVBCTTCT("G0003||"_x,"Y") s xx=PLIST(10)
+	. . . . . . . s doctor=EPVIS(15),dref=$$seldata^LVBCTDR(doctor,7)
+	. . . . . . . i xx>1 s dref=$$GetRefGP(epis)
+	. . . . . . . w $e(dref_$j("",6),1,6)
+	. . . . . . . w $tr($e($j(xx,6),1,6)," ","0")
+	. . . . . . . s doctor=EPVIS(15),dref=$$seldata^LVBCTDR(doctor,7)
+	. . . . . . . w $e(dref_$j("",6),1,6)
+	. . . . . . . w $e(EPVIS(32)_$j("",60),1,60)
+	. . . . . . . ; 
+	. . . . . . . ; ====================== Amendment #2 Begins ===============
+	. . . . . . . ; Translate a result code of "00" to "  "
+	. . . . . . . s xx="",x=$p($g(^TEPI(epis,1,ts,tscnt,"DATA","G0011")),"\")
+	. . . . . . . i $l(x),'$$select^LVBCTTCT("G0011||"_x,"Y") s xx=PLIST(10)
+	. . . . . . . s xxx=$tr($j(xx,2)," ","0")
+	. . . . . . . i xxx="00" s xxx="  "
+	. . . . . . . w xxx
+	. . . . . . . ; 
+	. . . . . . . ; ====================== Amendment #2 Ends ===================
+	. . . . . . . ; 
+	. . . . . . . w $e($s($l(EPVIS(8))>10:EPVIS(8),1:"")_$j("",11),1,11)
+	. . . . . . . w " "
+	. . . . . . . w " ",!
+	. . . . . . . s count=count+1
+	. . . . . . . q
+	. . . . . . q
+	. . . . . q
+	. . . . q
+	. . . ;
+	. . . u file w "*T*"_$tr($j(count,8)," ","0")_$j("",189),!
+	. . . c file
+	. . q
+	. . q
+	. q
+	q
+	; takes Lab Episode ID - returns REFDText1 from Episode Referral GP
+GetRefGP(epis)	n (epis)
+	; bounce to MedTrak
+	s nm=$zu(5)
+	s mednm=$p($g(^CF("ML",1)),"^",1)
+	d $zu(5,mednm)
+	s refdtext1=""
+	; assume that a lab episode number CANNOT span MedTrak episodes. . 
+	s ord=$o(^OEORD(0,"EpisNo",epis,"")) i ord  d
+	. s paadm=$p($g(^OEORD(ord)),"^") i paadm d
+	. . s refD=$p($g(^PAADM(paadm)),"^",82) i refD d
+	. . . s refdtext1=$p($g(^PAC("REFD",refD)),"^",30)
+	. . . q
+	. . q
+	. q
+	; back to LabTrak
+	d $zu(5,nm)
+	q refdtext1
+]]></Routine>
+</Export>

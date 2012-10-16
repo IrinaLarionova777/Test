@@ -1,0 +1,374 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="BVBPACK6" type="INT" languagemode="0"><![CDATA[
+BVBPACK6 ; IG 18/12/98 ; MVB Control data access for BB_Pack  ; Compiled May 22, 2000 13:24:09 for Cache for Windows
+ ; 
+ ; supported calls: 
+ ; 
+ ; $$open^BVBPACK6(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat) 
+ ; $$fetch^BVBPACK6(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat) 
+ ; $$fetchbuffer^BVBPACK6(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat) 
+ ; $$fetchall^BVBPACK6(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat) 
+ ; $$close^BVBPACK6() 
+ ;
+ ;
+ ; GET ALL BB_Pack 
+open(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat) 
+ k ^TMP("MVB",$j)
+ k BloodGrp s cnt=0 f j=1:1:$l(bgrplist,"^") i $p(bgrplist,"^",j) s cnt=cnt+1,BloodGrp(cnt)=$p(bgrplist,"^",j)
+ s pat=$g(pat),excl=$p(pat,"^",2),pat=$p(pat,"^")
+ s site=$p(loc,"^",2),loc=$p(loc,"^")
+ s datefrom=$p(date,"^",2),dateto=$p(date,"^",3),date=$p(date,"^")
+ s Cnt=1,bgrp=$g(BloodGrp(Cnt)),NoUnits=0
+ i packid'="" d %PACK00o 
+ i packid="" d %PACK10o 
+ q 0
+ ;
+fetch(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat) 
+ i units=0 q 100
+ s pat=$g(pat),excl=$p(pat,"^",2),pat=$p(pat,"^")
+ s site=$p(loc,"^",2),loc=$p(loc,"^")
+ s datefrom=$p(date,"^",2),dateto=$p(date,"^",3),date=$p(date,"^")
+nx  
+ k PLIST
+ i packid'="" d %0Io
+ i packid="" d %0Jo
+ s PLIST=$o(PLIST(""),-1)
+ f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ i 'SQLCODE,'$$checkXMF^BVBPKTRN(PLIST(2),pat) g nx
+ i 'SQLCODE,$l($g(stat)),(","_stat_",")'[(","_PLIST(5)_",") g nx
+ i 'SQLCODE,$l(PLIST(5)) s xxz=0 d  i xxz g nx
+ .i avail="" q
+ .s x3=$p(^CT("ST",PLIST(5)),"^",1)
+ .s x2=$p(^CT("ST",PLIST(5)),"^",4)
+ .i x3'="EX",$p(x2,$c(1))'=avail s xxz=1 q
+ .i x3="EX",date="",$p(x2,$c(1))=avail s xxz=1 q
+ i 'SQLCODE,$d(^TMP("MVB",$j,+PLIST(1))) g nx
+ i 'SQLCODE,excl'="",$g(PLIST(20))=excl g nx
+ i 'SQLCODE,$g(split)="S",'$o(^CT("PR",+$g(PLIST(8)),"SPLIT",""),-1) g nx 
+ i 'SQLCODE,$$valid(packid,prod,bgrp,date,units,avail,loc,stat,datefrom,dateto,site,$g(PLIST(1))) g nx
+ s units1=0
+ i 'SQLCODE s units1=$$units($g(PLIST(1)))
+ i 'SQLCODE,units1'>0,avail["Y" g nx
+ i 'SQLCODE,units,NoUnits'<units q 100
+ i 'SQLCODE s NoUnits=NoUnits+units1 i units,NoUnits>units s units1=units1-(NoUnits-units),NoUnits=units
+ i 'SQLCODE s PLIST(1)=$g(PLIST(1))_$c(1)_units1
+ i SQLCODE,avail'="Y" q 100
+ i SQLCODE s bgrp00=$$nextbgrp^BVBPACK1(Cnt),bgrp=$p(bgrp00,"^"),Cnt=$p(bgrp00,"^",2)
+ i SQLCODE,avail="Y",'bgrp,bgrplist'="" q 100
+ i SQLCODE g nx
+ s PLIST=$o(PLIST(""),-1) 
+ k addr i $d(PLIST(9)) m addr=PLIST(9)
+ i 'SQLCODE s ^TMP("MVB",$j,+PLIST(1))="" d adjust
+ q SQLCODE
+ ; 
+ ; Fetch all data
+fetchbuffer(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat) k ^TMP($zn,$j)
+ s packid=$g(packid),prod=$g(prod),bgrplist=$g(bgrplist),date=$g(date),units=$g(units)
+ s avail=$g(avail),loc=$g(loc),stat=$g(stat),split=$g(split),pat=$g(pat)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100)
+ f xxx=1:1:max s SQLCODE=$$fetch(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat) N (packid,prod,bgrplist,date,units,avail,loc,stat,split,pat,PLIST) K ^TMP($zn,$j)
+ s packid=$g(packid),prod=$g(prod),bgrplist=$g(bgrplist),date=$g(date),units=$g(units)
+ s avail=$g(avail),loc=$g(loc),stat=$g(stat),split=$g(split),pat=$g(pat)
+ i $$open(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat)
+ f cnt=1:1 Q:$$fetch(packid,prod,bgrplist,date,units,avail,loc,stat,split,pat)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ; 
+close() k ^TMP("MVB",$j)
+ d %PACK00c 
+ d %PACK10c 
+ q 0 
+ ;        
+ ; Adjust certain fields 
+adjust N plist,I,J,SQLCODE,X F J=1:1:PLIST I $D(PLIST(J)) S PLIST(J)=$P(PLIST(J),$C(1),1)
+ f j=9 k XX m XX=PLIST(j) i '$$remarks^LVBCOM01("IE",.XX) k PLIST(j) m PLIST(j)=XX
+ ;
+ I $G(PLIST(8))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^BVBCTPRC(plist(8))
+ .S X="" I 'SQLCODE S X=$p(PLIST(1),$c(1))_$C(1)_PLIST(3)_$c(1)_PLIST(2)
+ .K PLIST M PLIST=plist S PLIST(8)=X K plist
+ ;
+ I $G(PLIST(5))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^BVBCTSTS(plist(5))
+ .S X="" I 'SQLCODE S X=$p(PLIST(1),$c(1))_$C(1)_PLIST(3)_$C(1)_PLIST(2)
+ .K PLIST M PLIST=plist S PLIST(5)=X K plist
+ ;
+ I $G(PLIST(10))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^BVBCTBGR(plist(10))
+ .S X="" I 'SQLCODE S X=$p(PLIST(1),$c(1))_$C(1)_PLIST(3)_$C(1)_PLIST(5)
+ .K PLIST M PLIST=plist S PLIST(10)=X K plist
+ q 
+ ;
+units(pack) ;get number of units available in pack
+ q:$g(pack)="" 0
+ n (pack)
+ s ind=$o(^BB("PK",+pack,"PROD",""),-1) q:'ind 0
+ s s=^BB("PK",+pack,"PROD",ind)
+ s units=$p(s,"^",2)-$p(s,"^",3)
+ s:'units units=1
+ s:units<0 units=0
+ q units
+ ;   
+valid(packid,prod,bgrp,date,units,avail,loc,stat,datefrom,dateto,site,rowid) 
+ n (packid,prod,bgrp,date,units,avail,loc,stat,rowid,site,datefrom,dateto)
+ d %0Mo
+ i 'SQLCODE d
+ .i avail="" q
+ .i x3'="EX",$p(x2,$c(1))'=avail s SQLCODE=100 q
+ .i x3="EX",date="",$p(x2,$c(1))=avail s SQLCODE=100 q
+ q SQLCODE
+ q
+%0ABs1 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%0ABs2 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,4,-1,2) q
+%0ABs3 s %val=$$timeext^%qarzdt(%val,1) q
+%0ABs4 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,1,-1,2) q
+%0ABs5 s %val=$$timeext^%qarzdt(%val,2) q
+%PACK00o s SQLCODE=$s($g(%PACK00c):-101,1:0) q:SQLCODE'=0
+ s %PACK00c=1 k %PACK00m
+ s %PACK00E=$zt,%PACK00f=0,%PACK00e=0,%PACK00L=""
+ s %PACK00d(2)=$P(packid,$C(1))
+ s:%PACK00d(2)="" %PACK00d(2)=$E(packid,2,999)
+ q
+%0Afirst   ;  init
+ ; asl MOD# 2
+ s %PACK00d(1)=%PACK00d(2)
+ i %PACK00d(1)'="",$d(^BB("PK",0,"ID",%PACK00d(1))) g %0ABg1
+%0ABk1 s %PACK00d(1)=$o(^BB("PK",0,"ID",%PACK00d(1)))
+ i %PACK00d(1)="" g %0ABdun
+%0ABg1 i (%PACK00d(2)?1n.n),":"']%PACK00d(1) g %0ABdun
+ i '(%PACK00d(2)=$e(%PACK00d(1),1,$l(%PACK00d(2)))) g:(%PACK00d(2)?1n.n) %0ABk1 g %0ABdun
+ s %PACK00d(4)=""
+%0ABk2 s %PACK00d(4)=$o(^BB("PK",0,"ID",%PACK00d(1),%PACK00d(4)))
+ i %PACK00d(4)="" g %0ABk1
+ i %PACK00d(4)'=+%PACK00d(4) g %0ABk1
+ i %PACK00d(4)'="",$d(^BB("PK",%PACK00d(4)))
+ i '$t
+ e  i 1>%PACK00d(4),%PACK00d(4)=+%PACK00d(4)
+ i  g %0ABk2
+ s %PACK00n=$g(^BB("PK",%PACK00d(4)))
+ s %PACK00d(5)=$p(%PACK00n,"^",2) s %PACK00d(6)=$p(%PACK00n,"^",3) s %PACK00d(7)=$p(%PACK00n,"^",4) s %PACK00d(8)=$p(%PACK00n,"^",5) s %PACK00d(9)=$p(%PACK00n,"^",7) s %PACK00d(10)=$p(%PACK00n,"^",6) s %PACK00d(12)=$p(%PACK00n,"^",8) s %PACK00d(13)=$p(%PACK00n,"^",9) s %PACK00d(14)=$p(%PACK00n,"^",10)
+ s %PACK00d(15)=$p(%PACK00n,"^",11) s %PACK00d(16)=$p(%PACK00n,"^",14) s %PACK00d(17)=$p(%PACK00n,"^",15) s %PACK00d(18)=$p(%PACK00n,"^",12) s %PACK00d(19)=$p(%PACK00n,"^",13) s %PACK00d(20)=$p(%PACK00n,"^",16) s %PACK00d(21)=$p(%PACK00n,"^",17) s %PACK00d(22)=$p(%PACK00n,"^",18) s %PACK00d(23)=$p(%PACK00n,"^",19)
+ s %PACK00d(24)=$p(%PACK00n,"^",20) s %PACK00d(25)=$p(%PACK00n,"^",21) s %PACK00d(26)=$p(%PACK00n,"^",22) s %PACK00d(27)=$p(%PACK00n,"^",23) s %PACK00d(28)=$p(%PACK00n,"^",24) s %PACK00d(29)=$p(%PACK00n,"^",25) s %PACK00d(30)=$p(%PACK00n,"^",26)
+ k %PACK00d(11) s %PACK00d(11)=$g(^BB("PK",%PACK00d(4),"REM",0)) s:'%PACK00d(11) %PACK00d(11)="" f %irep=1:1:%PACK00d(11) s %PACK00d(11,%irep)=$g(^(%irep))
+ s %val=$P(%PACK00d(9),$C(1)) d %0ABs1:%val'="" s $P(%PACK00d(9),$C(1),2)=%val
+ s %val=$P(%PACK00d(5),$C(1)) d %0ABs2:%val'="" s $P(%PACK00d(5),$C(1),2)=%val
+ s %val=$P(%PACK00d(18),$C(1)) d %0ABs2:%val'="" s $P(%PACK00d(18),$C(1),2)=%val
+ s %val=$P(%PACK00d(16),$C(1)) d %0ABs2:%val'="" s $P(%PACK00d(16),$C(1),2)=%val
+ s %val=$P(%PACK00d(20),$C(1)) d %0ABs2:%val'="" s $P(%PACK00d(20),$C(1),2)=%val
+ s %val=$P(%PACK00d(19),$C(1)) d %0ABs3:%val'="" s $P(%PACK00d(19),$C(1),2)=%val
+ s %val=$P(%PACK00d(17),$C(1)) d %0ABs3:%val'="" s $P(%PACK00d(17),$C(1),2)=%val
+ s %val=$P(%PACK00d(23),$C(1)) d %0ABs1:%val'="" s $P(%PACK00d(23),$C(1),2)=%val
+ s %val=$P(%PACK00d(24),$C(1)) d %0ABs4:%val'="" s $P(%PACK00d(24),$C(1),2)=%val
+ s %val=$P(%PACK00d(25),$C(1)) d %0ABs3:%val'="" s $P(%PACK00d(25),$C(1),2)=%val
+ s %val=$P(%PACK00d(29),$C(1)) d %0ABs4:%val'="" s $P(%PACK00d(29),$C(1),2)=%val
+ s %val=$P(%PACK00d(30),$C(1)) d %0ABs5:%val'="" s $P(%PACK00d(30),$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %PACK00f=%PACK00f+1 s %PACK00c=10 q
+%PACK00f i '$g(%PACK00c) s SQLCODE=-102 q
+ i %PACK00c=100 s SQLCODE=100 q
+ s $zt="%0Aerr^"_$zn s $ze="" n %val g %0Afirst:%PACK00c=1
+ g %0ABk2
+%0ABdun 
+%0AAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %PACK00c=100 q
+%PACK00c i '$g(%PACK00c) s SQLCODE=-102 q
+ k %PACK00c,%PACK00d,%PACK00e,%PACK00E,%PACK00f,%PACK00l,%PACK00L,%PACK00n,%PACK00r,%PACK00R s SQLCODE=0 q
+%0Aerr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%PACK00E),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0FAr1 s %val=$$dateint^%qarzdt(%val,4,"") s:%val<0 %ok=0
+ q  
+%0FAr2 s %val=$$dateint^%qarzdt(%val,1,"") s:%val<0 %ok=0
+ q  
+%PACK10o s SQLCODE=$s($g(%PACK10c):-101,1:0) q:SQLCODE'=0
+ s %PACK10c=1 k %PACK10m
+ s %PACK10E=$zt,%PACK10f=0,%PACK10e=0,%PACK10L=""
+ s %PACK10d(2)=$P(loc,$C(1)),%PACK10d(3)=$P(loc,$C(1)),%PACK10d(5)=$P(site,$C(1)),%PACK10d(6)=$P(site,$C(1)),%PACK10d(8)=$P(prod,$C(1)),%PACK10d(9)=$P(prod,$C(1)),%PACK10d(11)=$P(bgrp,$C(1)),%PACK10d(12)=$P(bgrp,$C(1)),%PACK10d(14)=$P(date,$C(1)),%PACK10d(15)=$P(date,$C(1)),%PACK10d(17)=$P(datefrom,$C(1)),%PACK10d(18)=$P(datefrom,$C(1)),%PACK10d(19)=$P(dateto,$C(1)),%PACK10d(20)=$P(dateto,$C(1))
+ s:%PACK10d(2)="" %PACK10d(2)=$E(loc,2,999)
+ s:%PACK10d(5)="" %PACK10d(5)=$E(site,2,999)
+ s:%PACK10d(8)="" %PACK10d(8)=$E(prod,2,999)
+ s:%PACK10d(11)="" %PACK10d(11)=$E(bgrp,2,999)
+ i %PACK10d(14)="",$L(date)>1 s %val=$E(date,2,999) d %0FAr1 s %PACK10d(14)=%val
+ i %PACK10d(17)="",$L(datefrom)>1 s %val=$E(datefrom,2,999) d %0FAr2 s %PACK10d(17)=%val
+ i %PACK10d(19)="",$L(dateto)>1 s %val=$E(dateto,2,999) d %0FAr2 s %PACK10d(19)=%val
+ l +^mtemp s %PACK10t(1)=$zp(^mtemp(" "))+1,^(%PACK10t(1))="" l -^mtemp
+ q
+%0Ffirst   ;  init
+ k ^mtemp(%PACK10t(1),0)
+ ; asl MOD# 3
+ d %0FBMod
+ s %PACK10s(22)=""
+%0FCk1 s %PACK10s(22)=$o(^mtemp(%PACK10t(1),0,%PACK10s(22)))
+ i %PACK10s(22)="" g %0FCdun
+ s %PACK10d(22)=$s(%PACK10s(22)=" ":"",1:%PACK10s(22))
+ s %PACK10s(23)=""
+%0FCk2 s %PACK10s(23)=$o(^mtemp(%PACK10t(1),0,%PACK10s(22),%PACK10s(23)))
+ i %PACK10s(23)="" g %0FCk1
+ s %PACK10d(23)=$s(%PACK10s(23)=-99999999999999999:"",1:%PACK10s(23))
+ i %PACK10d(23)'="",$d(^BB("PK",%PACK10d(23)))
+ i '$t
+ e  i 1>%PACK10d(23),%PACK10d(23)=+%PACK10d(23)
+ i  g %0FCk2
+ s %PACK10n=$g(^BB("PK",%PACK10d(23)))
+ s %PACK10d(1)=$p(%PACK10n,"^",10) s %PACK10d(7)=$p(%PACK10n,"^",6) s %PACK10d(10)=$p(%PACK10n,"^",8) s %PACK10d(13)=$p(%PACK10n,"^",16) s %PACK10d(16)=$p(%PACK10n,"^",25) s %PACK10d(24)=$p(%PACK10n,"^",2) s %PACK10d(25)=$p(%PACK10n,"^",3) s %PACK10d(26)=$p(%PACK10n,"^",4) s %PACK10d(27)=$p(%PACK10n,"^",5)
+ s %PACK10d(28)=$p(%PACK10n,"^",7) s %PACK10d(30)=$p(%PACK10n,"^",9) s %PACK10d(31)=$p(%PACK10n,"^",11) s %PACK10d(32)=$p(%PACK10n,"^",14) s %PACK10d(33)=$p(%PACK10n,"^",15) s %PACK10d(34)=$p(%PACK10n,"^",12) s %PACK10d(35)=$p(%PACK10n,"^",13) s %PACK10d(36)=$p(%PACK10n,"^",17) s %PACK10d(37)=$p(%PACK10n,"^",18)
+ s %PACK10d(38)=$p(%PACK10n,"^",19) s %PACK10d(39)=$p(%PACK10n,"^",20) s %PACK10d(40)=$p(%PACK10n,"^",21) s %PACK10d(41)=$p(%PACK10n,"^",22) s %PACK10d(42)=$p(%PACK10n,"^",23) s %PACK10d(43)=$p(%PACK10n,"^",24) s %PACK10d(44)=$p(%PACK10n,"^",26)
+ k %PACK10d(29) s %PACK10d(29)=$g(^BB("PK",%PACK10d(23),"REM",0)) s:'%PACK10d(29) %PACK10d(29)="" f %irep=1:1:%PACK10d(29) s %PACK10d(29,%irep)=$g(^(%irep))
+ s %val=$P(%PACK10d(28),$C(1)) d %0ABs1:%val'="" s $P(%PACK10d(28),$C(1),2)=%val
+ s %val=$P(%PACK10d(24),$C(1)) d %0ABs2:%val'="" s $P(%PACK10d(24),$C(1),2)=%val
+ s %val=$P(%PACK10d(34),$C(1)) d %0ABs2:%val'="" s $P(%PACK10d(34),$C(1),2)=%val
+ s %val=$P(%PACK10d(32),$C(1)) d %0ABs2:%val'="" s $P(%PACK10d(32),$C(1),2)=%val
+ s %val=$P(%PACK10d(13),$C(1)) d %0ABs2:%val'="" s $P(%PACK10d(13),$C(1),2)=%val
+ s %val=$P(%PACK10d(35),$C(1)) d %0ABs3:%val'="" s $P(%PACK10d(35),$C(1),2)=%val
+ s %val=$P(%PACK10d(33),$C(1)) d %0ABs3:%val'="" s $P(%PACK10d(33),$C(1),2)=%val
+ s %val=$P(%PACK10d(38),$C(1)) d %0ABs1:%val'="" s $P(%PACK10d(38),$C(1),2)=%val
+ s %val=$P(%PACK10d(39),$C(1)) d %0ABs4:%val'="" s $P(%PACK10d(39),$C(1),2)=%val
+ s %val=$P(%PACK10d(40),$C(1)) d %0ABs3:%val'="" s $P(%PACK10d(40),$C(1),2)=%val
+ s %val=$P(%PACK10d(16),$C(1)) d %0ABs4:%val'="" s $P(%PACK10d(16),$C(1),2)=%val
+ s %val=$P(%PACK10d(44),$C(1)) d %0ABs5:%val'="" s $P(%PACK10d(44),$C(1),2)=%val
+ s %PACK10d(45)=$g(%PACK10d(1))
+ i %PACK10d(45)'="",$d(^CT("LO",%PACK10d(45)))
+ i '$t
+ e  i 1>%PACK10d(45),%PACK10d(45)=+%PACK10d(45)
+ i  s (%PACK10d(45),%PACK10d(4))="" g %0FCp2
+ s %PACK10n=$g(^CT("LO",%PACK10d(45)))
+ s %PACK10d(4)=$p(%PACK10n,"^",3)
+%0FCp2 
+ g:'(((%PACK10d(4))=(%PACK10d(5)))!(%PACK10d(6)="")) %0FCk2
+ s SQLCODE=0 s:SQLCODE=0 %PACK10f=%PACK10f+1 s %PACK10c=10 q
+%PACK10f i '$g(%PACK10c) s SQLCODE=-102 q
+ i %PACK10c=100 s SQLCODE=100 q
+ s $zt="%0Ferr^"_$zn s $ze="" n %val g %0Ffirst:%PACK10c=1
+ g %0FCk2
+%0FCdun 
+%0FAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %PACK10c=100 q
+%PACK10c i '$g(%PACK10c) s SQLCODE=-102 q
+ f %PACK10t=1:1:1 k ^mtemp(%PACK10t(%PACK10t))
+ k %PACK10c,%PACK10d,%PACK10e,%PACK10E,%PACK10f,%PACK10l,%PACK10L,%PACK10n,%PACK10r,%PACK10R,%PACK10s,%PACK10t s SQLCODE=0 q
+%0Ferr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%PACK10E),SQLCODE=-20603,%msg=$ze s $ze="" g %0FAdun
+%0FBMod ; asl MOD# 2
+ n %PACK10n  ; Nested NEWing for Subquery...
+ s %PACK10d(23)=""
+%0FBk1 s %PACK10d(23)=$o(^BB("PK",%PACK10d(23)))
+ i %PACK10d(23)="" g %0FBdun
+ i 1>%PACK10d(23),%PACK10d(23)=+%PACK10d(23) g %0FBk1
+ i %PACK10d(23)'=+%PACK10d(23) g %0FBdun
+ s %PACK10n=$g(^BB("PK",%PACK10d(23)))
+ s %PACK10d(16)=$p(%PACK10n,"^",25)
+ g:'((($P(%PACK10d(16),$C(1)))'<(%PACK10d(17)))!(%PACK10d(18)="")) %0FBk1
+ g:'((($P(%PACK10d(16),$C(1)))'>(%PACK10d(19)))!(%PACK10d(20)="")) %0FBk1
+ s %PACK10d(1)=$p(%PACK10n,"^",10)
+ g:'(((%PACK10d(1))=(%PACK10d(2)))!(%PACK10d(3)="")) %0FBk1
+ s %PACK10d(7)=$p(%PACK10n,"^",6)
+ g:'(((%PACK10d(7))=(%PACK10d(8)))!(%PACK10d(9)="")) %0FBk1
+ s %PACK10d(10)=$p(%PACK10n,"^",8)
+ g:'(((%PACK10d(10))=(%PACK10d(11)))!(%PACK10d(12)="")) %0FBk1
+ s %PACK10d(13)=$p(%PACK10n,"^",16)
+ g:'((($P(%PACK10d(13),$C(1)))'<(%PACK10d(14)))!(%PACK10d(15)="")) %0FBk1
+ s %PACK10d(22)=$p(%PACK10n,"^",1) s %PACK10d(24)=$p(%PACK10n,"^",2) s %PACK10d(25)=$p(%PACK10n,"^",3) s %PACK10d(26)=$p(%PACK10n,"^",4) s %PACK10d(27)=$p(%PACK10n,"^",5) s %PACK10d(28)=$p(%PACK10n,"^",7) s %PACK10d(30)=$p(%PACK10n,"^",9) s %PACK10d(31)=$p(%PACK10n,"^",11) s %PACK10d(32)=$p(%PACK10n,"^",14)
+ s %PACK10d(33)=$p(%PACK10n,"^",15) s %PACK10d(34)=$p(%PACK10n,"^",12) s %PACK10d(35)=$p(%PACK10n,"^",13) s %PACK10d(36)=$p(%PACK10n,"^",17) s %PACK10d(37)=$p(%PACK10n,"^",18) s %PACK10d(38)=$p(%PACK10n,"^",19) s %PACK10d(39)=$p(%PACK10n,"^",20) s %PACK10d(40)=$p(%PACK10n,"^",21) s %PACK10d(41)=$p(%PACK10n,"^",22)
+ s %PACK10d(42)=$p(%PACK10n,"^",23) s %PACK10d(43)=$p(%PACK10n,"^",24) s %PACK10d(44)=$p(%PACK10n,"^",26)
+ k %PACK10d(29) s %PACK10d(29)=$g(^BB("PK",%PACK10d(23),"REM",0)) s:'%PACK10d(29) %PACK10d(29)="" f %irep=1:1:%PACK10d(29) s %PACK10d(29,%irep)=$g(^(%irep))
+ s %val=$P(%PACK10d(28),$C(1)) d %0ABs1:%val'="" s $P(%PACK10d(28),$C(1),2)=%val
+ s %val=$P(%PACK10d(24),$C(1)) d %0ABs2:%val'="" s $P(%PACK10d(24),$C(1),2)=%val
+ s %val=$P(%PACK10d(34),$C(1)) d %0ABs2:%val'="" s $P(%PACK10d(34),$C(1),2)=%val
+ s %val=$P(%PACK10d(32),$C(1)) d %0ABs2:%val'="" s $P(%PACK10d(32),$C(1),2)=%val
+ s %val=$P(%PACK10d(13),$C(1)) d %0ABs2:%val'="" s $P(%PACK10d(13),$C(1),2)=%val
+ s %val=$P(%PACK10d(35),$C(1)) d %0ABs3:%val'="" s $P(%PACK10d(35),$C(1),2)=%val
+ s %val=$P(%PACK10d(33),$C(1)) d %0ABs3:%val'="" s $P(%PACK10d(33),$C(1),2)=%val
+ s %val=$P(%PACK10d(38),$C(1)) d %0ABs1:%val'="" s $P(%PACK10d(38),$C(1),2)=%val
+ s %val=$P(%PACK10d(39),$C(1)) d %0ABs4:%val'="" s $P(%PACK10d(39),$C(1),2)=%val
+ s %val=$P(%PACK10d(40),$C(1)) d %0ABs3:%val'="" s $P(%PACK10d(40),$C(1),2)=%val
+ s %val=$P(%PACK10d(16),$C(1)) d %0ABs4:%val'="" s $P(%PACK10d(16),$C(1),2)=%val
+ s %val=$P(%PACK10d(44),$C(1)) d %0ABs5:%val'="" s $P(%PACK10d(44),$C(1),2)=%val
+ s %PACK10s(22)=$s(%PACK10d(22)'="":%PACK10d(22),1:" "),%PACK10s(23)=$s(%PACK10d(23)'="":%PACK10d(23),1:-99999999999999999),^mtemp(%PACK10t(1),0,%PACK10s(22),%PACK10s(23))=""
+ g %0FBk1
+%0FBdun 
+ q
+%0Io d %PACK00f q:SQLCODE'=0
+ s PLIST(1)=%PACK00d(4),PLIST(2)=%PACK00d(1),PLIST(3)=%PACK00d(5),PLIST(4)=%PACK00d(6),PLIST(5)=%PACK00d(7),PLIST(6)=%PACK00d(8),PLIST(7)=%PACK00d(9),PLIST(8)=%PACK00d(10)
+ k PLIST(9) s PLIST(9)=%PACK00d(11) n ir f ir=1:1:PLIST(9) s PLIST(9,ir)=%PACK00d(11,ir)
+ s PLIST(10)=%PACK00d(12),PLIST(11)=%PACK00d(13),PLIST(12)=%PACK00d(14),PLIST(13)=%PACK00d(15),PLIST(14)=%PACK00d(16),PLIST(15)=%PACK00d(17),PLIST(16)=%PACK00d(18),PLIST(17)=%PACK00d(19),PLIST(18)=%PACK00d(20),PLIST(19)=%PACK00d(21),PLIST(20)=%PACK00d(22),PLIST(21)=%PACK00d(23),PLIST(22)=%PACK00d(24),PLIST(23)=%PACK00d(25),PLIST(24)=%PACK00d(26),PLIST(25)=%PACK00d(27),PLIST(26)=%PACK00d(28),PLIST(27)=%PACK00d(29)
+ s PLIST(28)=%PACK00d(30)
+ q
+%0Jo d %PACK10f q:SQLCODE'=0
+ s PLIST(1)=%PACK10d(23),PLIST(2)=%PACK10d(22),PLIST(3)=%PACK10d(24),PLIST(4)=%PACK10d(25),PLIST(5)=%PACK10d(26),PLIST(6)=%PACK10d(27),PLIST(7)=%PACK10d(28),PLIST(8)=%PACK10d(7)
+ k PLIST(9) s PLIST(9)=%PACK10d(29) n ir f ir=1:1:PLIST(9) s PLIST(9,ir)=%PACK10d(29,ir)
+ s PLIST(10)=%PACK10d(10),PLIST(11)=%PACK10d(30),PLIST(12)=%PACK10d(1),PLIST(13)=%PACK10d(31),PLIST(14)=%PACK10d(32),PLIST(15)=%PACK10d(33),PLIST(16)=%PACK10d(34),PLIST(17)=%PACK10d(35),PLIST(18)=%PACK10d(13),PLIST(19)=%PACK10d(36),PLIST(20)=%PACK10d(37),PLIST(21)=%PACK10d(38),PLIST(22)=%PACK10d(39),PLIST(23)=%PACK10d(40),PLIST(24)=%PACK10d(41),PLIST(25)=%PACK10d(42),PLIST(26)=%PACK10d(43),PLIST(27)=%PACK10d(16)
+ s PLIST(28)=%PACK10d(44)
+ q
+%0Mo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Merr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(8)=$P(packid,$C(1)),%mmmsqld(10)=$P(prod,$C(1)),%mmmsqld(11)=$P(prod,$C(1)),%mmmsqld(13)=$P(bgrp,$C(1)),%mmmsqld(14)=$P(bgrp,$C(1)),%mmmsqld(16)=$P(loc,$C(1)),%mmmsqld(17)=$P(loc,$C(1)),%mmmsqld(19)=$P(site,$C(1)),%mmmsqld(20)=$P(site,$C(1)),%mmmsqld(21)=$P(stat,$C(1)),%mmmsqld(23)=$P(stat,$C(1)),%mmmsqld(25)=$P(date,$C(1)),%mmmsqld(26)=$P(date,$C(1)),%mmmsqld(28)=$P(datefrom,$C(1)),%mmmsqld(29)=$P(datefrom,$C(1)),%mmmsqld(30)=$P(dateto,$C(1))
+ s %mmmsqld(31)=$P(dateto,$C(1)),%mmmsqld(32)=$P(rowid,$C(1))
+ s:%mmmsqld(8)="" %mmmsqld(8)=$E(packid,2,999)
+ s:%mmmsqld(10)="" %mmmsqld(10)=$E(prod,2,999)
+ s:%mmmsqld(13)="" %mmmsqld(13)=$E(bgrp,2,999)
+ s:%mmmsqld(16)="" %mmmsqld(16)=$E(loc,2,999)
+ s:%mmmsqld(19)="" %mmmsqld(19)=$E(site,2,999)
+ i %mmmsqld(25)="",$L(date)>1 s %val=$E(date,2,999) d %0FAr1 s %mmmsqld(25)=%val
+ i %mmmsqld(28)="",$L(datefrom)>1 s %val=$E(datefrom,2,999) d %0FAr2 s %mmmsqld(28)=%val
+ i %mmmsqld(30)="",$L(dateto)>1 s %val=$E(dateto,2,999) d %0FAr2 s %mmmsqld(30)=%val
+ s:%mmmsqld(32)="" %mmmsqld(32)=$E(rowid,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s x1=$g(%mmmsqld(32))
+ i x1'="",$d(^BB("PK",x1))
+ i '$t
+ e  i 1>x1,x1=+x1
+ i  g %0MBdun
+ s %mmmsqln=$g(^BB("PK",x1))
+ s %mmmsqld(27)=$p(%mmmsqln,"^",25)
+ g:'(((%mmmsqld(27))'<(%mmmsqld(28)))!(%mmmsqld(29)="")) %0MBdun
+ g:'(((%mmmsqld(27))'>(%mmmsqld(30)))!(%mmmsqld(31)="")) %0MBdun
+ s %mmmsqld(7)=$p(%mmmsqln,"^",1)
+ g:'((%mmmsqld(8))=$E((%mmmsqld(7)),1,$L((%mmmsqld(8))))) %0MBdun
+ s %mmmsqld(9)=$p(%mmmsqln,"^",6)
+ g:'(((%mmmsqld(9))=(%mmmsqld(10)))!(%mmmsqld(11)="")) %0MBdun
+ s %mmmsqld(12)=$p(%mmmsqln,"^",8)
+ g:'(((%mmmsqld(12))=(%mmmsqld(13)))!(%mmmsqld(14)="")) %0MBdun
+ s %mmmsqld(15)=$p(%mmmsqln,"^",10)
+ g:'(((%mmmsqld(15))=(%mmmsqld(16)))!(%mmmsqld(17)="")) %0MBdun
+ s %mmmsqld(22)=$p(%mmmsqln,"^",4)
+ g:'(((%mmmsqld(21))[(%mmmsqld(22)))!(%mmmsqld(23)="")) %0MBdun
+ s %mmmsqld(24)=$p(%mmmsqln,"^",16)
+ g:'(((%mmmsqld(24))'<(%mmmsqld(25)))!(%mmmsqld(26)="")) %0MBdun
+ s %mmmsqld(34)=$g(%mmmsqld(15))
+ i %mmmsqld(34)'="",$d(^CT("LO",%mmmsqld(34)))
+ i '$t
+ e  i 1>%mmmsqld(34),%mmmsqld(34)=+%mmmsqld(34)
+ i  s (%mmmsqld(34),%mmmsqld(18))="" g %0MBp3
+ s %mmmsqln=$g(^CT("LO",%mmmsqld(34)))
+ s %mmmsqld(18)=$p(%mmmsqln,"^",3)
+%0MBp3 
+ g:'(((%mmmsqld(18))=(%mmmsqld(19)))!(%mmmsqld(20)="")) %0MBdun
+ s %mmmsqld(35)=$g(%mmmsqld(22))
+ i %mmmsqld(35)'="",$d(^CT("ST",%mmmsqld(35)))
+ i '$t
+ e  i 1>%mmmsqld(35),%mmmsqld(35)=+%mmmsqld(35)
+ i  s (x2,x3,%mmmsqld(35))="" g %0MBp5
+ s %mmmsqln=$g(^CT("ST",%mmmsqld(35)))
+ s x2=$p(%mmmsqln,"^",4) s x3=$p(%mmmsqln,"^",1)
+ s %val=$P(x2,$C(1)) d %0ABs1:%val'="" s $P(x2,$C(1),2)=%val
+%0MBp5 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Mc
+%0MBdun 
+%0MAdun 
+%0Mc q
+%0Merr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0MAdun
+]]></Routine>
+</Export>

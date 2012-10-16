@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCCR13" type="INT" languagemode="0"><![CDATA[
+LVBCCR13 ; IG 31/12/98 ; CCR file creation - Launceston  ; Compiled September 12, 2001 12:31:06 for Cache for Windows
+ ;
+ ; supported calls
+ ;
+ ; $$create^LVBCCR13(type,TYPE,DATE)
+ ;
+create(type,TYPE,DATE) n (type,TYPE,DATE) s type=$g(type),TYPE=$g(TYPE),DATE=$g(DATE),file="" k ^TMP($zn,$j)
+ i '$l(DATE) s DATE=+$h
+ ; find list of test sets
+ i $$open^LVBCTTS()
+ f  q:$$fetch^LVBCTTS()  i PLIST(42)=type s ^TMP($zn,$j,1,PLIST(2))=""
+ i $$close^LVBCTTS()
+ ; find list of patients
+ i $d(^TMP($zn,$j,1)) d
+ .i $$select^MVBCFLAB(1) q
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .s dir=PLIST(48),rid=$s(type="P":PLIST(47),1:PLIST(49)),lab=PLIST(46)
+ .f j="\","/" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ .s Start=$o(^TCCR(type,"DATA",DATE),-1)-1,End=DATE-1
+ .s epis="" f  s epis=$o(^TCCR(type,"DATA",DATE,epis)) q:epis=""  d
+ ..s ts="" f  s ts=$o(^TCCR(type,"DATA",DATE,epis,ts)) q:ts=""  d
+ ...s cnt="" f  s cnt=$o(^TCCR(type,"DATA",DATE,epis,ts,cnt)) q:cnt=""  d
+ ....k ^TCCR(type,"DATA",DATE,epis,ts,cnt)
+ ....k ^TCCR(type,"INDEX-VTS",epis,ts,cnt)
+ .s date=Start f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>End  d
+ ..s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ ...s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  d
+ ....i $d(^TMP($zn,$j,1,ts)) s cnt="" f  s cnt=$o(^TEPIi("AUTHORISED",date,epis,ts,cnt)) q:cnt=""  d
+ .....s vtsRID=epis_"||"_ts_"||"_cnt
+ .....s ExcludeFromCCR="" d %0Ao
+ .....i $p(ExcludeFromCCR,$c(1))="Y" q
+ .....i $d(^TEPI(epis,1,ts,cnt,"CCR")),'$d(^TCCR(type,"INDEX-VTS",epis,ts,cnt)) d
+ ......s ^TCCR(type,"DATA",DATE,epis,ts,cnt)=""
+ ......s ^TCCR(type,"INDEX-VTS",epis,ts,cnt)=""
+ . ; create file
+ .i $d(^TCCR(type,"DATA",DATE)) d
+ ..s date=$$extdate2^SSUTIL4(DATE)
+ ..i type="P" s file=dir_$e($p(date,"/",3),3,4)_$e(1000+$$julian(Start),2,4)_$e(1000+$$julian(End),2,4)_".002"
+ ..o file:"WNS":5 e  q
+ ..u file
+ ..s epis="" f  s epis=$o(^TCCR(type,"DATA",DATE,epis)) q:epis=""  d
+ ...i $$select^LVBEPVIS(epis,"Y") q
+ ...f j=1:1:6,8:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...k VISIT m VISIT=PLIST
+ ...i $$select^LVBCTDR(VISIT(15),"Y") q
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...k DOC m DOC=PLIST
+ ...s ts="" f  s ts=$o(^TCCR(type,"DATA",DATE,epis,ts)) q:ts=""  d
+ ....s cnt="" f  s cnt=$o(^TCCR(type,"DATA",DATE,epis,ts,cnt)) q:cnt=""  d
+ .....s acc="" f  s acc=$o(^THIR(epis,acc)) q:acc=""  i $d(^THIR(epis,acc,"TEST",epis_"||"_ts_"||"_cnt)) q
+ .....i '$l(acc) q
+ .....s rid=rid+1,^TCCR(type,"DATA",DATE,epis,ts,cnt)=rid
+ .....s RECORD=$$txt($e($p($$extdate2^SSUTIL4(VISIT(12)),"/",3),3,4)_VISIT(2),12)_","_$$txt($p(VISIT(7),$c(1),2),4)_","_$$txt(VISIT(3),20)_","_$$txt(VISIT(4),30)
+ .....s RECORD=RECORD_","_$$txt(VISIT(32)_" "_VISIT(33),30)_","_$$txt(VISIT(34),20)_","_$$txt(VISIT(36),4)_","_$$txt(VISIT(35),3)
+ .....s RECORD=RECORD_","_$$date(VISIT(6))_","_$$txt(VISIT(8),10)
+ .....s RECORD=RECORD_","_$$txt(DOC(18),10)_","_$$txt(DOC(3),20)_","_$$txt(DOC(4),30)
+ .....s RECORD=RECORD_","_$$txt(DOC(9)_" "_DOC(10),30)_","_$$txt(DOC(11),30)_","_$$txt(DOC(13),4)_","_$$txt(DOC(12),3)
+ .....s RECORD=RECORD_","_$$date(VISIT(12))_","_$$date($p(^TEPI(epis,1,ts,cnt),"\",4))
+ .....i type="P" f j="S","W","E","O","R" d
+ ......s xx=$g(^TEPI(epis,1,ts,cnt,"CCR",j))
+ ......s RECORD=RECORD_","_$$txt(xx,2)
+ .....W RECORD,!
+ ..c file
+ ..i '$$select^MVBCFLAB(1) d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...i type="P" s PLIST(47)=rid
+ ...i $$update^MVBCFLAB(1)
+ q file
+txt(xx1,xx2) n (xx1,xx2) s xx1=$tr($g(xx1),""""),xx2=$g(xx2)
+ i xx2 s result=""""_$e(xx1_$j("",xx2),1,xx2)_""""
+ i 'xx2 s result=""""_xx1_""""
+ q result
+date(date) n (date) q """"_$$extdate2^SSUTIL4($g(date))_""""
+julian(date) n (date) s result=""
+ s x1=$p($$extdate2^SSUTIL4(date),"/",3)
+ s result=date-$$intdate^SSUTIL4("01/01/"_x1)+1
+ q result
+ q
+%0ABs1 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(vtsRID,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(vtsRID,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1),%mmmsqld(7)=$p($g(%mmmsqld(4)),"||",2,2),%mmmsqld(8)=$p($g(%mmmsqld(4)),"||",3,3)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",$d(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8)))
+ e  g %0ABdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8)))
+ s ExcludeFromCCR=$p(%mmmsqln,"\",8)
+ s %val=$P(ExcludeFromCCR,$C(1)) d %0ABs1:%val'="" s $P(ExcludeFromCCR,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+]]></Routine>
+</Export>

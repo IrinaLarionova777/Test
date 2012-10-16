@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF124ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF124ESP01(mi) ; ML 13/12/99 ; CHIRON Rapidlink
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ s $zt="ERROR"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),eot=$c(4),ack=$c(6),etb=$c(23),fs=$c(28),gs=$c(29),rs=$c(30)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,eot) q:'$l(record)
+ ; translate etb='-', fs='|', gs='^', rs='~' for trace
+ d trace^MIF000(mi,$tr($p(record,etx),$c(23,28,29,30),"-|^~")_" "_$p(record,etx,2),"H<--M")
+ ; check record validity
+ s chsum=$p(record,etx,2) i $$CHSUM($p(record,etx))'=chsum d trace^MIF000(mi,"Incorrect Checksum - Packet Ignored","H-->M") q
+ d ACK
+ s recid=$p(record,fs)
+ ;*************************************************************************
+ ; process device identity record
+ i recid="ID_REQ" d  q
+ .s str="ID_DATA"_fs_rs_"aMOD"_gs_"LIS"_gs_gs_gs_fs_"iIID"_gs_"TRAK"_gs_gs_gs_fs_rs
+ .d SEND(str)
+ ;****************************************
+ ;Process Accession Number
+ i recid="ACC_REQ" d  q      ;Linka e nrqeq con un episodio de LabTraK
+ .f i=1:1:$l(record,fs)-1 s res($p($p(record,fs,i),gs))=$p(record,fs,i)
+ .s x1="" f  s x1=$o(res(x1)) q:x1=""  d
+ ..i x1="rSEQ" s rseq=$p(res(x1),gs,2) q
+ ..i x1="iPID" s iPID=$p(res(x1),gs,2) q
+ ..i x1="iSOURCE" s iSOURCE=$p(res(x1),gs,2) q
+ .s iPID2=iPID
+ .i $l(iPID2)'=9 d       ;Si el iPID que nos llega no es un nº episodio lo creamos (el episodio)
+ ..d CREAR
+ .s str="ACC_DATA"_fs_rs_"aMOD"_gs_"DMS"_gs_gs_gs_fs_"iIID"_gs_"COMP2"_gs_gs_gs_fs_"rSEQ"_gs_rseq_gs_gs_gs_fs_"iPID"_gs_iPID_gs_gs_gs_fs_"iACC"_gs_iPID2_gs_gs_gs_fs_rs
+ .d SEND(str)
+ ;*************************************************************************
+ ; process patient demographic request record
+ i recid="PAT_DEMOG_REQ" d  q
+ .s epis=$p($p(record,fs,4),gs,2),str=""
+ .s iCNAME=$p($p(record,fs,5),gs,2),str=""
+ .i $l(epis)=9 d 
+ ..q:$$select^LVBEPVIS(epis,"Y")  m VISIT=PLIST k PLIST
+ .i $l(epis)'=9 d 
+ ..d trace^MIF000(mi,"socket|"_epis_"|"_$l(epis)_"|"_iCNAME,"**33***")
+ ..d 
+ ... n (PLIST,epis,ok)
+ ... s P0=$zu(5)
+ ... i $zu(5,"USER")
+ ... s ok=$$Get^HIS(epis)
+ ... i $zu(5,P0)
+ ..i (ok=100)  d  q
+ ...s str="PAT_DEMOG_NOT_AV"_fs_rs_"aMOD"_gs_"DMS"_gs_gs_gs_fs_"iIID"_gs_"COMP2"_gs_gs_gs_fs_"iPID"_gs_epis_gs_gs_gs_fs_"iCNAME"_gs_iCNAME_gs_gs_gs_fs_rs
+ ...d SEND(str)
+ ..m VISIT=PLIST k PLIST
+ .s dob=""
+ .i $d(VISIT(6)) d
+ ..s dob=VISIT(6),dob=$$extdate2^SSUTIL4(dob),month=$p(dob,"/",2)
+ ..s dob=$p(dob,"/",1)_$s(month="01":"Jan",month="02":"Feb",month="03":"Mar",month="04":"Apr",month="05":"May",month="06":"Jun",month="07":"Jul",month="08":"Aug",month="09":"Sep",month="10":"Oct",month="11":"Nov",month="12":"Dec",1:"")_$p(dob,"/",3)
+ .d trace^MIF000(mi,epis,"**01***")
+ .d trace^MIF000(mi,iCNAME,"**02***")
+ .d trace^MIF000(mi,VISIT(3),"**03***")
+ .s str="PAT_DEMOG_DATA"_fs_rs_"aMOD"_gs_"DMS"_gs_gs_gs_fs_"iIID"_gs_"COMP2"_gs_gs_gs_fs_"iPID"_gs_epis_gs_gs_gs_fs_"iCNAME"_gs_iCNAME_gs_gs_gs_fs_"iLNAME"_gs_VISIT(3)_gs_gs_gs_fs
+ .s str=str_"iFNAME"_gs_VISIT(4)_gs_gs_gs_fs_"iDOB"_gs_dob_gs_gs_gs_fs_"iSEX"_gs_VISIT(5)_gs_gs_gs_fs_rs
+ .d SEND(str)
+ ;*************************************************************************
+ ; process result available record
+ i recid="PATIENT_DATA_AV" d  q
+ .s rseq=$p($p(record,fs,4),gs,2)
+ .s str="PATIENT_DATA_REQ"_fs_rs_"aMOD"_gs_"DMS"_gs_gs_gs_fs_"iIID"_gs_"COMP2"_gs_gs_gs_fs_"rSEQ"_gs_rseq_gs_gs_gs_fs_rs
+ .d SEND(str)
+ ; process result record
+ ;*************************************************************************
+ i recid="PATIENT_DATA" d
+ .s (sample,epis,surname,result,date,time,QC)=""
+ .k res s record=$tr(record,rs)
+ .f i=1:1:$l(record,fs)-1 s res($p($p(record,fs,i),gs))=$p(record,fs,i)
+ .s x1="" f  s x1=$o(res(x1)) q:x1=""  d
+ ..i " aMOD iIID rSEQ iFNAME iSEX iDOB iUSERP1 iUSERP2 iUSERP3 iUSERP4 iUSERP5 iROOM iDOC "[x1 q
+ ..i " iDID iDDATE iDTIME iRDATE iRTIME iTYPE iOID iMODE iUSERS1 iUSERS2 iUSERS3 iUSERS4 iUSERS5 "[x1 q
+ ..i " PATIENT_DATA iPID iLNAME "[x1 q
+ ..i x1="iACC" s epis=$p(res(x1),gs,2) d trace^MIF000(mi,epis,"****") q
+ ..i x1="iSOURCE" s iSOURCE=$p(res(x1),gs,2) d  q
+ ..i x1="rSYSTEM" s maquina=$p(res(x1),gs,2) d  q
+ ...d trace^MIF000(mi,"maquina :"_maquina,"***")
+ ...i maquina="7 UVI H.GRAL.",$l(epis)=9 s $p(^TEPI(epis),"\",49)="MIVG"
+ ...i maquina="HEMOD. INFANTIL",$l(epis)=9  s $p(^TEPI(epis),"\",49)="CARI"
+ ...i maquina="NEONATOS 400",$l(epis)=9  s $p(^TEPI(epis),"\",49)="NEOI"
+ ...i maquina="NEONATOS 865",$l(epis)=9  s $p(^TEPI(epis),"\",49)="NEOI"
+ ...i maquina="NEUMO. HG 405",$l(epis)=9  s $p(^TEPI(epis),"\",49)="NMLG"
+ ...i maquina="PARITORIO 1",$l(epis)=9  s $p(^TEPI(epis),"\",49)="OBSM"
+ ...i maquina="PARITORIO 1",$l(epis)=9  s $p(^TEPI(epis),"\",49)="OBSM"
+ ...i maquina="QUIR 1 pta H.G.",$l(epis)=9  s $p(^TEPI(epis),"\",49)="ANRG"
+ ...i maquina="QUIR 3 pta H.G.",$l(epis)=9  s $p(^TEPI(epis),"\",49)="ANRG"
+ ...i maquina="REA 1 pta H.G.",$l(epis)=9  s $p(^TEPI(epis),"\",49)="ANRG"
+ ...i maquina="REA 3 pta H.G.",$l(epis)=9  s $p(^TEPI(epis),"\",49)="ANRG"
+ ...i maquina="REA INFANTIL",$l(epis)=9  s $p(^TEPI(epis),"\",49)="ANRI"
+ ...i maquina="UVI INF. RL865",$l(epis)=9  s $p(^TEPI(epis),"\",49)="MIVI"
+ ..i x1="rDATE" s date=$p(res(x1),gs,2) d  q
+ ...s month=$e(date,3,5),date=$e(date,6,9)_$s(month="Jan":"01",month="Feb":"02",month="Mar":"03",month="Apr":"04",month="May":"05",month="Jun":"06",month="Jul":"07",month="Aug":"08",month="Sep":"09",month="Oct":"10",month="Nov":11,1:"12")_$e(date,1,2)
+ ...s date=$$intdate^SSUTIL4(date)
+ ..i x1="rTIME" s time=$$inttime^SSUTIL4($p($p(res(x1),gs,2),":",1,2)) q
+ ..s result=result_x1_$c(par10)_$p(res(x1),gs,2)_$c(par10)_$tr($p(res(x1),gs,4),etb,"-")_$c(par11)
+ .i $l(epis),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+ ; send string to instrument
+SEND(x) s chsum=$$CHSUM(x)
+ f i=1:1:2 w stx,x,etx,chsum,eot,*-3 d  q:ok
+ .d trace^MIF000(mi,x_" "_chsum,"H-->M")
+ .s ok="" s record=$$read^MIF000(stx,eot,,6) q:'$l(record)
+ .i $p(record,etx)=ack d trace^MIF000(mi,"ACK","H<--M") s ok=1 q
+ .d trace^MIF000(mi,"No Response - Message Rejected","H<--M")
+ q
+ ; send 'ack' to instrument
+ACK s chsum=$$CHSUM(ack)
+ w stx,ack,etx,chsum,eot,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+ ; calculate check sum
+CHSUM(x) s x=$c(2)_x_$c(3)
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+CREAR 
+ s ^TMP("USER",$j)="al"
+ s P0=$zu(5)
+ i $zu(5,"USER")
+ s ok=$$Get^HIS(iPID2)
+ i $zu(5,P0)
+ k MiPLISTR
+ m MiPLISTR=PLIST
+ i ok=100 q
+ s npet="00"_^RapidLink(0),iPID2="00"_^RapidLink(0),^RapidLink(0)=^RapidLink(0)+1
+ q:$$vtsLock^SSLOCK("PEI",npet,"","al","OPTICALREADER")'=-1 2
+ f i=1:1:113 s PLIST(i)=""
+ s PLIST(2)=npet ;nº EPISODIO
+ s PLIST(3)=MiPLISTR(5) ;Apellido1
+ s PLIST(4)=MiPLISTR(4) ;Nombre
+ s PLIST(5)=MiPLISTR(8) ;Sexo
+ i MiPLISTR(7)=+MiPLISTR(7) s PLIST(6)=MiPLISTR(7) ;Fecha Nacimiento
+ s PLIST(10)=$p($H,",",1) ;Fecha entrada
+ s PLIST(11)=$p($H,",",2) ;Hora Entrada
+ s PLIST(14)=$p($H,",",1) ;Fecha Peticion
+ s PLIST(15)=0
+ s PLIST(20)=MiPLISTR(1) ;Numero episodio
+ s PLIST(22)="POCT" ;GFH Destino
+ s PLIST(29)="I" ;Status Impresion
+ s PLIST(31)="al" ;Usuario
+ s PLIST(32)=$e(MiPLISTR(9),1,30) ;DOMICILIO
+ s PLIST(43)=MiPLISTR(13) ;TELEFONO
+ s PLIST(62)=$p($H,",",1) ;Hora 
+ s PLIST(65)=","_MiPLISTR(2) ;Numero tIS
+ s PLIST(66)="HULP"
+ s PLIST(75)="N" ;Fax
+ s PLIST(86)=1
+ s PLIST(86)=0
+ s PLIST(99)=MiPLISTR(39) ;Apellido 2
+ s PLIST(105)="N"
+ s PLIST(111)=$p($H,",",2) ;Hora Entrada
+ s ok=$$save^LVBEPVIS(npet) i +ok d  q 5
+ .s ok=$$vtsLockClr^SSLOCK("PEI",npet,"")
+ s Aux="U017"
+ i iSOURCE'="Arterial"!iSOURCE'="Capilar" s Aux="U032"
+ f o=1:1:$l(Aux,",") d  
+ .i $d(^TEPI(npet,1,$p(Aux,",",o)))'=0 q
+ .f i=1:1:57 s PLIST(i)=""
+ .s PLIST(0)=npet
+ .s PLIST(1)=npet_"||"_$p(Aux,",",o)
+ .s PLIST(3)=$p(Aux,",",o)
+ .s PLIST(13)="R"
+ .i $e($p(Aux,",",o),1)="O" s PLIST(13)="H"
+ .s ok=$$insert^LVBVISTS(npet,"Patient PreEntry : Patient Pre-Entry","")
+ s ok=$$vtsLockClr^SSLOCK("PEI",npet,"")
+ERROR 
+ d trace^MIF000(mi,$ze,"ERROR")
+ q 
+]]></Routine>
+</Export>

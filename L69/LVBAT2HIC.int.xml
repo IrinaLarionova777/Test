@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBAT2HIC" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBAT2HIC	; IG 24/07/96 ; CREATING Accounts EDI FILES
+	;
+	; supported calls :
+	;
+	; $$claim^LVBAT2HIC(PayCode,InvoiceBatch)
+	; $$trans^LVBAT2HIC()
+	;
+claim(PayCode,InvoiceBatch)	n (PayCode,InvoiceBatch) k ^TMP($zn,$j,100)
+	s PayCode=$p($g(PayCode),$c(1)),InvoiceBatch=$g(InvoiceBatch)
+	i '$$select^LVBINVB(PayCode_"||"_InvoiceBatch) d
+	.f j=1:1:PLIST S PLIST(j)=$p($g(PLIST(j)),$c(1))
+	.k INVB m INVB=PLIST s ClaimNumber=INVB(7)
+	i '$$select^LVBCTPC(PayCode,"Y") d
+	.f j=1:1:PLIST S PLIST(j)=$p($g(PLIST(j)),$c(1))
+	.k PAYCODE m PAYCODE=PLIST
+	k ^TMCBi(1,ClaimNumber),^TMCBi(2,ClaimNumber)
+	s ^TMCBi(1,ClaimNumber)=PayCode_"\"_InvoiceBatch
+	s episode="" f  s episode=$o(^TMCB(PayCode,InvoiceBatch,episode)) q:episode=""  d
+	.s x1=episode
+	.i PAYCODE(28)="M" s %routine=$p($g(^TTAB("REPORT-GENERIC","MCHIC")),"\",1)
+	.i PAYCODE(28)="V" s %routine=$p($g(^TTAB("REPORT-GENERIC","VAHIC")),"\",1)
+	.i $l(%routine) s LineRoutine="sort^"_%routine i $l($t(@LineRoutine)) x "s x1=$$sort^"_%routine_"("""_episode_""")"
+	.s:'$l(x1) x1=" " s ^TMP($zn,$j,100,x1,episode)=""
+	s x1="" f  s x1=$o(^TMP($zn,$j,100,x1)) q:x1=""  d
+	.s episode="" f  s episode=$o(^TMP($zn,$j,100,x1,episode)) q:episode=""  d
+	..i $$CT007^at345(episode,PayCode_"||"_InvoiceBatch)="Y" q
+	.. ; Medicare
+	..i PAYCODE(28)="M" d CLAIM1
+	.. ; VA
+	..i PAYCODE(28)="V" d CLAIM2
+	i '$$select^LVBINVB(PayCode_"||"_InvoiceBatch) s PLIST(8)=+$h i $$update^LVBINVB(PayCode_"||"_InvoiceBatch)
+	k ^TMP($zn,$j,100)
+	q 0
+CLAIM1	n (PayCode,InvoiceBatch,ClaimNumber,episode) k EPISODE i $$select^LVBEPVIS(episode,"Y") q
+	m EPISODE=PLIST
+	i $l(EPISODE(22)) s EPISODE(22)=$$seldata^LVBCTHOS(EPISODE(22),3)
+	s provider=$$seldata^LVBCTDR($p(EPISODE(15),$c(1)),18),(NI,IT)="" f  s IT=$o(^TEPI(episode,7,IT)) q:IT=""  i ^(IT) s NI=NI+1,NI(NI)=IT_"\"_^(IT)
+	s NI=$$NUM(+NI,2),EPISODE(8)=$tr(EPISODE(8)," ")
+	f j=6 s EPISODE(j)=$$DATE(EPISODE(j),1)
+	s provider=$$NUM($E(provider,1,$L(provider)-2),6)_$$TXT($E(provider,$L(provider)-1,$L(provider)),2)
+	s PatientDetails=$$TXT(EPISODE(3),18)_$$TXT(EPISODE(4),12)_" "_$$TXT(EPISODE(6),8)_$$TXT(EPISODE(5),1)_$$TXT(EPISODE(34),17)_$$NUM(EPISODE(36),4)
+	s PatientDetailsHOL=$$TXT(EPISODE(3),40)_$$TXT(EPISODE(4),40)_" "_$$TXT(EPISODE(6),8)_$$TXT(EPISODE(5),1)_$$TXT(EPISODE(34),17)_$$NUM(EPISODE(36),4)_$$TXT(EPISODE(108),2)_$$TXT(EPISODE(22),50)
+	s LCC="" i '$$select^LVBCTCC(EPISODE(27),"Y") s LCC=PLIST(10) i $l(PLIST(13)),EPISODE(12)<PLIST(13) s LCC=PLIST(14)
+	i $e(LCC,1,4)="LCC-" s LCC=$e(LCC,5,99)
+	i LCC["-" s LCC=$p(LCC,"-",2)
+	i $L(LCC)>3 s LCC=$e(LCC,$l(LCC)-2,$l(LCC))
+	f J=1:1:NI d
+	.i (J-1)#14=0 s L=$o(^TMP($zn,$j,"HIC-M",ClaimNumber,""),-1)+1 d
+	..s ^TMCBi(1,ClaimNumber,L)=episode
+	..i '$l(EPISODE(8)) d
+	...s a1="*VP00"_$$DATE(EPISODE(14),2)_provider_" "_PatientDetails_$j("",9)
+	...s a2="*VP00"_$$DATE(EPISODE(14),1)_provider_" "_PatientDetails_$j("",9)_PatientDetailsHOL
+	...s ^TMP($zn,$j,"HIC-M",ClaimNumber,L)=a1_$c(1)_a2
+	..i $l(EPISODE(8)) d
+	...s a1="*VM00"_$$DATE(EPISODE(14),2)_provider_" "_$$NUM(EPISODE(8),10)_$$TXT(EPISODE(4),12)_$j("",8)
+	...s a2="*VM00"_$$DATE(EPISODE(14),1)_provider_" "_$$NUM(EPISODE(8),10)_$$TXT(EPISODE(4),12)_$j("",8)_PatientDetailsHOL
+	...S ^TMP($zn,$j,"HIC-M",ClaimNumber,L)=a1_$c(1)_a2
+	..s ^TMP($zn,$j,"HIC-M",ClaimNumber)=PayCode_"\"_InvoiceBatch
+	.s LL=$O(^TMP($zn,$j,"HIC-M",ClaimNumber,L,""),-1)+1,xx=$p(NI(J),"\",2,99)
+	.s a1="*I"_$$NUM($p(NI(J),"\"),5)_$$DATE(EPISODE(12),2)_$$NUM($p(NI(J),"\",2)*100,7)_" "_$$TXT(LCC,3)_" "
+	.s a2="*I"_$$NUM($p(NI(J),"\"),5)_$$DATE(EPISODE(12),1)_$$NUM($p(NI(J),"\",2)*100,7)_" "_$$TXT(LCC,3)_" "_$s($p(xx,"\",3)="Y":"Y",1:"N")_$s($p(xx,"\",5)="Y":"Y",1:"N")
+ 	.s time=$tr($$exttime^SSUTIL4(+EPISODE(13)),":") i ($p(xx,"\",3)="Y")!($p(xx,"\",5)="Y"),$l($p(xx,"\",6)) d
+ 	..s xx1=$p(xx,"\",6) f j6=1:1:$l(xx1,";") s ep=$p($p(xx1,";",j6),"-"),tm=$$seldata^LVBEPVIS(ep,13) i tm s time=$tr($$exttime^SSUTIL4(tm),":") q
+	.s a2=a2_time
+	.s ^TMP($zn,$j,"HIC-M",ClaimNumber,L,LL)=a1_$c(1)_a2
+	.s ^TMCBi(1,ClaimNumber,L,LL)=$P(NI(J),"\",1,2)
+	.s a1=$p(^TMP($zn,$j,"HIC-M",ClaimNumber,L),$c(1),1),a1=$e(a1,1,3)_$$NUM(J-1#14+1,2)_$e(a1,6,999)
+	.s a2=$p(^TMP($zn,$j,"HIC-M",ClaimNumber,L),$c(1),2),a2=$e(a2,1,3)_$$NUM(J-1#14+1,2)_$e(a2,6,999)
+	.s ^TMP($zn,$j,"HIC-M",ClaimNumber,L)=a1_$c(1)_a2
+	q
+CLAIM2	n (PayCode,InvoiceBatch,ClaimNumber,episode) k EPISODE i $$select^LVBEPVIS(episode,"Y") q
+	m EPISODE=PLIST
+	i $l(EPISODE(22)) s EPISODE(22)=$$seldata^LVBCTHOS(EPISODE(22),3)
+	s EPISODE(8)=$s($l($tr(EPISODE(23)," ")):EPISODE(23),1:$tr(EPISODE(8)," "))
+	s provider=$$seldata^LVBCTDR($p(EPISODE(15),$c(1)),18),(NI,IT)="" f  s IT=$o(^TEPI(episode,7,IT)) q:IT=""  i ^(IT) s NI=NI+1,NI(NI)=IT_"\"_^(IT)
+	s NI=$$NUM(+NI,2)
+	f j=6 s EPISODE(j)=$$DATE(EPISODE(j),1)
+	s provider=$$NUM($E(provider,1,$L(provider)-2),6)_$$TXT($E(provider,$L(provider)-1,$L(provider)),2)
+	s PatientDetails=$$TXT(EPISODE(3),18)_$$TXT(EPISODE(4),12)_" "_$$TXT(EPISODE(6),8)_$$TXT(EPISODE(5),1)_$$TXT(EPISODE(34),17)_$$NUM(EPISODE(36),4)
+	s PatientDetailsHOL=$$TXT(EPISODE(3),40)_$$TXT(EPISODE(4),40)_" "_$$TXT(EPISODE(6),8)_$$TXT(EPISODE(5),1)_$$TXT(EPISODE(34),17)_$$NUM(EPISODE(36),4)_$$TXT(EPISODE(108),2)_$$TXT(EPISODE(22),50)
+	s LCC="" i '$$select^LVBCTCC(EPISODE(27),"Y") s LCC=PLIST(10) i $l(PLIST(13)),EPISODE(12)<PLIST(13) s LCC=PLIST(14)
+	i $e(LCC,1,4)="LCC-" s LCC=$e(LCC,5,99)
+	i LCC["-" s LCC=$p(LCC,"-",2)
+	i $L(LCC)>3 s LCC=$e(LCC,$l(LCC)-2,$l(LCC))
+	f J=1:1:NI d
+	.i (J-1)#14=0 s L=$o(^TMP($zn,$j,"HIC-VA",ClaimNumber,""),-1)+1 d
+	..s ^TMCBi(1,ClaimNumber,L)=episode
+	..s XXX=$s($l($tr(EPISODE(89)," ")):$tr(EPISODE(89)," "),1:$tr(EPISODE(8)," "))
+	..i '$l(XXX) d
+	...s a1="*VP00"_$$DATE(EPISODE(14),2)_provider_" "_PatientDetails_$j("",9)
+	...s a2="*VP00"_$$DATE(EPISODE(14),1)_provider_" "_PatientDetails_$j("",9)_PatientDetailsHOL
+	...s ^TMP($zn,$j,"HIC-VA",ClaimNumber,L)=a1_$c(1)_a2
+	..i $l(XXX) d
+	...s a1="*VV00"_$$DATE(EPISODE(14),2)_provider_" "_$$TXT(XXX,10)_$$TXT(EPISODE(4),12)_$j("",8)
+	...s a2="*VV00"_$$DATE(EPISODE(14),1)_provider_" "_$$TXT(XXX,10)_$$TXT(EPISODE(4),12)_$j("",8)_PatientDetailsHOL
+	...s ^TMP($zn,$j,"HIC-VA",ClaimNumber,L)=a1_$c(1)_a2
+	..s ^TMP($zn,$j,"HIC-VA",ClaimNumber)=PayCode_"\"_InvoiceBatch
+	.s LL=$O(^TMP($zn,$j,"HIC-VA",ClaimNumber,L,""),-1)+1,xx=$p(NI(J),"\",2,99)
+	.s a1="*I"_$$NUM($p(NI(J),"\"),5)_$$DATE(EPISODE(12),2)_$$NUM($p(NI(J),"\",2)*100,7)_" "_$$TXT(LCC,3)_$J("",16)
+	.s a2="*I"_$$NUM($p(NI(J),"\"),5)_$$DATE(EPISODE(12),1)_$$NUM($p(NI(J),"\",2)*100,7)_" "_$$TXT(LCC,3)_$J("",16)_$s($p(xx,"\",3)="Y":"Y",1:"N")_$s($p(xx,"\",5)="Y":"Y",1:"N")
+ 	.s xx=$p(NI(J),"\",2,99),time=$tr($$exttime^SSUTIL4(+EPISODE(13)),":") i ($p(xx,"\",3)="Y")!($p(xx,"\",5)="Y"),$l($p(xx,"\",6)) d
+ 	..s xx1=$p(xx,"\",6) f j6=1:1:$l(xx1,";") s ep=$p($p(xx1,";",j6),"-"),tm=$$seldata^LVBEPVIS(ep,13) i tm s time=$tr($$exttime^SSUTIL4(tm),":") q
+	.s a2=a2_time
+	.s ^TMP($zn,$j,"HIC-VA",ClaimNumber,L,LL)=a1_$c(1)_a2
+	.s ^TMCBi(1,ClaimNumber,L,LL)=$P(NI(J),"\",1,2)
+	.s a1=$p(^TMP($zn,$j,"HIC-VA",ClaimNumber,L),$c(1),1),a1=$e(a1,1,3)_$$NUM(J-1#14+1,2)_$e(a1,6,999)
+	.s a2=$p(^TMP($zn,$j,"HIC-VA",ClaimNumber,L),$c(1),2),a2=$e(a2,1,3)_$$NUM(J-1#14+1,2)_$e(a2,6,999)
+	.s ^TMP($zn,$j,"HIC-VA",ClaimNumber,L)=a1_$c(1)_a2
+	q
+TXT(X1,X2)	     Q $E($E(X1,1,X2)_$J("",X2),1,X2)
+NUM(X1,X2)	     Q $E(X1+(10**X2),2,X2+1)
+DATE(date,format)	; $horolog to external date
+	s date=$$extdate2^SSUTIL4(date)
+	i format=1 s date=$tr(date,"/","")
+	i format=2 s date=$p(date,"/",1)_$p(date,"/",2)_$e($p(date,"/",3),3,4)
+	i format=3 s date=$p(date,"/",3)_$p(date,"/",2)_$p(date,"/",1)
+	q date
+trans()	; CREATE CLAIM-FILE
+	s (FILE1,FILE2)=""
+	; Medicare
+	i $d(^TMP($zn,$j,"HIC-M")) S FILE1=$$TRANS1()
+	; VA
+	i $d(^TMP($zn,$j,"HIC-VA")) S FILE2=$$TRANS2()
+	k ^TMP($zn,$j)
+	q FILE1_","_FILE2
+TRANS1()	N X1,X2,X3,FILE,J
+	S X1="" F  S X1=$O(^TMP($zn,$j,"HIC-M",X1)) Q:X1=""  I $D(^(X1))>1 D
+	.f j=1,2 s @("xx"_j)=$p(^TMP($zn,$j,"HIC-M",X1),"\",j)
+	.s pathProvider="" i '$$select^LVBINVB(xx1_"||"_xx2) s pathProvider=$p(PLIST(5),$c(1))
+	.S (X2,X4)="" F J=0:1 S X2=$O(^TMP($zn,$j,"HIC-M",X1,X2)) Q:X2=""  D
+	..S X3="" F  S X3=$O(^TMP($zn,$j,"HIC-M",X1,X2,X3)) Q:X3=""  S X4=X4+$E(^(X3),14,20)
+	.S pathProvider=$$NUM($E(pathProvider,1,$L(pathProvider)-2),6)_$$TXT($E(pathProvider,$L(pathProvider)-1,$L(pathProvider)),2)
+	.S L=$O(^TMP($zn,$j,"CLAIM",X1,""),-1)+1
+	.s a1="*C"_$$NUM(J,2)_$$TXT(X1,5)_"@"_$$DATE(+$H,2)_pathProvider_pathProvider_$$NUM(X4,8)_$J("",5)
+	.s a2="*C"_$$NUM(J,2)_$$TXT(X1,5)_"@"_$$DATE(+$H,1)_pathProvider_pathProvider_$$NUM(X4,8)_$J("",5) ; for HIC online
+	.S ^TMP($zn,$j,"CLAIM",X1,L)=a1_$c(1)_a2
+	.S X2="" F  S X2=$O(^TMP($zn,$j,"HIC-M",X1,X2)) Q:X2=""  D
+	..S L=$O(^TMP($zn,$j,"CLAIM",X1,""),-1)+1
+	..S ^TMP($zn,$j,"CLAIM",X1,L)=^TMP($zn,$j,"HIC-M",X1,X2)
+	..S XEPA13=$E(^TMP($zn,$j,"HIC-M",X1,X2),12,19)
+	..S X3="" F  S X3=$O(^TMP($zn,$j,"HIC-M",X1,X2,X3)) Q:X3=""  D
+	...I $E(pathProvider,1,6)'=$E(XEPA13,1,6) D  Q
+	....S L=$O(^TMP($zn,$j,"CLAIM",X1,""),-1)+1
+	....S ^TMP($zn,$j,"CLAIM",X1,L)=^TMP($zn,$j,"HIC-M",X1,X2,X3)
+	...I $E(pathProvider,1,6)=$E(XEPA13,1,6) D  Q
+	....S L=$O(^TMP($zn,$j,"CLAIM",X1,""),-1)+1
+	....s a1=$p(^TMP($zn,$j,"HIC-M",X1,X2,X3),$c(1),1)
+	....s a2=$p(^TMP($zn,$j,"HIC-M",X1,X2,X3),$c(1),2)
+	....S ^TMP($zn,$j,"CLAIM",X1,L)=$E(a1,1,20)_"Y"_$E(a1,22,999)_$c(1)_$E(a2,1,22)_"Y"_$E(a2,24,999)
+	i '$$select^LVBCTPCT("HIC") d
+	.f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+	.m CTPCT=PLIST
+	s LAST=$e(CTPCT(4)+1001,2,6)
+	k PLIST m PLIST=CTPCT s PLIST(4)=LAST i $$update^LVBCTPCT("HIC")
+	s TRAKID=CTPCT(5)
+	; get outbound file directory
+	s DIR=$tr(CTPCT(7),$c(16,17,18),"^\|") f J="/","\" i DIR[J,$e(DIR,$l(DIR))'=J s DIR=DIR_J
+	s FILE=DIR_TRAKID_"."_LAST
+	s X1="" f CLMN=0:1 s X1=$o(^TMP($zn,$j,"CLAIM",X1)) Q:X1=""
+	o FILE:"WNS"
+	u FILE w "*TP"_$e(1000+CLMN,2,4)_$$DATE(+$h,2)_"TP"_TRAKID_$j("",8)_"M "_$j("",8)
+	s X1="" f  s X1=$o(^TMP($zn,$j,"CLAIM",X1)) q:X1=""  d
+	.s X2="" f  s X2=$o(^TMP($zn,$j,"CLAIM",X1,X2))  q:X2=""  w $p(^(X2),$c(1))
+	c FILE
+	; changes for HIC online
+	s DIR=$tr(CTPCT(7),$c(16,17,18),"^\|") f J="/","\" i DIR[J s:$e(DIR,$l(DIR))'=J DIR=DIR_J q
+	s FILE=DIR_"HOL"_J_TRAKID_"_"_LAST_".HOL"
+	o FILE:"WNS"
+	u FILE w "*TP"_$e(1000+CLMN,2,4)_$$DATE(+$h,1)_"TP"_TRAKID_$j("",8)_"M "_$j("",8)
+	s X1="" f  s X1=$o(^TMP($zn,$j,"CLAIM",X1)) q:X1=""  d
+	.s X2="" f  s X2=$o(^TMP($zn,$j,"CLAIM",X1,X2))  q:X2=""  d
+	..i $l($p(^(X2),$c(1),2)) w $p(^(X2),$c(1),2) q
+	..w $p(^(X2),$c(1),1)
+	c FILE
+	q FILE
+TRANS2()	N X1,X2,X3,FILE,J
+	S X1="" F  S X1=$O(^TMP($zn,$j,"HIC-VA",X1)) Q:X1=""  I $D(^(X1))>1 D
+	.f j=1,2 s @("xx"_j)=$p(^TMP($zn,$j,"HIC-VA",X1),"\",j)
+	.s pathProvider="" i '$$select^LVBINVB(xx1_"||"_xx2) s pathProvider=$p(PLIST(5),$c(1))
+	.S (X2,X4)="" F J=0:1 S X2=$O(^TMP($zn,$j,"HIC-VA",X1,X2)) Q:X2=""  D
+	..S X3="" F  S X3=$O(^TMP($zn,$j,"HIC-VA",X1,X2,X3)) Q:X3=""  S X4=X4+$E(^(X3),14,20)
+	.S pathProvider=$$NUM($E(pathProvider,1,$L(pathProvider)-2),6)_$$TXT($E(pathProvider,$L(pathProvider)-1,$L(pathProvider)),2)
+	.S L=$O(^TMP($zn,$j,"CLAIM",X1,""),-1)+1
+	.S a1="*C"_$$NUM(J,2)_$$TXT(X1,5)_"@"_$$DATE(+$H,2)_pathProvider_pathProvider_$$NUM(X4,8)_$J("",5)
+	.S a2="*C"_$$NUM(J,2)_$$TXT(X1,5)_"@"_$$DATE(+$H,1)_pathProvider_pathProvider_$$NUM(X4,8)_$J("",5)
+	.S ^TMP($zn,$j,"CLAIM",X1,L)=a1_$c(1)_a2
+	.S X2="" F  S X2=$O(^TMP($zn,$j,"HIC-VA",X1,X2)) Q:X2=""  D
+	..S L=$O(^TMP($zn,$j,"CLAIM",X1,""),-1)+1
+	..S ^TMP($zn,$j,"CLAIM",X1,L)=^TMP($zn,$j,"HIC-VA",X1,X2)
+	..S XEPA13=$E(^TMP($zn,$j,"HIC-VA",X1,X2),12,19)
+	..S X3="" F  S X3=$O(^TMP($zn,$j,"HIC-VA",X1,X2,X3)) Q:X3=""  D
+	...I $E(pathProvider,1,6)'=$E(XEPA13,1,6) D  Q
+	....S L=$O(^TMP($zn,$j,"CLAIM",X1,""),-1)+1
+	....S ^TMP($zn,$j,"CLAIM",X1,L)=^TMP($zn,$j,"HIC-VA",X1,X2,X3)
+	...I $E(pathProvider,1,6)=$E(XEPA13,1,6) D  Q
+	....S L=$O(^TMP($zn,$j,"CLAIM",X1,""),-1)+1
+	....s a1=$p(^TMP($zn,$j,"HIC-VA",X1,X2,X3),$c(1),1)
+	....s a2=$p(^TMP($zn,$j,"HIC-VA",X1,X2,X3),$c(1),2)
+	....S ^TMP($zn,$j,"CLAIM",X1,L)=$E(a1,1,20)_"Y"_$E(a1,22,999)_$c(1)_$E(a2,1,22)_"Y"_$E(a2,24,999)
+	i '$$select^LVBCTPCT("HIC") d
+	.f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+	.m CTPCT=PLIST
+	s LAST=$e(CTPCT(4)+1001,2,6)
+	k PLIST m PLIST=CTPCT s PLIST(4)=LAST i $$update^LVBCTPCT("HIC")
+	s TRAKID=CTPCT(5)
+	; get outbound file directory
+	s DIR=$tr(CTPCT(7),$c(16,17,18),"^\|") f J="/","\" i DIR[J,$e(DIR,$l(DIR))'=J s DIR=DIR_J
+	s FILE=DIR_TRAKID_"."_LAST
+	s X1="" f CLMN=0:1 s X1=$o(^TMP($zn,$j,"CLAIM",X1)) Q:X1=""
+	o FILE:"WNS"
+	u FILE w "*TP"_$e(1000+CLMN,2,4)_$$DATE(+$h,2)_"TP"_TRAKID_$j("",8)_"V "_$j("",8)
+	s X1="" f  s X1=$o(^TMP($zn,$j,"CLAIM",X1)) q:X1=""  d
+	.s X2="" f  s X2=$o(^TMP($zn,$j,"CLAIM",X1,X2))  q:X2=""  w $p(^(X2),$c(1))
+	c FILE
+	; changes for HIC online
+	s DIR=$tr(CTPCT(7),$c(16,17,18),"^\|") f J="/","\" i DIR[J s:$e(DIR,$l(DIR))'=J DIR=DIR_J q
+	s FILE=DIR_"HOL"_J_TRAKID_"_"_LAST_".HOL"
+	o FILE:"WNS"
+	u FILE w "*TP"_$e(1000+CLMN,2,4)_$$DATE(+$h,1)_"TP"_TRAKID_$j("",8)_"V "_$j("",8)
+	s X1="" f  s X1=$o(^TMP($zn,$j,"CLAIM",X1)) q:X1=""  d
+	.s X2="" f  s X2=$o(^TMP($zn,$j,"CLAIM",X1,X2))  q:X2=""  d
+	..i $l($p(^(X2),$c(1),2)) w $p(^(X2),$c(1),2) q
+	..w $p(^(X2),$c(1),1)
+	c FILE
+	q FILE
+]]></Routine>
+</Export>

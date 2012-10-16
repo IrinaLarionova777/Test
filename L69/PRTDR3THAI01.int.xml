@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR3THAI01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDR3THAI01 ; ML 6/12/99 ; Doctors Reports printing (cumulative) - Chiang Mai University Hospital
+ ;
+ ; supported calls :
+ ;
+ ; $$print^PRTDR3THAI01(vtsRID,type,EpisodeList,DH)
+ ;
+ ; type          : P - print
+ ;                 V - view from Enquiry
+ ;                   - view from Entry
+print(vtsRID,type,EpisodeList,DH,group,cOrder) n (vtsRID,type,EpisodeList,DH,group,cOrder,tsLM,tsWD,GroupName) 
+ s vtsRID=$g(vtsRID),type=$g(type),EpisodeList=$g(EpisodeList),DH=$g(DH),group=$g(group),cOrder=$g(cOrder)
+ s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),max=6,ColWidth=9,ColLeft=18,FullYear="N",tsLM=$g(tsLM),tsWD=$g(tsWD)
+ K ^TMP($zn,$j,"CUM"),^TMP($zn,$j,"CUM-TC"),^TMP($zn,$j,"CUM-EXIST"),^TMP($zn,$j,"CUM-TC-ORDER")
+ i '$$select^LVBEPVIS(epis,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k VISIT m VISIT=PLIST
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ s range1="(",range2=")",(flaglow,flaghigh,Reportable)="" i '$$select^MVBCFLAB(1) d
+ .i $l(PLIST(18)) s flaglow=PLIST(18)
+ .i $l(PLIST(19)) s flaghigh=PLIST(19)
+ .i $l(PLIST(20)) s range1=PLIST(20)
+ .i $l(PLIST(21)) s range2=PLIST(21)
+ .i $l(PLIST(14)) s max=PLIST(14)
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ .i PLIST(37)="Y" s ColWidth=11,FullYear="Y"
+ .i $l(PLIST(68)) s Reportable=PLIST(68)
+ k FORMAT,TS
+ i '$$getit^LVBCTTSF(,vtsRID,"Y") d
+ .f j=1:1:PLIST s ti=$p(PLIST(j),$c(2),10) i $l(ti) s:'$d(FORMAT(ti)) FORMAT(ti)=PLIST(j) s TS($p(vtsRID,"||",2),ti)=""
+ i $l(group),group'=" " d
+ .s ts="" f  s ts=$o(^TTAB("GR",group,"TS",ts)) q:ts=""  i '$d(TS(ts)) d
+ ..s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d
+ ...i '$$getit^LVBCTTSF(,epis_"||"_ts_"||"_tscnt,"Y") d
+ ....f j=1:1:PLIST s ti=$p(PLIST(j),$c(2),10) i $l(ti) s:'$d(FORMAT(ti)) FORMAT(ti)=PLIST(j) s TS(ts,ti)=""
+ .s ts="" f  s ts=$o(^TTAB("GR",group,"TS",ts)) q:ts=""  i '$d(TS(ts)) d
+ ..i '$$getit^LVBCTTSF(ts,,"Y") d
+ ...f j=1:1:PLIST s ti=$p(PLIST(j),$c(2),10) i $l(ti) s:'$d(FORMAT(ti)) FORMAT(ti)=PLIST(j) s TS(ts,ti)=""
+ .s ti="" f cnt=1:1 s ti=$o(FORMAT(ti)) q:ti=""  d
+ ..i $g(^TTAB("GR",group,"TI",ti)) s $p(FORMAT(ti),$c(2),27)=^(ti)
+ ..e  s $p(FORMAT(ti),$c(2),27)=cnt
+ ; create list of episodes and results
+ k EPTS i $l(EpisodeList) d
+ .f col=1:1:$l(EpisodeList,",") s ep=$p(EpisodeList,",",col) i $l(ep) d
+ ..s date=$$seldata^LVBEPVIS(ep,12),time=$$seldata^LVBEPVIS(ep,13)
+ ..s time=$tr(time," ")
+ ..s ^TMP($zn,$j,"CUM",col)=ep_$c(1)_date_$c(1)_time
+ ..i $l(group),group'=" " d
+ ...s ts="" f  s ts=$o(TS(ts)) q:ts=""  d
+ ....s cnt="" f  s cnt=$o(^TEPI(ep,1,ts,cnt)) q:cnt=""  s rowid=ep_"||"_ts_"||"_cnt i '$d(EPTS(rowid)) s EPTS(rowid)="" d TestItems(col,rowid) q
+ ..i '$l(group)!(group=" ") d
+ ...i ep'=epis s cnt="" f  s cnt=$o(^TEPI(ep,1,test,cnt)) q:cnt=""  s rowid=ep_"||"_test_"||"_cnt i '$d(EPTS(rowid)) s EPTS(rowid)="" d TestItems(col,rowid) q
+ ...i ep=epis d
+ ....i '$d(EPTS(vtsRID)) s EPTS(vtsRID)="" d TestItems(col,vtsRID) q
+ ....s cnt="" f  s cnt=$o(^TEPI(ep,1,test,cnt)) q:cnt=""  s rowid=ep_"||"_test_"||"_cnt i '$d(EPTS(rowid)) s EPTS(rowid)="" d TestItems(col,rowid) q
+ k EPTS i '$l(EpisodeList) d
+ .s visit="" f j=1:1:VISIT s $p(visit,$c(28),j)=VISIT(j)
+ .s TestList=test i $l(group),group'=" " s ts="" f  s ts=$o(TS(ts)) q:ts=""  s TestList=TestList_","_ts
+ .d CumList^PRTDR00(TestList,epis,visit,cOrder)
+ .f col=1:1:PLIST d
+ ..s ep=PLIST(col)
+ ..s date=$$seldata^LVBEPVIS(ep,12),time=$$seldata^LVBEPVIS(ep,13)
+ ..s time=$tr(time," ")
+ ..s ^TMP($zn,$j,"CUM",col)=ep_$c(1)_date_$c(1)_time
+ ..i $l(group),group'=" " d
+ ...s ts="" f  s ts=$o(TS(ts)) q:ts=""  d
+ ....s cnt="" f  s cnt=$o(^TEPI(ep,1,ts,cnt)) q:cnt=""  s rowid=ep_"||"_ts_"||"_cnt i '$d(EPTS(rowid)) s EPTS(rowid)="" d TestItems(col,rowid) q
+ ..i '$l(group)!(group=" ") d
+ ...i ep'=epis s cnt="" f  s cnt=$o(^TEPI(ep,1,test,cnt)) q:cnt=""  s rowid=ep_"||"_test_"||"_cnt i '$d(EPTS(rowid)) s EPTS(rowid)="" d TestItems(col,rowid) q
+ ...i ep=epis d
+ ....i '$d(EPTS(vtsRID)) s EPTS(vtsRID)="" d TestItems(col,vtsRID) q
+ ....s cnt="" f  s cnt=$o(^TEPI(ep,1,test,cnt)) q:cnt=""  s rowid=ep_"||"_test_"||"_cnt i '$d(EPTS(rowid)) s EPTS(rowid)="" d TestItems(col,rowid) q
+ i '$d(^TMP($zn,$j,"CUM-TC")) d  q 100_$c(1)_EpisodeList
+ .k ^TMP($zn,$j,"CUM"),^TMP($zn,$j,"CUM-TC"),^TMP($zn,$j,"CUM-TC-ORDER"),^TMP($zn,$j,"CUM-EXIST")
+ ; print cumulative header
+ d LN^PRTDR00("Y")
+ d ADD^PRTDR00(tsLM,$e("Date Collected"_$j("",tsWD),1,ColLeft-3)_" :","Y")
+ s maxcol=$o(^TMP($zn,$j,"CUM",""),-1) s:maxcol>max maxcol=max
+ f col=1:1:maxcol i $d(^TMP($zn,$j,"CUM",col)) d
+ .s xx=$p(^TMP($zn,$j,"CUM",col),$c(1),2)
+ .i xx s xx=$$extdate2^SSUTIL4(xx) i FullYear="N" s $p(xx,"/",3)=$e($p(xx,"/",3),3,4)
+ .d ADD^PRTDR00(tsLM+ColLeft+(col-1*ColWidth),xx,"Y")
+ d LN^PRTDR00("Y")
+ d ADD^PRTDR00(tsLM,$e("Time Collected"_$j("",tsWD),1,ColLeft-3)_" :","Y")
+ f col=1:1:maxcol i $d(^TMP($zn,$j,"CUM",col)) d
+ .s ep=$p(^TMP($zn,$j,"CUM",col),$c(1),1)
+ .s xx=$$seldata^LVBEPVIS(ep,13)
+ .s xx=$tr(xx," "),xx=$s($l(xx):$$exttime^SSUTIL4(xx),1:"N/S")
+ .d ADD^PRTDR00(tsLM+ColLeft+(col-1*ColWidth),xx,"Y")
+ d LN^PRTDR00("Y")
+ d ADD^PRTDR00(tsLM,$e("Episode"_$j("",tsWD),1,ColLeft-3)_" :","Y")
+ f col=1:1:maxcol i $d(^TMP($zn,$j,"CUM",col)) d
+ .s xx=$p(^TMP($zn,$j,"CUM",col),$c(1),1)
+ .d ADD^PRTDR00(tsLM+ColLeft+(col-1*ColWidth),xx,"Y")
+ d LN^PRTDR00("Y")
+ d ADD^PRTDR00(tsLM,"==============","Y") s delim="",$p(delim,"=",ColWidth)=""
+ f col=1:1:maxcol i $d(^TMP($zn,$j,"CUM",col)) d ADD^PRTDR00(tsLM+ColLeft+(col-1*ColWidth),delim,"Y")
+ d LN^PRTDR00("Y")
+ ; print test set header only for Cum report page
+ i $l(EpisodeList) d
+ .i ('$l(group)!(group=" ")),$l(TEST(17)) d LN^PRTDR00(),ADD^PRTDR00(tsLM,$s(TEST(17)="*":TEST(3),1:TEST(17))),LN^PRTDR00()
+ .i $l(group),group'=" ",$l(GroupName) d LN^PRTDR00(),ADD^PRTDR00(tsLM,GroupName),LN^PRTDR00() s GroupName=""
+ ; print results
+ s order="" f  s order=$o(^TMP($zn,$j,"CUM-TC-ORDER",order)) q:order=""  d
+ .s tc=^(order)
+ .d ADD^PRTDR00(tsLM,$e($tr($p(FORMAT(tc),$c(2),3),":")_$j("",tsWD),1,ColLeft-3)_" :")
+ .f col=1:1:maxcol i $d(^TMP($zn,$j,"CUM",col)) d
+ ..s result=$p($g(^TMP($zn,$j,"CUM",col,tc)),$c(1),1),flag=$p($g(^TMP($zn,$j,"CUM",col,tc)),$c(1),2)
+ ..i result="" d
+ ...i $d(^TMP($zn,$j,"CUM-EXIST",col,tc)) d  q
+ ....i $p(FORMAT(tc),$c(2),8)="M" s result="TF"
+ ....e  s result=""
+ ...s result="-"
+ .. ; print extra info
+ ..i flag="L" d
+ ...i "MN"[$e($p(FORMAT(tc),$c(2),18)),$l(flaglow) s result=result_" "_flaglow
+ ..i flag="H" d
+ ...i "MN"[$e($p(FORMAT(tc),$c(2),18)),$l(flaghigh) s result=result_" "_flaghigh
+ ..d ADD^PRTDR00(tsLM+ColLeft+(col-1*ColWidth),result)
+ .d LN^PRTDR00()
+ K ^TMP($zn,$j,"CUM"),^TMP($zn,$j,"CUM-TC"),^TMP($zn,$j,"CUM-EXIST"),^TMP($zn,$j,"CUM-TC-ORDER")
+ q 0
+ ; collect Test Items information
+TestItems(col,rowid) n (col,rowid,type,FORMAT,vtsRID,Reportable) s col=$g(col),rowid=$g(rowid)
+ i '$$select^LVBVISTS(rowid,"Y") d
+ .m ^TMP($zn,$j,"CUM-EXIST",col)=TS($p(rowid,"||",2))
+ .s status=$$status^LVBVIS1(rowid)
+ .s Result=0 i status="A" s Result=1
+ .e  i vtsRID=rowid s Result=1
+ .e  i $l(type),status="E",Reportable["ENTERED" s Result=1
+ .e  i $l(type),status="P",Reportable["PATHOLOGIST" s Result=1
+ .i '$$results^LVBVISTS(rowid) f j=1:1:PLIST d
+ ..s tc=$p(PLIST(j),$c(1),2),(result,flag)=""
+ ..i Result s result=$p(PLIST(j),$c(1),3),flag=$p(PLIST(j),$c(1),5)
+ ..i '$d(FORMAT(tc)) q
+ .. ; not included in cumulative
+ ..i $p(FORMAT(tc),$c(2),20)'="Y" q
+ ..i $l(tc),$l(result) d
+ ... ; non reportable test item
+ ...i $l(type),$p(FORMAT(tc),$c(2),15)'="Y" q
+ ...i $e($p(FORMAT(tc),$c(2),18))="N" d IN
+ ...i $e($p(FORMAT(tc),$c(2),18))="D" d ID^PRTDR00
+ ...i $e($p(FORMAT(tc),$c(2),18))="T" d IT^PRTDR00
+ ...i $e($p(FORMAT(tc),$c(2),18))="Y" d IY^PRTDR00
+ ...s ^TMP($zn,$j,"CUM",col,tc)=result_$c(1)_flag
+ ...i '$d(^TMP($zn,$j,"CUM-TC",tc)) d
+ ....s order=$p(FORMAT(tc),$c(2),27) i '$l(order) s order=$p(FORMAT(tc),$c(2),2)
+ ....s ^TMP($zn,$j,"CUM-TC-ORDER",order)=tc,^TMP($zn,$j,"CUM-TC",tc)=""
+ q
+IN ; Numeric
+ i $l(result),$d(^TTAB("RC",result)) q
+ s Flag="" f  q:'$l(result)  q:"<>+-"'[$e(result)  s Flag=Flag_$e(result),result=$e(result,2,$l(result))
+ s result=Flag_$j(result,0,$e($p(FORMAT(tc),$c(2),18),2,9))
+ q
+]]></Routine>
+</Export>

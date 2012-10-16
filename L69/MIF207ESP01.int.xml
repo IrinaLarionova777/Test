@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF207ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF207ESP01(mi) ; DADE Dimension (Bi-Directional)
+ i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ s $zt="err"
+ d trace("*** Starting ***","DEBUG")
+ i $$select^LVBMIMP(mi) d trace("Error select^LVBMIMP(mi)","DEBUG") q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s:'$l(par10) par10=$a("|") s:'$l(par11) par11=$a("\")
+ s stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(21),del=$c(28),eot=$c(4)
+ i $$start^MIF000() d trace("Cannot open device "_par4,"DEBUG") q
+ d trace("Started $j="_$j,"DEBUG")
+ ; Neutral State
+ f  d Main i $$stop^MIF000() q
+ c par4
+ d trace("Finished","DEBUG")
+ q
+Main 
+ i '$$read(stx,etx,eot) q
+ s record=$e(record,2,$l(record)-1) ; Remove <STX>....<ETX>
+ s type=$e(record,1)
+ i type="P" d sendchar(ack) d POL q    ; polling message
+ i type="M" d sendchar(ack) q        ; request acceptance message
+ i type="R" d sendchar(ack),RES q    ; result message
+ i type="C" d sendchar(ack),CAL q    ; calibration result message
+ i type="I" d sendchar(ack),QUE q    ; query message
+ d trace("Unknow message type="_type,"DEBUG")
+ d sendchar(nak)
+ q
+POL ; check polling message
+ s rq=$p(record,del,2),xx1=$p(record,del,3),xx2=$p(record,del,4),xx3=$p(record,del,5)
+ i xx1 d N5 q
+ i xx2=0 d N51 q
+ i '$d(^TMIF(mi,10)) d  q
+ .d N5
+ .d:" L "[(" "_par9_" ") loadlist^MIF000(mi)
+ s ord="",ord=$o(^TMIF(mi,10,ord)) i ord'="" d
+ .s rec=^TMIF(mi,10,ord) d SEND(rec)
+ .k ^TMIF(mi,10,ord)
+ q
+RES ; process result record
+ s (sample,epis,surname,result,date,time,QC)=""
+ s aux=$e(epis,1)
+ s epis=$tr($p(record,del,4)," ")
+ i epis="" d CAL q
+ i epis?1.N s $e(epis,1)=0
+ s typ=$p(record,del,7),timedate=$p(record,del,8),time=$e(timedate,1,6),date=$e(timedate,7,12)
+ s stype=$p(record,del,5)
+ i stype=2 s stype=1
+ s time=$e(time,5,6)+($e(time,3,4)*60)+($e(time,1,2)*3600)
+ s date=$e(date,5,6)_$e(date,3,4)_$e(date,1,2),date=$$intdate^SSUTIL4(date)
+ s cup=$p(record,del,9),record=$p(record,del,10,999) f d=1:1:cup d
+ .s test=$p(record,del,2) f j=1:1:test d
+ ..i $p(record,del,j-1*4+4)<0 q
+ ..i $p(record,del,j-1*4+3)="CREA" d
+ ...i ($l($p(record,del,j-1*4+4))'=0)&($p(record,del,j-1*4+4)<0.1)&(stype=1) s $p(record,del,j-1*4+4)=0.1 
+ ...i ($l($p(record,del,j-1*4+4))'=0)&($p(record,del,j-1*4+4)<0.5)&(stype=3) s $p(record,del,j-1*4+4)=0.1 
+ ...i ($p(record,del,j-1*4+6)=16)&(stype=1) s $p(record,del,j-1*4+4)=0.1
+ ...i ($p(record,del,j-1*4+6)=16)&(stype=3) s $p(record,del,j-1*4+4)=0.5
+ ..i $p(record,del,j-1*4+3)="RCRP" d
+ ...i ($l($p(record,del,j-1*4+4))'=0)&($p(record,del,j-1*4+4)<0.5) s $p(record,del,j-1*4+4)=0.5
+ ...i $p(record,del,j-1*4+6)=16 s $p(record,del,j-1*4+4)=0.5
+ ..i $p(record,del,j-1*4+3)="BUN" d
+ ...i ($l($p(record,del,j-1*4+4))'=0)&($p(record,del,j-1*4+4)<1) s $p(record,del,j-1*4+4)=1
+ ...i $p(record,del,j-1*4+6)=16 s $p(record,del,j-1*4+4)=1
+ ..i $p(record,del,j-1*4+3)="MMB" d 
+ ...i ($l($p(record,del,j-1*4+4))'=0)&($p(record,del,j-1*4+4)<0.5) s $p(record,del,j-1*4+4)=0.5
+ ...i $p(record,del,j-1*4+6)=16 s $p(record,del,j-1*4+4)=0.5
+ ..i $p(record,del,j-1*4+3)="CTNI" d 
+ ...i ($l($p(record,del,j-1*4+4))'=0)&($p(record,del,j-1*4+4)<0.01) s $p(record,del,j-1*4+4)=0.01
+ ...i $p(record,del,j-1*4+6)=16 s $p(record,del,j-1*4+4)=0.01
+ ..i $p(record,del,j-1*4+3)="TBIL" d
+ ...i ($l($p(record,del,j-1*4+4))'=0)&($p(record,del,j-1*4+4)<0.1) s $p(record,del,j-1*4+4)=0.1
+ ...i $p(record,del,j-1*4+6)=16 s $p(record,del,j-1*4+4)=0.1
+ ..i ($p(record,del,j-1*4+6)=3)&($p(record,del,j-1*4+4)>10) q
+ ..i $p(record,del,j-1*4+6)=1 q
+ ..i $p(record,del,j-1*4+6)=4 q
+ ..i $p(record,del,j-1*4+6)=6 q
+ ..i $p(record,del,j-1*4+6)=14 q
+ ..i $p(record,del,j-1*4+6)="AB" q
+ ..i $p(record,del,j-1*4+6)="PE" q
+ ..i typ'=3 s result=result_$p(record,del,j-1*4+3)_stype_$c(par10)_$p(record,del,j-1*4+4)_$c(par10)_$p(record,del,j-1*4+6)_$c(par11)      
+ ..i typ=3 s result=result_$$channel($p(record,del,j-1*4+3))_$c(par10)_$p(record,del,j-1*4+4)_$c(par10)_$p(record,del,j-1*4+6)_$c(par11)
+ .s record=$p(record,del,test*4+3,$l(record,del))
+ i (typ<3)!(stype=7),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ i typ>2,$l(result) d QC
+CAL s rec="M"_del_"A"_del_del
+ d SEND(rec)
+ q
+QC ; process QC record
+ s time=$e(date,1,6)
+ s date=$e(date,11,12)_$e(date,9,10)_$e(date,7,8)
+ s date=$$intdate^SSUTIL4(date),time=$e(time,5,6)+($e(time,3,4)*60)+($e(time,1,2)*3600)
+ s QC="\"_epis d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+QUE ; build string to send to instrument
+ s (epis,tube,saveepis)=$tr($p(record,del,2)," "),(z1,z2)=""
+ s stype=$e(epis,1),$e(epis,1)=0
+ i stype=4 s stype=6
+ i stype=1 s stype=0
+ i $e(saveepis,1)=4 s $e(saveepis,1)=6 
+ i $e(saveepis,1)=1 s $e(saveepis,1)=0 
+ d scanone^MIF000(mi,epis)
+ k tst s tc="" f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ .f i=1:1:$l(tc,",") s y=$p(tc,",",i) i y'="" i $e(saveepis,1)+1=$e(y,$l(y)) s tst($e(y,1,$l(y)-1))=""
+ s tst="" f j=0:1 s tst=$o(tst(tst)) i tst="" s tst=j q
+ i 'tst d N5 q
+ s z1=$tr($p(^TEPI(epis),"\",2)_" "_$p(^TEPI(epis),"\",1),"ÑñÇçºª","")
+ s rec="D"_del_0_del_0_del_"A"_del_$e(z1,1,26)_del_tube_del_(stype+1)_del_z2_del_0_del_1_del_"**"_del_1_del_tst_del
+ s tst="" f  s tst=$o(tst(tst)) q:tst=""  s rec=rec_tst_del
+ d SEND(rec)
+ q
+N5 s rec="N"_del d SEND(rec)
+ q
+N51 s rec="W"_del d SEND(rec)
+ q
+SAVE(mi) ; create loadlist records
+ s stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(21),del=$c(28)
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+ s (z,test)="" f  s z=$o(^TMP("MIF000",$j,"LL","TEST",z)) q:z=""  s test=test_$s($l(test):"\",1:"")_z
+ d SET(epis,test,sample)
+ q 0
+SET(epis,tests,cup) ; set record to be sent to instrument
+ s del=$c(28),test="",test=$p(tests,"\",1) i test="" s rec="N"_del d SEND(rec) q
+ s (name,loc)="",num=$l(tests,"\"),stype=$p(tests,"\",1),stype=$e(stype,$l(stype))
+ i $d(^TEPI(epis)) s name=$p(^TEPI(epis),"\",1)_","_$p(^(epis),"\",2),loc=$p(^TEPI(epis),"\",20)
+ s rec="D"_del_0_del_0_del_"A"_del_$e(name,1,26)_del_epis_del_1_del_loc_del_0_del_1_del_0_del_1_del_num_del_test_del
+ s test="" f j=2:1 s test=$p(tests,"\",j) q:test=""  s rec=rec_$e(test,1,$l(test)-1)_del
+ s rec=rec_del
+ s cnt=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,cnt)=rec
+ q
+CHSUM(x) ; calculate check sum
+ n y,z s z=0
+ f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=z#256
+ s z=$e("0123456789ABCDEF",z\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+SEND(x) ; send data string
+ s str=x_$$CHSUM(x) w stx,str,etx,*-3
+ d trace(stx_str_etx,"H-->M")
+ f  r *c:30 q:c=-1  q:$f(ack_nak,$c(c))  d trace("Ignored character "_$c(c))
+ i c=-1 d trace("Timeout"),sendchar(eot) q
+ d trace($c(c))
+ q
+channel(ch) ;
+ s ret=$o(^TMIF(mi,3,ch))
+ i $l(ret)'=($l(ch)+1) q ch
+ q $s($e(ret,1,$l(ch))=ch:ret,1:ch)
+trace(mes,dir) 
+ s mes=$g(mes),dir=$g(dir,"H<--M")
+ i '$l($g(mi)) q
+ d trace^MIF000(mi,$$trans(mes),dir)
+ q
+trans(txt) n new,n,a
+ s new="" f n=1:1:$l(txt) s a=$a(txt,n) d
+ . i a>31 s new=new_$c(a) q
+ . i a=2 s new=new_"<STX>" q
+ . i a=3 s new=new_"<ETX>" q
+ . i a=4 s new=new_"<EOT>" q
+ . i a=5 s new=new_"<ENQ>" q
+ . i a=6 s new=new_"<ACK>" q
+ . i a=10 s new=new_"<LF>" q
+ . i a=13 s new=new_"<CR>" q
+ . i a=21 s new=new_"<NAK>" q
+ . s new=new_"<"_a_">"
+ q new
+read(start,stop,term,timeout)   n (mi,record,start,stop,term,timeout)
+ ; start: string of start charactes i.e. stx
+ ; stop : string of stop characters i.e. etb_etb
+ ; term: string of terminator characters i.e. eot
+ ; Returns: 0 - Failed
+ ;          1 - Done
+ s start=$g(start),stop=$g(stop),term=$g(term),timeout=$g(timeout),ok=0
+ i '$l(start) s ok=1
+ i '$l(timeout) s timeout=30
+ s record=""
+ f  r *x:timeout q:x=-1  q:$f(term,$c(x))  d  q:$f(stop,$c(x))
+ . i 'ok,$f(start,$c(x)) s ok=1
+ . i 'ok d trace("Wait for "_start_" but received "_$c(x)) q
+ . s record=record_$c(x)
+ i $f(term,$c(x)) d trace("Received terminate char "_$c(x)) q 0
+ i x=-1 d  q 0
+ . s mess="Timeout ocurred"
+ . i $l(record) d trace(mess_" Record="_record) q
+ . s last=$o(^TMPmif(mi,99,""),-1)
+ . i $l(last),$p($g(^TMPmif(mi,99,last))," : ",3)=mess k ^TMPmif(mi,99,last)
+ . d trace(mess)
+ d trace(record)
+ q 1
+err 
+ s $zt=""
+ d trace($ze,"ERROR")
+ d trace("Finished","DEBUG")
+ q
+sendchar(char) 
+ d trace(char,"H-->M") w char,*-3
+ q
+]]></Routine>
+</Export>

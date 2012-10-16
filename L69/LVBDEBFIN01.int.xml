@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBDEBFIN01" type="INT" languagemode="0"><![CDATA[
+LVBDEBFIN01 ; IG 12/07/98 ; MRN control for Finalnd - Savolina
+ ;
+ ; supported calls:
+ ;
+ ; $$check^LVBDEBFIN01(deb)
+ ;
+ ; check debtor number
+ ; return code = ReturnCode_$c(1)_Flag1_$c(1)_Flag2
+ ; Return Code - 10 - exist in TDEB              - MRN - last visit
+ ;               20 - exist in THOS              - MRN - multiple THOS data
+ ;               30 - exist in Labtrak as HRN    -     - multiple Labtrak MRN's and last visits
+ ;               50 - does not exist but valid   - MRN - single THOS data
+ ;              100 - invalid MRN
+ ; Flag1       - Search DB : H - LVBHOSP
+ ;                           L - LVBEPVIS
+ ; Flag2       - Accept Hospital DB MRN as LabTrak MRN
+check(deb,step) n (PLIST,deb) k PLIST
+ ; existing LabTrak MRN                          - ok=10_$c(1)_$c(1)_"N"
+ i '$$select^LVBDEB(deb) s ok=10_$c(1)_$c(1)_"N",last=PLIST(4) k PLIST s PLIST(1)=deb,PLIST(2)=last g end
+ ; request for new MRN                           - ok=50_$c(1)_"L"_$c(1)_"N"
+ i deb="." s ok=50_$c(1)_"LH"_$c(1)_"N" k PLIST s PLIST(1)="{New}" g end
+ ; request for new MRN with URprefix             - ok=50_$c(1)_"L"_$c(1)_"N"
+ i deb?1U1"." s ok=50_$c(1)_"LH"_$c(1)_"N" d  i ok k PLIST s PLIST(1)=$e(deb)_"{New}" g end
+ .i $$select^LVBCTUR($e(deb),"Y") s ok=0 q
+ .i PLIST(7)="Y" s ok=0 q
+ i deb?1U1".",'ok s ok=100 g end
+ ; check MRN format
+ i deb'?6N1(1"-",1"+",1"A")3N1(1A,1N).1"*" s ok=100 k PLIST g end
+ ; Check the last control character
+ i '$$CheckCC(deb) s ok=100 k PLIST g end
+ ; MRN conversion                                - ok=50_$c(1)_$c(1)_"N"
+ s dt=$e(deb,1,2),mm=$e(deb,3,4),yy=$e(deb,5,6),cent=$e(deb,7),ok=50_$c(1)_$c(1)_"N"
+ s cent=$s(cent="+":1800,cent="A":2000,1:1900),yy=yy+cent
+ s dob=$$intdate^SSUTIL4(mm_"/"_dt_"/"_yy)
+ s sex=$e(deb,10),sex=$s("13579"[sex:"M",1:"F")
+ k PLIST s PLIST(1)=deb,PLIST(7)=dob,PLIST(8)=sex
+end s PLIST=$o(PLIST(""),-1)
+ q ok
+ ; Checks the last character of Finnish Social Security Number
+CheckCC(FSSN) new status
+ set status=$extract(FSSN,1,6)_$extract(FSSN,8,10)
+ quit $extract("0123456789ABCDEFHJKLMNPRSTUVWXY",status#31+1)=$e(FSSN,11)        
+]]></Routine>
+</Export>

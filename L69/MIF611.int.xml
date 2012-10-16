@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF611" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF611(mi) ; ML 1/3/2001 ; COULTER Handshaking - Including Scatterplot/Histogram v.2A
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),crlf=$c(13,10),dc1=$c(17),nak=$c(21),syn=$c(22)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *x:20 q:$c(x)'=syn
+ d trace^MIF000(mi,"SYN - Synchronising","H<--M")
+ w syn,*-3 d trace^MIF000(mi,"SYN - Synchronising","H-->M")
+ ; get block count
+ r *x1:10 e  w nak,*-3 d trace^MIF000(mi,"NAK - No block count (1) received","H-->M") q
+ i x1<32 w nak,*-3 d trace^MIF000(mi,"NAK - Invalid block count (1) received","H-->M") q
+ r *x2:10 e  w nak,*-3 d trace^MIF000(mi,"NAK - No block count (2) received","H-->M") q
+ i x2<32 w nak,*-3 d trace^MIF000(mi,"NAK - Invalid block count (2) received","H-->M") q
+ s BlockCnt=$zh($c(x1)_$c(x2)) d trace^MIF000(mi,"Block Count - "_BlockCnt_" ("_x1_","_x2_")","H<--M")
+ i 'BlockCnt w nak,*-3 d trace^MIF000(mi,"NAK - Bad block count","H-->M") q
+ w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ k ^TMP($zn,$j)
+Read s er=0 f i=1:1:BlockCnt d  i er q
+ .s rec=$$read^MIF000(stx,etx) i '$l(rec) e  s er=er+1 q
+ .s record=$tr($e(rec,3,$l(rec)-4),crlf,"\"),record=$tr(record,$c(0)," "),record=$tr(record,dc1,""),^TMP($zn,$j,i)=record,er=0
+ .d trace^MIF000(mi,record,"H<--M")
+ .w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ i er=1 w syn,*-3 d trace^MIF000(mi,"SYN - Resend data","H-->M") k ^TMP($zn,$j) g Read
+ i er q
+ r *x:2 i $c(x)'=syn w nak,*-3 d trace^MIF000(mi,"NAK - Did not receive synch after data","H-->M") q
+ d trace^MIF000(mi,"SYN - Packet transfer completed","H<--M")
+ w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ s record="" f i=1:1:BlockCnt s record=record_^TMP($zn,$j,i)
+ i $e(record,1,21)="\\\\\\--------------\" s record=$e(record,22,$l(record))
+ i $e(record)="S" d
+ .s (sample,epis,result,res,surname,date,time,QC)="" k ScatRes
+ .s xTests=$zh($e($p(record,"\"),2,3)),record=$p(record,"\",xTests+2,$l(record,"\"))
+ .f j1=1:1:xTests i $e(record)="T" d
+ ..s xTestType=$p(record,"\"),xGroup=$zh($p(record,"\",2)),record=$p(record,"\",3,$l(record,"\"))
+ ..f j2=1:1:xGroup i $e(record)="G" d
+ ...s xField=$zh($p(record,"\",2)),record=$p(record,"\",3,$l(record,"\"))
+ ...f j3=1:1:xField s res=$p(record,"\",j3) i $l(res) d
+ .... ; extract record type
+ ....s x1=$p(res," ",1) i " .. -- ++ ?? :: "[(" "_$e(x1,1,2)_" ") q
+ ....i x1="ID1",'$l(epis) s epis=$p(res,"ID1 ",2),epis=$tr(epis," -") i xTestType="5CC" s QC="\"_epis
+ ....i x1="PID1",'$l(epis) s epis=$p(res,"PID1 ",2),epis=$tr(epis," -") i xTestType="5CC" s QC="\"_epis
+ ....i x1="CASSPOS",'$l(epis) s epis=$p(res,"CASSPOS ",2),epis=$tr(epis,"/ -","_") i xTestType="5CC" s QC="\"_epis
+ ....i x1="PCASSPOS",'$l(epis) s epis=$p(res,"PCASSPOS ",2),epis=$tr(epis,"/ -","_") i xTestType="5CC" s QC="\"_epis
+ ....s group=0
+ ....i (" WBC RBC HGB HCT MCV MCH MCHC RDW PLT PCT MPV PDW ")[(" "_x1_" ") s group=1
+ ....i (" LY# MO# NE# EO# BA# LY% MO% NE% EO% BA% ")[(" "_x1_" ") s group=1
+ ....i (" RET% RET# MRV MI OTHER ")[(" "_x1_" ") s group=1
+ ....i (" VAL1 VAL2 VAL3 VAL4 VAL5 DF1 ")[(" "_x1_" ") s group=2
+ ....i (" RBCH PLTH PLTF V C S ")[(" "_x1_" ") s group=2
+ ....i group=1 d
+ ..... ; extract result
+ .....s x2=$tr($e(res,$l(x1)+2,$l(x1)+6)," ") i " .. -- ++ ?? :: "[(" "_$e(x2,1,2)_" ") q
+ ..... ; extract flag
+ .....s x3="" f j4="R","H","L","E" i $tr($e(res,$l(x1)+8,$l(x1)+10)," ")[j4 s x3=x3_$s($l(x3):",",1:"")_j4
+ .....i $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ....i group=2 d
+ ..... ; extract result
+ .....s x2=$tr($p(res," ",2)," ") i x2="" q
+ .....i $e(x1,1,3)="VAL" s ScatRes(x1)=x2 q
+ .....i x1="DF1" f j=1:1:($l(res)\64) s ScatRes("DIFF",j)="DIFF"_$c(par10)_j_$c(par10)_$e(x2,(j-1)*64+1,j*64)_$c(par11)
+ .....i " RBCH PLTH PLTF V C S "[(" "_x1_" ") s ScatRes(x1,1)=x1_$c(par10)_1_$c(par10)_x2_$c(par11)
+ ...s record=$p(record,"\",xField+1,$l(record,"\"))
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ i $d(ScatRes) d
+ .s result="DIFF"_$c(par10)_"0"_$c(par10)_$g(ScatRes("VAL1"))_$c(20)_$g(ScatRes("VAL2"))_$c(20)_$g(ScatRes("VAL3"))_$c(20)_$g(ScatRes("VAL4"))_$c(20)_$g(ScatRes("VAL5"))_$c(par11)
+ .f i="DIFF" s x="" f  s x=$o(ScatRes(i,x)) q:x=""  s result=result_ScatRes(i,x)
+ .f i="RBCH","PLTH","PLTF","V","C","S" i $d(ScatRes(i,1)) s result=result_ScatRes(i,1)
+ .i $l(result) d filesp^MIF000(mi,sample,epis,result)
+ k ^TMP($zn,$j)
+ q
+]]></Routine>
+</Export>

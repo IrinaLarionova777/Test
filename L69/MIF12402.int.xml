@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF12402" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF12402(mi) ; ML 13/12/99 ; CHIRON Rapidlink
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),eot=$c(4),ack=$c(6),etb=$c(23),fs=$c(28),gs=$c(29),rs=$c(30)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,eot) q:'$l(record)
+ ; translate etb='-', fs='|', gs='^', rs='~' for trace
+ d trace^MIF000(mi,$tr($p(record,etx),etb_fs_gs_rs,"-|^~")_" "_$p(record,etx,2),"H<--M")
+ ; check record validity
+ s chsum=$p(record,etx,2) i $$CHSUM($p(record,etx))'=chsum d trace^MIF000(mi,"Incorrect Checksum - Packet Ignored","H-->M") q
+ d ACK
+ s recid=$p(record,fs)
+ ; process device identity record
+ i recid="ID_REQ" d  q
+ .s str="ID_DATA"_fs_rs_"aMOD"_gs_"LIS"_gs_gs_gs_fs_"iIID"_gs_"TRAK"_gs_gs_gs_fs_rs
+ .d SEND(str)
+ ; process patient demographic request record
+ i recid="PAT_DEMOG_REQ" d  q
+ .s epis=$p($p(record,fs,4),gs,2),str=""
+ .i '$$select^LVBEPVIS(epis,"Y") d
+ ..k VISIT m VISIT=PLIST k PLIST
+ ..s dob=VISIT(6),dob=$$extdate2^SSUTIL4(dob),month=$p(dob,"/",2)
+ ..s dob=$p(dob,"/",1)_$s(month="01":"Jan",month="02":"Feb",month="03":"Mar",month="04":"Apr",month="05":"May",month="06":"Jun",month="07":"Jul",month="08":"Aug",month="09":"Sep",month="10":"Oct",month="11":"Nov",month="12":"Dec",1:"")_$p(dob,"/",3)
+ ..s str="PAT_DEMOG_DATA"_fs_rs_"aMOD"_gs_"DMS"_gs_gs_gs_fs_"iIID"_gs_"COMP2"_gs_gs_gs_fs_"iLNAME"_gs_VISIT(3)_gs_gs_gs_fs
+ ..s str=str_"iFNAME"_gs_VISIT(4)_gs_gs_gs_fs_"iDOB"_gs_dob_gs_gs_gs_fs_"iSEX"_gs_VISIT(5)_gs_gs_gs_fs_rs
+ ..d SEND(str)
+ ; process result available record
+ i recid="PATIENT_DATA_AV" d  q
+ .s rseq=$p($p(record,fs,4),gs,2)
+ .s str="PATIENT_DATA_REQ"_fs_rs_"aMOD"_gs_"DMS"_gs_gs_gs_fs_"iIID"_gs_"COMP2"_gs_gs_gs_fs_"rSEQ"_gs_rseq_gs_gs_gs_fs_rs
+ .d SEND(str)
+ ; process result record
+ i recid="PATIENT_DATA" d
+ .s (sample,epis,surname,result,date,time,QC)=""
+ .k res s record=$tr(record,rs)
+ .f i=1:1:$l(record,fs) s res($p($p(record,fs,i),gs))=$p(record,fs,i)
+ .s x1="" f  s x1=$o(res(x1)) q:x1=""  d
+ .. ; i " aMOD iIID rSEQ rSYSTEM iFNAME iSEX iDOB iUSERP1 iUSERP2 iUSERP3 iUSERP4 iUSERP5 iROOM iDOC "[x1 q
+ .. ; i " iDID iDDATE iDTIME iRDATE iRTIME iSOURCE iTYPE iOID iMODE iUSERS1 iUSERS2 iUSERS3 iUSERS4 iUSERS5 "[x1 q
+ ..i '$l(epis),x1="iPID" s epis=$p(res(x1),gs,2) q
+ ..i '$l(epis),x1="iACC" s epis=$p(res(x1),gs,2) q
+ ..i x1="iLNAME" s surname=$p(res(x1),gs,2) q
+ ..i x1="rDATE" s date=$p(res(x1),gs,2) d  q
+ ...s month=$e(date,3,5),date=$e(date,6,9)_$s(month="Jan":"01",month="Feb":"02",month="Mar":"03",month="Apr":"04",month="May":"05",month="Jun":"06",month="Jul":"07",month="Aug":"08",month="Sep":"09",month="Oct":"10",month="Nov":11,1:"12")_$e(date,1,2)
+ ...s date=$$intdate^SSUTIL4(date)
+ ..i x1="rTIME" s time=$$inttime^SSUTIL4($p($p(res(x1),gs,2),":",1,2)) q
+ ..s result=result_x1_$c(par10)_$p(res(x1),gs,2)_$c(par10)_$tr($p(res(x1),gs,4),etb,"-")_$c(par11)
+ .i $l(epis),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+ ; send string to instrument
+SEND(x) s chsum=$$CHSUM(x)
+ f i=1:1:2 w stx,x,etx,chsum,eot,*-3 d  q:ok
+ .d trace^MIF000(mi,x_" "_chsum,"H-->M")
+ .s ok="" s record=$$read^MIF000(stx,eot,,6) q:'$l(record)
+ .i $p(record,etx)=ack d trace^MIF000(mi,"ACK","H<--M") s ok=1 q
+ .d trace^MIF000(mi,"No Response - Message Rejected","H<--M")
+ q
+ ; send 'ack' to instrument
+ACK s chsum=$$CHSUM(ack)
+ w stx,ack,etx,chsum,eot,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+ ; calculate check sum
+CHSUM(x) s x=$c(2)_x_$c(3)
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+]]></Routine>
+</Export>

@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTINV22" type="INT" languagemode="0"><![CDATA[
+PRTINV22 ; IG 07/10/98 ; PRIVATE INVOICES - UNSW
+ Q
+ ; Parameters :  1.Payment Code
+ ;               2.Batch Number
+ ;               3.Episode Number
+ ;               4.Sequence Number
+ ;               5.  - Invoice (Original)
+ ;                 Y - Invoice (Duplicate)
+ ;                 1 - Reminder 1
+ ;                 2 - Reminder 2
+ ;                 3 - Reminder 3
+ ;                 R - Receipt
+ ;                 H - Invoice history
+ ;               6.Receipt Number
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+ D INIT,BODY,PRINT
+CREND I " H Y  "[(" "_PAR5_" "),'$$select^LVBPRPR(REPID) S PLIST(12)=PAR1_"-"_PAR2 I $$update^LVBPRPR(REPID)
+ I " 1 2 3 "[(" "_PAR5_" "),'$$select^LVBPRPR(REPID) S PLIST(12)="REM-"_PAR5 I $$update^LVBPRPR(REPID)
+ I " R "[(" "_PAR5_" "),'$$select^LVBPRPR(REPID) S PLIST(7)="REC",PLIST(12)=PAR6 I $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$J)
+ q
+ ; initialize parameters
+INIT f J=1:1:$l(PAR,$c(1)) s @("PAR"_J)=$p(PAR,$c(1),J)
+ q
+ ; create temporary printing file
+BODY ; print single patient
+ i $l(PAR3),'$$select^LVBEPVIS(PAR3,"Y") d
+ .s xx1=$p(PLIST(9),$c(1)),xx2=$e(PLIST(57),$l(xx1)+1,$l(PLIST(57)))
+ . ; find sequence
+ .s xx3="" i $l(xx1),$l(xx2) s xx3=$p($g(^TMCB(xx1,xx2,PAR3)),"\",2)
+ . ; collect all episodes for this sequence
+ .i $l(xx3) d
+ .. ; get provider name and provider number
+ ..k INVOICE i '$$select^LVBINVB(xx1_"||"_xx2) m INVOICE=PLIST
+ ..s COMP(10)=$$seldata^LVBCTCO(INVOICE(6),10)
+ ..s ^TMP($zn,$j,"REPORT")=$p(INVOICE(10),$c(1),2)_" - "_INVOICE(5)_$c(1)_$p(COMP(10),$c(1))
+ ..s epis="" f  s epis=$o(^TMCB(xx1,xx2,epis)) q:epis=""  i xx3=$p(^TMCB(xx1,xx2,epis),"\",2) d
+ ...i $$CT007^at345(epis,xx1_"||"_xx2)="Y" q
+ ...i '$$select^LVBEPVIS(epis,"Y") d  q
+ ....s ^TMP($zn,$j,"REPORT",xx3,"EPISODE",epis)=PLIST(23)
+ ....s ^TMP($zn,$j,"REPORT",xx3)=xx1_"-"_xx2_"-"_xx3
+ ; print batch
+ i $l(PAR1),$l(PAR2) d
+ .k INVOICE i '$$select^LVBINVB(PAR1_"||"_PAR2) m INVOICE=PLIST
+ .s COMP(10)=$$seldata^LVBCTCO(INVOICE(6),10)
+ .s ^TMP($zn,$j,"REPORT")=$p(INVOICE(10),$c(1),2)_" - "_INVOICE(5)_$c(1)_$p(COMP(10),$c(1))
+ .s epis="" f  s epis=$o(^TMCB(PAR1,PAR2,epis)) q:epis=""  d
+ ..i $$CT007^at345(epis,PAR1_"||"_PAR2)="Y" q
+ ..s seq=$p(^TMCB(PAR1,PAR2,epis),"\",2) i '$l(seq) s seq=" "
+ ..i $l(PAR4),PAR4'=seq q
+ ..i '$$select^LVBEPVIS(epis,"Y") d  q
+ ...s ^TMP($zn,$j,"REPORT",seq,"EPISODE",epis)=PLIST(23)
+ ...s ^TMP($zn,$j,"REPORT",seq)=PAR1_"-"_PAR2_"-"_seq
+ ; check credits
+ i " 1 2 3 R H "[(" "_PAR5_" ") d
+ .s seq="" f  s seq=$o(^TMP($zn,$j,"REPORT",seq)) q:seq=""  d
+ ..s (credit,epis)="" f cnt=1:1 s epis=$O(^TMP($zn,$j,"REPORT",seq,"EPISODE",epis)) q:epis=""  d
+ ...s deb=$$seldata^LVBEPVIS(epis,20),date=$$seldata^LVBEPVIS(epis,12),list=$$seldata^LVBEPVIS(epis,55)
+ ...s list=epis_","_list f jMaster=1:1:$l(list,",") s ep=$p(list,",",jMaster) i $l(ep) d
+ ....s rowid=deb_"||"_date_"||"_ep
+ ....i $$open^LVBDEBVT(rowid)
+ ....f  q:$$fetch^LVBDEBVT(rowid)  d
+ .....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .....k TRAN m TRAN=PLIST
+ .....i TRAN(5)="JOURNAL",'$$select^LVBJOU(TRAN(2)) i PLIST(14) d
+ ......s x=$o(^TMP($zn,$j,"REPORT",seq,"CREDIT",""),-1)+1
+ ......s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,1)=$$extdate2^SSUTIL4(PLIST(4))
+ ......s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2)="JOURNAL "_$p(PLIST(3),$c(1),2)_"-"_PLIST(6)
+ ......s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,3)=PLIST(14)
+ ......s credit=credit-PLIST(14)
+ .....i TRAN(5)="CREDIT",$l(TRAN(2),"||")=2,'$$select^LVBCRBL(TRAN(2)) i PLIST(16) d
+ ......s x=$o(^TMP($zn,$j,"REPORT",seq,"CREDIT",""),-1)+1
+ ......s x1=$p(PLIST(1),"||",1),x2=$p(PLIST(1),"||",2),receipt=$p(^TBAT(x1,x2),"\",3)
+ ......s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,1)=$$extdate2^SSUTIL4(PLIST(12))
+ ......i $l(receipt) s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2)="Receipt "_receipt
+ ......i '$l(receipt) s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2)="Credit "_x1_"-"_x2
+ ......s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,3)=PLIST(16)
+ ......s credit=credit-PLIST(16)
+ ......s xLength=$l(^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2))+1
+ ......i $$open^LVBCRBLA(TRAN(2))
+ ......f jj=0:1 q:$$fetch^LVBCRBLA(TRAN(2))  d
+ .......f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .......s x=$o(^TMP($zn,$j,"REPORT",seq,"CREDIT",""),-1) i jj s x=x+1
+ .......f j=1:1:3 s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,j)=$g(^TMP($zn,$j,"REPORT",seq,"CREDIT",x,j))
+ .......s xx=$e($s(PLIST(3)="CQ":"Cheque",PLIST(3)="CC":"Cr.Card",1:"Cash")_$s($l(PLIST(8)):" "_PLIST(8),1:""),1,30)
+ .......s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2)=$e(^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2)_$j("",xLength),1,xLength)_"("_xx_")"
+ ......i $$close^LVBCRBLA()
+ .....i TRAN(5)="CREDIT",$l(TRAN(2),"||")=3,'$$select^LVBCRBLB(TRAN(2)) i PLIST(9) d
+ ......s x1=$p(PLIST(1),"||",1),x2=$p(PLIST(1),"||",2),receipt=$p(^TBAT(x1,x2),"\",3)
+ ......s pay=1 i $d(^TMP($zn,$j,"REPORT",seq,"CREDIT-IN",x1_" "_x2)) s x=^(x1_" "_x2),pay=0
+ ......e  s x=$o(^TMP($zn,$j,"REPORT",seq,"CREDIT",""),-1)+1,^TMP($zn,$j,"REPORT",seq,"CREDIT-IN",x1_" "_x2)=x
+ ......s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,3)=$g(^TMP($zn,$j,"REPORT",seq,"CREDIT",x,3))+PLIST(9)
+ ......s credit=credit-PLIST(9) i pay d
+ .......s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,1)=$$extdate2^SSUTIL4(PLIST(5))
+ .......i $l(receipt) s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2)="Receipt "_receipt
+ .......i '$l(receipt) s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2)="Credit "_x1_"-"_x2
+ .......s xLength=$l(^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2))+1
+ .......i $$open^LVBCRBLA(TRAN(2))
+ .......f jj=0:1 q:$$fetch^LVBCRBLA(TRAN(2))  d
+ ........f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ........s x=$o(^TMP($zn,$j,"REPORT",seq,"CREDIT",""),-1) i jj s x=x+1
+ ........f j=1:1:3 s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,j)=$g(^TMP($zn,$j,"REPORT",seq,"CREDIT",x,j))
+ ........s xx=$e($s(PLIST(3)="CQ":"Cheque",PLIST(3)="CC":"Cr.Card",PLIST(3)="EDI":"BPay",1:"Cash")_$s($l(PLIST(8)):" "_PLIST(8),1:""),1,30)
+ ........s ^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2)=$e(^TMP($zn,$j,"REPORT",seq,"CREDIT",x,2)_$j("",xLength),1,xLength)_"("_xx_")"
+ .......i $$close^LVBCRBLA()
+ ....i $$close^LVBDEBVT()
+ ..i credit s ^TMP($zn,$j,"REPORT",seq,"CREDIT")=credit
+ ; set events
+ s seq="" f  s seq=$o(^TMP($zn,$j,"REPORT",seq)) q:seq=""  s invoice=^(seq) d
+ .s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",seq,"EPISODE",epis)) q:epis=""  d
+ ..i '$l(PAR5) d events^LVBCOM01(epis,"ACC","Original invoice "_invoice_$s($l(USER):" printed by "_USER,1:"")) q
+ ..i PAR5="R" d events^LVBCOM01(epis,"ACC","Receipt "_PAR6_$s($l(USER):" printed by "_USER,1:"")) q
+ ..i PAR5="H" d events^LVBCOM01(epis,"ACC","Invoice history "_invoice_$s($l(USER):" printed by "_USER,1:"")) q
+ ..i 'PAR5 d events^LVBCOM01(epis,"ACC","Duplicate invoice "_invoice_$s($l(USER):" printed by "_USER,1:"")) q
+ ..d events^LVBCOM01(epis,"ACC","Reminder "_PAR5_$s($l(USER):" printed by "_USER,1:""))
+ q
+PRINT s max=25
+ s seq="" f  s seq=$O(^TMP($zn,$j,"REPORT",seq)) q:seq=""  d
+ .s pc=$p(^TMP($zn,$j,"REPORT",seq),"-",1)
+ . ;
+ . ; calculate amount
+ . ;
+ .k amount s (amount,GST)="",INVOICE=^TMP($zn,$j,"REPORT",seq)
+ .s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",seq,"EPISODE",epis)) q:epis=""  d
+ ..s item="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  d
+ ...s amount=amount+^(item),amount(epis)=$g(amount(epis))+^(item)
+ ...i $p(^(item),"\",4)="GST" s GST=GST+^(item)
+ .s credit=$g(^TMP($zn,$j,"REPORT",seq,"CREDIT"))
+ . ;
+ . ; print invoice
+ . ;
+ .s (start,epis)="" f  s epis=$o(^TMP($zn,$j,"REPORT",seq,"EPISODE",epis)) q:epis=""  d
+ ..s rowid=$p(^TMP($zn,$j,"REPORT",seq),"-",1)_"||"_$p(^TMP($zn,$j,"REPORT",seq),"-",2)_"||"_epis
+ ..k INVBP i '$$select^LVBINVBP(rowid) m INVBP=PLIST
+ ..i '$$select^LVBEPVIS(epis) k VISIT m VISIT=PLIST
+ ..s inpat="" i '$$select^LVBCTIC($p(VISIT(18),$c(1)),"Y"),PLIST(4)="Y" s inpat=1
+ ..i 'start s start=1 d ADDRESS,S1
+ ..s icDescr="" i '$$select^LVBCTIC(VISIT(18),"Y") s icDescr=PLIST(5)
+ ..i icDescr="" s icDescr="Processing Fee"
+ ..i '$$select^LVBCTDR($p(VISIT(15),$c(1)),"Y") k DOC m DOC=PLIST
+ ..d S2
+ ..s item="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  s xx=^(item) d
+ ...k x s x(1)=$$extdate2^SSUTIL4(VISIT(14)),x(2)=epis,x(3)=$$extdate2^SSUTIL4(VISIT(12)),x(4)=$p(xx,"\",2),x(5)=item,x(6)=$p(xx,"\",1),x(15)=$p(xx,"\",4)
+ ...i item=VISIT(54),'$l(x(4)) s x(4)=icDescr
+ ...d S3
+ ...i $p(xx,"\",3)="Y" k x s (x(1),x(2),x(3),x(5),x(6))="",x(4)="Rule 3 exemption" d S3
+ .. ; print SCP number
+ ..i $l(VISIT(18)),$l(VISIT(27)) d
+ ...i '$$select^LVBCTIC($p(VISIT(18),$c(1)),"Y"),PLIST(7)="Y",'$$select^LVBCTCC($p(VISIT(27),$c(1))) d
+ ....d ADD^SSPRINT(REPID,"PRT","?10 SCP : "_$s($l(PLIST(13))&(VISIT(12)<PLIST(13)):PLIST(14),1:PLIST(10))),LN s line=line+1
+ .i " 1 2 3 R H "[(" "_PAR5_" ") d S6
+ .d S5(1)
+ q
+ADDRESS ; if billing address different to actual address use billing address
+ k ADDRESS s ADDRESS(1)=VISIT(42)
+ f  q:$e(ADDRESS(1))'=" "  s ADDRESS(1)=$e(ADDRESS(1),2,99)
+ i '$l(ADDRESS(1)) s ADDRESS(1)=$p(VISIT(7),$c(1),2)_" "_VISIT(4)_" "_VISIT(3)
+ f  q:$e(ADDRESS(1))'=" "  s ADDRESS(1)=$e(ADDRESS(1),2,99)
+ f j=2:1:6 s ADDRESS(j)=VISIT(j+35)
+ i '$l(ADDRESS(2)) f j=2:1:6 s ADDRESS(j)=VISIT(j+30)
+ d
+ .i $l(ADDRESS(4)),ADDRESS(4)'[ADDRESS(6) s ADDRESS(4)=ADDRESS(4)_" "_ADDRESS(5)_" "_ADDRESS(6),ADDRESS(6)="" q
+ .i $l(ADDRESS(3)),ADDRESS(3)'[ADDRESS(6) s ADDRESS(3)=ADDRESS(3)_" "_ADDRESS(5)_" "_ADDRESS(6),ADDRESS(6)="" q
+ .i $l(ADDRESS(2)),ADDRESS(2)'[ADDRESS(6) s ADDRESS(2)=ADDRESS(2)_" "_ADDRESS(5)_" "_ADDRESS(6),ADDRESS(6)="" q
+ q
+ ; print invoice header
+S1 d ADD^SSPRINT(REPID,"PRT","#")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p10v0s1b4102T")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a250h0V Phone")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a550h0V : (02) 9382 6730")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a250h120V Fax")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a550h120V : (02) 9382 6444")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s0b4102T")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3700h200V APA/APP")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4300h200V : ")
+ d ADD^SSPRINT(REPID,"PRT","~BOLD")
+ d ADD^SSPRINT(REPID,"PRT",$p($p(^TMP($zn,$j,"REPORT"),$c(1),1)," - ",1))
+ d ADD^SSPRINT(REPID,"PRT","~NORMAL")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3700h320V Provider No.")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4300h320V : "_$p($p(^TMP($zn,$j,"REPORT"),$c(1),1)," - ",2))
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3700h440V ABN")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4300h440V : 57 195 873 179")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3700h800V Outpatient/Inpatient")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4500h800V "_$s(inpat:"Inpatient",1:"Outpatient"))
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3700h920V Medicare No")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4500h920V : "_VISIT(8))
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3700h1040V Fund/Table")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4500h1040V : "_$p(VISIT(9),$c(1))_" / "_VISIT(106))
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3700h1160V Membership No")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4500h1160V : "_VISIT(107))
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p14v0s3b4102T")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a"_$s(PAR5:2000,1:1500)_"h1800V")
+ d ADD^SSPRINT(REPID,"PRT","~UNDERLINE")
+ d ADD^SSPRINT(REPID,"PRT",$s(PAR5:"REMINDER NOTICE",PAR5="H":"INVOICE HISTORY",PAR5="R":"RECEIPT FOR PATHOLOGY SERVICES",1:"TAX INVOICE FOR PATHOLOGY SERVICES"))
+ d ADD^SSPRINT(REPID,"PRT","~NORMAL")
+ i PAR5="" d
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p10v0s1b4102T")
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a300h2000V")
+ .d ADD^SSPRINT(REPID,"PRT","ORIGINAL")
+ i PAR5="Y" d
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p10v0s1b4102T")
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a300h2000V")
+ .d ADD^SSPRINT(REPID,"PRT","DUPLICATE")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p10v0s1b4102T")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a300h2200VTo:")
+ s x=2200 f j=1:1:4 i $l(ADDRESS(j)) d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a550h"_x_"V"_ADDRESS(j)) s x=x+100
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p12v0s3b4102T")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3600h2200V Invoice No")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4300h2200V : "_INVOICE)
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3600h2320V Invoice Date")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4300h2320V : "_$$extdate2^SSUTIL4(INVBP(6)))
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3600h2440V Print Date")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4300h2440V : "_$$extdate2^SSUTIL4(+$h)),LN
+ s line=0
+ q
+ ; print episode header
+S2 i line+3>max d S5(0),S1
+ d LN s line=line+1
+ s provider=DOC(18) i VISIT(12)<DOC(37) s provider=DOC(36)
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s0p12h0s0b4101T"_$c(13))
+ d ADD^SSPRINT(REPID,"PRT","?9  Referring Practitioner : "_$p(VISIT(15),$c(1),2)_$c(13))
+ d ADD^SSPRINT(REPID,"PRT","?62 Provider Number : "_provider),LN s line=line+1
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"*r3U"_$c(27)_"*v2S")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a200H")
+ d ADD^PRTREP00(REPID,"PRT","_______________________________________________________________________________________")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"*r1U"_$c(27)_"*v1S"),LN
+ d ADD^SSPRINT(REPID,"PRT","~BOLD"),LN s line=line+1
+ d ADD^SSPRINT(REPID,"PRT","?9  Request Date")
+ d ADD^SSPRINT(REPID,"PRT","?24 Sample No.")
+ d ADD^SSPRINT(REPID,"PRT","?36 Service Date")
+ d ADD^SSPRINT(REPID,"PRT","?52 Service")
+ d ADD^SSPRINT(REPID,"PRT","?69 Item No.")
+ d ADD^SSPRINT(REPID,"PRT","?80 Fee")
+ d ADD^SSPRINT(REPID,"PRT","~NORMAL"),LN s line=line+1
+ q
+ ; print single item
+S3 i line+3>max d S5(0),S1
+ ; split description
+ s x(4,1)=x(4) i $l(x(4))>15 s x=0 d
+ .f j=1:1:$l(x(4),";") i $l($p(x(4),";",1,j))>15 s x=x+1,x(4,x)=$p(x(4),";",1,j-1),(x(4),x(4,x+1))=$p(x(4),";",j,999) q:$l(x(4))'>15
+ d ADD^SSPRINT(REPID,"PRT","?10 "_x(1))
+ d ADD^SSPRINT(REPID,"PRT","?24 "_x(2))
+ d ADD^SSPRINT(REPID,"PRT","?37 "_x(3))
+ d ADD^SSPRINT(REPID,"PRT","?52 "_x(4,1))
+ d ADD^SSPRINT(REPID,"PRT","?70 "_x(5)_$s(inpat:"*",1:" ")_$s(x(15)="Y":"#",1:" "))
+ d ADD^SSPRINT(REPID,"PRT","?78 "_$j(x(6),7,2)),LN s line=line+1
+ f j=2:1 q:'$d(x(4,j))  d ADD^SSPRINT(REPID,"PRT","?52 "_x(4,j)),LN s line=line+1
+ q
+ ; print credits
+S6 d LN s line=line+1
+ i $d(^TMP($zn,$j,"REPORT",seq,"CREDIT"))\10 d
+ .s xx="" f  s xx=$o(^TMP($zn,$j,"REPORT",seq,"CREDIT",xx)) q:xx=""  d
+ ..i line+3>max d S5(0),S1
+ ..f j=1:1:3 s @("x"_j)=$g(^TMP($zn,$j,"REPORT",seq,"CREDIT",xx,j))
+ ..d ADD^SSPRINT(REPID,"PRT","?5  "_x1)
+ ..d ADD^SSPRINT(REPID,"PRT","?18 "_x2)
+ ..i x3 d ADD^SSPRINT(REPID,"PRT","?78 "_$j(x3,7,2))
+ ..d LN s line=line+1
+ q
+S5(last) s last=$g(last)
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3800h6000V TOTAL    : $ "_$j(amount,7,2))
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3800h6120V (GST     : $ "_$j(GST,7,2)_")")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3800h6240V RECEIVED : $ "_$j(credit,7,2))
+ d ADD^SSPRINT(REPID,"PRT","~BOLD")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a3800h6360V BALANCE  : $ "_$j(amount-credit,7,2))
+ d ADD^SSPRINT(REPID,"PRT","~NORMAL")
+ d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a300h6480V # Item includes GST       * Inpatient")
+ i PAR5="R" d
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p12v0s3b4102T")
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1500h6720V THANKYOU FOR YOUR PAYMENT")
+ i (amount-credit)>0 s xx=6720 d
+ .i PAR5="R" d  q
+ ..s xx=xx+120
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s3b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a900h"_xx_"V Please pay any outstanding balance by postal order or cheque within 14 days.")
+ ..s xx=xx+120
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s0b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a800h"_xx_"V An extra fee of $20 is payable for processing accounts that are overdue by more than 30 days.")
+ ..s xx=xx+120
+ .i (PAR5="Y")!(PAR5="") d
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s0b4102T")
+ ..i $p(INVOICE,"-",1)'="I" d
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a800h"_xx_"V An extra fee of $20 is payable for processing accounts that are overdue by more than 30 days.")
+ ...s xx=xx+120
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1300h"_xx_"V Please pay within 7 days by cheque or money order payable to:")
+ ..s xx=xx+120
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s3b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1800h"_xx_"V  UNSW School of W&CH Acc No. RMM1595")
+ ..s xx=xx+120
+ .i PAR5=1 d
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s0b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1500h"_xx_"V Our records indicate that this account is 30 days ")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s3b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT","~UNDERLINE")
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"*r3U"_$c(27)_"*v1S")
+ ..d ADD^SSPRINT(REPID,"PRT","OVERDUE")
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"*r1U"_$c(27)_"*v1S")
+ ..d ADD^SSPRINT(REPID,"PRT","~NORMAL")
+ ..s xx=xx+120
+ .i PAR5=2 d
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s0b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1500h"_xx_"V Our records indicate that this account is 60 days ")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s3b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT","~UNDERLINE")
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"*r3U"_$c(27)_"*v1S")
+ ..d ADD^SSPRINT(REPID,"PRT","OVERDUE")
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"*r1U"_$c(27)_"*v1S")
+ ..d ADD^SSPRINT(REPID,"PRT","~NORMAL")
+ ..s xx=xx+120
+ .i PAR5=3 d
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s0b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1500h"_xx_"V Our records indicate that this account is 90 days ")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s3b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT","~UNDERLINE")
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"*r3U"_$c(27)_"*v1S")
+ ..d ADD^SSPRINT(REPID,"PRT","OVERDUE")
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"*r1U"_$c(27)_"*v1S")
+ ..d ADD^SSPRINT(REPID,"PRT","~NORMAL")
+ ..s xx=xx+120
+ .i PAR5 d
+ ..i PAR5=3 d
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s0b4102T")
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a600h"_xx_"V If payment is not received within 14 days this account will be forwarded to our Debt Collector")
+ ...s xx=xx+120
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s0b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1500h"_xx_"V Please pay IMMEDIATELY by cheque or money order payable to:")
+ ..s xx=xx+120
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s3b4102T")
+ ..d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1800h"_xx_"V  UNSW School of W&CH Acc No. RMM1595")
+ ..s xx=xx+120
+ .i PAR5'=3 s xx=xx+120
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s0b4102T")
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a2200h"_xx_"VSend Payment to:")
+ .s xx=xx+120
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s1p9v0s3b4102T")
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1800h"_xx_"VAttention: School of W&CH School Secretary")
+ .s xx=xx+120
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a1900h"_xx_"VLevel 1, Royal Hospital for Women")
+ .s xx=xx+120
+ .d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a2000h"_xx_"VBarker St Randwick NSW 2031")
+ q
+LN d ADD^SSPRINT(REPID,"PRT","!")
+ q
+]]></Routine>
+</Export>

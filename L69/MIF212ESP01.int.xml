@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF212ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF212ESP01(mi) ; IG 2/6/98 ; DADE Sysmex CA-1500 (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,etx) i '$l(record) q
+ d trace^MIF000(mi,record,"H<--M")
+ ; slow interface response to prevent loss of 'ack' on analyser side
+ h 1 d ACK
+ s (sample,epis,surname,result,date,time,QC)=""
+ ; Result from machine
+ ; file only mean
+ i $e(record)="D" d A1
+ ; Request from machine
+ i $e(record)="R" d A2
+ ; file result
+ i QC=1 s QC=cup_"\"_epis
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+A1 ; sample distinction codes
+ ;  U - Routine
+ ;  E - STAT
+ ;  S - Standard curve
+ ;  C - QC
+ i $e(record,9)="S" q
+ s QC="" i $e(record,9)="C" s QC=1
+ ; date and time
+ s date="20"_$e(record,14,15)_$e(record,12,13)_$e(record,10,11),date=$$intdate^SSUTIL4(date)
+ s time=($e(record,16,17)*3600)+($e(record,18,19)*60)
+ s epis=$tr($e(record,28,42)," ")
+ s data=$e(record,59,$l(record))
+ f j=1:9 s rec=$e(data,j,j+8) q:$e(rec,1,3)=""  d
+ .s code=$tr($e(rec,1,3)," "),res=$tr($e(rec,4,8)," "),flag=$tr($e(rec,9)," ")
+ .s result=result_code_$c(par10)_res_$c(par10)_flag_$c(par11)
+ q
+A2 ; process request record
+ s epis=$tr($e(record,28,42)," ")
+ d scanone^MIF000(mi,epis)
+ s message="S1210101U"_$e(record,10,58),test=""
+ s tc="" f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  s test=test_tc_$j("",6)
+ i test="" s test="000"_$j("",6)
+ s message=message_test
+ d Send(message)
+ q
+Send(str) ; send string to instrument
+ w stx,str,etx,*-3
+ d trace^MIF000(mi,str,"H-->M")
+ q
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

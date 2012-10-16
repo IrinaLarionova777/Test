@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDMS01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDMS01 ; ML 29/09/99 ; DR MARKETING STATISTICS
+ q
+ ; Parameters :  1. Date From
+ ;               2. Date To
+ ;               3. Marketing Code
+ ;               4. Print zero values
+ ;               5. Exclude initiation item : Y/N
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Dr Statistics by Marketing Code"
+ s line=2,xHEADER(line)=""
+ i $l(PAR3) d
+ .s line=3,xHEADER(line)="Marketing Code : ("_MARK(2)_") "_MARK(3)
+ .s line=4,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,PAR1,PAR2),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ k MARK i '$$select^LVBCTMC(PAR3) m MARK=PLIST
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ s MONTH(1)=" JAN"
+ s MONTH(2)=" FEB"
+ s MONTH(3)=" MAR"
+ s MONTH(4)=" APR"
+ s MONTH(5)=" MAY"
+ s MONTH(6)=" JUN"
+ s MONTH(7)=" JUL"
+ s MONTH(8)=" AUG"
+ s MONTH(9)=" SEP"
+ s MONTH(10)=" OCT"
+ s MONTH(11)=" NOV"
+ s MONTH(12)=" DEC"
+ q
+BODY ; create temporary printing file
+ f type=1,2 d
+ .s date=PAR1-1 f  s date=$o(^TDAY(type,date)) q:date=""  q:date>PAR2  d
+ ..i type=1 s epis="" f  s epis=$o(^TDAY(type,date,0,epis)) q:epis=""  d BODY1(0)
+ ..i type=2 s epis="" f  s epis=$o(^TDAY(type,date,epis)) q:epis=""  d BODY1(0)
+ ; check journals
+ s jou="" f  s jou=$o(^TJOU(jou)) q:jou=""  d
+ .s JouType=$$seldata^LVBCTJO(jou,4)
+ .s date=PAR1-1 f  s date=$o(^TJOU(jou,date)) q:date=""  q:date>PAR2  d
+ ..s epis="" f  s epis=$o(^TJOU(jou,date,epis)) q:epis=""  d
+ ...s doc=$$DOC(epis),mc=$$MC(doc) i $l(PAR3),(","_PAR3_",")'[(","_mc_",") q
+ ...s order="" f  s order=$o(^TJOU(jou,date,epis,order)) q:order=""  d
+ ....s amt=$p(^(order),"\",3) d Set(mc,doc,$s(JouType="C":8,1:9),amt)
+ ; check rebills
+ s date=PAR1-1 f  s date=$o(^TRBL(date)) q:date=""  q:date>PAR2  d
+ .s epis="" f  s epis=$o(^TRBL(date,epis)) q:epis=""  d
+ ..s doc=$$DOC(epis),mc=$$MC(doc) i $l(PAR3),(","_PAR3_",")'[(","_mc_",") q
+ ..s x1=$p(^TRBL(date,epis),"\",1)
+ ..s x2=$p(^TRBL(date,epis),"\",5)
+ ..i $l(x1),$l(x2),$p(^TMCB(x1,x2),"\",1)<PAR1 s amt=+$g(^TMCB(x1,x2,epis)) d Set(mc,doc,10,amt)
+ ; extract number of patients seen for last 12 months
+ s xpar1=$zd(PAR1,3),year=$p(xpar1,"-")-1,month=$p(xpar1,"-",2),day=$p(xpar1,"-",3)
+ s xpar1=month_"/01/"_year,xpar1=$$intdate^SSUTIL4(xpar1)
+ s xpar2=$zd(PAR1,3),xpar2=$p(xpar2,"-",2)_"/01/"_$p(xpar2,"-",1)
+ s xpar2=$$intdate^SSUTIL4(xpar2),xpar2=xpar2-1
+ k part s cnt=10 f j=month:1:12,1:1:(month-1) s cnt=cnt+1,part(j)=cnt
+ s date=xpar1-1,type=1 f  s date=$o(^TDAY(type,date)) q:date=""  q:date>xpar2  d
+ .s xx=$zd(date,3),month=+$p(xx,"-",2)
+ .s epis="" f  s epis=$o(^TDAY(type,date,0,epis)) q:epis=""  d BODY1(part(month))
+ q
+MC(doc) n (doc) s doc=$g(doc)
+ s result=$$seldata^LVBCTDR(doc,28)
+ q result
+DOC(epis) n (epis) s epis=$g(epis)
+ s doc="" s result=$$seldata^LVBEPVIS(epis,15)
+ q result
+BODY1(part) s part=$g(part),doc=$$DOC(epis),mc=$$MC(doc) i $l(PAR3),(","_PAR3_",")'[(","_mc_",") q
+ i '$$select^LVBEPVIS(epis,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k VISIT m VISIT=PLIST
+ ; number of patients seen
+ i type=1 d Set(mc,doc,part+5,1)
+ i type=2,'part d
+ . ; number of patients billed and amount
+ .d Set(mc,doc,6,1)
+ .s (amt,cnt)="" f  s cnt=$o(^TEPI(epis,7,cnt)) q:cnt=""  d
+ ..i PAR5="Y",cnt=$g(VISIT(54)) q
+ ..s amt=amt+^(cnt)
+ .d Set(mc,doc,7,amt)
+ q
+Set(x1,x2,x3,x4) n (x1,x2,x3,x4,PAR4) s x1=$g(x1),x2=$g(x2),x3=$g(x3),x4=$g(x4)
+ i '$l(x1) s x1=" "
+ i '$l(x2) s x2=" "
+ i PAR4'="Y",x3'=5,'$p($g(^TMP($zn,$j,"REPORT",x1,x2)),"\",5) q
+ s $p(^TMP($zn,$j,"REPORT",x1,x2),"\",x3)=$p($g(^TMP($zn,$j,"REPORT",x1,x2)),"\",x3)+x4
+ s $p(^TMP($zn,$j,"REPORT",x1),"\",x3)=$p($g(^TMP($zn,$j,"REPORT",x1)),"\",x3)+x4
+ s $p(^TMP($zn,$j,"REPORT"),"\",x3)=$p($g(^TMP($zn,$j,"REPORT")),"\",x3)+x4
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ . ; print months
+ .s xxx(8)="" f j=1:1:12 s $p(xxx(8),"|",part(j)-10)=MONTH(j)
+ .d PRINT^PRTREP00(,.N,,"HDR") k xxx
+ .d ADDLINE^PRTREP00(REPID,"HDR","!")
+ .d ADDLINE^PRTREP00(REPID,"HDR",xLINE(4))
+ .s markcode="" f  s markcode=$o(^TMP($zn,$j,"REPORT",markcode)) q:markcode=""  d
+ ..s xxx(1)=markcode i $tr(xxx(1)," ")="" s xxx(1)="Unknown"
+ ..s doc="" f  s doc=$o(^TMP($zn,$j,"REPORT",markcode,doc)) q:doc=""  d
+ ...s xxx(2)=doc,addr="" i '$$select^LVBCTDR(doc,"Y") d
+ ....s addr=PLIST(33) f  q:addr'["||"  s addr=$p(addr,"||",1)_"|"_$p(addr,"||",2,$l(addr,"||"))
+ ....s xxx(3)=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51))
+ ...f j=5:1:7 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT",markcode,doc)),"\",j)
+ ...f j=9:1:11 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT",markcode,doc)),"\",j-1)
+ ...s xxx(4)=$p(addr,"|"),addr=$p(addr,"|",2,$l(addr,"|"))
+ ...s xxx(8)="" f j=11:1:22 s xxx(8)=xxx(8)_$j($p($g(^TMP($zn,$j,"REPORT",markcode,doc)),"\",j+5),4)_$s(j=22:"",1:"|")
+ ...s ActualVal=xxx(7)+xxx(9)-xxx(10)-xxx(11)
+ ...s xxx(7)=$j(xxx(7),N(7,4),2)
+ ...d PRINT^PRTREP00(,.N) k xxx
+ ...f  d  q:'$l(addr)
+ ....s xxx(4)=$p(addr,"|"),addr=$p(addr,"|",2,$l(addr,"|"))
+ ....i ActualVal'="" s xxx(7)="["_$j(ActualVal,0,2)_$j(" ",N(7,4)-$l($j(ActualVal,0,2))-2)_"]",ActualVal=""
+ ....s xxx(8)="" f j=1:1:12 s $p(xxx(8),"|",j)="    "
+ ....d PRINT^PRTREP00(,.N) k xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ ..s xxx(4)="Total"
+ ..f j=5:1:7 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT",markcode)),"\",j)
+ ..f j=9:1:11 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT",markcode)),"\",j-1)
+ ..s ActualVal=xxx(7)+xxx(9)-xxx(10)-xxx(11)
+ ..s xxx(7)=$j(xxx(7),N(7,4),2)
+ ..s xxx(8)="" f j=11:1:22 s xxx(8)=xxx(8)_$j($p($g(^TMP($zn,$j,"REPORT",markcode)),"\",j+5),4)_$s(j=22:"",1:"|")
+ ..d PRINT^PRTREP00(,.N) k xxx
+ ..i ActualVal'="" s xxx(7)="["_$j(ActualVal,0,2)_$j(" ",N(7,4)-$l($j(ActualVal,0,2))-2)_"]",ActualVal=""
+ ..d PRINT^PRTREP00(,.N) k xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","#")
+ .s markcode="" f  s markcode=$o(^TMP($zn,$j,"REPORT",markcode)) q:markcode=""  d
+ ..s xxx(1)=markcode
+ ..f j=5:1:7 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT",markcode)),"\",j)
+ ..f j=9:1:11 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT",markcode)),"\",j-1)
+ ..s ActualVal=xxx(7)+xxx(9)-xxx(10)-xxx(11)
+ ..s xxx(7)=$j(xxx(7),N(7,4),2)
+ ..s xxx(8)="" f j=11:1:22 s xxx(8)=xxx(8)_$j($p($g(^TMP($zn,$j,"REPORT",markcode)),"\",j+5),4)_$s(j=22:"",1:"|")
+ ..d PRINT^PRTREP00(,.N) k xxx
+ ..i ActualVal'="" s xxx(7)="["_$j(ActualVal,0,2)_$j(" ",N(7,4)-$l($j(ActualVal,0,2))-2)_"]",ActualVal=""
+ ..d PRINT^PRTREP00(,.N) k xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ .s xxx(4)="Overall Total"
+ .f j=5:1:7 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT")),"\",j)
+ .f j=9:1:11 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT")),"\",j-1)
+ .s ActualVal=xxx(7)+xxx(9)-xxx(10)-xxx(11)
+ .s xxx(7)=$j(xxx(7),N(7,4),2)
+ .s xxx(8)="" f j=11:1:22 s xxx(8)=xxx(8)_$j($p($g(^TMP($zn,$j,"REPORT")),"\",j+5),4)_$s(j=22:"",1:"|")
+ .d PRINT^PRTREP00(,.N) k xxx
+ .i ActualVal'="" s xxx(7)="["_$j(ActualVal,0,2)_$j(" ",N(7,4)-$l($j(ActualVal,0,2))-2)_"]",ActualVal=""
+ .d PRINT^PRTREP00(,.N) k xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="DMS"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

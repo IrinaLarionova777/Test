@@ -1,0 +1,832 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBVIS5" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBVIS5 ; IG 2/6/98 ; Visit selection routines
+ ;
+ ; supported calls:
+ ;
+ ; $$delete^LVBVIS5(Queue,vtsRID,Job)
+ ; $$A1^LVBVIS5(Job)
+ ; $$A2^LVBVIS5(Job)
+ ; $$counter^LVBVIS5(Job)
+ ; $$open^LVBVIS5(epis,test,worksh,ur,site,dep,type,lab,path,Flag)
+ ; $$fetch^LVBVIS5(epis,test,worksh,ur,site,dep,type,lab,path,Flag)
+ ; $$fetchbuffer^LVBVIS5(epis,test,worksh,ur,site,dep,type,lab,path,Flag)
+ ; $$close^LVBVIS5()
+ ; $$select^LVBVIS5(RowID,type,Job,Flag,site,move)
+ ; $$flag^LVBVIS5(RowID,job,Flag,entry)
+ ; $$next^LVBVIS5(RowID,job,Flag,entry)
+ ; $$back^LVBVIS5(RowID,job,Flag,entry)
+ ; $$savevts^LVBVIS5(path,type,app,group)
+ ; $$check^LVBVIS5(RowID,Flag,site)
+ ; $$list1^LVBVIS5(RowID,Job,Flag,site)
+ ; $$list^LVBVIS5(RowID,mi,Flag,site)
+ ;
+ ; save LRE grid
+A1(job) n (job) s job=$g(job) 
+ i $l(job) d
+ .k ^TMP("Saved",job)
+ .m ^TMP("Saved",job,1)=^TMP($zn,job)
+ .m ^TMP("Saved",job,2)=^TMP("EPISODE-GRID",job)
+ .m ^TMP("Saved",job,3)=^TMP("EPISODE-GRID-DATE",job)
+ q 0
+ ; restore LRE grid
+A2(job) n (job) s job=$g(job)
+ i $l(job) d
+ .k ^TMP($zn,job),^TMP("EPISODE-GRID",job),^TMP("EPISODE-GRID-DATE",job)
+ .m ^TMP($zn,job)=^TMP("Saved",job,1)
+ .m ^TMP("EPISODE-GRID",job)=^TMP("Saved",job,2)
+ .m ^TMP("EPISODE-GRID-DATE",job)=^TMP("Saved",job,3)
+ .k ^TMP("Saved",job)
+ q 0
+ ; check if test set has frames
+frame(test) n (test) s test=$g(test),result="N"
+ i $l(test),$d(^TTAB("TS",test,"FRAME")) s result="Y"
+ q result
+ ; list test sets for episode
+list1(RowID,Job,Flag,site) n (RowID,Job,Flag,site,PLIST) s RowID=$g(RowID),Job=$g(Job),Flag=$g(Flag),site=$g(site) k ^TMP($zn,$j)
+ s epis=$p(RowID,"||",1),test=$p(RowID,"||",2),testcnt=$p(RowID,"||",3)
+ i $$open^LVBVISTS(epis,,,$p(Flag,$c(1),3),,,,$s($p(Flag,$c(1),2)="Y":"V",1:""))
+ s cnt=0 f  q:$$fetch^LVBVISTS(epis,,,$p(Flag,$c(1),3),,,,$s($p(Flag,$c(1),2)="Y":"V",1:""))  d
+ .f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ .k VISTEST m VISTEST=PLIST
+ .s access=$s($$check(VISTEST(1),Flag,site):"N",1:"Y"),test=$p(VISTEST(1),"||",2)
+ .s DB=$$seldata^LVBCTTS(test,60),word=$$seldata^LVBCTTS(test,54)
+ . ; do not display DayBook tests
+ .i $p(DB,$c(1))="Y" q
+ .s cnt=cnt+1,word=$p(word,$c(1))
+ .s ^TMP($zn,$j,cnt)=VISTEST(1)_$c(2)_VISTEST(33)_$c(2)_$s(access'="Y":"N",'$l(Job):"N",'$d(^TMP("EPISODE-GRID-DATE",Job,epis,VISTEST(3),VISTEST(2))):"N",1:"Y")_$c(2)_word_$c(2)_VISTEST(32)_$c(2)_access_$c(2)_$s($l(VISTEST(23)):"Y",1:"")
+ i $$close^LVBVISTS()
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ; list test sets for multitest entry
+list(RowID,mi,Flag,site) n (RowID,mi,Flag,site,PLIST) s RowID=$g(RowID),mi=$g(mi),Flag=$g(Flag),site=$g(site)
+ k ^TMP($zn,$j) s epis=$p(RowID,"||",1),test=$p(RowID,"||",2),testcnt=$p(RowID,"||",3)
+ s multi="M" i '$$select^MVBCFLAB(1),$p(PLIST(13),$c(1))="S" s multi="S"
+ i '$l(mi) s cnt=0 d
+ .i $$open^LVBVISTS(epis,,,$p(Flag,$c(1),3))
+ .f  q:$$fetch^LVBVISTS(epis,,,$p(Flag,$c(1),3))  d
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k VISTEST m VISTEST=PLIST
+ ..i multi="M" d
+ ...s dep=$e(VISTEST(3)) i '$$check(VISTEST(1),Flag,site) d
+ ....i '$$select^LVBCTDEP(dep,"Y"),PLIST(11)="Y" s cnt=cnt+1,^TMP($zn,$j,cnt)=VISTEST(1)_$c(2)_VISTEST(33)
+ ..i multi="S" d
+ ...s dep=$e(test) i $e(VISTEST(3))=dep,'$$check(VISTEST(1),Flag,site) d
+ ....i '$$select^LVBCTDEP(dep,"Y"),PLIST(11)="Y" s cnt=cnt+1,^TMP($zn,$j,cnt)=VISTEST(1)_$c(2)_VISTEST(33)
+ .i $$close^LVBVISTS()
+ i $l(mi),'$$select^LVBMIMP(mi),PLIST(25)="Y" s cnt=0 d
+ .i $$open^LVBVISTS(epis)
+ .f  q:$$fetch^LVBVISTS(epis)  d
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k VISTEST m VISTEST=PLIST
+ ..i '$$select^LVBMITS(mi_"||"_VISTEST(3)),'$$check(VISTEST(1),Flag,site) d
+ ...s cnt=cnt+1,^TMP($zn,$j,cnt)=$p(VISTEST(1),$c(1))_$c(2)_$p(VISTEST(33),$c(1))
+ .i $$close^LVBVISTS()
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ; type : A-Allocate
+ ;        D-DeAllocate
+savevts(path,type,app,group) s path=$g(path),type=$g(type),app=$g(app),group=$g(group)
+ k ^TMP($zn,$j,"xx") m ^TMP($zn,$j,"xx")=PLIST
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,"xx",cnt)) q:cnt=""  d
+ .s RowID=^(cnt) i $$select^LVBVISTS(RowID,"Y") q
+ .i type="A" s PLIST(21)=$p($h,",",1),PLIST(22)=$p($h,",",2),PLIST(10)=path
+ .i type="D" s (PLIST(21),PLIST(22),PLIST(10))=""
+ .i $$update^LVBVISTS(RowID,app,group)
+ k ^TMP($zn,$j,"xx")
+ q 0
+delete(Queue,vtsRID,Job) n (Queue,vtsRID,Job) s Queue=$g(Queue),vtsRID=$g(vtsRID),Job=$g(Job)
+ s:'$l(Job) Job=$j
+ ; check Req.Queue
+ s xx="" f  s xx=$o(^TMP("LVBVIS9",Job,"LIST",xx)) q:xx=""  d
+ .i $d(^TMP("LVBVIS9",Job,"LIST",xx,Queue,1,vtsRID)) d
+ ..k ^TMP("LVBVIS9",Job,"LIST",xx,Queue,1,vtsRID)
+ ..s ^TMP("LVBVIS9",Job,"LIST",xx,Queue,1)=^TMP("LVBVIS9",Job,"LIST",xx,Queue,1)-1
+ ..i '^TMP("LVBVIS9",Job,"LIST",xx,Queue,1) k ^TMP("LVBVIS9",Job,"LIST",xx,Queue,1)
+ ; check Priority Queue
+ s xx="" f  s xx=$o(^TMP("LVBVIS9",Job,"LIST",xx)) q:xx=""  d
+ .s x="" f  s x=$o(^TMP("LVBVIS9",Job,"LIST",xx,Queue,0,x)) q:x=""  i $d(^TMP("LVBVIS9",Job,"LIST",xx,Queue,0,x,vtsRID)) d
+ ..k ^TMP("LVBVIS9",Job,"LIST",xx,Queue,0,x,vtsRID)
+ ..s ^TMP("LVBVIS9",Job,"LIST",xx,Queue,0,x)=^TMP("LVBVIS9",Job,"LIST",xx,Queue,0,x)-1
+ ..i '^TMP("LVBVIS9",Job,"LIST",xx,Queue,0,x) k ^TMP("LVBVIS9",Job,"LIST",xx,Queue,0,x)
+ s xx="" f  s xx=$o(^TMP("EPISODE-GRID",Job,xx)) q:xx=""  d
+ .s epis=$p(vtsRID,"||",1),ts=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3)
+ .k ^TMP("EPISODE-GRID",Job,xx,epis,ts,tscnt)
+ .k ^TMP("EPISODE-GRID-DATE",Job,epis,ts,tscnt)
+ q 0
+counter(Job) n (Job) s Job=$g(Job),result=0
+ s date="" f  s date=$o(^TMP("EPISODE-GRID",Job,date)) q:date=""  d
+ .s epis="" f  s epis=$o(^TMP("EPISODE-GRID",Job,date,epis)) q:epis=""  d
+ ..s test="" f  s test=$o(^TMP("EPISODE-GRID",Job,date,epis,test)) q:test=""  d
+ ...s tscnt="" f  s tscnt=$o(^TMP("EPISODE-GRID",Job,date,epis,test,tscnt)) q:tscnt=""  s result=result+1
+ q result
+xx1 f j=10:1:13,15,17,22,61,62,66 s VISIT(j)=$$seldata^LVBEPVIS(RowID,j)
+ q
+xx2 f j=10,13,29,33,52 s VISTS(j)=$$seldata^LVBVISTS(RowID,j)
+ q
+ ;type : "NOTENTERED"
+ ;       "ENTERED"
+ ;       "PATHOLOGIST"
+ ;       "AUTHORISED"
+ ;       "HOLD"
+ ;       "REVIEW"
+ ;       "OVERDUE"
+ ;       ""
+ ;Flag : Flag1_$c(1)_Flag2_$c(1)_ ... _$c(1)_Flag10
+ ;       1.P-Printing
+ ;       2.Y-Inquiry
+ ;       3.userID
+ ;       4.Sort Order :  EPIS - Test Sets order
+ ;                       C    - Collection Date/Time
+ ;                       R    - Reverse Collection Date/Time
+ ;                       CR   - Received Date/Time
+ ;                       RR   - Reverse Received Date/Time
+ ;                       U    - Urgents
+ ;                       V    - Verification queue
+ ;                       D    - Doctor
+ ;                       P    - Patient location
+ ;                       AN   - Accession Number
+ ;       5.module: S-Send Test
+ ;                 R-Receive Test
+ ;       6.mode :   - Patients
+ ;                Y - Blood Packs
+ ;       9.Cell : Queue_$c(2)_RQ - Referral Queue
+ ;                Queue_$c(2)_ALL- All
+ ;                Queue_$c(2)_P_$c(2)_<Priority>
+ ;      10.Queue type
+ ;      11.XM tests : Y - XM test
+ ;                    YP- XM test with pending units
+ ;      12.QC case
+ ;      13.Study case
+ ;      14.Accession number
+ ;      15.Location
+ ;      16.Patient type
+ ;      17.Start date
+ ;      18.ToView
+ ;      19.ToRead
+ ;      20.Authorised - Start date
+ ;      21.Authorised - Start time
+ ;      22.Authorised - End date
+ ;      23.Authorised - End time
+ ;      24.Authorised - User
+ ;      25.Reason : ALL    - any reason
+ ;                  <code> - single reason
+open(epis,test,worksh,ur,site,dep,type,lab,path,Flag) n (epis,test,worksh,ur,site,dep,type,lab,path,Flag)
+ k ^TMP($zn,$j),^TMP("EPISODE-GRID",$j),^TMP("EPISODE-GRID-DATE",$j) s Flag=$g(Flag)
+ s epis=$g(epis),test=$g(test),worksh=$g(worksh),ur=$g(ur),site=$g(site),dep=$g(dep),type=$g(type),lab=$g(lab),path=$g(path)
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("open^"_$zn_$p(^CF("SM",1),"^",28)))) k %quit d @("open^"_$zn_$p(^CF("SM",1),"^",28)) q:$d(%quit) %quit
+ s x1=$p(worksh,"||",1) i '$l(x1) s worksh=""
+ s Order=$p(Flag,$c(1),4) i $l(epis) s Order="EPIS"
+ s SiteOption="" i '$$select^MVBCFLAB(1) s SiteOption=PLIST(66)
+ k CFSM i '$$select^MVBCFSM(1) m CFSM=PLIST
+ i $p(Flag,$c(1),2)="Y" s type=""
+ ; setup Queues
+ i $l($p(Flag,$c(1),9)),$l($p(Flag,$c(1),10)) d  q $j
+ .s QueueType=$p(Flag,$c(1),10)
+ .s Queue=$p($p(Flag,$c(1),9),$c(2))
+ .i $p($p(Flag,$c(1),9),$c(2),2)="RQ" d  q
+ ..s x="" f  s x=$o(^TMP("LVBVIS9",$j,"LIST",QueueType,Queue,1,x)) q:x=""  d
+ ...s RowID=$p(x,"||"),QueueRID=^(x) d xx1
+ ...s RowID=x d xx2
+ ...d create4(x,QueueRID)
+ .s x1="" f  s x1=$o(^TMP("LVBVIS9",$j,"LIST",QueueType,Queue,0,x1)) q:x1=""  d
+ ..i $p($p(Flag,$c(1),9),$c(2),2)="P",$p($p(Flag,$c(1),9),$c(2),3)'=x1 q
+ ..s x2="" f  s x2=$o(^TMP("LVBVIS9",$j,"LIST",QueueType,Queue,0,x1,x2)) q:x2=""  d
+ ...s RowID=$p(x2,"||"),QueueRID=^(x2) d xx1
+ ...s RowID=x2 d xx2
+ ...d create4(x2,QueueRID)
+ ; set site to empty if episode or worksheet number entered
+ i SiteOption'=3,$l(epis)!$l($p(worksh,"||",2)) s site=""
+ ; check if test set - synonym
+ i $l(test) d
+ .s x0="" f j=1:1:$l(test,",") s x1=$p(test,",",j) i $l(x1) d
+ ..i '$d(^TTAB("TS",x1)) s x1=$$select^LVBCTSY(test,"TS",site)
+ ..s x0=x0_$s($l(x0):",",1:"")_x1
+ .s test=x0
+ s typeall=type
+ d
+ . ; episode entered
+ .i $l(epis) d create0(epis) q
+ . ; ur entered
+ .i $l(ur) d  q
+ ..s x1="" f  s x1=$o(^TDEBi(ur,"DATE",x1)) q:x1=""  d
+ ...s x2="" f  s x2=$o(^TDEBi(ur,"DATE",x1,x2)) q:x2=""  d
+ ....s epis="" f  s epis=$o(^TDEBi(ur,"DATE",x1,x2,epis)) q:epis=""  d create0(epis)
+ . ; QC case entered
+ .i $l($p(Flag,$c(1),12)) d  q
+ ..s epis="" f  s epis=$o(^TIND("Case-QC",$p(Flag,$c(1),12),epis)) q:epis=""  d create0(epis)
+ . ; Study case entered
+ .i $l($p(Flag,$c(1),13)) d  q
+ ..s epis="" f  s epis=$o(^TIND("Case-Study",$p(Flag,$c(1),13),epis)) q:epis=""  d create0(epis)
+ . ; Reason entered
+ .i $l($p(Flag,$c(1),25)) d  q
+ ..s date=$p(Flag,$c(1),17),date=$s($l(date):date-1,1:"") f  s date=$o(^TEPIi("REASON",date)) q:date=""  d
+ ...i $p(Flag,$c(1),25)="ALL" d
+ ....s reason="" f  s reason=$o(^TEPIi("REASON",date,reason)) q:reason=""  d
+ .....s epis="" f  s epis=$o(^TEPIi("REASON",date,reason,epis)) q:epis=""  d
+ ......s ts="" f  s ts=$o(^TEPIi("REASON",date,reason,epis,ts)) q:ts=""  d
+ .......s tscnt="" f  s tscnt=$o(^TEPIi("REASON",date,reason,epis,ts,tscnt)) q:tscnt=""  d
+ ........s RowID=epis d xx1
+ ........s RowID=(epis_"||"_ts_"||"_tscnt) d xx2
+ ........d create4(epis_"||"_ts_"||"_tscnt)
+ ...i $p(Flag,$c(1),25)'="ALL" d
+ ....s reason=$p(Flag,$c(1),25)
+ ....s epis="" f  s epis=$o(^TEPIi("REASON",date,reason,epis)) q:epis=""  d
+ .....s ts="" f  s ts=$o(^TEPIi("REASON",date,reason,epis,ts)) q:ts=""  d
+ ......s tscnt="" f  s tscnt=$o(^TEPIi("REASON",date,reason,epis,ts,tscnt)) q:tscnt=""  d
+ .......s RowID=epis d xx1
+ .......s RowID=(epis_"||"_ts_"||"_tscnt) d xx2
+ .......d create4(epis_"||"_ts_"||"_tscnt)
+ . ; ToView List
+ .i $p(Flag,$c(1),18)="Y" d
+ ..s DT=$h-10 f  s DT=$o(^TEPIi("ToView",DT)) q:DT=""  d
+ ...s epis="" f  s epis=$o(^TEPIi("ToView",DT,epis)) q:epis=""  d
+ ....s ts="" f  s ts=$o(^TEPIi("ToView",DT,epis,ts)) q:ts=""  d
+ .....s tscnt="" f  s tscnt=$o(^TEPIi("ToView",DT,epis,ts,tscnt)) q:tscnt=""  d
+ ......s RowID=epis d xx1
+ ......s RowID=(epis_"||"_ts_"||"_tscnt) d xx2
+ ......d create4(epis_"||"_ts_"||"_tscnt)
+ . ; ToRead List
+ .i $p(Flag,$c(1),19)="Y" d
+ ..s DT=$h-10 f  s DT=$o(^TEPIi("ToRead",DT)) q:DT=""  d
+ ...s epis="" f  s epis=$o(^TEPIi("ToRead",DT,epis)) q:epis=""  d
+ ....s ts="" f  s ts=$o(^TEPIi("ToRead",DT,epis,ts)) q:ts=""  d
+ .....s tscnt="" f  s tscnt=$o(^TEPIi("ToRead",DT,epis,ts,tscnt)) q:tscnt=""  d 
+ ......s RowID=epis d xx1
+ ......s RowID=(epis_"||"_ts_"||"_tscnt) d xx2
+ ......d create4(epis_"||"_ts_"||"_tscnt)
+ . ; Start date entered
+ .i $l($p(Flag,$c(1),17)) d  q
+ ..s DT=$p(Flag,$c(1),17)-1 f  s DT=$o(^TDAY(1,DT)) q:DT=""  d
+ ...s epis="" f  s epis=$o(^TDAY(1,DT,0,epis)) q:epis=""  d create0(epis)
+ . ; Authorised date/time entered
+ .i $l($p(Flag,$c(1),20))!$l($p(Flag,$c(1),21))!$l($p(Flag,$c(1),22))!$l($p(Flag,$c(1),23)) d  q
+ ..s DT=$s($l($p(Flag,$c(1),20)):$p(Flag,$c(1),20)-1,1:"") f  s DT=$o(^TEPIi("AUTHORISED",DT)) q:DT=""  d
+ ...i $l($p(Flag,$c(1),22)),DT>$p(Flag,$c(1),22) q
+ ...s epis="" f  s epis=$o(^TEPIi("AUTHORISED",DT,epis)) q:epis=""  d
+ ....s ts="" f  s ts=$o(^TEPIi("AUTHORISED",DT,epis,ts)) q:ts=""  d
+ .....i $l(test),(","_test_",")'[(","_ts_",") q
+ .....s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",DT,epis,ts,tscnt)) q:tscnt=""  d
+ ......s tm=$$seldata^LVBVISTS(epis_"||"_ts_"||"_tscnt,8)
+ ......i $l($p(Flag,$c(1),20)),$l($p(Flag,$c(1),21)),DT=$p(Flag,$c(1),20),tm<$p(Flag,$c(1),21) q
+ ......i $l($p(Flag,$c(1),22)),$l($p(Flag,$c(1),23)),DT=$p(Flag,$c(1),22),tm>$p(Flag,$c(1),23) q
+ ......s RowID=epis d xx1
+ ......s RowID=(epis_"||"_ts_"||"_tscnt) d xx2
+ ......d create4(epis_"||"_ts_"||"_tscnt)
+ . ; test entered
+ .i $l(test) d create1(test) q
+ . ; worksheet entered
+ .i $l(worksh) d  q
+ .. ; worksheet number entered
+ ..i $l($p(worksh,"||",2)) d  q
+ ...f j=1,2 s @("ws"_j)=$p(worksh,"||",j)
+ ...s epis="" f  s epis=$o(^TWKS(ws1,2,ws2,"EP",epis)) q:epis=""  d
+ ....s ts="" f  s ts=$o(^TWKS(ws1,2,ws2,"EP",epis,"TEST",ts)) q:ts=""  d create2(epis,ts)
+ .. ; worksheet number not entered
+ ..i $$open^LVBWKSTS($p(worksh,"||"))
+ ..f  q:$$fetch^LVBWKSTS($p(worksh,"||"))  d
+ ...s ts=$p(PLIST(3),$c(1))
+ ...i $l(test),(","_test_",")'[(","_ts_",") q
+ ...d create1(ts)
+ ..i $$close^LVBWKSTS()
+ . ; department entered
+ .i $l(dep) d  q
+ ..s ts=dep f  s ts=$o(^TTAB("TS",ts)) q:ts=""  q:$e(ts)'=dep  i $p(^(ts),"\",12)="Y" d create1(ts)
+ . ; laboratory entered
+ .i $l(lab) d  q
+ ..i '$$select^LVBCTDBL($p(lab,"||",1),"Y") s dep=$p(PLIST(10),$c(1))
+ ..s ts=dep f  s ts=$o(^TTAB("TS",ts)) q:ts=""  q:$e(ts)'=dep  i $p(^(ts),"\",12)="Y" d create1(ts)
+ . ; type entered
+ .f j=1:1:$l(typeall,",") s type=$p(typeall,",",j) d
+ ..s status=$s(type="NOTENTERED":"C",type="ENTERED":"E",type="PATHOLOGIST":"P",type="AUTHORISED":"A",type="HOLD":"H",type="REVIEW":"R",type="OVERDUE":"OVERDUE",1:"")
+ ..s st="" f  s st=$o(^TEPIi("STATUS-TEST",st)) q:st=""  d
+ ...i status="OVERDUE",st="A" q
+ ...i status'="OVERDUE",st'=status q
+ ...i $l(test) d  q
+ ....s ts="" f  s ts=$o(^TEPIi("STATUS-TEST",st,ts)) q:ts=""  d
+ .....i (","_test_",")'[(","_ts_",") q
+ .....s epis="" f  s epis=$o(^TEPIi("STATUS-TEST",st,ts,epis)) q:epis=""  d create2(epis,ts)
+ ...i '$l(test) d  q
+ ....s epis="" f  s epis=$o(^TEPIi("STATUS-EPISODE",st,epis)) q:epis=""  d create5(epis,st)
+ s ^TMP("EPISODE-GRID",$j)=""
+ q $j
+ ; create by episode
+create0(epis) n (epis,test,worksh,ur,site,dep,type,lab,path,Flag,typeall,Order,CFSM)
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . ; check department
+ .i $l(dep),$e(ts)'=dep q
+ . ; check user access to the department
+ .i $$ValUser^LVBCTDEP($p(Flag,$c(1),3),dep) q
+ . ; check test
+ .i $l(test),(","_test_",")'[(","_ts_",") q
+ . ; check XMtest
+ .i $p(Flag,$c(1),11)["Y",'$d(^TTAB("TS",ts,"XM")) q
+ . ; type entered
+ .i $l(typeall) f j=1:1:$l(typeall,",") s type=$p(typeall,",",j) d create2(epis,ts)
+ .i '$l(typeall) d create2(epis,ts)
+ q
+ ; create by testset for all episodes
+create1(test) n (epis,test,worksh,ur,site,dep,type,lab,path,Flag,typeall,Order,CFSM)
+ ; type entered
+ i typeall="" s typeall="NOTENTERED,ENTERED,PATHOLOGIST,AUTHORISED,HOLD,REVIEW,OVERDUE"
+ f j=1:1:$l(typeall,",") s type=$p(typeall,",",j) d
+ .s status=$s(type="NOTENTERED":"C",type="ENTERED":"E",type="PATHOLOGIST":"P",type="AUTHORISED":"A",type="HOLD":"H",type="REVIEW":"R",type="OVERDUE":"OVERDUE",1:"")
+ .s st="" f  s st=$o(^TEPIi("STATUS-TEST",st)) q:st=""  d
+ ..i status="OVERDUE",st="A" q
+ ..i status'="OVERDUE",st'=status q
+ ..s epis="" f  s epis=$o(^TEPIi("STATUS-TEST",st,test,epis)) q:epis=""  d create2(epis,test)
+ q
+ ; create by episode and testset
+create2(epis,ts) n (epis,ts,worksh,ur,site,dep,type,lab,path,Flag,Order,CFSM)
+ ; DayBook tests
+ s CT=$$seldata^LVBCTTS(ts,11),DB=$$seldata^LVBCTTS(ts,60)
+ s DB=$p(DB,$c(1)),CT=$p(CT,$c(1)) i DB="Y" q
+ ; preentered patient and patient type
+ s result1=$$seldata^LVBEPVIS(epis,86),result2=$$seldata^LVBEPVIS(epis,93)
+ i $p(Flag,$c(1),6)="",$p(Flag,$c(1),5)="",$p(result1,$c(1))'=0 q
+ i $p(Flag,$c(1),6)="Y",$p(result1,$c(1))'=9 q
+ i $l($p(Flag,$c(1),16)),$p(Flag,$c(1),16)'=$p(result2,$c(1)) q
+ ; check worksheet
+ i $l(worksh),$$seltest^LVBWKSTS($p(worksh,"||"),ts) q
+ s workseq="" i $l($p(worksh,"||",2)) s ok=1 d  i ok q
+ .i '$$select^LVBWKSRE(worksh_"||"_epis) s ok=0,workseq=PLIST(3)
+ i $d(^TEPI(epis)) s RowID=epis d xx1
+ s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d
+ .s RowID=epis_"||"_ts_"||"_tscnt d xx2
+ . ; check XMtest with pending units
+ .i $p(Flag,$c(1),11)="YP" s ok=1 d  i ok q
+ ..s p1="" f  s p1=$o(^TEPI(epis,1,ts,tscnt,"BBP",p1)) q:p1=""  d  q:'ok
+ ...s p2="" f  s p2=$o(^TEPI(epis,1,ts,tscnt,"BBP",p1,p2)) q:p2=""  d  q:'ok
+ ....i '$$select^LVBBBP(p1_"||"_p2,"Y"),PLIST(18)="IN-0" s ok=0
+ . ; check pathologist if already allocated to pathologist
+ .i $l(path),VISTS(10)'=path q
+ . ; check site
+ .i $l(site),'((VISTS(29)=site)!((VISTS(29)="")&(VISIT(66)=site))) q
+ . ; check type
+ .i $l(type) s ok=0 d  i ok q
+ ..i type="NOTENTERED",VISTS(33)'="C" s ok=1 q
+ ..i type="ENTERED",VISTS(33)'="E" s ok=1 q
+ ..i type="PATHOLOGIST",VISTS(33)'="P" s ok=1 q
+ ..i type="AUTHORISED",VISTS(33)'="A" s ok=1 q
+ ..i type="HOLD",VISTS(33)'="H" s ok=1 q
+ ..i type="REVIEW",VISTS(33)'="R" s ok=1 q
+ ..i type="OVERDUE" d  q
+ ...i VISTS(33)="A" s ok=1 q
+ ...i CT#1=0 d  q
+ ....i $l(VISIT(61)),VISIT(61)+CT'<$h s ok=1 q
+ ....i '$l(VISIT(61)),$l(VISIT(12)),VISIT(12)+CT'<$h s ok=1 q
+ ...i CT#1'=0 d  q
+ ....i $l(VISIT(61)),((VISIT(61)*24*3600+VISIT(62))+(CT*24*3600))'<($h*24*3600+$p($h,",",2)) s ok=1 q
+ ....i '$l(VISIT(61)),$l(VISIT(12)),((VISIT(12)*24*3600+VISIT(13))+(CT*24*3600))'<($h*24*3600+$p($h,",",2)) s ok=1 q
+ . ; check lab from DayBook
+ .i $l(lab) s x=$o(^THIR(epis,$tr(lab,"|"))) i $e(x,1,$l($tr(lab,"|")))'=$tr(lab,"|") q
+ .d create4(epis_"||"_ts_"||"_tscnt)
+ q
+create4(vtsRID,QueueRID) s vtsRID=$g(vtsRID),QueueRID=$g(QueueRID)
+ s epis=$p(vtsRID,"||",1),ts=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3)
+ ; preentered patient
+ s result=$$seldata^LVBEPVIS(epis,86),loc=$$seldata^LVBEPVIS(epis,22)
+ i $p(Flag,$c(1),6)="",$p(Flag,$c(1),5)="",$p(result,$c(1))'=0 q
+ i $p(Flag,$c(1),6)="Y",$p(result,$c(1))'=9 q
+ i $l($p(Flag,$c(1),15)),$p(Flag,$c(1),15)'=loc q
+ i $l($p(Flag,$c(1),5)),$$move(vtsRID,Flag) q
+ ; check site
+ i $l(site),$$site^LVBVISTS(vtsRID)'=site q
+ ; set list of Accession numbers from Flag
+ s access="" d
+ .i $$open^LVBHIVAC(epis)
+ .f  q:$$fetch^LVBHIVAC(epis)  d
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..i $l($g(lab)),$e(PLIST(2))'=$p(lab,"||") q
+ ..i $l($p(Flag,$c(1),14)),$p(Flag,$c(1),14)'=$e(PLIST(2),1,$l($p(Flag,$c(1),14))) q
+ ..i (","_PLIST(6)_",")[(","_vtsRID_",") s access=access_$s($l(access):",",1:"")_PLIST(2)_"-"_PLIST(3)
+ .i $$close^LVBHIVAC()
+ i $l($p(Flag,$c(1),24)),$p(Flag,$c(1),24)'=$$seldata^LVBVISTS(vtsRID,9) q
+ i $p(Flag,$c(1),18)="Y" s ok=0 d  i 'ok q
+ .s date=$$seldata^LVBVISTS(vtsRID,7)
+ .i $l(date),$d(^TEPIi("ToView",date,epis,ts,tscnt)) s ok=1
+ i $p(Flag,$c(1),19)="Y" s ok=0 d  i 'ok q
+ .s date=$$seldata^LVBVISTS(vtsRID,7)
+ .i $l(date),$d(^TEPIi("ToRead",date,epis,ts,tscnt)) s ok=1
+ i $l($p(Flag,$c(1),9)),'$l($p(Flag,$c(1),10)) d  i xx'=$p($p(Flag,$c(1),9),$c(2),1) q
+ .s xx="",last=$o(^TEPI(epis,1,ts,tscnt,"QUEUE","VQ",""),-1)
+ .i $l(last),'$l($p(^TEPI(epis,1,ts,tscnt,"QUEUE","VQ",last),"\",5)) s xx=$p(^TEPI(epis,1,ts,tscnt,"QUEUE","VQ",last),"\")
+ s xSort="" i $l(Order) d
+ .i Order="D" s xSort=VISIT(15)
+ .i Order="P" s xSort=VISIT(22)
+ .i Order="C" d
+ ..s tm=VISIT(13) i $l(CFSM(8)),CFSM(8)=VISIT(13) s tm=VISIT(62)
+ ..s dt=$$seldata^LVBVISTS(vtsRID,49)_","_$$seldata^LVBVISTS(vtsRID,50) i dt="," s dt=VISIT(12)_","_tm
+ ..s xSort=$p(dt,",",1)_" "_$e(100000+$p(dt,",",2),2,6)
+ .i Order="R" d
+ ..s tm=VISIT(13) i $l(CFSM(8)),CFSM(8)=VISIT(13) s tm=VISIT(62)
+ ..s dt=$$seldata^LVBVISTS(vtsRID,49)_","_$$seldata^LVBVISTS(vtsRID,50) i dt="," s dt=VISIT(12)_","_tm
+ ..s xSort=(100000-$p(dt,",",1))_" "_$e(100000+100000-$p(dt,",",2),2,6)
+ .i Order="CR" d
+ ..s tm=VISIT(62) i CFSM(8)=VISIT(62) s tm=""
+ ..s dt=$$seldata^LVBVISTS(vtsRID,80)_","_$$seldata^LVBVISTS(vtsRID,81) i dt="," s dt=$$seldata^LVBVISTS(vtsRID,62)_","_$$seldata^LVBVISTS(vtsRID,63) i dt="," s dt=VISIT(61)_","_tm
+ ..s xSort=$p(dt,",",1)_" "_$e(100000+$p(dt,",",2),2,6)
+ .i Order="RR" d
+ ..s tm=VISIT(62) i CFSM(8)=VISIT(62) s tm=""
+ ..s dt=$$seldata^LVBVISTS(vtsRID,80)_","_$$seldata^LVBVISTS(vtsRID,81) i dt="," s dt=$$seldata^LVBVISTS(vtsRID,62)_","_$$seldata^LVBVISTS(vtsRID,63) i dt="," s dt=VISIT(61)_","_tm
+ ..s xSort=(100000-$p(dt,",",1))_" "_$e(100000+100000-$p(dt,",",2),2,6)
+ .i Order="U" s xSort="" d
+ ..s urgent=$s($l(VISTS(13)):VISTS(13),1:VISIT(17))
+ ..i $l(urgent) s xSort=$$seldata^LVBCTPR(urgent,4)
+ ..s xSort=$p(xSort,$c(1)),xSort=$s(xSort="Y":1,1:2)
+ .i Order="EPIS" s xSort=$$seq^LVBCTTS(ts)
+ .i Order="V" d
+ ..s last=$o(^TEPI(epis,1,ts,tscnt,"QUEUE","VQ",""),-1)
+ ..i $l(last),'$l($p(^TEPI(epis,1,ts,tscnt,"QUEUE","VQ",last),"\",5)) s xSort=$p(^TEPI(epis,1,ts,tscnt,"QUEUE","VQ",last),"\")
+ .i Order="AN" s an="" f  s an=$o(^THIR(epis,an)) q:an=""  i $d(^THIR(epis,an,"TEST",vtsRID)) s xSort=an q
+ i $l($g(workseq)) s xSort=workseq
+ i $l($p(Flag,$c(1),5)) s xSort=$p($$move(vtsRID,Flag),$c(1),2)
+ i '$l(xSort) s xSort=" "_epis
+ i $$ValUser^LVBEPVIS($p(Flag,$c(1),3),$p(RowID,"||"))>50 q
+ i $$ValUser^LVBVIS14($p(Flag,$c(1),3),RowID,$s($p(Flag,$c(1),1)="P":"P",$p(Flag,$c(1),2)="Y":"V",1:""))>50 q
+ s ^TMP("EPISODE-GRID",$j,xSort,epis,ts,tscnt)=access_"\"_QueueRID
+ s ^TMP("EPISODE-GRID-DATE",$j,epis,ts,tscnt)=xSort
+ q
+ ; create pending by episode
+create5(epis,st) n (epis,st,worksh,ur,site,dep,type,lab,path,Flag,typeall,Order,CFSM)
+ ; preentered patient
+ s result=$$seldata^LVBEPVIS(epis,86),loc=$$seldata^LVBEPVIS(epis,22)
+ i $p(Flag,$c(1),6)="",$p(Flag,$c(1),5)="",$p(result,$c(1))'=0 q
+ i $p(Flag,$c(1),6)="Y",$p(result,$c(1))'=9 q
+ i $l($p(Flag,$c(1),15)),$p(Flag,$c(1),15)'=loc q
+ s ts="" f  s ts=$o(^TEPIi("STATUS-EPISODE",st,epis,ts)) q:ts=""  d
+ . ; check department
+ .i $l(dep),$e(ts)'=dep q
+ . ; check user access to the department
+ .i $$ValUser^LVBCTDEP($p(Flag,$c(1),3),dep) q
+ . ; check XMtest
+ .i $p(Flag,$c(1),11)["Y",'$d(^TTAB("TS",ts,"XM")) q
+ .d create2(epis,ts)
+ q
+ ; check module
+move(vtsRID,Flag) n (vtsRID,Flag) s vtsRID=$g(vtsRID),epis=$p(vtsRID,"||"),Flag=$g(Flag),(ok,x)=""
+ ; Send Test module
+ i $p(Flag,$c(1),5)="S" d
+ .s x="" f  s x=$o(^TEPI(epis,9,x)) q:x=""  s xx=^(x) d  q:$l(ok)
+ ..i $p(xx,"\",9)="S",$d(^TEPI(epis,9,x,"VTS",vtsRID)) s ok=0
+ ..i $p(xx,"\",9)="W",$d(^TEPI(epis,9,x,"VTS",vtsRID)) s ok=0
+ ; Receive Test module or LRE/LRI
+ i ($p(Flag,$c(1),5)="")!($p(Flag,$c(1),5)="R") s ok=1 d
+ .s x="" f  s x=$o(^TEPI(epis,9,x)) q:x=""  s xx=^(x) d  q:'ok
+ ..i $p(xx,"\",9)="S",$d(^TEPI(epis,9,x,"VTS",vtsRID)) s ok=0
+ ..i $p(xx,"\",9)="P",$d(^TEPI(epis,9,x,"VTS",vtsRID)) s ok=0
+ q ok_$c(1)_$s('ok:epis_"||"_x,1:"")
+ ;
+fetch(epis,test,worksh,ur,site,dep,type,lab,path,Flag) n (epis,test,worksh,ur,site,dep,type,lab,path,Flag,PLIST)
+ K PLIST s Flag=$g(Flag)
+ s epis=$g(epis),test=$g(test),worksh=$g(worksh),ur=$g(ur),site=$g(site),dep=$g(dep),type=$g(type),lab=$g(lab),path=$g(path)
+ ; check if test set - synonym
+ i $l(test),'$d(^TTAB("TS",test)) s test=$$select^LVBCTSY(test,"TS",site)
+ s line=$g(^TMP("EPISODE-GRID",$j)),date=$p(line,"\",1),epis=$p(line,"\",2),test=$p(line,"\",3),tscnt=$p(line,"\",4)
+ s ok=0
+ f  d:$l(date)  q:ok  s date=$o(^TMP("EPISODE-GRID",$j,date)) q:date=""
+ .f  d:$l(epis)  q:ok  s epis=$o(^TMP("EPISODE-GRID",$j,date,epis)) q:epis=""
+ ..f  d:$l(test)  q:ok  s test=$o(^TMP("EPISODE-GRID",$j,date,epis,test)) q:test=""
+ ...f  s tscnt=$o(^TMP("EPISODE-GRID",$j,date,epis,test,tscnt)) q:tscnt=""  s ok=1 q
+ ; get result for the record
+ s SQLCODE=100
+ i ok s SQLCODE=$$select(epis_"||"_test_"||"_tscnt,type,$j,Flag,site)
+ s ^TMP("EPISODE-GRID",$j)=date_"\"_epis_"\"_test_"\"_tscnt
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(epis,test,worksh,ur,site,dep,type,lab,path,Flag) k ^TMP($zn,$j)
+ s epis=$g(epis),test=$g(test),worksh=$g(worksh),ur=$g(ur),site=$g(site),dep=$g(dep),type=$g(type),lab=$g(lab),path=$g(path),Flag=$g(Flag)
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("fetchbuffer^"_$zn_$p(^CF("SM",1),"^",28)))) k %quit d @("fetchbuffer^"_$zn_$p(^CF("SM",1),"^",28)) q:$d(%quit) %quit
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ s xSUM=0
+ f xxx=1:1:max s SQLCODE=$$fetch(epis,test,worksh,ur,site,dep,type,lab,path,Flag) q:SQLCODE  d  q:xSUM>15000
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ .s xSUM=xSUM+$l(^TMP($zn,$j,cnt))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ;
+close() k ^TMP("EPISODE-GRID",$j),^TMP("EPISODE-GRID-DATE",$j),^TMP($zn,$j)
+ q 0
+ ;
+ ; PLIST :       1. VisitTestRowID
+ ;               2. Patient name
+ ;               3. ur
+ ;               4. Date of Entry
+ ;               5. TestSet Name
+ ;               6. TestSet Synonym
+ ;               7. TestSet
+ ;               8. WorkSheet List
+ ;               9. Medicare
+ ;               10.Confidential (Y/N)
+ ;               11.Episode
+ ;               12.Date collection
+ ;               13.Time collection
+ ;               14.Date entered
+ ;               15.Time entered
+ ;               16.Date authorised/PA/VQ
+ ;               17.Time authorised/PA/VQ
+ ;               18.Current Location
+ ;               19.User Location
+ ;               20.Status
+ ;               21.move Packaging number
+ ;               22.Accession number
+ ;               23.Access type
+ ;               24.Debtor History
+ ;               25.Pathologist
+ ;               26.Word test set
+ ;               27.Priority
+ ;               28.Ability to deauthorise
+ ;               29.Already billed
+ ;               30.User entered
+ ;               31.User authorised/PA/VQ
+ ;               32.Frame exists
+ ;               33.Date requested
+ ;               34.Time requested
+ ;               35.User requested
+ ;               36.Voice files (Y/N)
+ ;               37.Word template
+ ;               38.move Status
+ ;               39.move User Sent_by/Received
+ ;               40.move Date Sent_by/Received
+ ;               41.move Time Sent_by/Received
+ ;               42.move Location From
+ ;               43.move Location To
+ ;               44.QueueRID
+ ;               45.Patient Location
+ ;               46.Actions (Y/N)
+ ;               47.moveRID
+ ;               48.move RefLab To
+ ;               49.SuperSet
+ ;               50.Date Received
+ ;               51.Time Received
+ ;               52.Accession number (formatted)
+ ;               53.SOP (Short_Long)
+ ;               54.Collection manual (Short_Long)
+ ;               55.Given name_Surname_Sex_DOB
+ ;               56.Phone RQ : Queue_$c(1)_"Y/N"_","
+ ;               57.Antibiotic Therapy
+ ;               58.Doctor
+ ;               59.Date expiry
+ ;               60.Time expiry
+ ;               61.Exclude from Patient Running means
+ ;               62.Reason
+ ;               63.Date Reason
+ ;               64.Time Reason
+ ;               65.User Reason
+ ;               66.Word subdirectory
+ ;               67.Species
+ ;               68.DOB
+ ;               69.ToRead
+ ;               70.ToView
+ ;               71.XM TS
+ ;               72.National ID
+ ;               73.TS added by action
+select(vtsRID,type,Job,Flag,site,move) n (vtsRID,type,Job,Flag,site,move,PLIST) s vtsRID=$g(vtsRID),site=$g(site),move=$g(move)
+ s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tscnt=$p(vtsRID,"||",3),type=$g(type),Job=$g(Job),Flag=$g(Flag)
+ i 'Job s Job=$j 
+ s date=$g(^TMP("EPISODE-GRID-DATE",Job,epis,test,tscnt))
+ i $$select^LVBEPVIS(epis,"Y",,$s($p(Flag,$c(1),6)="Y":9,1:"")) q 1_$c(1)_epis
+ f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ s $p(PLIST(22),$c(1),2)=$$seldata^LVBCTHOS(PLIST(22),3)
+ f j=3,4,26,49,50,51 s x(j)=$$seldata^LVBCTDR(PLIST(15),j)
+ s $p(PLIST(15),$c(1),2)=$$NameFormat^LVBCOM03("DR",x(26),x(4),x(3),x(49),x(50),x(51))
+ m xPLIST=PLIST
+ i $$select^LVBVISTS(epis_"||"_test_"||"_tscnt,"Y") q 2_$c(1)_epis_"||"_test_"||"_tscnt
+ f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ s $p(PLIST(29),$c(1),2)=$$seldata^LVBCTUSL(PLIST(29),3)
+ s $p(PLIST(40),$c(1),2)=$$seldata^LVBCTRL(PLIST(40),3)
+ s $p(PLIST(41),$c(1),2)=$$seldata^LVBCTUSL(PLIST(41),3)
+ s $p(PLIST(58),$c(1),2)=$$seldata^LVBCTR(PLIST(58),3)
+ m yPLIST=PLIST
+ i $$select^LVBCTTS(test,"Y") q 3_$c(1)_test
+ f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ m zPLIST=PLIST
+ i epis["BBP_",$$select^LVBBBP($p(epis,"_",2)_"||"_$p(epis,"_",3),"Y") q 4_$c(1)_epis
+ f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ m bPLIST=PLIST
+ i '$l(move) s move=$p($$move(vtsRID,Flag),$c(1),2)
+ i '$$select^LVBVISMV(move) d
+ .f j=1:1:2,6:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ .m mPLIST=PLIST i mPLIST(12)="P" d
+ ..i $g(^TEPI(epis,9,$p(mPLIST(1),"||",2),"VTS",vtsRID))="Y" s mPLIST(12)="R"
+ ..e  s mPLIST(12)="S"
+ s (wslist,ws1)="" f  s ws1=$o(^TTAB("TS",test,6,ws1)) q:ws1=""  d
+ .s ws2="" f  s ws2=$o(^TEPI(epis,"WS",ws1,ws2)) q:ws2=""  d
+ ..s ws3=$p($g(^TWKS(ws1,2,ws2,"EP",epis)),"\",1)
+ ..s cr="" i $l(wslist),wslist'[$c(13),$l(wslist)+5+$l(ws1)+$l(ws2)+$l(ws3)>20 s cr=$c(13)
+ ..s wslist=wslist_$s($l(wslist):", ",1:"")_cr_ws1_"("_ws2_"-"_ws3_")"
+ s history="" i '$$history^LVBDEB(xPLIST(20),1) s history=PLIST(1)
+ i '$l(yPLIST(7)),$d(^TEPI(epis,1,test,tscnt,"QUEUE","VQ")) d
+ .s x=$o(^TEPI(epis,1,test,tscnt,"QUEUE","VQ",""),-1)
+ .i '$$select^LVBVISTQ(epis_"||"_test_"||"_tscnt_"||VQ||"_x) d
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..i '$l(PLIST(7)) m qPLIST=PLIST
+ k PLIST
+ s PLIST(1)=yPLIST(1)
+ s PLIST(2)=$$NameFormat^LVBCOM03("PT",,xPLIST(4),xPLIST(3),xPLIST(99),xPLIST(100),xPLIST(101))
+ s PLIST(3)=xPLIST(20)
+ s PLIST(4)=yPLIST(4)
+ s PLIST(5)=zPLIST(4)
+ s PLIST(6)=zPLIST(3)
+ s PLIST(7)=test
+ s PLIST(8)=wslist
+ s PLIST(9)=xPLIST(8)
+ s PLIST(10)=$s(yPLIST(46)="Y":"Y",(yPLIST(46)="P")&($p(Flag,$c(1))="P"):"Y",(yPLIST(46)="D")&($p(Flag,$c(1),2)="Y"):"Y",xPLIST(84)="Y":"Y",(xPLIST(84)="P")&($p(Flag,$c(1))="P"):"Y",xPLIST(84)="Y":"Y",(xPLIST(84)="D")&($p(Flag,$c(1),2)="Y"):"Y",1:"")
+ s PLIST(11)=epis
+ s PLIST(12)=xPLIST(12),PLIST(13)=xPLIST(13)
+ i $l(yPLIST(49)) s PLIST(12)=yPLIST(49),PLIST(13)=yPLIST(50)
+ s PLIST(14)=yPLIST(4)
+ s PLIST(15)=yPLIST(5)
+ s PLIST(16)=$s($l($g(qPLIST(4))):qPLIST(4),$l(yPLIST(7)):yPLIST(7),$l(yPLIST(21)):yPLIST(21),1:"")
+ s PLIST(17)=$s($l($g(qPLIST(4))):qPLIST(5),$l(yPLIST(8)):yPLIST(8),$l(yPLIST(21)):yPLIST(22),1:"")
+ s PLIST(18)=$s($l($p(yPLIST(29),$c(1))):$p(yPLIST(29),$c(1)),1:xPLIST(66))
+ s PLIST(19)=xPLIST(66)
+ s PLIST(20)=yPLIST(33)_$c(1)_$s(yPLIST(33)="A":"Y",1:"N")
+ s PLIST(21)=$g(mPLIST(8))
+ s PLIST(22)=$s($l(date):$p($g(^TMP("EPISODE-GRID",Job,date,epis,test,tscnt)),"\",1),1:"")
+ s PLIST(23)=$s($$check(vtsRID,Flag,site):"N",(yPLIST(45)="Y"):"YH",($l($g(qPLIST(4)))):"YQ",1:"Y")
+ s PLIST(24)=history
+ s PLIST(25)=yPLIST(10)
+ f j=25 i $g(PLIST(j))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$selrow^MVBSSUSR(plist(j),"Y")
+ .s X="" i 'SQLCODE s X=PLIST(2)_$c(1)_PLIST(3)
+ .k PLIST m PLIST=plist s PLIST(j)=X k plist
+ s PLIST(26)=$s(zPLIST(31)="Y":"Y",zPLIST(54)="Y":"Y",1:"N")
+ s PLIST(27)=$p($s($l(yPLIST(13)):yPLIST(13),1:xPLIST(17)),$c(1))
+ i $l(PLIST(27)) s PLIST(27)=PLIST(27)_$c(1)_$$seldata^LVBCTPR(PLIST(27),4)
+ s PLIST(28)="Y"
+ s PLIST(29)=$s($l(xPLIST(21)):"Y",1:"")
+ s PLIST(30)=yPLIST(6)
+ s PLIST(31)=$s($l(yPLIST(9)):yPLIST(9),$l($g(qPLIST(4))):"[VQ-"_qPLIST(10)_"] "_qPLIST(6),$l(yPLIST(21)):"[PA] "_yPLIST(10),1:"")
+ s PLIST(32)=$$frame(test)
+ s PLIST(33)=yPLIST(24)
+ s PLIST(34)=yPLIST(25)
+ s PLIST(35)=yPLIST(39)
+ s PLIST(36)=$s($d(^TEPI(epis,"VOICE")):"Y",1:"N")
+ s PLIST(37)=""
+ i zPLIST(31)="Y" d
+ .s PLIST(37)=zPLIST(30),(x,xx)=""
+ .f  s x=$o(^TEPI(epis,1,test,tscnt,"SNOMED",x)) q:x=""  s sn=$p(^(x),"\",1) i $l(sn) s xx=$p($g(^TSNO(sn)),"\",8) q:$l(xx)
+ .i $l(xx) s PLIST(37)=xx
+ i zPLIST(54)="Y" d
+ .s PLIST(37)=zPLIST(55),(x,xx)=""
+ .f  s x=$o(^TEPI(epis,1,test,tscnt,"SNOMED",x)) q:x=""  s sn=$p(^(x),"\",1) i $l(sn) s xx=$p($g(^TSNO(sn)),"\",6) q:$l(xx)
+ .i $l(xx) s PLIST(37)=xx
+ s PLIST(38)=$g(mPLIST(12))
+ s PLIST(39)=$g(mPLIST(11))_$c(1)_$s($g(mPLIST(12))="R":$g(mPLIST(15)),1:"")
+ s PLIST(40)=$g(mPLIST(9))_$c(1)_$s($g(mPLIST(12))="R":$g(mPLIST(13)),1:"")
+ s PLIST(41)=$g(mPLIST(10))_$c(1)_$s($g(mPLIST(12))="R":$g(mPLIST(14)),1:"")
+ s PLIST(42)=$g(mPLIST(3))
+ s PLIST(43)=$s($l($g(mPLIST(5))):$g(mPLIST(5)),1:$g(mPLIST(4)))
+ s PLIST(44)=$s($l(date):$p($g(^TMP("EPISODE-GRID",Job,date,epis,test,tscnt)),"\",2),1:"")
+ s PLIST(45)=xPLIST(22)
+ s PLIST(46)=$s($d(^TTAB("TS",test,"ACTION")):"Y",$d(^TTAB("TS-ACTION")):"Y",1:"N")
+ s PLIST(47)=move
+ s PLIST(48)=$g(mPLIST(5))
+ s PLIST(49)=$g(yPLIST(32))
+ s PLIST(50)=$g(xPLIST(61)),PLIST(51)=$g(xPLIST(62))
+ i $l(yPLIST(62)) s PLIST(50)=yPLIST(62),PLIST(51)=yPLIST(63)
+ i $l(yPLIST(80)) s PLIST(50)=yPLIST(80),PLIST(51)=yPLIST(81)
+ s PLIST(52)="" f j=1:1:$l(PLIST(22),",") s xx=$p(PLIST(22),",",j) i $l(xx) d
+ .s xx1=$p(xx,"-",1),xx2=$p(xx,"-",2)
+ .s acc=$$AccNoFormat^LVBCOM03(xx1) i $l(acc) s PLIST(52)=PLIST(52)_$s($l(PLIST(52)):",",1:"")_acc_"-"_xx2
+ .s $p(PLIST(22),",",j)=xx1
+ s PLIST(53)=$s($l(zPLIST(59)):"Y",1:"N")_$c(1)_zPLIST(58)
+ s PLIST(54)=$s($l(zPLIST(27)):"Y",1:"N")_$c(1)_zPLIST(19)
+ s PLIST(55)=xPLIST(4)_$c(1)_xPLIST(3)_$c(1)_xPLIST(5)_$c(1)_xPLIST(6)
+ s XXX="" d  s PLIST(56)=XXX
+ .n (XXX,vtsRID)
+ .i $$open^LVBVISTQ(vtsRID,"RQ")
+ .f  q:$$fetch^LVBVISTQ(vtsRID,"RQ")  i $p(PLIST(10),$c(1),3)="P" s XXX=XXX_$s($l(XXX):",",1:"")_PLIST(10)_"\"_$s($l(PLIST(7)):"Y",1:"N")
+ .i $$close^LVBVISTQ()
+ s PLIST(57)="" i $d(^TEPI(epis,"AT")) s PLIST(57)="Y"
+ s PLIST(58)=xPLIST(15)
+ s PLIST(59)=$g(bPLIST(13))
+ s PLIST(60)=$g(bPLIST(38))
+ s PLIST(61)=$g(yPLIST(28))
+ s PLIST(62)=$g(yPLIST(58))
+ s PLIST(63)=$g(yPLIST(59))
+ s PLIST(64)=$g(yPLIST(60))
+ s PLIST(65)=$g(yPLIST(61))
+ s PLIST(66)=$g(yPLIST(66))
+ s PLIST(67)=xPLIST(5)
+ s PLIST(68)=xPLIST(6)
+ s PLIST(69)=$s($l(yPLIST(68)):"N",1:"Y")
+ s PLIST(70)=$s($l(yPLIST(71)):"N",1:"Y")
+ s PLIST(71)=zPLIST(6)
+ s PLIST(72)=xPLIST(126)
+ s PLIST(73)=yPLIST(83)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ; comes from the result entry
+flag(RowID,job,Flag,entry) n (RowID,job,Flag,entry,user,PLIST) s RowID=$g(RowID),job=$g(job),Flag=$g(Flag),entry=$g(entry)
+ k ^TMP($zn,$j)
+ s ^TMP($zn,$j,1)=$s($$next(RowID,job,Flag,entry):"N",1:"Y")
+ s ^TMP($zn,$j,2)=$s($$back(RowID,job,Flag,entry):"N",1:"Y")
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+xList(epis,job,Flag) n (epis,job,Flag,PLIST) k PLIST s epis=$g(epis),job=$g(job),Flag=$g(Flag)
+ s test="" f  s test=$o(^TMP("EPISODE-GRID-DATE",job,epis,test)) q:test=""  d
+ .s tscnt="" f  s tscnt=$o(^TMP("EPISODE-GRID-DATE",job,epis,test,tscnt)) q:tscnt=""  d
+ ..i '$$check(epis_"||"_test_"||"_tscnt,Flag) s x=$o(PLIST(""),-1)+1,PLIST(x)=epis_"||"_test_"||"_tscnt
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ; comes from result entry
+ ; entry : M - multitest
+next(RowID,job,Flag,entry) n (RowID,job,Flag,entry,PLIST) s RowID=$g(RowID),job=$g(job),Flag=$g(Flag),entry=$g(entry)
+ s epis=$p(RowID,"||",1),test=$p(RowID,"||",2),tscnt=$p(RowID,"||",3) k PLIST
+ i 'job s job=$j
+ ; get next record
+ s date="" i $l(epis),$l(test),$l(tscnt) s date=$g(^TMP("EPISODE-GRID-DATE",job,epis,test,tscnt))
+ s EPIS="" i entry="M" s EPIS=epis
+ s ok=0,user=$$user^MVBSSUSR(job)
+ f  d:$l(date)  q:ok  s date=$o(^TMP("EPISODE-GRID",job,date)),(epis,test,tscnt)="" q:date=""
+ .f  d:$l(epis)  q:ok  s epis=$o(^TMP("EPISODE-GRID",job,date,epis)),(test,tscnt)="" q:epis=""
+ ..f  d:$l(test)  q:ok  s test=$o(^TMP("EPISODE-GRID",job,date,epis,test)),tscnt="" q:test=""
+ ...f  s tscnt=$o(^TMP("EPISODE-GRID",job,date,epis,test,tscnt)) q:tscnt=""  d  i ok q
+ ....i $l(EPIS),EPIS=epis q
+ ....i '$$check(epis_"||"_test_"||"_tscnt,Flag) s ok=1
+ ; get result for the record
+ s SQLCODE=100
+ i ok s SQLCODE=$$select(epis_"||"_test_"||"_tscnt,"",job,Flag)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; comes from result entry
+ ; entry : M - multitest
+back(RowID,job,Flag,entry) n (RowID,job,Flag,entry,PLIST) s RowID=$g(RowID),job=$g(job),Flag=$g(Flag),entry=$g(entry)
+ s epis=$p(RowID,"||",1),test=$p(RowID,"||",2),tscnt=$p(RowID,"||",3) k PLIST
+ i 'job s job=$j
+ ; get previous record
+ s date="" i $l(epis),$l(test),$l(tscnt) s date=$g(^TMP("EPISODE-GRID-DATE",job,epis,test,tscnt))
+ s EPIS="" i entry="M" s EPIS=epis
+ s ok=0,user=$$user^MVBSSUSR(job)
+ f  d:$l(date)  q:ok  s date=$o(^TMP("EPISODE-GRID",job,date),-1),(epis,test,tscnt)="" q:date=""
+ .f  d:$l(epis)  q:ok  s epis=$o(^TMP("EPISODE-GRID",job,date,epis),-1),(test,tscnt)="" q:epis=""
+ ..f  d:$l(test)  q:ok  s test=$o(^TMP("EPISODE-GRID",job,date,epis,test),-1),tscnt="" q:test=""
+ ...f  s tscnt=$o(^TMP("EPISODE-GRID",job,date,epis,test,tscnt),-1) q:tscnt=""  d  i ok q
+ ....i $l(EPIS),EPIS=epis q
+ ....i '$$check(epis_"||"_test_"||"_tscnt,Flag) s ok=1
+ ; get result for the record
+ s SQLCODE=100
+ i ok s SQLCODE=$$select(epis_"||"_test_"||"_tscnt,"",job,Flag)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; check access to the data
+check(RowID,Flag,site) n (RowID,Flag,site) s RowID=$g(RowID),Flag=$g(Flag),site=$g(site),ok=0 
+ s epis=$p(RowID,"||",1),test=$p(RowID,"||",2),tscnt=$p(RowID,"||",3),user=$p(Flag,$c(1),3)
+ ; for inquiry select only tests set in LabConfig
+ i 'ok,$p(Flag,$c(1),2)="Y" s ok=$$checkView1(RowID)
+ ; for inquiry select only tests set in Viewable Queue
+ i 'ok,$p(Flag,$c(1),2)="Y" s ok=$$checkView2(RowID)
+ ; for entry check access to a Queue
+ i 'ok,$p(Flag,$c(1),1)'="Y",$p(Flag,$c(1),2)'="Y",$d(^TEPI(epis,1,test,tscnt,"QUEUE","VQ")) d
+ .s vq1=""
+ .i $$open^LVBVISTQ(RowID,"VQ")
+ .f  q:$$fetch^LVBVISTQ(RowID,"VQ")  i $p(PLIST(9),$c(1))="" s vq1=$p(PLIST(10),$c(1))
+ .i $$close^LVBVISTQ()
+ .i $l(vq1),$l(user),$$select^LVBCTVQU(vq1_"||"_user) s ok=1
+ ; for printing select only tests set in Printable Queue
+ i 'ok,$p(Flag,$c(1),1)="P",$d(^TEPI(epis,1,test,tscnt,"QUEUE","VQ")) d
+ .s vq1=""
+ .i $$open^LVBVISTQ(RowID,"VQ")
+ .f  q:$$fetch^LVBVISTQ(RowID,"VQ")  i $p(PLIST(9),$c(1))="" s vq1=$p(PLIST(10),$c(1))
+ .i $$close^LVBVISTQ()
+ .i $l(vq1) s ok=1 i '$$select^LVBCTVQ(vq1),$p(PLIST(5),$c(1))="Y" s ok=0
+ s ok1=$$ValUser^LVBEPVIS($p(Flag,$c(1),3),$p(RowID,"||"),,$p(Flag,$c(1),2))
+ s ok2=$$ValUser^LVBVIS14($p(Flag,$c(1),3),RowID,$s($p(Flag,$c(1),1)="P":"P",$p(Flag,$c(1),2)="Y":"V",1:""))
+ s x(+ok)="",x(+ok1)="",x(+ok2)=""
+ s ok=$o(x(""),-1)
+ q ok
+checkView1(vts) n (vts) s vts=$g(vts),ok=""
+ s epis=$p(vts,"||",1),test=$p(vts,"||",2),tscnt=$p(vts,"||",3)
+ i '$d(^TEPI(epis,1,test,tscnt,"QUEUE","VQ")) d
+ .s xxRR=""
+ .k CTTS i '$$select^LVBCTTS(test,"Y") m CTTS=PLIST
+ .i '$l(xxRR) s xxRR=$g(CTTS(70))
+ .i '$l(xxRR),'$$select^LVBCTDEP($e(test)) s xxRR=PLIST(17)
+ .i '$l(xxRR),'$$select^MVBCFLAB(1) s xxRR=PLIST(68)
+ .i $l(xxRR) s ok=1 d  q:ok
+ ..s TEST(33)=$$status^LVBVIS1(vts)
+ ..i (","_xxRR_",")[",AUTHORISED,",TEST(33)="A" s ok=0
+ ..i (","_xxRR_",")[",ENTERED,",TEST(33)="E" s ok=0
+ ..i (","_xxRR_",")[",PATHOLOGIST,",TEST(33)="P" s ok=0
+ .i $g(CTTS(15))="C" s ok=1 q
+ q ok
+checkView2(vts) n (vts) s vts=$g(vts),ok=""
+ s epis=$p(vts,"||",1),test=$p(vts,"||",2),tscnt=$p(vts,"||",3)
+ i $d(^TEPI(epis,1,test,tscnt,"QUEUE","VQ")) d
+ .s vq=""
+ .i $$open^LVBVISTQ(vts,"VQ")
+ .f  q:$$fetch^LVBVISTQ(vts,"VQ")  i $p(PLIST(9),$c(1))="" s vq=$p(PLIST(10),$c(1))
+ .i $$close^LVBVISTQ()
+ .i $l(vq) s ok=1 i '$$select^LVBCTVQ(vq),$p(PLIST(6),$c(1))="Y" s ok=0
+ q ok
+]]></Routine>
+</Export>

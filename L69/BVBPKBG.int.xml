@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="BVBPKBG" type="INT" languagemode="0"><![CDATA[
+BVBPKBG ; IG 10/12/98 ; MVB Control data access for BB_Pack  ; Compiled May 22, 2000 13:24:29 for Cache for Windows
+ ; 
+ ; supported calls: 
+ ; 
+ ; $$select^BVBPKBG(ROWID) 
+ ; $$open^BVBPKBG(stat,result,site,p3,p4,p5,p6,p7,p8,p9) 
+ ; $$fetch^BVBPKBG(stat,result,site,p3,p4,p5,p6,p7,p8,p9) 
+ ; $$fetchbuffer^BVBPKBG(stat,result,site,p3,p4,p5,p6,p7,p8,p9) 
+ ; $$fetchall^BVBPKBG(stat,result,site,p3,p4,p5,p6,p7,p8,p9) 
+ ; $$close^BVBPKBG() 
+ ; $$getstat^BVBPKBG(pack) 
+ ; 
+open(stat,result,site,p3,p4,p5,p6,p7,p8,p9) s stat=$g(stat),result=$g(result),site=$g(site)
+ d %PKBG00o 
+ q 0
+ ;
+fetch(stat,result,site,p3,p4,p5,p6,p7,p8,p9) s stat=$g(stat),result=$g(result),site=$g(site) k PLIST
+nx d %0Go
+ i 'SQLCODE,$$val(PLIST(1),result) g nx
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(stat,result,site,p3,p4,p5,p6,p7,p8,p9) s stat=$g(stat),result=$g(result),site=$g(site) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100)
+ f xxx=1:1:max s SQLCODE=$$fetch(stat,result,site) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(stat,result,site,p3,p4,p5,p6,p7,p8,p9) N (stat,result,site,PLIST) s stat=$g(stat),result=$g(result),site=$g(site) K ^TMP($zn,$j)
+ i $$open(stat,result,site)
+ f cnt=1:1 Q:$$fetch(stat,result,site)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+close()   d %PKBG00c
+ q 0
+ ;
+adjust N plist,I,J,SQLCODE,X F J=1:1:PLIST I $D(PLIST(J)) S PLIST(J)=$P(PLIST(J),$C(1),1)
+ ;
+ I $G(PLIST(8))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^BVBCTPRC(plist(8))
+ .S X="" I 'SQLCODE S X=$p(PLIST(1),$c(1))_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(8)=X K plist
+ ;
+ I $G(PLIST(5))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^BVBCTSTS(plist(5))
+ .S X="" I 'SQLCODE S X=$p(PLIST(1),$c(1))_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(5)=X K plist
+ ;
+ I $G(PLIST(10))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^BVBCTBGR(plist(10))
+ .S X="" I 'SQLCODE S X=$p(PLIST(1),$c(1))_$C(1)_PLIST(2)
+ .K PLIST M PLIST=plist S PLIST(10)=X K plist
+ ;
+ q 
+ ;
+ ;validate pack
+ ;0-valid,1-invalid
+ ;status can be : WAITING,ENTERED,AUTHORISED,PATHOLOGIST
+val(pack,status) n (pack,status)
+ i status="WAITING",$o(^BB("PK",+pack,"RES",0))="" q 0
+ i status="WAITING",$o(^BB("PK",+pack,"RES",0))'="" q 1
+ s found=0
+ s res=0 f  s res=$o(^BB("PK",+pack,"RES",res)) q:res=""  q:found  s s=^(res) d
+ .i status="PATHOLOGIST",$p(s,"^",9)'="P" q
+ .i status'="PATHOLOGIST",$p(s,"^",9)="P" q
+ .i status="ENTERED",'s q
+ .i status="ENTERED",$p(s,"^",4) q
+ .i status="AUTHORISED",'$p(s,"^",4) q
+ .s found=1
+ q 'found
+ ;get pack status
+getstat(pack) n (pack,PLIST)
+ i $o(^BB("PK",+pack,"RES",0))="" s status("WAITING")=""
+ s res=0 f  s res=$o(^BB("PK",+pack,"RES",res)) q:res=""  s s=^(res) d
+ .i $p(s,"^",9)="P" s status("PATHOLOGIST")="" q
+ .i $p(s,"^",4) s status("AUTHORISED")="" q
+ .i s s status("ENTERED")="" q
+ k PLIST 
+ f ind="AUTHORISED","PATHOLOGIST","ENTERED","WAITING" i $d(status(ind)),'$d(PLIST(1)) s PLIST(1)=ind
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ q
+%0ABs1 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,4,-1,2) q
+%0ABs2 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%0ABs3 s %val=$$timeext^%qarzdt(%val,1) q
+%0ABs4 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,1,-1,2) q
+%0ABs5 s %val=$$timeext^%qarzdt(%val,2) q
+%PKBG00o s SQLCODE=$s($g(%PKBG00c):-101,1:0) q:SQLCODE'=0
+ s %PKBG00c=1 k %PKBG00m
+ s %PKBG00E=$zt,%PKBG00f=0,%PKBG00e=0,%PKBG00L=""
+ s %PKBG00d(1)=$P(stat,$C(1)),%PKBG00d(4)=$P(site,$C(1)),%PKBG00d(5)=$P(site,$C(1))
+ s:%PKBG00d(4)="" %PKBG00d(4)=$E(site,2,999)
+ q
+%0Afirst   ;  init
+ ; asl MOD# 2
+ s %PKBG00d(2)=""
+%0ABk1 s %PKBG00d(2)=$o(^BB("PK",0,"Stat",%PKBG00d(2)))
+ i %PKBG00d(2)="" g %0ABdun
+ i '((%PKBG00d(1))[(%PKBG00d(2))) g %0ABk1
+ s $P(%PKBG00d(23),$C(1))=""
+%0ABk2 s $P(%PKBG00d(23),$C(1))=$o(^BB("PK",0,"Stat",%PKBG00d(2),$P(%PKBG00d(23),$C(1))))
+ i $P(%PKBG00d(23),$C(1))="" g %0ABk1
+ i $P(%PKBG00d(23),$C(1))'=+$P(%PKBG00d(23),$C(1)) g %0ABk1
+ s %PKBG00d(7)=""
+%0ABk3 s %PKBG00d(7)=$o(^BB("PK",0,"Stat",%PKBG00d(2),$P(%PKBG00d(23),$C(1)),%PKBG00d(7)))
+ i %PKBG00d(7)="" g %0ABk2
+ i %PKBG00d(7)'=+%PKBG00d(7) g %0ABk2
+ s %val=$P(%PKBG00d(23),$C(1)) d %0ABs1:%val'="" s $P(%PKBG00d(23),$C(1),2)=%val
+ i %PKBG00d(7)'="",$d(^BB("PK",%PKBG00d(7)))
+ i '$t
+ e  i 1>%PKBG00d(7),%PKBG00d(7)=+%PKBG00d(7)
+ i  g %0ABk3
+ s %PKBG00n=$g(^BB("PK",%PKBG00d(7)))
+ s %PKBG00d(8)=$p(%PKBG00n,"^",1) s %PKBG00d(9)=$p(%PKBG00n,"^",2) s %PKBG00d(10)=$p(%PKBG00n,"^",3) s %PKBG00d(11)=$p(%PKBG00n,"^",5) s %PKBG00d(12)=$p(%PKBG00n,"^",7) s %PKBG00d(13)=$p(%PKBG00n,"^",6) s %PKBG00d(15)=$p(%PKBG00n,"^",8) s %PKBG00d(16)=$p(%PKBG00n,"^",9) s %PKBG00d(17)=$p(%PKBG00n,"^",10)
+ s %PKBG00d(18)=$p(%PKBG00n,"^",11) s %PKBG00d(19)=$p(%PKBG00n,"^",14) s %PKBG00d(20)=$p(%PKBG00n,"^",15) s %PKBG00d(21)=$p(%PKBG00n,"^",12) s %PKBG00d(22)=$p(%PKBG00n,"^",13) s %PKBG00d(24)=$p(%PKBG00n,"^",17) s %PKBG00d(25)=$p(%PKBG00n,"^",18) s %PKBG00d(26)=$p(%PKBG00n,"^",19) s %PKBG00d(27)=$p(%PKBG00n,"^",20)
+ s %PKBG00d(28)=$p(%PKBG00n,"^",21) s %PKBG00d(29)=$p(%PKBG00n,"^",22) s %PKBG00d(30)=$p(%PKBG00n,"^",23) s %PKBG00d(31)=$p(%PKBG00n,"^",24) s %PKBG00d(32)=$p(%PKBG00n,"^",25) s %PKBG00d(33)=$p(%PKBG00n,"^",26)
+ k %PKBG00d(14) s %PKBG00d(14)=$g(^BB("PK",%PKBG00d(7),"REM",0)) s:'%PKBG00d(14) %PKBG00d(14)="" f %irep=1:1:%PKBG00d(14) s %PKBG00d(14,%irep)=$g(^(%irep))
+ s %val=$P(%PKBG00d(12),$C(1)) d %0ABs2:%val'="" s $P(%PKBG00d(12),$C(1),2)=%val
+ s %val=$P(%PKBG00d(9),$C(1)) d %0ABs1:%val'="" s $P(%PKBG00d(9),$C(1),2)=%val
+ s %val=$P(%PKBG00d(21),$C(1)) d %0ABs1:%val'="" s $P(%PKBG00d(21),$C(1),2)=%val
+ s %val=$P(%PKBG00d(19),$C(1)) d %0ABs1:%val'="" s $P(%PKBG00d(19),$C(1),2)=%val
+ s %val=$P(%PKBG00d(22),$C(1)) d %0ABs3:%val'="" s $P(%PKBG00d(22),$C(1),2)=%val
+ s %val=$P(%PKBG00d(20),$C(1)) d %0ABs3:%val'="" s $P(%PKBG00d(20),$C(1),2)=%val
+ s %val=$P(%PKBG00d(26),$C(1)) d %0ABs2:%val'="" s $P(%PKBG00d(26),$C(1),2)=%val
+ s %val=$P(%PKBG00d(27),$C(1)) d %0ABs4:%val'="" s $P(%PKBG00d(27),$C(1),2)=%val
+ s %val=$P(%PKBG00d(28),$C(1)) d %0ABs3:%val'="" s $P(%PKBG00d(28),$C(1),2)=%val
+ s %val=$P(%PKBG00d(32),$C(1)) d %0ABs4:%val'="" s $P(%PKBG00d(32),$C(1),2)=%val
+ s %val=$P(%PKBG00d(33),$C(1)) d %0ABs5:%val'="" s $P(%PKBG00d(33),$C(1),2)=%val
+ s %PKBG00d(34)=$g(%PKBG00d(17))
+ i %PKBG00d(34)'="",$d(^CT("LO",%PKBG00d(34)))
+ i '$t
+ e  i 1>%PKBG00d(34),%PKBG00d(34)=+%PKBG00d(34)
+ i  s (%PKBG00d(34),%PKBG00d(3))="" g %0ABp2
+ s %PKBG00n=$g(^CT("LO",%PKBG00d(34)))
+ s %PKBG00d(3)=$p(%PKBG00n,"^",3)
+%0ABp2 
+ g:'(((%PKBG00d(3))=(%PKBG00d(4)))!(%PKBG00d(5)="")) %0ABk3
+ s SQLCODE=0 s:SQLCODE=0 %PKBG00f=%PKBG00f+1 s %PKBG00c=10 q
+%PKBG00f i '$g(%PKBG00c) s SQLCODE=-102 q
+ i %PKBG00c=100 s SQLCODE=100 q
+ s $zt="%0Aerr^"_$zn s $ze="" n %val g %0Afirst:%PKBG00c=1
+ g %0ABk3
+%0ABdun 
+%0AAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %PKBG00c=100 q
+%PKBG00c i '$g(%PKBG00c) s SQLCODE=-102 q
+ k %PKBG00c,%PKBG00d,%PKBG00e,%PKBG00E,%PKBG00f,%PKBG00l,%PKBG00L,%PKBG00n,%PKBG00r,%PKBG00R s SQLCODE=0 q
+%0Aerr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%PKBG00E),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0Go d %PKBG00f q:SQLCODE'=0
+ s PLIST(1)=%PKBG00d(7),PLIST(2)=%PKBG00d(8),PLIST(3)=%PKBG00d(9),PLIST(4)=%PKBG00d(10),PLIST(5)=%PKBG00d(2),PLIST(6)=%PKBG00d(11),PLIST(7)=%PKBG00d(12),PLIST(8)=%PKBG00d(13)
+ k PLIST(9) s PLIST(9)=%PKBG00d(14) n ir f ir=1:1:PLIST(9) s PLIST(9,ir)=%PKBG00d(14,ir)
+ s PLIST(10)=%PKBG00d(15),PLIST(11)=%PKBG00d(16),PLIST(12)=%PKBG00d(17),PLIST(13)=%PKBG00d(18),PLIST(14)=%PKBG00d(19),PLIST(15)=%PKBG00d(20),PLIST(16)=%PKBG00d(21),PLIST(17)=%PKBG00d(22),PLIST(18)=%PKBG00d(23),PLIST(19)=%PKBG00d(24),PLIST(20)=%PKBG00d(25),PLIST(21)=%PKBG00d(26),PLIST(22)=%PKBG00d(27),PLIST(23)=%PKBG00d(28),PLIST(24)=%PKBG00d(29),PLIST(25)=%PKBG00d(30),PLIST(26)=%PKBG00d(31),PLIST(27)=%PKBG00d(32)
+ s PLIST(28)=%PKBG00d(33)
+ q
+]]></Routine>
+</Export>

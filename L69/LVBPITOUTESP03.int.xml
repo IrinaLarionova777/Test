@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPITOUTESP03" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBPITOUTESP03 ; Create PIT format file - Sant Pau
+ ; ---------------------------
+ ; December 2003, by Mc_Fly
+ ; Trakhealth BCN
+ ;
+ ; supported calls:
+ ;
+ ; create^LVBPITOUTESP03
+ ; start^LVBPITOUTESP03(type)
+ ; ---------------------------
+ q
+create 
+ s type="PIT"
+ d start(type)
+ q
+ ; type : PIT
+start(type) 
+ n (type)
+ s type=$g(type)
+ l +^TMPclean k ^TMP($zn,$j)
+ l +^TEDI("OUT",type)
+ m ^TMP($zn,$j)=^TEDI("OUT",type)
+ k ^TEDI("OUT",type)
+ l -^TEDI("OUT",type)
+ s tab=46
+ s (doh,cli,doc,epi,tid,ord)=""
+ f  s doh=$o(^TMP($zn,$j,doh)) q:doh=""  d
+ . f  s cli=$o(^TMP($zn,$j,doh,cli)) q:cli=""  d
+ .. f  s doc=$o(^TMP($zn,$j,doh,cli,doc)) q:doc=""  d
+ ... f  s epi=$o(^TMP($zn,$j,doh,cli,doc,epi)) q:epi=""  d
+ .... f  s tid=$o(^TMP($zn,$j,doh,cli,doc,epi,tab,tid)) q:tid=""  d
+ ..... f  s ord=$o(^TMP($zn,$j,doh,cli,doc,epi,tab,tid,ord)) q:ord=""  d proc
+ s (cli,epi)=""
+ f  s cli=$o(^TEDI("TOSEND",cli)) q:cli=""  d
+ . i cli="FP" d puigvert
+ k ^TMP($zn,$j) l -^TMPclean
+ q
+proc 
+ n (doh,cli,doc,epi,tab,tid,ord)
+ i '$$printable^LVBCTTS($p(tid,"||",2)) q
+ s r=^TMP($zn,$j,doh,cli,doc,epi,tab,tid,ord)
+ s status=$p(r,"\",3)
+ ; Print: Send this test + all Authorized tests + previous Print tests
+ ; Auth: Send all Authorized tests + previous Print tests
+ i status["Auth" s ^TEDI("TOSEND",cli,epi)=""
+ i status="Print" s ^TEDI("TOSEND",cli,epi)="",^TEDI("PREVIEW",cli,epi,tid)=""
+ q
+puigvert 
+ ; --------------------------
+ ;  Fundació PUIGVERT Format
+ ; --------------------------
+ n (cli,type)
+ s (epi,ts,cnt)=""
+epi s epi=$o(^TEDI("TOSEND",cli,epi))
+ i epi="" q
+ k PLIST
+ i $$select^LVBEPVIS(epi,"Y") k ^TEDI("TOSEND",cli,epi) g epi
+ k EPVIS m EPVIS=PLIST           
+ s fileno=$g(^TEDI("OUT-DATA",type,cli))+1,^TEDI("OUT-DATA",type,cli)=fileno
+ k ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ s dat=$zd($h,8)_$tr($zt($p($h,",",2)),":")
+ d SET("MSH|^~\&|STPMIC||FPMIC|"_dat_"||ORU^R01|STPMIC"_dat_"|T|2.3.1")
+ s surnam1=EPVIS(3)   ; EPVIS_Surname
+ s givnam=EPVIS(4)    ; EPVIS_GivenName
+ s sex=EPVIS(5)       ; EPVIS_Species_DR
+ s dob=EPVIS(6)       ; EPVIS_DateOfBirth
+ s dob=$$horo2astm(dob_",0")
+ s date=EPVIS(10)     ; EPVIS_DateOfEntry
+ s time=EPVIS(11)     ; EPVIS_TimeOfEntry
+ s entrydate=$$horo2astm(date_","_time)
+ s doc=EPVIS(15)      ; EPVIS_DoctorCode_DR
+ s docname=""
+ i $l(doc) s r=$g(^TTAB("DR",doc)),docname=$p(r,"\",1)_" "_$p(r,"\",2)   
+ s labmrn=EPVIS(20)   ; EPVIS_DebtorNumber_DR
+ s fpmrn=EPVIS(78)    ; EPVIS_Extra5 (External reference)
+ s surnam2=EPVIS(99)  ; EPVIS_Name_1
+ s ^TMP($zn,$j,"OUT-DATA",type,cli,fileno,"EPIS",epi)=""
+ d SET("PID||"_fpmrn_"|"_labmrn_"|"_surnam1_" "_surnam2_" "_givnam_"|||"_dob_"|"_sex)    
+ d SET("PV1||||||||"_docname_"||MIC")
+ s obr=0
+ts s ts=$o(^TEPI(epi,1,ts))
+ i ts="" d end g epi
+ ; Hide MI TestSets
+ i $e(ts,1,2)="MI" g ts
+cnt s cnt=$o(^TEPI(epi,1,ts,cnt)) g:cnt="" ts
+ s tid=epi_"||"_ts_"||"_cnt
+ s status=$$status^LVBVIS1(tid)
+ i status'="A",'$d(^TEDI("PREVIEW",cli,epi,tid)) g cnt
+ s db=$$getdb(tid)
+ s spec=""
+ k DBLIST
+ i '$$select^LVBHIVAC(epi_"||"_db) m DBLIST=PLIST s spec=$p(DBLIST(3),$c(1),1)_"^"_$p(DBLIST(3),$c(1),2)
+ k EPVIST
+ s authdate=""
+ i status="A" d
+ . k ^TEDI("PREVIEW",cli,epi,tid)
+ . i '$$select^LVBVISTS(tid) m EPVIST=PLIST s authdate=$$horo2astm(EPVIST(7)_","_EPVIST(8))
+ s sect=""
+ i '$$select^LVBCTTS(ts,"Y") s sect=PLIST(62)
+ i $l(sect)=0 s sect=" "
+ s obr=obr+1
+ d SET("OBR|"_obr_"|"_epi_"||"_ts_"^"_$g(PLIST(3))_"^|"_entrydate_"||"_authdate_"|||||||"_spec_"||||||||||F")
+ i '$$SINGLE^PRTDR00(tid,"P") d adjust(.PLIST)
+ f j=1:1:PLIST d
+ . f n=1:1:6 q:$e(PLIST(j),n)'=" "  ; Cut 5 spaces maximum
+ . s line=$e(PLIST(j),n,$l(PLIST(j)))
+ . d SET("OBX||ST|^LINE RESULT||"_line_"||||||F")
+ d SET("OBX||ST|^LINE RESULT||||||||F")
+ s text="Autoritzat per: Pendent"
+ i status="A" s text="Autoritzat per "_$p(EPVIST(9),$c(1),2)_" el "_$$extdate2^SSUTIL4(EPVIST(7))_" a les "_$$exttime^SSUTIL4(EPVIST(8))
+ d SET("OBX||ST|^LINE RESULT||"_text_"||||||F")
+ i '$$select^LVBCTDS(sect,"Y") i $l($g(PLIST(7))) d
+ . s descsec=PLIST(7)
+ . f n=1:1:$l(descsec) q:$e(descsec,n)'=" "
+ . s descsec=$e(descsec,n,$l(descsec))
+ .d SET("OBX||ST|^LINE RESULT||"_descsec_"||||||F")
+ k ^TEDI("TOSEND",cli,epi)
+ g cnt
+getdb(tid) ;^THIR(346,"U032A","TEST","346||MU001||1")=
+ n (tid)
+ s (tsi,ret)="",epis=$p(tid,"||",1)
+ f  s ret=$o(^THIR(epis,ret)) q:ret=""  s tsi=$o(^THIR(epis,ret,"TEST",tsi)) q:tsi=""  q:tsi=tid
+ q ret
+end 
+ l +^TEDI("OUT-DATA",type,cli,fileno)
+ m ^TEDI("OUT-DATA",type,cli,fileno)=^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ l -^TEDI("OUT-DATA",type,cli,fileno)
+ k ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ q
+ ; compile transmission global
+SET(line) 
+ s line=$g(line)
+ s seq=$o(^TMP($zn,$j,"OUT-DATA",type,cli,fileno,"SEQ",""),-1)+1
+ s ^TMP($zn,$j,"OUT-DATA",type,cli,fileno,"SEQ",seq)=line
+ q
+ ; adjust into one line
+adjust(ARRAY) 
+ k array
+ s x2=1,x1="",tab=1
+ f  s x1=$o(ARRAY(x1)) q:x1=""  d
+ . i ARRAY(x1)=$c(13) q
+ . i ARRAY(x1)="!" s x2=x2+1,tab=1 q
+ .
+ . i $e(ARRAY(x1))="~" q
+ . 
+ . i $e(ARRAY(x1))="?" s tab=+$e(ARRAY(x1),2,4),ARRAY(x1)=$e(ARRAY(x1),5,$l(ARRAY(x1)))
+ .
+ . i ARRAY(x1)="" q
+ . s $e(array(x2),tab,tab+$l(ARRAY(x1))-1)=ARRAY(x1)
+ . s tab=tab+$l(ARRAY(x1))
+ k ARRAY m ARRAY=array s ARRAY=$o(ARRAY(""),-1)
+ f j=1:1:ARRAY i '$d(ARRAY(j)) s ARRAY(j)=""
+ q
+horo2astm(horo) 
+ q $zd($p(horo,",",1),8)_$tr($zt($p(horo,",",2)),":")    
+]]></Routine>
+</Export>

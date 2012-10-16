@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTMCHIR01S" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTMCHIR01S ; IG 07/10/98 ; MEDICARE HIC - Rejections
+ Q
+ ; Parameters :  1.File name
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+ K xHEADER D INIT
+ s line=1,xHEADER(line)="HIC Rejections"
+ s line=2,xHEADER(line)=""
+ D HEADER^PRTREP00(.xHEADER),BODY,PRINT,EPVIS
+CREND I '$$select^LVBPRPR(REPID) s PLIST(12)=PAR1 I $$update^LVBPRPR(REPID)
+ K ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$zn)
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+ Q
+ ; create temporary printing file
+BODY s ClaimID="" f  s ClaimID=$O(^TMP("EDI",$j,"REPORT-S",PAR1,ClaimID)) q:ClaimID=""  d
+ .k ^TMCBi(2,ClaimID)
+ . ; Search for batch
+ .i '$d(^TMCBi(1,ClaimID)) d
+ ..s (stop,x1)="" f  s x1=$o(^TMCB(x1)) q:x1=""  d  i stop q
+ ...s x2="" f  s x2=$o(^TMCB(x1,x2)) q:x2=""  d  i stop q
+ ....i $p(^(x2),"\",2)=ClaimID s stop=1 i $$claim^LVBAT2HIC(x1,x2)
+ ..f j="HIC-M","HIC-VA" k ^TMP("LVBAT2HIC",$j,j,ClaimID)
+ . ; Batch has not been processed yet
+ .i '$d(^TMCBi(1,ClaimID)) s Error=4 d Log^LVBAT201("HIC",Error)
+ .s ^TMCBi(2,ClaimID)=$p($g(^TMCBi(1,ClaimID)),"\",1,2)
+ .s $p(^TMCBi(2,ClaimID),"\",3)=$e(^TMP("EDI",$j,"REPORT-S",PAR1,ClaimID),35,42)/100
+ .s $p(^TMCBi(2,ClaimID),"\",4)=$e(^TMP("EDI",$j,"REPORT-S",PAR1,ClaimID),43,50)/100
+ .s xL1="" f  s xL1=$o(^TMCBi(1,ClaimID,xL1)) q:xL1=""  s epis=^(xL1) d
+ ..s xL2="" f  s xL2=$o(^TMCBi(1,ClaimID,xL1,xL2)) q:xL2=""  d
+ ...s ^TMCBi(2,ClaimID,epis,xL1_" "_xL2)=$p(^(xL2),"\",1,2)
+ ...s ^TMCBi(2,ClaimID,epis)="NT"
+ .s x1="" f  s x1=$o(^TMP("EDI",$j,"REPORT-S",PAR1,ClaimID,x1)) q:x1=""  s xx=^(x1) d
+ ..s xL1=+$e(xx,3,4),xL2=+$e(xx,5,6),VISIT(3)=$$ALPHAUP^SSUTIL4($e(xx,60,77)),VISIT(4)=$$ALPHAUP^SSUTIL4($e(xx,18,29)),VISIT(8)=$tr($e(xx,7,16)," ")
+ ..s epis=$g(^TMCBi(1,ClaimID,xL1))
+ ..i $l(epis) d
+ ...s xx1=$$ALPHAUP^SSUTIL4($p($g(^TEPI(epis)),"\",1))
+ ...s xx2=$$ALPHAUP^SSUTIL4($p($g(^TEPI(epis)),"\",2))
+ ...i VISIT(3)=xx1,VISIT(4)=xx2,$e(VISIT(8),1,9)=$e($p($g(^TEPI(epis)),"\",6),1,9) d  q
+ ....s ^TMCBi(2,ClaimID,epis)=3
+ ...i ((VISIT(3)=xx1)&(VISIT(4)=xx2))!((VISIT(3)=xx2)&(VISIT(4)=xx1)) d  q
+ ....s ^TMCBi(2,ClaimID,epis)=2
+ ...i ((VISIT(3)_VISIT(4))=(xx1_xx2))!((VISIT(3)_VISIT(4))=(xx2_xx1)) d  q
+ ....s ^TMCBi(2,ClaimID,epis)=2
+ ...i ((VISIT(4)_VISIT(3))=(xx1_xx2))!((VISIT(4)_VISIT(3))=(xx2_xx1)) d  q
+ ....s ^TMCBi(2,ClaimID,epis)=2
+ ...i $e(VISIT(8),1,9)=$e($p($g(^TEPI(epis)),"\",6),1,9) d  q
+ ....s ^TMCBi(2,ClaimID,epis)="1M"
+ ...i (VISIT(3)=xx1)!(VISIT(4)=xx2)!(VISIT(3)=xx2)!(VISIT(4)=xx1) d  q
+ ....s ^TMCBi(2,ClaimID,epis)=1
+ ...s xS1=$$valid^LVBCOM07($p($g(^TEPI(epis)),"\",1))
+ ...s xS2=$$valid^LVBCOM07($p($g(^TEPI(epis)),"\",2))
+ ...s xV1=$$valid^LVBCOM07(VISIT(3))
+ ...s xV2=$$valid^LVBCOM07(VISIT(4))
+ ...i ((xV1=xS1)&(xV2=xS2))!((xV1=xS2)&(xV2=xS1)) d  q
+ ....s ^TMCBi(2,ClaimID,epis)="2S"
+ ...s epis=""
+ ..i '$l(epis) d
+ ...s xL1=+$e(xx,3,4),xL2=+$e(xx,5,6),epis="xx_"_VISIT(4)_" "_VISIT(3)
+ ...s ^TMCBi(2,ClaimID,epis)=0
+ ..s $p(^TMCBi(2,ClaimID,epis,xL1_" "_xL2),"\",3)=$e(xx,30,34)
+ ..s $p(^TMCBi(2,ClaimID,epis,xL1_" "_xL2),"\",4)=$e(xx,41,47)/100
+ ..s $p(^TMCBi(2,ClaimID,epis,xL1_" "_xL2),"\",5)=$e(xx,48,54)/100
+ ..s $p(^TMCBi(2,ClaimID,epis,xL1_" "_xL2),"\",6)=$tr($e(xx,55,57)," ")
+ ..s $p(^TMCBi(2,ClaimID,epis,xL1_" "_xL2),"\",7)=$tr($e(xx,17)," ")
+ ..s $p(^TMCBi(2,ClaimID,epis,xL1_" "_xL2),"\",8)=$tr($e(xx,7,16)," ")
+ ..s $p(^TMCBi(2,ClaimID,epis,xL1_" "_xL2),"\",9)=$tr($e(xx,18,29)," ")_" "_$tr($e(xx,60,77)," ")
+ .m ^TMP($zn,$j,"REPORT",ClaimID)=^TMCBi(2,ClaimID)
+ q
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s ClaimID="" f  s ClaimID=$o(^TMP($zn,$j,"REPORT",ClaimID)) q:ClaimID=""  d
+ ..s Message=^(ClaimID),Total=""
+ ..i '$p(Message,"\",3) d
+ ...s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",ClaimID,epis)) q:epis=""  s xx=^(epis) d
+ ....s x1="" f  s x1=$o(^TMP($zn,$j,"REPORT",ClaimID,epis,x1)) q:x1=""  d
+ .....s $p(Message,"\",3)=$p(Message,"\",3)+$p(^(x1),"\",$s($l($p(^(x1),"\",4)):4,1:2))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","Batch ID         : "_$tr($p(Message,"\",1,2),"\"))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","Claim Number     : "_ClaimID)
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","Benefit Assigned : "_$j($p(Message,"\",3),0,2))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","Benefit Paid     : "_$j($p(Message,"\",4),0,2))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",ClaimID,epis)) q:epis=""  s xx=^(epis) d
+ ...k VISIT d
+ ....i $e(epis,1,2)="xx" s VISIT(2)="New record",VISIT(3)=$e(epis,3,99)
+ ....i '$$select^LVBEPVIS(epis) m VISIT=PLIST s VISIT(2)=$s(xx=3:"",1:"["_xx_"] ")_VISIT(2)
+ ...s (x1,EpisodeTotal(2),EpisodeTotal(3))="" f  s x1=$o(^TMP($zn,$j,"REPORT",ClaimID,epis,x1)) q:x1=""  d
+ ....i $e(epis,1,2)="xx" s VISIT(3)=$p(^(x1),"\",9)
+ ....s xxx(1)=$p(^(x1),"\",$s($l($p(^(x1),"\",3)):3,1:1))
+ ....s xxx(2)=$p(^(x1),"\",$s($l($p(^(x1),"\",4)):4,1:2))
+ ....s xxx(3)=$p(^(x1),"\",5) i xxx(3)="" s xxx(3)=xxx(2)
+ ....s xxx(4)=$p(^(x1),"\",6),xxx(5)=$p(^(x1),"\",7),xxx(6)=$p(^(x1),"\",8)
+ ....s Total=Total+xxx(3) f j=2,3 s EpisodeTotal(j)=EpisodeTotal(j)+xxx(j)
+ ....d PRINT^PRTREP00(.VISIT,.N) k VISIT,xxx
+ ...s xxx(1)="Total" f j=2,3 s xxx(j)=EpisodeTotal(j)
+ ...d PRINT^PRTREP00(.VISIT,.N) k VISIT,xxx
+ ..D ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..D ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..k VISIT s VISIT(3)="Total benefit paid",xxx(5)=Total d PRINT^PRTREP00(.VISIT,.N) k VISIT,xxx
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="MCHIR"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+EPVIS i $d(^TMP($zn,$j,"REPORT")) d
+ .s ClaimID="" f  s ClaimID=$o(^TMP($zn,$j,"REPORT",ClaimID)) q:ClaimID=""  d
+ ..s pc=$p(^(ClaimID),"\")
+ ..k CTPC i '$$select^LVBCTPC(pc,"Y") m CTPC=PLIST
+ ..i $g(CTPC(47))="Y" s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",ClaimID,epis)) q:epis=""  d
+ ...i $e(epis,1,2)="xx" q
+ ...k VISIT i '$$select^LVBEPVIS(epis,"Y") m VISIT=PLIST
+ ...f j=1:1:VISIT s VISIT(j)=$p(VISIT(j),$c(1))
+ ...s (change,rebill,x1)="" f  s x1=$o(^TMP($zn,$j,"REPORT",ClaimID,epis,x1)) q:x1=""  d
+ ....i $p(^(x1),"\",6)=374 s rebill="Y"
+ ....i $l($p(^(x1),"\",8)),VISIT(8)'=$p(^(x1),"\",8) s VISIT(8)=$p(^(x1),"\",8),change="Y"
+ ...i change="Y" d
+ ....k PLIST m PLIST=VISIT i $$update^LVBEPVIS(epis)
+ ....i rebill="Y",$$RebillEpisode^LVBCOM02(epis)
+ q
+]]></Routine>
+</Export>

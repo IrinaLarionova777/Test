@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="CLNBQBUILD02" type="INT" languagemode="0"><![CDATA[
+CLNBQBUILD02(swfull)
+	; +-------------------------+
+	; | Binary Queries          |
+	; | Rebuild Blood Bank cube |
+	; +-------------------------+
+	;  Feb 07, 2005 by Mc_Fly
+	;  TrakHealth BCN
+	;  
+	; swfull=2 k ^BQD(cube) + swfull=1
+	; swfull=1, scan ^TBBP
+	; swfull=0, scan only ^TMPBQ(cube,packid,second)
+	; 
+	; Tables/globals affected:
+	; BBP_PackDetails          ^TBBP(packid,second)
+	; BBP_PackTransactions     ^TBBP(packid,second,"TRAN",sequence)
+	; EP_VisitNumber           ^TEPI(epis)
+	; 
+	; Code Tables:
+	; 
+	s $zt="err^CLNBQAUX"
+	n (swfull)
+	s isajob=$zjob\2#2
+	s swfull=+$g(swfull)
+	s cube=2
+	l +^BQD(cube,$s(swfull>0:"full",1:"partial")):5 e  q
+	d setmess^CLNBQAUX("*** Starting swfull="_swfull_" ***")
+	d DISABLE^%NOJRN
+	i $zu(68,25,1) ; Batch status
+ 
+	i swfull=2 k ^BQD(cube) s swfull=1
+	
+	d setmess^CLNBQAUX("Rebuilding... Done=0/0")
+	s zhini=$zh,zhnow=zhini
+	s (packid,second)="",(cur,changed)=0
+	i swfull f  s packid=$o(^TBBP(packid)) q:packid=""  d
+	. f  s second=$o(^TBBP(packid,second)) q:second=""  d doit
+	i 'swfull f  s packid=$o(^TMPBQ(cube,packid)) q:packid=""  d
+	. f  s secong=$o(^TBBP(packid,second)) q:second=""  d
+	. l +^TMPBQ(cube,packid,second) k ^TMPBQ(cube,packid,second) l -^TMPBQ(cube,packid,second) d doit
+	d end^CLNBQAUX
+	q
+doit
+	i $zh-zhnow>60 s zhnow=$zh d setmess^CLNBQAUX("Rebuilding... Done="_changed_"/"_cur)
+	k make
+	s cur=cur+1
+	s r=$g(^TBBP(packid,second))
+	; ***** Level 2 *****
+	s rowid=packid_"||"_second
+	d make(rowid,1,,packid) ; PackId
+	d make(rowid,2,,second) ; Second
+	d make(rowid,3,,$p(r,"\",4)) ; Product Code
+	d make(rowid,4,,$p(r,"\",5)) ; Blood group
+	d make(rowid,5,,$p(r,"\",7)) ; Expiry Date
+	d make(rowid,6,,$p(r,"\",6)) ; Collection Date
+	d make(rowid,7,,$p(r,"\",8)) ; Location
+	s sequence=""
+	f  s sequence=$o(^TBBP(packid,second,"TRAN",sequence)) q:sequence=""  d
+	. s r=$g(^(sequence))
+	. ; *** Level 3 ***
+	. n rowid
+	. s rowid=packid_"||"_second_"||"_sequence
+	. d make(rowid,9,,$p(r,"\",2)) ; Date
+	. d make(rowid,10,,$p(r,"\",3)) ; Time
+	. d make(rowid,11,,$p(r,"\",4)) ; User
+	. d make(rowid,8,,$p(r,"\",8)) ; Status
+	. s epis=$p($p(r,"\",7),"||",1)
+	. d make(rowid,12,,epis) ; Episode
+	. s (re,re0)=""
+	. i $l(epis) s re=$g(^TEPI(epis)),re0=$g(^TEPI(epis,0))
+	. d make(rowid,13,,$p(re,"\",1)) ; Patient Surname
+	. d make(rowid,14,,$p(re,"\",2)) ; Patient Given Name
+	. d make(rowid,15,,$p(re,"\",3)) ; Sex
+	. d make(rowid,16,,$p(re,"\",4)) ; Date of Birth
+	. s mrn=$p(re,"\",18)
+	. d make(rowid,17,,$p(re,"\",25)) ; Patient age
+	. d make(rowid,18,,mrn) ; MRN
+	. d make(rowid,19,,$$NameFormat^LVBCOM03("PT",,$p(re,"\",2),$p(re,"\",1),$p(re0,"\",23),$p(re0,"\",24),$p(re0,"\",25)))
+	d save^CLNBQAUX
+	q
+make(rowid,field,val1,val2)
+	n o,double,v,rf
+	i '$$enabled(field) q
+	s rf=^BQC(cube,2,field)
+	s type=$p(rf,"\",3),double=$p(rf,"\",5)
+	i type="ALF"!(type="FAL") s val2=$$UPPER^SSUTIL4(val2)
+	i $$isanum^CLNBQAUX(val2) s val2=+val2 ; Because there are results nn.0
+	i '$l(val2) q
+	i type="FAL" s val2=" "_val2 ; Force Alpha, not tested
+	s v=$e(val2,1,200) ; For avoid <subscript> errors
+	i double d  i '$l(val1) q
+	. i $$isanum^CLNBQAUX(val1) s val1=+val1 q
+	. s val1=$e($$UPPER^SSUTIL4(val1),1,200)
+	i double s v=v_"\"_val1
+	s o=$o(make(" "_rowid,field,""),-1)+1
+	s make(" "_rowid,field,o)=v
+	q
+enabled(field)
+	q +$p($g(^BQZ(cube,2,field)),"\",2)
+ 
+]]></Routine>
+</Export>

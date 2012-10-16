@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBDEB1" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBDEB1 ; IG 04/08/98 ; LVB Control data access for DEB_Debtor
+ ;
+ ; supported calls:
+ ;
+ ; $$open^LVBDEB1(RowID,Invoice,Master,EPIS,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBDEB1(RowID,Invoice,Master,EPIS,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBDEB1(RowID,Invoice,Master,EPIS,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBDEB1(RowID,Invoice,Master,EPIS,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBDEB1()
+ ;
+open(RowID,Invoice,Master,EPIS,p4,p5,p6,p7,p8,p9) s RowID=$g(RowID),Invoice=$g(Invoice),Master=$g(Master),EPIS=$g(EPIS)
+ k ^TMP($zn,$j)
+ ; get data from Debtor Visit
+ i $$open^LVBDEBVI(RowID)
+ f  q:$$fetch^LVBDEBVI(RowID)  d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .s date=PLIST(2),epis=PLIST(3)
+ .i $l(EPIS),(","_EPIS_",")'[(","_epis_",") q
+ . ; check invoice
+ .i $l(Invoice),$p(Invoice,"-",1,2)'=($p(PLIST(9),"||",1)_"-"_$p(PLIST(9),"||",2)) q
+ . ; check Master only
+ .i Master="Y" s xx="" d  i $l($p(xx,$c(1))) q
+ ..  ;---&sql(SELECT EPVIS_PricingEpisodeMaster INTO :xx FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  ..  ;--- ** SQL PUBLIC Variables: SQLCODE, epis, xx
+ .. Do %0Ao
+ .i $l(date),$l(epis) d
+ ..s cnt=$o(^TMP($zn,$j,0,date,""),-1)+1
+ ..m ^TMP($zn,$j,0,date,cnt)=PLIST s ^TMP($zn,$j,0,date,cnt,20)="I"
+ ..s ^TMP($zn,$j,5,epis)=""
+ .. ; set Slaves for Master
+ ..i Master="Y" d
+ ... ;---s list="" &sql(SELECT EPVIS_PricingEpisodes INTO :list FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  ... ;--- ** SQL PUBLIC Variables: SQLCODE, epis, list
+ ...s list="" Do %0Co
+ ...s list=$p(list,$c(1)) f j=1:1:$l(list,",") s epis=$p(list,",",j) i $l(epis) s ^TMP($zn,$j,5,epis)=""
+ i $$close^LVBDEBVI()
+ ; get data from Debtor Transaction
+ i $$open^LVBDEBTR(RowID)
+ f  q:$$fetch^LVBDEBTR(RowID)  d
+ .f j=1:1:PLIST s PLIST(j)=$g(PLIST(j),$c(1))
+ .s date=PLIST(2) i $l(date) d
+ ..k DEBTR m DEBTR=PLIST
+ ..i " JOURNAL "[(" "_DEBTR(6)_" ") s epis=$p(DEBTR(3),"||",3) d
+ ...i $l(epis),$d(^TMP($zn,$j,5,epis)) d
+ ....s cnt=$o(^TMP($zn,$j,0,date,""),-1)+1
+ ....m ^TMP($zn,$j,0,date,cnt)=DEBTR s ^TMP($zn,$j,0,date,cnt,20)="P"
+ ....i '$$select^LVBJOU(DEBTR(3)) d
+ .....s ^TMP($zn,$j,0,date,cnt,3)=PLIST(6),^TMP($zn,$j,0,date,cnt,5)=PLIST(14)
+ ..i " CREDIT "[(" "_DEBTR(6)_" ") s epis=$p(DEBTR(3),"||",3) d
+ ...i $l(epis),$d(^TMP($zn,$j,5,epis)) d
+ ....s bl=$p(DEBTR(3),"||",1,2)
+ ....i $d(^TMP($zn,$j,8,bl)) s cnt=^(bl)
+ ....e  s cnt=$o(^TMP($zn,$j,0,date,""),-1)+1,^TMP($zn,$j,8,bl)=cnt
+ ....f j=1:1:4,6:1:DEBTR s ^TMP($zn,$j,0,date,cnt,j)=DEBTR(j)
+ ....s ^TMP($zn,$j,0,date,cnt,20)="P"
+ ....i '$$select^LVBCRBLB(DEBTR(3)) d
+ .....s ^TMP($zn,$j,0,date,cnt,3)=$p(PLIST(1),"||",1)_"-"_$p(PLIST(1),"||",2)
+ .....s ^TMP($zn,$j,0,date,cnt,5)=$g(^TMP($zn,$j,0,date,cnt,5))+PLIST(9)
+ ...i '$l(epis) d
+ ....s bl=DEBTR(3)
+ ....i '$$select^LVBCRBL(DEBTR(3)) d
+ .....f j=1:1:PLIST s PLIST(j)=$g(PLIST(j),$c(1))
+ .....s epis=PLIST(3) i $l(epis),$d(^TMP($zn,$j,5,epis)) d
+ ......i $d(^TMP($zn,$j,8,bl)) s cnt=^(bl)
+ ......e  s cnt=$o(^TMP($zn,$j,0,date,""),-1)+1,^TMP($zn,$j,8,bl)=cnt
+ ......f j=1:1:4,6:1:DEBTR s ^TMP($zn,$j,0,date,cnt,j)=DEBTR(j)
+ ......s ^TMP($zn,$j,0,date,cnt,20)="P"
+ ......s ^TMP($zn,$j,0,date,cnt,3)=$p(PLIST(1),"||",1)_"-"_$p(PLIST(1),"||",2)
+ ......s ^TMP($zn,$j,0,date,cnt,5)=$g(^TMP($zn,$j,0,date,cnt,5))+PLIST(16)
+ ..i " REBILL "[(" "_DEBTR(6)_" ") s epis=$p(DEBTR(3),"||",2) d
+ ...i $l(epis),$d(^TMP($zn,$j,5,epis)) s ^TMP($zn,$j,10,epis)=DEBTR(3)
+ i $$close^LVBDEBTR()
+ s ^TMP($zn,$j,0)=""
+ q 0
+ ; PLIST :  1.RowID
+ ;
+ ;            Visist/Invoice     ---     Payments
+ ;
+ ;          2.Date of Collection ---     Date of Transaction
+ ;          3.Visit              ---     Transaction Code
+ ;          4.Amount Remaining   ---
+ ;          5.Amount Invoiced    ---     Amount Credited
+ ;          6.                   ---     Payments type : JOURNAL/CREDIT
+ ;          7.Date of Invoice    ---
+ ;          8.Rebill Flag        ---
+ ;          9.Payment Code       ---
+ ;         10.                   ---     Payments RID
+ ;         11.Invoice            ---
+ ;         12.Prompt billing     ---
+ ;         13.Unique Number      ---
+ ;         20.Type               ---     Type
+fetch(RowID,Invoice,Master,EPIS,p4,p5,p6,p7,p8,p9) s RowID=$g(RowID),Invoice=$g(Invoice),Master=$g(Master),EPIS=$g(EPIS)
+ s date=$p(^TMP($zn,$j,0),"||",1),cnt=$p(^TMP($zn,$j,0),"||",2)
+ k ^TMP($zn,$j,1) s SQLCODE=100
+ f  d:$l(date)  q:'SQLCODE  s date=$o(^TMP($zn,$j,0,date),-1)  q:date=""
+ .f  s cnt=$o(^TMP($zn,$j,0,date,cnt))  q:cnt=""  d  q
+ ..s SQLCODE=0
+ ..i ^TMP($zn,$j,0,date,cnt,20)="P" d
+ ...f j=1:1:20 s ^TMP($zn,$j,1,j)=$g(^TMP($zn,$j,0,date,cnt,j))
+ ...s ^TMP($zn,$j,1,10)=^TMP($zn,$j,0,date,cnt,3)
+ ..i ^TMP($zn,$j,0,date,cnt,20)="I" d
+ ...f j=1:1:5,20 s ^TMP($zn,$j,1,j)=^TMP($zn,$j,0,date,cnt,j)
+ ...s epis=^TMP($zn,$j,0,date,cnt,3) i $l(epis),'$$select^LVBEPVIS(epis) d
+ ....f j=1:1:8,10:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k VISIT m VISIT=PLIST
+ .... ; check if patient had been rebilled
+ ....s rebill="" i $d(^TMP($zn,$j,10,epis)) s rebill="Y"
+ ....s ^TMP($zn,$j,1,7)=VISIT(56),^TMP($zn,$j,1,8)=rebill,^TMP($zn,$j,1,9)=VISIT(9),^TMP($zn,$j,1,12)=VISIT(50)
+ ....s (^TMP($zn,$j,1,11),^TMP($zn,$j,1,13))=""
+ ....i $l(VISIT(57)),'$$select^LVBINVBP(VISIT(57)_"||"_epis) d
+ .....s ^TMP($zn,$j,1,11)=$p(PLIST(0),"||",1)_"-"_$p(PLIST(0),"||",2)_"-"_PLIST(4)
+ .....s ^TMP($zn,$j,1,13)=PLIST(13)
+ ....i $l(VISIT(55)) s ^TMP($zn,$j,1,3)=^TMP($zn,$j,1,3)_" incl "_VISIT(55)
+ ....e  i $l(VISIT(87)) s ^TMP($zn,$j,1,3)=^TMP($zn,$j,1,3)_" on "_VISIT(87)
+ ...i $l($g(^TMP($zn,$j,0,date,cnt,8))) s ^TMP($zn,$j,1,13)=^TMP($zn,$j,1,13)_" ["_^TMP($zn,$j,0,date,cnt,8)_"]"
+ k PLIST m PLIST=^TMP($zn,$j,1)
+ s PLIST=$o(PLIST(""),-1) i 'SQLCODE s ^TMP($zn,$j,0)=date_"||"_cnt
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(RowID,Invoice,Master,EPIS,p4,p5,p6,p7,p8,p9) s RowID=$g(RowID),Invoice=$g(Invoice),Master=$g(Master),EPIS=$g(EPIS)
+ k ^TMP($zn,$j,2)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(RowID,Invoice,Master,EPIS) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,2,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,2,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j,2) k ^TMP($zn,$j,2)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(RowID,Invoice,Master,EPIS,p4,p5,p6,p7,p8,p9) N (RowID,Invoice,Master,EPIS,PLIST)
+ s RowID=$g(RowID),Invoice=$g(Invoice),Master=$g(Master),EPIS=$g(EPIS) K ^TMP($zn,$j,2)
+ i $$open(RowID,Invoice,Master,EPIS)
+ f cnt=1:1 Q:$$fetch(RowID,Invoice,Master,EPIS)  s ^TMP($zn,$j,2,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,2,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j,2)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j,2)
+ q 0
+close() k ^TMP($zn,$j)
+ q 0
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3),7))
+ s xx=$p(%mmmsqld(10),"\",7)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3),7))
+ s xx=$p(%mmmsqld(13),"\",7)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0CBdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3),7))
+ s list=$p(%mmmsqld(10),"\",2)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0CCdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3),7))
+ s list=$p(%mmmsqld(13),"\",2)
+%0CBuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+]]></Routine>
+</Export>

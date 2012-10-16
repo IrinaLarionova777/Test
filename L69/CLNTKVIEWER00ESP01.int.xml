@@ -1,0 +1,1020 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="CLNTKVIEWER00ESP01" type="INT" languagemode="0"><![CDATA[
+CLNTKVIEWER00ESP01
+ ; ------------------------------------
+ ;  La Paz Hospital Viewer Version 2.0
+ ;  April 21, 2004
+ ;  Mc_Fly, TrakHealthCare BCN
+ ; ------------------------------------
+ ; Security = Patient Location , Department
+ s $zt="err"
+ k (%KEY,%CGIEVAR,%ZCS)
+ s stime=$zh
+ ; Constantes ---------------------------
+ s crlf=$c(13,10)
+ s debug=0
+ s pagetimeout=600 ; Tiempo de caducidad de la página
+ s runtimeout=30 ; Tiempo máximo permitido para hacer una búsqueda
+ ; -------------------------------------
+ i $d(%KEY("Session")) d session q
+ i $g(%KEY("Page"))="Login" d login q
+ d default
+ q
+default
+ ; Default login page
+ s help="Please enter your username and password and press Enter"
+ k session,page,pag
+ d head("Welcome","Login",help)
+ w "   <table border=0 cellpadding=0 cellspacing=0 style=""border-collapse: collapse"" bordercolor=""#111111"" width=""100%"">",crlf
+ w "    <tr><td width=""5%""></td><td width=""90%"" colspan=3>"
+ w "    <tr><td colspan=5>&nbsp;</td></tr>",crlf
+ w "    <tr>",crlf
+ w "     <td width=""5%""></td>",crlf
+ w "     <td width=""39%"" align=""right"">User</td>",crlf
+ w "     <td width=""1%"">&nbsp;</td>",crlf
+ w "     <td width=""50%""><input type=""text"" name=""Username"" size=""20""></td>",crlf
+ w "     <td width=""5%""></td>",crlf
+ w "    </tr>",crlf      
+ w "    <tr>",crlf
+ w "     <td width=""5%""></td>",crlf
+ w "     <td width=""39%"" align=""right"">Password</td>",crlf
+ w "     <td width=""1%"">&nbsp;</td>",crlf
+ w "     <td width=""50%""><input type=""password"" name=""Password"" size=""20""></td>",crlf
+ w "     <td width=""5%""></td>",crlf
+ w "    </tr>",crlf      
+ w "   </table>",crlf
+ w "   <p align=""center""><input type=""submit"" value=""Login"" name=""B1""></p>",crlf
+ d foot
+ q
+login
+ s user=$g(%KEY("Username"))
+ s pass=$g(%KEY("Password"))
+ s openwin="ERROR=Access Denied"
+ i $l(user)=0 d default q
+ i $l(user)=0 d default q
+ i '$d(^SSU("SSUSR",1,user)) d default q
+ s r=$g(^SSU("SSUSR",1,user))
+ i $p(r,"^",7)="N" d default q
+ s epass=$$ENCR^SSUTIL2(pass)
+ i epass'=$p(r,"^",3) d default q
+ k openwin
+ s group=$p(r,"^",4)
+ s session=$$newsession()
+ s ^TMPtkviewer(session,"username")=user
+ d formmain
+ q
+session
+ s session=$g(%KEY("Session"))
+ i $l(session)=0 d sessione(0) q
+ i '$d(^TMPtkviewer(session)) d sessione(1) q
+ s h=$p(^TMPtkviewer(session),"\",1)
+ i $$diff(h,$h)>pagetimeout d sessione(2) q
+ i $g(^TMPtkviewer(session,"HTTP_USER_AGENT"))'=$g(%CGIEVAR("HTTP_USER_AGENT")) d sessione(3) q
+ i $g(^TMPtkviewer(session,"REMOTE_ADDR"))'=$g(%CGIEVAR("REMOTE_ADDR")) d sessione(4) q
+ s page=$g(%KEY("Page"))
+ i $l(page)=0 d sessione(5) q
+ s ^TMPtkviewer(session)=$h
+ s user=^TMPtkviewer(session,"username")
+ i page="formSearchMRN" d formsearchmrn q
+ i page="formMRNList" d formmrnlist q
+ i page="formShowMRN" d formshowmrn q
+ i page="formShowEpis" d formshowepis^CLNTKVIEWER01ESP01 q
+ i page="formSelDR" d formseldr q
+ i page="formSelRH" d formselrh q
+ d message("Code "_page_" Unknown")
+ q
+sessione(err)
+ n r,h,link
+ s err=$g(err)
+ i $l(session) d
+ . s h=$g(^TMPtkviewer(session))
+ . k ^TMPtkviewer(session)
+ . i $l(h) k ^TMPtkviewer(1,$p(h,",",1),$p(h,",",2),session)
+ d message("Error "_err_" when trying to login. Please try again")
+ q
+formmrnlist
+ s pag=%KEY("Pag")
+ s i=""
+ f  s i=$o(^TMPtkviewer(session,"Pag",pag,i)) q:i=""  d
+ . s r=^TMPtkviewer(session,"Pag",pag,i)
+ . s sel=$p(r,"\",1),epis=$p(r,"\",4)
+ . i '$l(epis) q
+ . i $d(%KEY("Check"_epis)),sel=0 s $p(^TMPtkviewer(session,"Pag",pag,i),"\",1)=1,^TMPtkviewer(session,"Sel",epis)=""
+ . i '$d(%KEY("Check"_epis)),sel=1 s $p(^TMPtkviewer(session,"Pag",pag,i),"\",1)=0 k ^TMPtkviewer(session,"Sel",epis)
+ 
+ i $d(%KEY("MRNListPgDn")) d loadcriteria(pag+1) q
+ i $d(%KEY("MRNListPgUp")) d loadcriteria(pag-1) q
+ i $d(%KEY("SelThisPage")) d loadcriteria(pag,1) q
+ i $d(%KEY("UnSelThisPage")) d loadcriteria(pag,-1) q
+ i $d(%KEY("PrintSel")) d printsel,loadcriteria(pag) q
+ i $d(%KEY("MRNListNewSearch")) d formmain q
+ i $d(%KEY("MRNListShowMRN")) k ^TMPtkviewer(session,"COL") d formshowmrn q
+ i $d(%KEY("MRNListShowReq")) d showreq,loadcriteria(pag) q
+ d message("Unknown code in MRN list")
+ q
+showreq
+ k ^TMPtkviewer(session,"ToView")
+ s openwin="mgwms32.dll?App=TKVIEWER&Session="_session_"&Page=formShowEpis"
+ i $d(%KEY("MRNListShowReq")) d printreq(%KEY("MRNListShowReq"))
+ i $d(%KEY("ShowMRNShowReq")) d printts
+ i $d(^TMPtkviewer(session,"ToView")) q
+ i '$d(^TMPtkviewer(session,"SELREQ")) s openwin="ERROR=No episode selected" q
+ i '$d(^TMPtkviewer(session,"SELTS")) s openwin="ERROR=No test selected" q
+ s openwin="ERROR=Your selection does not have results"
+ q       
+printreq(epis)
+ s (ts,cnt)=""
+ f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . i $d(^TTAB("UA",user,4)),'$d(^TTAB("UA",user,4,$e(ts))) s ts=$e(ts)_"zzzzz" q
+ . f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ .. s tid=epis_"||"_ts_"||"_cnt
+ .. i '$$isvisible(tid) q
+ .. s ^TMPtkviewer(session,"ToView",epis,ts,cnt)=""
+ q   
+printts
+ n dep,ts,cnt,col,epis
+ s (dep,ts,cnt,col)=""
+ f  s dep=$o(^TMPtkviewer(session,"DEP",dep)) q:dep=""  d
+ . f  s ts=$o(^TMPtkviewer(session,"DEP",dep,ts)) q:ts=""  d
+ .. i '$d(^TMPtkviewer(session,"SELTS",ts)) q
+ .. f  s cnt=$o(^TMPtkviewer(session,"DEP",dep,ts,cnt)) q:cnt=""  d
+ ... f  s col=$o(^TMPtkviewer(session,"DEP",dep,ts,cnt,col)) q:col=""  d
+ .... s epis=$p(^TMPtkviewer(session,"COL",col),"\",1)
+ .... i '$d(^TMPtkviewer(session,"SELREQ",epis)) q
+ .... s ^TMPtkviewer(session,"ToView",epis,ts,cnt)=""
+ q
+isvisible(tid) n (tid)
+ s epi=$p(tid,"||",1)
+ s ts=$p(tid,"||",2)
+ i '$$printable(ts) q 0
+ s cnt=$p(tid,"||",3)
+ s status=$$status^LVBVIS1(tid)
+ ;i status="A" q 1
+ ;q $$inaqueue(epi,ts,cnt)
+ q 1
+    
+message(message)
+ k session,page,pag
+ d head("Error")
+ w "  <blockquote><p align=""center""><font color=""#FF0000"">"
+ w message
+ w "   <br><br>",crlf
+ w "   <input type=""submit"" name=""B1"" value=""Begin session"">",crlf
+ w "  </font></p></blockquote>",crlf
+ d foot
+ q
+formmain
+ ;s help="Introduzca los valores en los campos a buscar y pulse Selecionar."
+ s help="Enter search criteria and click on Selection button."
+ ;s help=help_" Como mínimo se tiene que informar algún campo de los marcados en negrita."
+ s help=help_" Fields in black, bold text are mandatory fields."
+ ;d head("Peticiones a buscar","formSearchMRN",help)
+ d head("Find requests","formSearchMRN",help)
+ d loadsearch("external")
+ ; Default values
+ i '$l($g(search("MAXREC"))) s search("MAXREC")=23
+ w "   <hr>",crlf
+ w "   <table border=0 cellpadding=0 cellspacing=0 style=""border-collapse: collapse"" bordercolor=""#111111"" width=""100%"">",crlf
+ ; -----------------------------------------------------------------------------------------
+ ;d field("Patient Location","RH","COMBO",,"0,1",,"Hospital")
+ d field("Patient Location","RH,RHDESC","QCOMBO",1,"10,40",,"Hospital")
+ ;d field("Médico solicitante","DR","COMBO",,"0,1,2")
+ d field("Requesting Doctor","DR,DRDESC","QCOMBO",1,"10,40")
+ w "   </table><hr>",crlf
+ w "   <table border=0 cellpadding=0 cellspacing=0 style=""border-collapse: collapse"" bordercolor=""#111111"" width=""100%"">",crlf
+ d field("MRN","MRN","TEXT",1,20,,"Patient")
+ d field("Surname","SURNAME1","NAME",1,40)
+ d field("Extra Name 1","SURNAME2","NAME",1,40)
+ d field("Given Name","NAME","NAME",1,30)
+ w "   </table><hr>",crlf
+ w "   <table border=0 cellpadding=0 cellspacing=0 style=""border-collapse: collapse"" bordercolor=""#111111"" width=""100%"">",crlf
+ d field("Date From","COLDATE1","DATE",,,,"Collection Date")
+ d field("Date To","COLDATE2","DATE")
+ w "   </table><hr>",crlf
+ w "   <table border=0 cellpadding=0 cellspacing=0 style=""border-collapse: collapse"" bordercolor=""#111111"" width=""100%"">",crlf     
+ k ttab("PRST") s ttab("PRST","N")="No print",ttab("PRST","I")="Interim",ttab("PRST","P")="Printed"
+ d field("Printing Status","PRST","COMBO",,"0,1","ttab","Help")
+ s glo="",user=^TMPtkviewer(session,"username")
+ i $d(^TTAB("UA",user,4)) k ttab("DEP") s glo="ttab" d
+ . s i="" f  s i=$o(^TTAB("UA",user,4,i)) q:i=""  s ttab("DEP",i)=^TTAB("DEP",i)
+ d field("Department","DEP","COMBO",,"0,1",glo)
+ w "   </table><hr>",crlf
+ w "   <table border=0 cellpadding=0 cellspacing=0 style=""border-collapse: collapse"" bordercolor=""#111111"" width=""100%"">",crlf
+ d field("Number of episodes per page","MAXREC","TEXT",,5,,"Display")
+ ;-----------------------------------------------------------------------------------------
+ w "   </table>",crlf
+ w "   <p align=""center"">"
+ w "<input type=""submit"" value=""Find"" name=""B1"">&nbsp;",crlf
+ w "<input type=""submit"" value=""Exit"" name=""SearchMRNLogoff"">",crlf
+ w "</p>",crlf
+ d foot
+ q
+field(desc,code,type,mandatory,option1,option2,title)
+ n swclosefont
+ s mandatory=+$g(mandatory),option1=$g(option1),option2=$g(option2),title=$g(title)
+ w "    <tr>",crlf
+ w "     <td width=""15%"">"
+ i $l(title) w "&nbsp;&nbsp;<b>",title,"</b>"
+ w "</td>",crlf
+ w "     <td width=""14%"" align=""right"">"
+ i mandatory w "<b>"
+ w desc
+ i mandatory w "</b>"
+ w "</td>",crlf
+ w "     <td width=""1%"">&nbsp;</td>",crlf
+ w "     <td width=""30%"">"
+ i type="DATE" d loadtext(code,9)
+ i type="TEXT" d loadtext(code,option1)
+ i type="NAME" d loadtext(code,option1)
+ i type="QCOMBO" d loadtext($p(code,",",1),$p(option1,",",1))
+ i type="COMBO" d loadcombo
+ i type="QCOMBO" w "&nbsp;" d loadtext($p(code,",",2),$p(option1,",",2))
+ w "</td>",crlf
+ w "<td width=""40%"">",crlf
+ ;i type="QCOMBO" w "Teclee el código en el primer campo o parte de la descripción en el segundo"
+ i type="QCOMBO" w "Type code in first field, or part of the description in the second field"
+ ;i type="DATE" w "Teclee la fecha, parte de ella o T+nn o T-nn"
+ i type="DATE" w "Enter date, or part date or T+nn or T-nn"
+ ;i type="NAME" w "Teclee un texto a buscar o terminado en * para los que empiecen por este texto"
+ i type="NAME" w "Type search text or end search text with * so that search can be initiated from this text onwards"
+ w "</td>"
+ q
+loadcombo
+ n i,r,n,p
+ ; option1 = extra pieces nn,nn,...,nn
+ ; option2 = global name
+ i option1="" s option1="0"
+ i option2="" s option2="^TTAB"
+ s pieces=option1
+ s glo=option2
+ w crlf
+ w "      <select size=""1"" name=""",code,""">",crlf
+ i 'mandatory w "       <option value=""""></option>",crlf
+ s i="" f  s i=$o(@glo@(code,i)) q:i=""  d
+ . s r=@glo@(code,i)
+ . w "       <option value=""",i,""""
+ . i $g(search(code))=i w " selected"
+ . w ">"
+ . s sep=""
+ . f n=1:1:$l(pieces,",") s p=$p(pieces,",",n) d  s sep=" "
+ .. i p=0 w sep,i q
+ .. w sep,$p(r,"\",p)
+ . w "</option>",crlf
+ w "      </select>"
+ q
+loadtext(code,size)
+ ; option1 = size
+ w "<input type=""text"" name=""",code,""" size=""",size,""""
+ i $l($g(search(code))) d
+ . w " value="""
+ . i $f(" TEXT QCOMBO NAME "," "_type_" ") w search(code)
+ . i type="DATE" d
+ .. i $e(search(code))="e" w $e(search(code),2,$l(search(code))) q
+ .. w $zd(search(code),4)
+ . w """"
+ w ">"
+ q
+isavaliddate(date)
+ n today,todayn,year,month,d,h
+ i '$l(date) q ""
+ s today=$p($h,",",1)
+ s todayn=$zd(today,8)
+ s year=$e(todayn,1,4),month=$e(todayn,5,6)
+ s d=$zcvt(date,"u")
+ i d="T"!(d?1"T-"1.n)!(d?1"T+"1.n) x "s d=today"_$e(d,2,$l(d)) s d=$zd(d,8),d=$e(d,7,8)_$e(d,5,6)_$e(d,1,4)
+ i d?2n1"/"1.2n s d=$tr(d,"/")
+ i d?2n1"/"2n1"/"1.4n s d=$tr(d,"/")
+ i d'?1.n q "e"_date
+ i $l(d)>8 q "e"_date
+ i $l(d)=1 s d="0"_d_month_year
+ i $l(d)=2 s d=d_month_year
+ i $l(d)=3 s d=$e(d,1,2)_"0"_$e(d,3)_year
+ i $l(d)=4 s d=d_year
+ i $l(d)<8 s d=$e(d,1,4)_(2000+$e(d,5,8))
+ s d=$e(d,5,8)_$e(d,3,4)_$e(d,1,2)
+ s $zt="isavaliddateerr"
+ s h=$zdh(d,8)
+ q h
+isavaliddateerr
+ q "e"_date
+verify()
+ n mandatory
+ k openwin
+ i $e(search("COLDATE1"))="e" s openwin="ERROR=Selected date is not valid" q
+ i $e(search("COLDATE2"))="e" s openwin="ERROR=End date is not valid" q
+ i $l(search("COLDATE1")),$e(search("COLDATE1"))'="e",$l(search("COLDATE2")),$e(search("COLDATE2"))'="e",search("COLDATE1")>search("COLDATE2") s openwin="ERROR=La fecha de recogida final no puede ser inferior a la inicial" q
+ s mandatory=0
+ f i="MRN","SURNAME1","SURNAME2","NAME","RH","RHDESC","DR","DRDESC" i $l(search(i)) s mandatory=1
+ i 'mandatory s openwin="ERROR=Some mandatory fields such as patient or Hospital Location are not complete" q
+ i search("MAXREC")'?1.n s openwin="ERROR=Number of episodes to search must be numeric" q
+ i search("MAXREC")<1!(search("MAXREC")>5000) s openwin="ERROR=The number of episodes to search must be between 1-5000" q
+ i $l(search("DR"))&$l(search("DRDESC")) s openwin="ERROR=You must specify either a code or a description when searching by doctor" q
+ i $l(search("DR")),'$d(^TTAB("DR",search("DR"))) s openwin="ERROR=Requesting doctor code does not exist" q
+ i $l(search("DRDESC")) d searchdr
+ i $l(search("RH"))&$l(search("RHDESC")) s openwin="ERROR=You must specify either a code or description when searching by Patient Location" q
+ i $l(search("RH")),'$d(^TTAB("RH",search("RH"))) s openwin="ERROR=Patient Location code does not exist." q
+ i $l(search("RHDESC")) d searchrh
+ q
+searchrh
+ n desc,ini,tot,code,lcode
+ s desc=$$ALPHAUP^SSUTIL4(search("RHDESC")) k search("RHDESC")
+ i '$l(desc) q
+ ;i $l(desc)<2 s openwin="ERROR=At least 2 characters are required for Patient Location" q
+ s ini=desc,tot=0,code=""
+ k ^TMPtkviewer(session,"RH")
+ f  s code=$o(^TTAB("RH",code)) q:code=""  s desc=$$ALPHAUP^SSUTIL4($p($g(^(code)),"\",1)) d
+ . i $e(desc,1,$l(ini))=ini s tot=tot+1,lcode=code,^TMPtkviewer(session,"RH",code)=""
+ d log("tot="_tot)
+ i tot=1 d log("tot="_tot_" lcode="_lcode) s search("RH")=lcode q
+ i tot=0 s openwin="ERROR=There is no Patient Location beginning with "_ini q
+ s ^TMPtkviewer(session,"SelectOne","RH")=""
+ q
+searchdr
+ n desc,ini,sworder,tot,code,lcode
+ s desc=$$ALPHAUP^SSUTIL4(search("DRDESC")) k search("DRDESC")
+ i '$l(desc) q
+ i $l(desc)<3 s openwin="ERROR=You must enter at least 3 characters for the surname" q
+ s ini=desc,sworder=1,tot=0,code=""
+ k ^TMPtkviewer(session,"DR")
+ i $d(^TTABi("DR","GivenName",desc)) s sworder=0
+ k ^TMPtkviewer(session,"DR")
+ f  s:sworder desc=$o(^TTABi("DR","GivenName",desc)) q:desc=""  q:$e(desc,1,$l(ini))'=ini  s sworder=1 d
+ . f  s code=$o(^TTABi("DR","GivenName",desc,code)) q:code=""  s tot=tot+1,lcode=code,^TMPtkviewer(session,"DR",code)=""
+ d log("tot="_tot)
+ i tot=1 s search("DR")=lcode q
+ i tot=0 s openwin="ERROR=There is no requesting doctor beginning with "_ini q
+ s ^TMPtkviewer(session,"SelectOne","DR")=""
+ q
+formseldr
+ i $d(%KEY("SelDRNewSearch")) d formmain q
+ i $d(%KEY("SelDRSelected")) d  q
+ . k ^TMPtkviewer(session,"SelectOne","DR")
+ . s ^TMPtkviewer(session,"internal","DR")=%KEY("DR")
+ . d formsearchmrn2
+ d head("Doctor List","formSelDR","Please select doctor, and click on the Continue button")
+ w "<p align=""center"">",crlf
+ w "  <table class=tblList cellspacing=1>",crlf
+ w "   <thead>",crlf
+ w "    <th width=""25%"" nowrap>Sel.</th>",crlf
+ w "    <th width=""25%"" nowrap>Code</th>",crlf
+ w "    <th width=""50%"" nowrap>Surname and Given Name</th>",crlf
+ w "   </thead>",crlf
+ 
+ s i="",tot=0
+ f  s i=$o(^TMPtkviewer(session,"DR",i)) q:i=""  d
+ . s tot=tot+1
+ . s r=$g(^TTAB("DR",i))
+ . w "    <tr class=""Row",$s(tot#2:"Odd",1:"Even"),""" nowrap>",crlf
+ . w "     <td nowrap><input type=""radio"" value=""",i,""""
+ . i tot=1 w " checked"
+ . w " name=""DR""></td>"_crlf
+ . w "     <td nowrap>",i,"</td>",crlf
+ . w "     <td nowrap>",$p(r,"\",2),", ",$p(r,"\",1),"</td>",crlf
+ . w "    </tr>",crlf    
+ w "  </table>",crlf
+ w "<input type=""submit"" value=""Continue"" name=""SelDRSelected"">",crlf
+ w "&nbsp;"
+ w "<input type=""submit"" value=""Previous"" name=""SelDRNewSearch"">",crlf
+ w "</p>",crlf
+ d foot
+ q
+formselrh
+ i $d(%KEY("SelRHNewSearch")) d formmain q
+ i $d(%KEY("SelRHSelected")) d  q
+ . k ^TMPtkviewer(session,"SelectOne","RH")
+ . s ^TMPtkviewer(session,"internal","RH")=%KEY("RH")
+ . d formsearchmrn2
+ d head("Patient Location List","formSelRH","Please select a Patient Location and click on the Continue button")
+ w "<p align=""center"">",crlf
+ w "  <table class=tblList cellspacing=1>",crlf
+ w "   <thead>",crlf
+ w "    <th width=""25%"" nowrap>Sel.</th>",crlf
+ w "    <th width=""25%"" nowrap>Code</th>",crlf
+ w "    <th width=""50%"" nowrap>Description</th>",crlf
+ w "   </thead>",crlf
+ 
+ s i="",tot=0
+ f  s i=$o(^TMPtkviewer(session,"RH",i)) q:i=""  d
+ . s tot=tot+1
+ . s r=$g(^TTAB("RH",i))
+ . w "    <tr class=""Row",$s(tot#2:"Odd",1:"Even"),""" nowrap>",crlf
+ . w "     <td nowrap><input type=""radio"" value=""",i,""""
+ . i tot=1 w " checked"
+ . w " name=""RH""></td>"_crlf
+ . w "     <td nowrap>",i,"</td>",crlf
+ . w "     <td nowrap>",$p(r,"\",1),"</td>",crlf
+ . w "    </tr>",crlf    
+ w "  </table>",crlf
+ w "<input type=""submit"" value=""Continue"" name=""SelRHSelected"">",crlf
+ w "&nbsp;"
+ w "<input type=""submit"" value=""Previous"" name=""SelRHNewSearch"">",crlf
+ w "</p>",crlf
+ d foot
+ q
+ 
+formsearchmrn
+ i $d(%KEY("SearchMRNLogoff")) d default q               
+ k search                
+ s i="" f  s i=$o(%KEY(i)) q:i=""  d
+ . ; Search criterias
+ . i '$f(" MRN SURNAME1 SURNAME2 NAME RH RHDESC DR DRDESC COLDATE1 COLDATE2 PRST DEP MAXREC "," "_i_" ") q
+ . i i["DATE" s search(i)=$$isavaliddate(%KEY(i)) q
+ . s search(i)=$zcvt(%KEY(i),"u")
+ k ^TMPtkviewer(session,"SelectOne")
+ d savesearch("external")
+ d verify()
+ d savesearch("internal")
+ d formsearchmrn2
+ q
+ 
+formsearchmrn2
+ d loadsearch("internal")
+ i $d(^TMPtkviewer(session,"SelectOne","DR")) d formseldr q
+ i $d(^TMPtkviewer(session,"SelectOne","RH")) d formselrh q
+ i $d(openwin) d formmain q
+ s ^TMPtkviewer(session,"criteria")=$$getcriteria()
+ k ^TMPtkviewer(session,"Pag")
+ k ^TMPtkviewer(session,"Sel")
+ d loadcriteria(1)
+ q
+loadcriteria(pag,selall)
+ s selall=+$g(selall)
+ d loadsearch("internal")
+ s criteria=^TMPtkviewer(session,"criteria")
+ d runcriteria(criteria,pag,selall)
+ q
+cridesc()
+ n clist,sep,txt,i
+ s clist("MRN")="MRN"
+ s clist("SURNAME1")="1<sup>er</sup> Surname"
+ s clist("SURNAME2")="2<sup>o</sup> Extra Name 1"
+ s clist("NAME")="Given Name"
+ s clist("RH")="Patient Location"
+ s clist("DR")="Requesting Doctor"
+ s clist("COLDATE1")="Collection Date - From:"
+ s clist("COLDATE2")="Collection Date - To:"
+ s clist("PRST")="Print Status"
+ s clist("DEP")="Department"
+ s clist("MAXREC")="Maximum number of episodes"
+ 
+ s sep=""
+ s txt="Search Criteria: "
+ s i="" f  s i=$o(search(i)) q:i=""  i $l(search(i)) d
+ . s txt=txt_sep_$g(clist(i))_"=",sep=", "
+ . i i["DATE" s d=$zd(search(i),8) s txt=txt_$e(d,7,8)_"/"_$e(d,5,6)_"/"_$e(d,1,4) q
+ . s txt=txt_search(i)
+ q txt   
+runcriteria(criteria,pag,selall)
+ s selall=+$g(selall)
+ d head("Retrieved Episodes","formMRNList",$$cridesc,"Page "_pag)
+ s (tot,quit)=0
+ i '$d(^TMPtkviewer(session,"Pag",pag,1)) d
+ . s last=$o(^TMPtkviewer(session,"Pag",pag-1,""),-1)
+ . s vars=""
+ . i $l(last) s vars=$g(^TMPtkviewer(session,"Pag",pag-1,last,"vars"))
+ . i criteria=1 f  s vars=$$cmrn(vars) q:vars=""  d save(vars,$p(vars,"\",3)) q:quit
+ . i criteria=10 f  s vars=$$crh(vars) q:vars=""  d save(vars,$p(vars,"\",2)) q:quit
+ . i criteria=20 f  s vars=$$cdr(vars) q:vars=""  d save(vars,$p(vars,"\",2)) q:quit
+ . i criteria=30 f  s vars=$$cdate(vars) q:vars=""  d save(vars,$p(vars,"\",3)) q:quit
+ . i criteria=40 s ini=$$ALPHAUP^SSUTIL4(search("SURNAME1")) f  s vars=$$cname(vars,ini,11) q:vars=""  d save(vars,vars) q:quit
+ . i criteria=50 s ini=$$ALPHAUP^SSUTIL4(search("SURNAME2")) f  s vars=$$cname(vars,ini,12) q:vars=""  d save(vars,vars) q:quit
+ . i criteria=60  s ini=$$ALPHAUP^SSUTIL4(search("NAME")) f  s vars=$$cname(vars,ini,10) q:vars=""  d save(vars,vars) q:quit
+ . i criteria=70 s ini=$$ALPHAUP^SSUTIL4(search("SURNAME1")) f  s vars=$$cpnam(vars,ini,11) q:vars=""  d save(vars,$p(vars,"\",2)) q:quit
+ . i criteria=80 s ini=$$ALPHAUP^SSUTIL4(search("SURNAME2")) f  s vars=$$cpnam(vars,ini,12) q:vars=""  d save(vars,$p(vars,"\",2)) q:quit
+ . i criteria=90 s ini=$$ALPHAUP^SSUTIL4(search("NAME")) f  s vars=$$cpnam(vars,ini,10) q:vars=""  d save(vars,$p(vars,"\",2)) q:quit
+ . i criteria=999 f  s vars=$$ctepi(vars) q:vars=""  d save(vars,vars) q:quit
+ 
+ w "<table border=0 cellspacing=1 width=""100%"">",crlf
+ w " <tr>",crlf
+ w "  <td width=""16%""><p align=""center""><input type=""submit"" name=""MRNListNewSearch"" value=""New Search""></td>",crlf
+ w "  <td width=""16%""><p align=""center""><input type=""submit"" name=""SelThisPage"" value=""Select Page""></td>",crlf
+ w "  <td width=""17%""><p align=""center""><input type=""submit"" name=""UnSelThisPage"" value=""Deselect Page""></td>",crlf
+ w "  <td width=""17%""><p align=""center""><input type=""submit"" name=""PrintSel"" value=""Print from LABTRAK""></td>",crlf
+ w "  <td width=""17%""><p align=""center"">"
+ i pag>1 w "<input type=""submit"" name=""MRNListPgUp"" value=""Previous page"">"
+ w "</td>",crlf
+ w "  <td width=""17%""><p align=""center"">"
+ i $d(^TMPtkviewer(session,"Pag",pag+1)) w "<input type=""submit"" name=""MRNListPgDn"" value=""Next Page"">"
+ w "</td>",crlf
+ w " </tr>",crlf
+ w "<tr><td colspan=6>"
+ i quit'=2 w "&nbsp;"
+ i quit=2 d
+ . w "<p align=""center"">"
+ . w "<font color=""#FF0000"">Limit of session has been exceeded."
+ . w ".Please change your search criteria and try again.</font>"
+ w "</td></tr>"
+ w "</table>",crlf
+ 
+ w "  <table class=tblList cellspacing=1 width=""100%"">",crlf
+ w "   <thead>",crlf
+ w "    <th width=""1%"" nowrap>Sel.</th>",crlf
+ w "    <th width=""7%"" nowrap>MRN</th>",crlf
+ w "    <th width=""1%"" nowrap>No. of epis.</th>",crlf
+ w "    <th width=""8%"" nowrap>Episode No</th>",crlf
+ w "    <th width=""8%"" nowrap>Collected</th>",crlf
+ w "    <th width=""14%"" nowrap>Surname</th>",crlf
+ w "    <th width=""14%"" nowrap>Extra Name 1</th>",crlf
+ w "    <th width=""13%"" nowrap>Given Name</th>",crlf
+ w "    <th width=""10%"" nowrap>Doctor</th>",crlf
+ w "    <th width=""9%"" nowrap>Department</th>",crlf
+ w "    <th width=""6%"" nowrap>Status</th>",crlf
+ w "    <th width=""10%"" nowrap>Patient Location</th>",crlf
+ w "   </thead>",crlf
+ 
+ s i="",tot=0
+ f  s i=$o(^TMPtkviewer(session,"Pag",pag,i)) q:i=""  d
+ . s r=^(i),tot=tot+1
+ . s sel=+$p(r,"\",1)
+ . s mrn=$p(r,"\",2),req=$p(r,"\",3),epis=$p(r,"\",4),coldate=$p(r,"\",5),sur1=$p(r,"\",6),sur2=$p(r,"\",7)
+ . s name=$p(r,"\",8),dr=$p(r,"\",9),dep=$p(r,"\",10),prst=$p(r,"\",11),loc=$p(r,"\",12)
+ . w "    <tr class=""Row",$s(tot#2:"Odd",1:"Even"),""" nowrap>",crlf
+ . w "     <td nowrap><input type=""checkbox"" name=""Check"_epis_""" value=""ON"""
+ . i selall=-1 s sel=0
+ . i sel!(selall=1) w " checked"
+ . w "></td>"_crlf
+ . w "     <td nowrap><input type=""submit"" name=""MRNListShowMRN"" value=""",mrn,""" class=""submitLink""></td>",crlf
+ . w "     <td nowrap align=""right"">",req,"&nbsp;</td>",crlf
+ . w "     <td nowrap><input type=""submit"" name=""MRNListShowReq"" value=""",epis,""" class=""submitLink""></td>",crlf
+ . w "     <td nowrap>",$zd(coldate,4),"</td>",crlf
+ . w "     <td nowrap>",sur1_"</td>",crlf
+ . w "     <td nowrap>",sur2_"</td>",crlf
+ . w "     <td nowrap>",name_"</td>",crlf
+ . w "     <td nowrap>" i $l(dr) s r=$g(^TTAB("DR",dr)),drname=$e($p(r,"\",2)_" "_$p(r,"\",1),1,15) w drname
+ . w "</td>",crlf
+ . w "     <td nowrap>",dep,"</td>",crlf
+ . w "     <td nowrap>",$s(prst="N":"No print",prst="I":"Provisional",prst="F":"Printed",1:"Unknown"),"</td>",crlf
+ . w "     <td nowrap>" i $l(loc) w $e($p($g(^TTAB("RH",loc)),"\",1),1,15)
+ . w "</td>",crlf
+ . w "    </tr>",crlf
+ w "  </table>",crlf
+ i tot>23 d
+ . w "<table border=0 cellspacing=1 width=""100%"">",crlf
+ . w " <tr>",crlf
+ . w "  <td width=""16%""><p align=""center""><input type=""submit"" name=""MRNListNewSearch"" value=""New Search""></td>",crlf
+ . w "  <td width=""16%""><p align=""center""><input type=""submit"" name=""SelThisPage"" value=""Select page""></td>",crlf
+ . w "  <td width=""17%""><p align=""center""><input type=""submit"" name=""UnSelThisPage"" value=""Deselect page""></td>",crlf
+ . w "  <td width=""17%""><p align=""center""><input type=""submit"" name=""PrintSel"" value=""Print from LABTRAK""></td>",crlf
+ . w "  <td width=""17%""><p align=""center"">"
+ . i pag>1 w "<input type=""submit"" name=""MRNListPgUp"" value=""Previous Page"">"
+ . w "</td>",crlf
+ . w "  <td width=""17%""><p align=""center"">"
+ . i $d(^TMPtkviewer(session,"Pag",pag+1)) w "<input type=""submit"" name=""MRNListPgDn"" value=""Next Page"">"
+ . w "</td>",crlf
+ . w " </tr>",crlf
+ . w "</table>",crlf
+ d foot
+ q
+getcriteria()
+ i $l(search("MRN")) q 1
+ i $l(search("RH")) q 10
+ i $l(search("DR")) q 20
+ i $l(search("COLDATE1"))!$l(search("COLDATE2")) q 30
+ i $l(search("SURNAME1")),$l($$ALPHAUP^SSUTIL4(search("SURNAME1"))),$e(search("SURNAME1"),$l(search("SURNAME1")))="*" q 70
+ i $l(search("SURNAME1")),$l($$ALPHAUP^SSUTIL4(search("SURNAME1"))) q 40
+ i $l(search("SURNAME2")),$l($$ALPHAUP^SSUTIL4(search("SURNAME2"))),$e(search("SURNAME2"),$l(search("SURNAME2")))="*" q 80
+ i $l(search("SURNAME2")),$l($$ALPHAUP^SSUTIL4(search("SURNAME2"))) q 50
+ i $l(search("NAME")),$l($$ALPHAUP^SSUTIL4(search("NAME"))),$e(search("NAME"),$l(search("NAME")))="*" q 90
+ i $l(search("NAME")),$l($$ALPHAUP^SSUTIL4(search("NAME"))) q 60
+ ; Not indexed
+ q 999
+ ; *********************************** Search routines *****************************************
+cmrn(vars)
+ s date=$p(vars,"\",1),time=$p(vars,"\",2),epis=$p(vars,"\",3)
+ i $l(vars) g cmrn3
+ i $l(search("COLDATE1")) s date=search("COLDATE1")-1
+cmrn1 s date=$o(^TDEBi(search("MRN"),"DATE",date)) i date="" q ""
+ i $l(search("COLDATE2"))&(date>search("COLDATE2")) q ""
+cmrn2 s time=$o(^TDEBi(search("MRN"),"DATE",date,time)) g:time="" cmrn1
+cmrn3 s epis=$o(^TDEBi(search("MRN"),"DATE",date,time,epis)) g:epis="" cmrn2
+ q date_"\"_time_"\"_epis
+ ; -----------------------------------------------------------
+crh(vars)
+ s date=$p(vars,"\",1),epis=$p(vars,"\",2)
+ i $l(vars) g crh2
+ i $l(search("COLDATE1")) s date=search("COLDATE1")-1
+crh1 s date=$o(^TIND(8,search("RH"),date)) i date="" q ""
+ i $l(search("COLDATE2"))&(date>search("COLDATE2")) q ""
+crh2 s epis=$o(^TIND(8,search("RH"),date,epis)) g:epis="" crh1
+ q date_"\"_epis
+ ; -----------------------------------------------------------
+cdr(vars)
+ s date=$p(vars,"\",1),epis=$p(vars,"\",2)
+ i $l(vars) g cdr2
+ i $l(search("COLDATE1")) s date=search("COLDATE1")-1
+cdr1 s date=$o(^TIND(3,search("DR"),date)) i date="" q ""
+ i $l(search("COLDATE2"))&(date>search("COLDATE2")) q ""
+cdr2 s epis=$o(^TIND(3,search("DR"),date,epis)) g:epis="" cdr1
+ q date_"\"_epis
+ ; -----------------------------------------------------------
+cdate(vars)
+ s date=$p(vars,"\",1),stat=$p(vars,"\",2),epis=$p(vars,"\",3)
+ i $l(vars) g cdate3
+ i $l(search("COLDATE1")) s date=search("COLDATE1")-1
+cdate1 s date=$o(^TDAY(1,date)) i date="" q ""
+ i $l(search("COLDATE2"))&(date>search("COLDATE2")) q ""
+cdate2 s stat=$o(^TDAY(1,date,stat)) g:stat="" cdate1
+cdate3 s epis=$o(^TDAY(1,date,stat,epis)) g:epis="" cdate2
+ q date_"\"_stat_"\"_epis
+ ; -----------------------------------------------------------
+cname(vars,ini,key)
+ q $o(^TIND("Name",key,ini,vars))
+ ; -----------------------------------------------------------
+cpnam(vars,ini,key)
+ s name=$p(vars,"\",1),epis=$p(vars,"\",2)
+ i $l(vars) g cpnam2
+ s name=$o(^TIND("Name",key,ini),-1)
+cpnam1 s name=$o(^TIND("Name",key,name)) i name="" q ""
+ i $e(name,1,$l(ini))'=ini q ""
+cpnam2 s epis=$o(^TIND("Name",key,name,epis)) g:epis="" cpnam1
+ q name_"\"_epis
+ ; -----------------------------------------------------------
+ctepi(vars)
+ q $o(^TEPI(vars))       
+ ; ***********************************************************
+log(txt)
+ n i
+ s i=$o(debug(""),-1)+1
+ s debug(i)=txt
+ q
+savesearch(code) n i
+ k ^TMPtkviewer(session,code)
+ s i=""  f  s i=$o(search(i)) q:i=""  s ^TMPtkviewer(session,code,i)=search(i)
+ q
+loadsearch(code) n i
+ k search
+ s i=""  f  s i=$o(^TMPtkviewer(session,code,i)) q:i=""  s search(i)=^(i)
+ q
+save(vars,epis)
+ n (vars,epis,search,tot,quit,stime,crlf,pag,session,runtimeout,user,debug)
+ s r=$g(^TEPI(epis))
+ s r0=$g(^TEPI(epis,0))
+ s sur1=$p(r,"\",1)
+ s name=$p(r,"\",2)
+ s coldate=$p(r,"\",10)
+ s dr=$p(r,"\",13)
+ s mrn=$p(r,"\",18)
+ s loc=$p(r,"\",20) s:loc="" loc=" "
+ s prst=$$status^LVBEPVIS(epis)
+ i '$l(mrn) s mrn=" "
+ s sur2=$p(r0,"\",23)
+ s sname=search("NAME") i $l(sname) s asname=$$ALPHAUP^SSUTIL4(sname)
+ s ssur1=search("SURNAME1") i $l(ssur1) s assur1=$$ALPHAUP^SSUTIL4(ssur1)
+ s ssur2=search("SURNAME2") i $l(ssur2) s assur2=$$ALPHAUP^SSUTIL4(ssur2)
+ i ($zh-stime)>runtimeout s quit=2  ; No quit
+ 
+ i $l(search("MRN")),mrn'=search("MRN") q
+ i $l(search("COLDATE1")),coldate<search("COLDATE1") q
+ i $l(search("COLDATE2")),coldate>search("COLDATE2") q       
+ i $l(ssur1),$l(assur1),$e(ssur1,$l(ssur1))="*" s w2=$$ALPHAUP^SSUTIL4(sur1) i $e(w2,1,$l(assur1))'=assur1 q
+ i $l(ssur1),$l(assur1),$e(ssur1,$l(ssur1))'="*" s w2=$$ALPHAUP^SSUTIL4(sur1) i w2'=assur1 q
+ i $l(ssur2),$l(assur2),$e(ssur2,$l(ssur2))="*" s w2=$$ALPHAUP^SSUTIL4(sur2) i $e(w2,1,$l(assur2))'=assur2 q
+ i $l(ssur2),$l(assur2),$e(ssur2,$l(ssur2))'="*" s w2=$$ALPHAUP^SSUTIL4(sur2) i w2'=assur2 q
+ i $l(sname),$l(asname),$e(sname,$l(sname))="*" s w2=$$ALPHAUP^SSUTIL4(name) i $e(w2,1,$l(asname))'=asname q
+ i $l(sname),$l(asname),$e(sname,$l(sname))'="*" s w2=$$ALPHAUP^SSUTIL4(name) i w2'=asname q
+ i $l(search("DR")),dr'=search("DR") q
+ i $l(search("RH")),loc'=search("RH") q
+ i $l(search("PRST")),prst'=search("PRST") q
+ i $d(^TTAB("UA",user,2)),'$d(^TTAB("UA",user,2,loc)) q
+ s ts="",dep=","
+ f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d  s ts=$e(ts)_"zzzzz"
+ . i $d(^TTAB("UA",user,4)),'$d(^TTAB("UA",user,4,$e(ts))) q
+ . s dep=dep_$e(ts)_","
+ i $l(search("DEP")),'$f(dep,","_search("DEP")_",") q
+ s dep=$e(dep,2,$l(dep)-1)
+ i $l(dep)=0 q
+ i '$d(^TMPtkviewer(session,"Req",mrn)) d
+ . s req=0,(i,j)=""
+ . f  s i=$o(^TDEB(mrn,i)) q:i=""  f  s j=$o(^TDEB(mrn,i,0,j)) q:j=""  s req=req+1
+ . s ^TMPtkviewer(session,"Req",mrn)=req
+ s req=^TMPtkviewer(session,"Req",mrn)
+ s tot=tot+1
+ i tot=(search("MAXREC")+1) s ^TMPtkviewer(session,"Pag",pag+1)="" s:'quit quit=1 q
+ s ^TMPtkviewer(session,"Pag",pag,tot)="0\"_mrn_"\"_req_"\"_epis_"\"_coldate_"\"_sur1_"\"_sur2_"\"_name_"\"_dr_"\"_dep_"\"_prst_"\"_loc
+ s ^TMPtkviewer(session,"Pag",pag,tot,"vars")=vars
+ q
+head(title,page,line1,line2)
+ s page=$g(page)
+ s line1=$g(line1),line2=$g(line2)
+ w "<html>",crlf
+ w " <head>",crlf
+ w "  <title>TkViewer</title>",crlf
+ w "  <link rel=""stylesheet"" type=""text/css"" href=""../css/websys.css""></link>",crlf
+ w "  <style type=""text/css"">",crlf
+ w "   .submitLink {",crlf
+ w "   color: #00f;",crlf
+ w "   background-color: transparent;",crlf
+ w "   text-decoration: underline;",crlf
+ w "   border: none;",crlf
+ w "   cursor: pointer;",crlf
+ w "   cursor: hand;",crlf
+ w "   }",crlf
+ w "  </style>",crlf
+ w " </head>",crlf
+ i $d(openwin) d
+ . i $e(openwin,1,6)="ERROR=" w " <body onload=""window.alert('",$e(openwin,7,$l(openwin)),"');"">",crlf
+ . i $e(openwin,1,6)'="ERROR=" w " <body onload=""window.open('",openwin,"','a",$tr($zts,",."),"','toolbar=no,location=no,directories=no,status=yes,menubar=no,scrollbars=yes,resizable=yes,maximized=yes');"">",crlf    
+ i '$d(openwin) w " <body>",crlf
+ k openwin       
+ w "  <form method=""POST"" action=""mgwms32.dll?App=TKVIEWER"">",crlf
+ i $d(session) w "   <input type=""hidden"" name=""Session"" value=""",session,""">",crlf
+ i $d(page) w "   <input type=""hidden"" name=""Page"" value=""",page,""">",crlf 
+ i $d(pag) w "   <input type=""hidden"" name=""Pag"" value=""",pag,""">",crlf    
+ w "   <table border=0 cellpadding=0 cellspacing=0 style=""border-collapse: collapse"" bordercolor=""#336699"" width=""100%"" bgcolor=""#FFFFFF"">",crlf
+ w "    <tr>",crlf
+ w "     <td width=""1%"" style=""border-bottom-style: solid; border-bottom-width: 3"">&nbsp;</td>",crlf
+ w "     <td width=""27%"" style=""border-bottom-style: solid; border-bottom-width: 3"">",crlf
+ w "      <b><font size=4 color=""#336699"">",title,"</font></b>",crlf
+ w "     </td>",crlf
+ w "     <td width=""45%"" style=""border-bottom-style: solid; border-bottom-width: 3"">",crlf
+ w "      <img border=0 src=""/images/logosite.gif"" width=443 height=61>",crlf
+ w "     </td>",crlf
+ w "     <td width=""18%"" style=""border-bottom-style: solid; border-bottom-width: 3""></td>",crlf
+ w "     <td width=""8%"" style=""border-bottom-style: solid; border-bottom-width: 3"">",crlf
+ w "      <a href=""http://www.trakhealth.com"" target=""_blank""><img border=0 src=""/images/logotrak.gif"" width=80 height=31></a>",crlf
+ w "     </td>",crlf
+ w "     <td width=""1%"" style=""border-bottom-style: solid; border-bottom-width: 3"">&nbsp;</td>",crlf
+ w "    </tr>",crlf
+ w "   </table>",crlf
+ w "   <table border=0 width=""100%"">"
+ w "    <tr><td width=""2%"">&nbsp;</td><td width=""88%"">",line1,"</td><td width=""10%"">",line2,"</td></tr>",crlf
+ w "   </table>",crlf
+ q
+foot
+ i debug d
+ . w "<hr>",crlf
+ . w $zh-stime," seg<br>",crlf
+ . s i="" f  s i=$o(debug(i)) q:i=""  w debug(i),"<br>"
+ . d test
+ w "  </form>",crlf
+ w " </body>",crlf
+ w "</html>"
+ q
+printsel
+ i '$d(^TMPtkviewer(session,"Sel")) s openwin="ERROR=No episodes selected for printing" q
+ s x=$$check^LBACKGR("tkLTInsRePrint")
+ s epis=""
+ f  s epis=$o(^TMPtkviewer(session,"Sel",epis)) q:epis=""  d
+ . s x=$$doc^at46(epis),cour1=$p(x,"^"),doc=$p(x,"^",2)
+ . s x=$$hosp^at46(epis),cour2=$p(x,"^"),hosp=$p(x,"^",2)
+ . s (ts,cnt,r)=""
+ . f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ .. f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ ... s r=r_epis_"||"_ts_"||"_cnt_"\"
+ . i $l(cour1),$l(doc),$p($g(^TTAB("CR",cour1)),"\",4)'="Y" s x=$$docinst^LVBVIS1(epis_"~"_cour1_"~DOC~"_doc_"~"_r_"~"_user_"~","IP","","")
+ . i $l(cour2),$l(hosp),$p($g(^TTAB("CR",cour2)),"\",4)'="Y" s x=$$docinst^LVBVIS1(epis_"~"_cour2_"~HOS~"_hosp_"~"_r_"~"_user_"~","IP","","")
+ s openwin="ERROR=Printing in progress..."
+ q
+formshowmrn
+ s pag=%KEY("Pag")
+ k ^TMPtkviewer(session,"SELTS"),^TMPtkviewer(session,"SELREQ")
+ s i="Check"
+ f  s i=$o(%KEY(i)) q:i=""  q:$e(i,1,5)'="Check"  d
+ . i $e(i,1,7)="CheckTs" s ^TMPtkviewer(session,"SELTS",$e(i,8,$l(i)))="" q
+ . s ^TMPtkviewer(session,"SELREQ",$e(i,6,$l(i)))=""
+ i $d(%KEY("ShowMRNSelTS")) d selallts()
+ i $d(%KEY("ShowMRNSelReq")) d selallreq()
+ i $d(%KEY("ShowMRNback")) d loadcriteria(%KEY("Pag")) q
+ i $d(%KEY("ShowMRNHide"))!($d(%KEY("ShowMRNShowReq"))) d
+ . i '$d(^TMPtkviewer(session,"SELREQ")) d selallreq("S")
+ . i '$d(^TMPtkviewer(session,"SELTS")) d selallts("S") d log("Passa per selallts")
+ i $d(%KEY("ShowMRNShowReq")) d showreq
+ s mrn=$g(%KEY("MRNListShowMRN"))
+ i mrn="" d message("MRN not entered") q
+ i $d(%KEY("ShowMRNHide")) d
+ . k ^TMPtkviewer(session,"COLBCK"),^TMPtkviewer(session,"DEPBCK")
+ . m ^TMPtkviewer(session,"COLBCK")=^TMPtkviewer(session,"COL")
+ . m ^TMPtkviewer(session,"DEPBCK")=^TMPtkviewer(session,"DEP")
+ . d formshowmrn2(1)
+ . i $d(^TMPtkviewer(session,"COL"))>1 q
+ . s openwin="ERROR=Your selection does not contain any results"
+ . m ^TMPtkviewer(session,"COL")=^TMPtkviewer(session,"COLBCK")
+ . m ^TMPtkviewer(session,"DEP")=^TMPtkviewer(session,"DEPBCK")
+ i $d(%KEY("ShowMRNAll")) d formshowmrn2(0)
+ s epis=""
+ s dat=$o(^TDEB(mrn,99999),-1)
+ i $l(dat) s epis=$o(^TDEB(mrn,dat,0,""),-1)
+ i '$l(epis) d message("MRN "_mrn_" with no episode requests") q    
+ s r=^TEPI(epis)
+ s r0=$g(^TEPI(epis,0))
+ s surname1=$p(r,"\",1)
+ s surname2=$p(r0,"\",23)
+ s givenname=$p(r,"\",2)
+ d head("Patient episode","formShowMRN","<b><font size=3>"_mrn_" - "_surname1_" "_surname2_", "_givenname_"</font></b>")
+ w "   <input type=""hidden"" name=""MRNListShowMRN"" value=""",mrn,""">",crlf
+ i '$d(^TMPtkviewer(session,"COL")) d formshowmrn2(0)
+ s cols=^TMPtkviewer(session,"COL")
+ s (dep,ts,cnt,col)="",swchkrow=1
+ f  s dep=$o(^TMPtkviewer(session,"DEP",dep)) q:dep=""  d
+ . i $d(^TTAB("UA",user,4)),'$d(^TTAB("UA",user,4,dep)) q
+ . w "    <table class=tblList cellspacing=1>",crlf
+ . w "     <thead>",crlf
+ . f col=1:1:cols d
+ .. i col#12=1 d  q
+ ... w "      <td></td><td colspan=14>",crlf
+ ... w "       <input type=""submit"" name=""ShowMRNback"" value=""Previous"">&nbsp;",crlf
+ ... w "       <input type=""submit"" name=""ShowMRNShowReq"" value=""View Report"">&nbsp;",crlf
+ ... w "       <input type=""submit"" name=""ShowMRNHide"" value=""View Selection"">",crlf
+ ... w "       <input type=""submit"" name=""ShowMRNAll"" value=""View All"">",crlf
+ ... w "       <input type=""submit"" name=""ShowMRNSelTS"" value=""Sel./Des. all tests"">",crlf
+ ... w "       <input type=""submit"" name=""ShowMRNSelReq"" value=""Sel./Des. all episodes"">",crlf
+ . w "     </thead>",crlf
+ . s depdesc=$p($g(^TTAB("DEP",dep)),"\",1)
+ . i '$l(depdesc) s depdesc="Unknown"
+ . s tot=0
+ . w "     <thead>",crlf
+ . f col=1:1:cols d
+ .. i col#12=1 w "      <td></td><td colspan=2><b>",depdesc,"</b></td>",crlf
+ .. w "      <td>"
+ .. s epis=$p(^TMPtkviewer(session,"COL",col),"\",1)
+ .. w "<p align=""center""><input type=""checkbox"" name=""Check",epis,""" value=""ON"""
+ .. i swchkrow,$d(^TMPtkviewer(session,"SELREQ",epis)) w " checked"
+ .. w ">"
+ .. w "</td>",crlf
+ . s swchkrow=0
+ . w "     </thead>",crlf
+ . d header(2),header(1)
+ . f  s ts=$o(^TMPtkviewer(session,"DEP",dep,ts)) q:ts=""  d
+ .. f  s cnt=$o(^TMPtkviewer(session,"DEP",dep,ts,cnt)) q:cnt=""  d
+ ... s tot=tot+1
+ ... w "     <tr class=""Row",$s(tot#2:"Odd",1:"Even"),""" nowrap>",crlf
+ ... f col=1:1:cols d
+ .... i col#12=1 d
+ ..... w "      <td>"
+ ..... w "<p align=""center""><input type=""checkbox"" name=""CheckTs",ts,""" value=""ON"""
+ ..... i col=1,$d(^TMPtkviewer(session,"SELTS",ts)) w " checked"
+ ..... w ">"
+ ..... w "</td>",crlf
+ ..... w "      <th>&nbsp;",ts,"</th><th nowrap>",$p(^TTAB("TS",ts),"\",1),"</th>",crlf
+ .... s r=$g(^TMPtkviewer(session,"DEP",dep,ts,cnt,col))
+ .... s stat=$p(r,"\",1)
+ .... w "      <td"
+ .... i $l(stat) w " align=""center"""
+ .... w ">",stat,"</td>",crlf
+ ... w "     </tr>",crlf
+ . w "     <tr></tr><td>&nbsp;</td>",crlf
+ . w "    </table>",crlf
+ d foot
+ q
+formshowmrn2(swsel)
+ k ^TMPtkviewer(session,"COL"),^TMPtkviewer(session,"DEP")
+ s (dat,epis,ts,cnt,col)=""
+ f  s dat=$o(^TDEB(mrn,dat),-1) q:dat=""  d
+ . f  s epis=$o(^TDEB(mrn,dat,0,epis),-1) q:epis=""  d
+ .. i swsel,'$d(^TMPtkviewer(session,"SELREQ",epis)) q
+ .. s r=$g(^TEPI(epis))
+ .. s time=$p(r,"\",11)
+ .. s loc=$p(r,"\",20) s:loc="" loc=" "
+ .. i $d(^TTAB("UA",user,2)),'$d(^TTAB("UA",user,2,loc)) q
+ .. s wdat=$zd(dat,4)
+ .. s sw=1
+ .. f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ... i '$$printable(ts) q
+ ... i $d(^TTAB("UA",user,4)),'$d(^TTAB("UA",user,4,$e(ts))) s ts=$e(ts)_"zzzzz" q
+ ... i swsel,'$d(^TMPtkviewer(session,"SELTS",ts)) q
+ ... f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ .... s stat=$$getstatus(epis,ts,cnt)
+ .... s dep=$e(ts)
+ .... i sw s col=col+1,^TMPtkviewer(session,"COL",col)=epis_"\"_wdat_"\"_time,sw=0
+ .... s ^TMPtkviewer(session,"DEP",dep,ts,cnt,col)=stat
+ .. i 'sw d saveevent(epis)
+ s ^TMPtkviewer(session,"COL")=col
+ q
+selallts(mode) n dep,ts
+ s mode=$g(mode),(dep,ts)=""
+ f  s dep=$o(^TMPtkviewer(session,"DEP",dep)) q:dep=""  d
+ . f  s ts=$o(^TMPtkviewer(session,"DEP",dep,ts)) q:ts=""  d
+ .. i mode="" s mode=$s($d(^TMPtkviewer(session,"SELTS",ts)):"K",1:"S")
+ .. i mode="K" k ^TMPtkviewer(session,"SELTS",ts)
+ .. i mode="S" s ^TMPtkviewer(session,"SELTS",ts)=""
+ q
+selallreq(mode) n col
+ s mode=$g(mode),col=""
+ f  s col=$o(^TMPtkviewer(session,"COL",col)) q:col=""  d
+ . s epis=$p(^(col),"\",1)
+ . i mode="" s mode=$s($d(^TMPtkviewer(session,"SELREQ",epis)):"K",1:"S")
+ . i mode="K" k ^TMPtkviewer(session,"SELREQ",epis)
+ . i mode="S" s ^TMPtkviewer(session,"SELREQ",epis)=""
+ q
+getstatus(epis,ts,cnt) n (epis,ts,cnt)
+ s s=$p($g(^TEPI(epis,1,ts,cnt)),"\",31),s=$s(s="A":"A",1:"C")
+ i s="C",$$inaqueue(epis,ts,cnt) s s="P"
+ s sdesc=$s(s="C":"In progress",s="P":"Provisional",1:"Final")
+ i s'="A" q sdesc
+ s swred=0,(tc,result)=""
+ f  s tc=$o(^TEPI(epis,1,ts,cnt,"DATA",tc)) q:tc=""  d  q:swred
+ . s result=$p(^TEPI(epis,1,ts,cnt,"DATA",tc),"\",1)
+ . s valid=$$validres^LVBVIS1(epis,tc,result,epis_"||"_ts_"||"_cnt)
+ . i $e(valid)'="N" s swred=1
+ i swred s sdesc="<font color=""#FF0000"">"_sdesc_"</font>"
+ s t=0,i=""
+ f  s i=$o(^TTAB("TS",ts,0,i)) q:i=""  s t=t+1
+ i t>1 q sdesc
+ ; Only one TestItem
+ s sdesc=result
+ i swred s sdesc="<font color=""#FF0000"">"_sdesc_"</font>"
+ q sdesc
+header(piece)
+ w "     <thead>",crlf
+ s col=""
+ f  s col=$o(^TMPtkviewer(session,"COL",col)) q:col=""  d
+ . i col#12=1 d
+ .. w "      <td></td>",crlf
+ .. i piece=2 w "      <th nowrap>&nbsp;</th><th nowrap>Collection Date</th>",crlf
+ .. i piece=1 w "      <th nowrap>Code</th><th nowrap>Test Name / N<sup>o</sup> of episode</th>",crlf
+ . s txt=$p(^(col),"\",piece)
+ . i txt="" s txt="&nbsp;"
+ . w "      <th nowrap>",txt,"</th>",crlf
+ w "     </thead>",crlf
+ q
+inaqueue(epi,ts,cnt) n (epi,ts,cnt)
+ s vis=0,i=""
+ f  s i=$o(^TEPI(epi,1,ts,cnt,"QUEUE","VQ",i)) q:i=""  d
+ . s queue=$p(^(i),"\",1)
+ . i '$$select^LVBCTVQ(queue),PLIST(6)="Y" s vis=1
+ q vis
+printable(ts) n (ts)
+ s r=$g(^TTAB("TS",ts))
+ s report=$p(r,"\",19) ; Hospital Report page type
+ i report="" q 1
+ s r=$g(^TTAB("RP",report))
+ i $p(r,"\",2)="N" q 0
+ q 1
+test
+ w "<table width=""100%"">",crlf
+ w " <tr><td width=""50%"" valign=""top"">",crlf
+ w "  <TABLE BORDER>",crlf
+ W "<CAPTION><B><I>%KEY</I></B></CAPTION>",crlf
+ w "   <tr><TH>Variable Name</TH><TH>Value</TH></tr>",crlf
+ 
+ S KEY=""
+ I '$G(%ZCS("GLO")) F n=1:1 S KEY=$O(%KEY(KEY)) Q:KEY=""  d
+ . ;i $e(KEY,1,3)="MGW" q
+ . i n#1=1 w "<tr>"
+ . s val=$g(%KEY(KEY))
+ . i val="" s val="&nbsp;"
+ . w "    <td>",KEY,"</td><td>",val D:$D(^MGW("MPC",$J,KEY)) MPC W "</td>"
+ . i n#1=0 w "</tr>",crlf
+ I $G(%ZCS("GLO")) F  S KEY=$O(^MGW("%KEY",$J,KEY)) Q:KEY=""  W "<TR><TD>",KEY,"</TD><TD>",$G(^MGW("%KEY",$J,KEY)),"</TD></TR>",crlf
+ W "  </TABLE>",crlf
+ w " </td><td width=""50%"" valign=""top"">"
+ w "  <TABLE BORDER>",crlf
+ W "<CAPTION><B><I>%CGIEVAR</I></B></CAPTION>",crlf
+ w "   <TR><TH>Variable Name</TH><TH>Value</TH></TR>",crlf
+ S KEY=""  F  S KEY=$O(%CGIEVAR(KEY)) Q:KEY=""  W "<TR><TD>",KEY,"</TD><TD>",%CGIEVAR(KEY) D CGI W "</TD></TR>",crlf
+ w "  </TABLE>",crlf
+ w " </td></tr></table>",crlf
+ q
+MPC ; Multipart MIME
+ N I
+ W "<P>",CRLF
+ F I=1:1 Q:'$D(^MGW("MPC",$J,KEY,I))  W ^(I) D flush^%mgw
+ q
+CGI ; Additional CGI Environment Variable content
+ N I
+ F I=1:1 Q:'$D(%CGIEVAR(KEY,I))  W "<BR>",$G(%CGIEVAR(KEY,I))
+ q
+newsession() 
+ n abc,str,n,h
+ ; Purge old jobs
+ s str=""
+ f  s str=$o(^TMPtkviewer(str)) q:str=""  d
+ . i $d(^TMPtkviewer(str))#10=0 k ^TMPtkviewer(str) q
+ . i $$diff(^(str),$h)>600 k ^TMPtkviewer(str)
+ s abc="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890"
+ s str=""
+ f  s str="" d  q:'$d(^TMPtkviewer(str))
+ . f n=1:1:30 s str=str_$e(abc,$r($l(abc))+1)
+ s h=$h
+ s ^TMPtkviewer(str)=h
+ s ^TMPtkviewer(str,"HTTP_USER_AGENT")=$g(%CGIEVAR("HTTP_USER_AGENT"))
+ s ^TMPtkviewer(str,"REMOTE_ADDR")=$g(%CGIEVAR("REMOTE_ADDR"))
+ q str
+ 
+diff(old,new) n tot,dold,told,dnew,tnew,sold,snew,diff
+ s tot=0
+ s dold=$p(old,",",1)
+ s told=$p(old,",",2)
+ s dnew=$p(new,",",1)
+ s tnew=$p(new,",",2)
+ s sold=(dold*86400)+told
+ s snew=(dnew*86400)+tnew
+ i snew<sold q 99999
+ s diff=snew-sold
+ q diff
+saveevent(epis)
+ n (epis,user)
+ k PLIST s PLIST=6
+ s PLIST(3)="WA" ; VISEV_Type - Event Type
+ s PLIST(4)="Results reviewed by "_user ; VISEV_Text - Text
+ s PLIST(5)=$p($h,",",1) ; VISEV_Date - Date
+ s PLIST(6)=$p($h,",",2) ; VISEV_Time - Time
+ s err=$$insert^LVBVISEV(epis)
+ q
+err
+ s $zt=""
+ d message("Error :"_$tr($ze,"<>","||"))
+ q
+]]></Routine>
+</Export>

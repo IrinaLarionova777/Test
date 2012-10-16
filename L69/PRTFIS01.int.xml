@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTFIS01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTFIS01 ; ML 22/10/98 ; FINANCIAL SUMMARY
+ q
+ ; Parameters :  1. From Date
+ ;               2. To Date
+ ;               3. Company
+ ;               4. Billing Location
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j),^TMPfis
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Financial Summary Report"
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="Company : "_$s($d(COMP):COMP(3)_" ("_COMP(2)_" )",1:"All")
+ s line=4,xHEADER(line)=""
+ s line=5,xHEADER(line)="Billing Location : "_$s($d(BLOC):BLOC(3)_" ("_BLOC(2)_" )",1:"All")
+ s line=6,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,PAR1,PAR2),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ i $l(PAR3),'$$select^LVBCTCO(PAR3,"Y") m COMP=PLIST
+ i $l(PAR4),'$$select^LVBCTBL(PAR4,"Y") m BLOC=PLIST
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+epis(epis) s epis=$g(epis)
+ s ic=$$seldata^LVBEPVIS(epis,18),result=$$seldata^LVBCTIC(ic,4)
+ q result
+BODY ; create temporary printing file
+ s comp="" f  s comp=$o(^TSUM(comp)) q:comp=""  d
+ .i $l(PAR3),PAR3'=comp q
+ .s date=PAR1-1 f  s date=$o(^TSUM(comp,date)) q:date=""  q:date>PAR2  d
+ ..s type="" f  s type=$o(^TSUM(comp,date,type)) q:type=""  d
+ ...i type="INVOICE" d
+ ....s payc="" f  s payc=$o(^TSUM(comp,date,type,payc)) q:payc=""  d
+ .....s batch="" f  s batch=$o(^TSUM(comp,date,type,payc,batch)) q:batch=""  d
+ ......s epis="" f  s epis=$o(^TMCB(payc,batch,epis)) q:epis=""  i $d(^TEPI(epis)) d
+ .......s billoc=$p(^TEPI(epis),"\",22) i $l(PAR4),PAR4'=billoc q
+ .......s io=$$epis(epis) i io="" s io="N"
+ .......s xx=$g(^TMCB(payc,batch,epis))
+ .......f j=1,3,4,5 s $p(^TMP($zn,$j,"REPORT",comp,type,payc),"\",j)=$p($g(^TMP($zn,$j,"REPORT",comp,type,payc)),"\",j)+$p(xx,"\",j)
+ .......f j=1,3,4,5 s $p(^TMP($zn,$j,"REPORT-"_io,comp,type,payc),"\",j)=$p($g(^TMP($zn,$j,"REPORT-"_io,comp,type,payc)),"\",j)+$p(xx,"\",j)
+ .......s ^TMPfis(epis)=$g(^TMPfis(epis))+xx
+ .......s ^TMPfis(epis,type,payc,batch)=xx
+ ...i type="CREDITS" d
+ ....s batch="" f  s batch=$o(^TSUM(comp,date,type,batch)) q:batch=""  d
+ .....s line="" f  s line=$o(^TSUM(comp,date,type,batch,line)) q:line=""  d
+ ......s rowid=batch_"||"_line
+ ......s found=0 d  i found q
+ .......s epis="" f  s epis=$o(^TBAT(batch,line,1,epis)) q:epis=""  s found=1 d
+ ........s amt=^(epis),billoc=$$CT006^at325(epis) i $l(PAR4),PAR4'=billoc q
+ ........s io=$$epis(epis) i io="" s io="N"
+ ........s ^TMP($zn,$j,"REPORT",comp,type)=$g(^TMP($zn,$j,"REPORT",comp,type))+amt
+ ........s ^TMP($zn,$j,"REPORT-"_io,comp,type)=$g(^TMP($zn,$j,"REPORT-"_io,comp,type))+amt
+ ........s ^TMPfis(epis)=$g(^TMPfis(epis))-amt
+ ........s ^TMPfis(epis,type,batch,line)=amt
+ ......s xx=^TSUM(comp,date,type,batch,line),epis=$p(^TBAT(batch,line),"\")
+ ......i $l(epis) d
+ .......s io=$$epis(epis) i io="" s io="N"
+ .......s amt=$p(xx,"\",1),billoc=$p(xx,"\",2) i $l(PAR4),PAR4'=billoc q
+ .......s ^TMP($zn,$j,"REPORT",comp,type)=$g(^TMP($zn,$j,"REPORT",comp,type))+amt
+ .......s ^TMP($zn,$j,"REPORT-"_io,comp,type)=$g(^TMP($zn,$j,"REPORT-"_io,comp,type))+amt
+ .......s ^TMPfis(epis)=$g(^TMPfis(epis))-amt
+ .......s ^TMPfis(epis,type,batch,line)=amt
+ ...i type="JOURNAL" d
+ ....s jourcode="" f  s jourcode=$o(^TSUM(comp,date,type,jourcode)) q:jourcode=""  d
+ .....s jourtype=$p($g(^TTAB("JO",jourcode)),"\",2)
+ .....s epis="" f  s epis=$o(^TSUM(comp,date,type,jourcode,epis)) q:epis=""  d
+ ......s io=$$epis(epis) i io="" s io="N"
+ ......s jour="" f  s jour=$o(^TSUM(comp,date,type,jourcode,epis,jour)) q:jour=""  d
+ .......s xx=^TJOU(jourcode,date,epis,jour)
+ .......s billoc=$p(xx,"\",14) i $l(PAR4),PAR4'=billoc q
+ .......s xx=$p(xx,"\",3)_"\\"_$p(xx,"\",6)_"\"_$p(xx,"\",7)_"\"_$p(xx,"\",8)
+ .......i jourtype="C" d
+ ........f j=1,3,4,5 s $p(^TMP($zn,$j,"REPORT",comp,type_"-CR",jourcode),"\",j)=$p($g(^TMP($zn,$j,"REPORT",comp,type_"-CR",jourcode)),"\",j)+$p(xx,"\",j)
+ ........f j=1,3,4,5 s $p(^TMP($zn,$j,"REPORT-"_io,comp,type_"-CR",jourcode),"\",j)=$p($g(^TMP($zn,$j,"REPORT-"_io,comp,type_"-CR",jourcode)),"\",j)+$p(xx,"\",j)
+ ........s ^TMPfis(epis)=$g(^TMPfis(epis))-xx
+ ........s ^TMPfis(epis,type,jourcode,epis,jour)=xx
+ .......i jourtype="D" d
+ ........f j=1,3,4,5 s $p(^TMP($zn,$j,"REPORT",comp,type_"-DE",jourcode),"\",j)=$p($g(^TMP($zn,$j,"REPORT",comp,type_"-DE",jourcode)),"\",j)+$p(xx,"\",j)
+ ........f j=1,3,4,5 s $p(^TMP($zn,$j,"REPORT-"_io,comp,type_"-DE",jourcode),"\",j)=$p($g(^TMP($zn,$j,"REPORT-"_io,comp,type_"-DE",jourcode)),"\",j)+$p(xx,"\",j)
+ ........s ^TMPfis(epis)=$g(^TMPfis(epis))+xx
+ ........s ^TMPfis(epis,type,jourcode,epis,jour)=xx
+ ...i type="REBILL" d
+ ....s epis="" f  s epis=$o(^TSUM(comp,date,type,epis)) q:epis=""  d
+ .....s billoc=$p($g(^TEPI(epis)),"\",22) i $l(PAR4),PAR4'=billoc q
+ .....s io=$$epis(epis) i io="" s io="N"
+ .....s in1="" f  s in1=$o(^TSUM(comp,date,type,epis,in1)) q:in1=""  d
+ ......s in2="" f  s in2=$o(^TSUM(comp,date,type,epis,in1,in2)) q:in2=""  d
+ .......s date2=$p(^TMCB(in1,in2),"\",1),dx=$s(date2<PAR1:1,1:2),xx=$g(^TMCB(in1,in2,epis))
+ .......f j=1,3,4,5 s $p(^TMP($zn,$j,"REPORT",comp,type,dx,in1),"\",j)=$p($g(^TMP($zn,$j,"REPORT",comp,type,dx,in1)),"\",j)+$p(xx,"\",j)
+ .......f j=1,3,4,5 s $p(^TMP($zn,$j,"REPORT-"_io,comp,type,dx,in1),"\",j)=$p($g(^TMP($zn,$j,"REPORT-"_io,comp,type,dx,in1)),"\",j)+$p(xx,"\",j)
+ .......s ^TMPfis(epis)=$g(^TMPfis(epis))-xx
+ .......s ^TMPfis(epis,type,in1,in2)=xx
+ q
+PRINT ; print report
+ f report="REPORT","REPORT-Y","REPORT-N" i $d(^TMP($zn,$j,report)) d
+ .i report["-" d
+ ..d ADDLINE^PRTREP00(REPID,"PRT","#"),LN
+ ..d ADDLINE^PRTREP00(REPID,"PRT","~BOLD"),LN
+ ..d ADDLINE^PRTREP00(REPID,"PRT",$s(report["-Y":"Inpatients",1:"Outpatients"))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL"),LN
+ .s comp="" f  s comp=$O(^TMP($zn,$j,report,comp)) q:comp=""  d
+ ..k DebitAmt,CreditAmt,JournalCreditAmt,JournalDebitAmt,RebillAmt1,RebillAmt2,OpenBalance,CloseBalance,move
+ ..s (DebitAmt,CreditAmt,JournalCreditAmt,JournalDebitAmt,RebillAmt1,RebillAmt2,OpenBalance,CloseBalance,move)=""
+ ..i '$l(PAR3) d
+ ...k xCOMP i '$$select^LVBCTCO(comp,"Y") m xCOMP=PLIST
+ ...d LN,ADDLINE^PRTREP00(REPID,"PRT",$e(xLINE(1),2,$l($g(xCOMP(2))_" - "_$g(xCOMP(3)))+1))
+ ...d ADDLINE^PRTREP00(REPID,"PRT","~BOLD"),LN
+ ...d ADDLINE^PRTREP00(REPID,"PRT",$g(xCOMP(2))_" - "_$g(xCOMP(3)))
+ ...d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL"),LN
+ ...d ADDLINE^PRTREP00(REPID,"PRT",$e(xLINE(1),2,$l($g(xCOMP(2))_" - "_$g(xCOMP(3)))+1)),LN
+ .. ; print total invoiced by paycode
+ ..d LN,ADDLINE^PRTREP00(REPID,"PRT","~BOLD"),LN
+ ..d ADDLINE^PRTREP00(REPID,"PRT","DEBITS BY PAYCODE"),LN
+ ..d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL"),LN
+ ..s payc="" f  s payc=$o(^TMP($zn,$j,report,comp,"INVOICE",payc)) q:payc=""  s xx=^(payc) d
+ ...i '$$select^LVBCTPC(payc,"Y") d
+ ....s xxx(1)=" ("_PLIST(2)_") "_PLIST(3)
+ ....s xxx(2)=$p(xx,"\",1)
+ ....s xxx(3)=$p(xx,"\",3)
+ ....s xxx(4)=$p(xx,"\",4)+$p(xx,"\",5)
+ ....s xxx(5)=$p(xx,"\",4)
+ ....s xxx(6)=$p(xx,"\",5)
+ ....f j=1,3,4,5 s $p(DebitAmt,"\",j)=$p(DebitAmt,"\",j)+$p(xx,"\",j)
+ ....f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ....d PRINT^PRTREP00(,.N,"N") k xxx
+ ..s xxx(1)="                         Total Debits"
+ ..s xxx(2)=$p(DebitAmt,"\",1)
+ ..s xxx(3)=$p(DebitAmt,"\",3)
+ ..s xxx(4)=$p(DebitAmt,"\",4)+$p(DebitAmt,"\",5)
+ ..s xxx(5)=$p(DebitAmt,"\",4)
+ ..s xxx(6)=$p(DebitAmt,"\",5)
+ ..f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ..d PRINT^PRTREP00(,.N,"N") k xxx
+ .. ; print total CreditAmts
+ ..s CreditAmt=$g(^TMP($zn,$j,report,comp,"CREDITS"))
+ ..d LN,ADDLINE^PRTREP00(REPID,"PRT","~BOLD"),LN
+ ..d ADDLINE^PRTREP00(REPID,"PRT","CREDITS")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL"),LN
+ ..s xxx(1)="                         Total Credits"
+ ..s xxx(2)=CreditAmt
+ ..d PRINT^PRTREP00(,.N,"N") k xxx
+ .. ; print total journals by journal code
+ ..d LN,ADDLINE^PRTREP00(REPID,"PRT","~BOLD"),LN
+ ..d ADDLINE^PRTREP00(REPID,"PRT","JOURNALS")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL"),LN
+ ..s jType="JOURNAL CREDITS"
+ ..s jourcode="" f  s jourcode=$o(^TMP($zn,$j,report,comp,"JOURNAL-CR",jourcode)) q:jourcode=""  s xx=^(jourcode) d
+ ...i '$$select^LVBCTJO(jourcode,"Y") d
+ ....s xxx(1)=$e(jType_$j("",16),1,16)_" ("_PLIST(2)_") "_PLIST(3),jType=""
+ ....s xxx(2)=$p(xx,"\",1)
+ ....s xxx(3)=$p(xx,"\",3)
+ ....s xxx(4)=$p(xx,"\",4)+$p(xx,"\",5)
+ ....s xxx(5)=$p(xx,"\",4)
+ ....s xxx(6)=$p(xx,"\",5)
+ ....f j=1,3,4,5 s $p(JournalCreditAmt,"\",j)=$p(JournalCreditAmt,"\",j)+$p(xx,"\",j)
+ ....f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ....d PRINT^PRTREP00(,.N,"N") k xxx
+ ..s xxx(1)="                         Total Journal Credits"
+ ..s xxx(2)=$p(JournalCreditAmt,"\",1)
+ ..s xxx(3)=$p(JournalCreditAmt,"\",3)
+ ..s xxx(4)=$p(JournalCreditAmt,"\",4)+$p(JournalCreditAmt,"\",5)
+ ..s xxx(5)=$p(JournalCreditAmt,"\",4)
+ ..s xxx(6)=$p(JournalCreditAmt,"\",5)
+ ..f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ..d PRINT^PRTREP00(,.N,"N"),LN k xxx
+ ..s jType="JOURNAL DEBITS"
+ ..s jourcode="" f  s jourcode=$o(^TMP($zn,$j,report,comp,"JOURNAL-DE",jourcode)) q:jourcode=""  s xx=^(jourcode) d
+ ...i '$$select^LVBCTJO(jourcode,"Y") d
+ ....s xxx(1)=$e(jType_$j("",16),1,16)_" ("_PLIST(2)_") "_PLIST(3),jType=""
+ ....s xxx(2)=$p(xx,"\",1)
+ ....s xxx(3)=$p(xx,"\",3)
+ ....s xxx(4)=$p(xx,"\",4)+$p(xx,"\",5)
+ ....s xxx(5)=$p(xx,"\",4)
+ ....s xxx(6)=$p(xx,"\",5)
+ ....f j=1,3,4,5 s $p(JournalDebitAmt,"\",j)=$p(JournalDebitAmt,"\",j)+$p(xx,"\",j)
+ ....f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ....d PRINT^PRTREP00(,.N,"N") k xxx
+ ..s xxx(1)="                         Total Journal Debits"
+ ..s xxx(2)=$p(JournalDebitAmt,"\",1)
+ ..s xxx(3)=$p(JournalDebitAmt,"\",3)
+ ..s xxx(4)=$p(JournalDebitAmt,"\",4)+$p(JournalDebitAmt,"\",5)
+ ..s xxx(5)=$p(JournalDebitAmt,"\",4)
+ ..s xxx(6)=$p(JournalDebitAmt,"\",5)
+ ..f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ..d PRINT^PRTREP00(,.N,"N") k xxx
+ .. ; print Rebills
+ ..d LN,ADDLINE^PRTREP00(REPID,"PRT","~BOLD"),LN
+ ..d ADDLINE^PRTREP00(REPID,"PRT","REBILLS")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL"),LN
+ ..i $d(^TMP($zn,$j,report,comp,"REBILL",1)) d
+ ...d ADDLINE^PRTREP00(REPID,"PRT","?5  REBILLS (previous period)"),LN
+ ...s payc="" f  s payc=$o(^TMP($zn,$j,report,comp,"REBILL",1,payc)) q:payc=""  s xx=^(payc) d
+ ....i '$$select^LVBCTPC(payc,"Y") d
+ .....s xxx(1)="      ("_PLIST(2)_") "_PLIST(3)
+ .....s xxx(2)=$p(xx,"\",1)
+ .....s xxx(3)=$p(xx,"\",3)
+ .....s xxx(4)=$p(xx,"\",4)+$p(xx,"\",5)
+ .....s xxx(5)=$p(xx,"\",4)
+ .....s xxx(6)=$p(xx,"\",5)
+ .....f j=1,3,4,5 s $p(RebillAmt1,"\",j)=$p(RebillAmt1,"\",j)+$p(xx,"\",j)
+ .....f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ .....d PRINT^PRTREP00(,.N,"N") k xxx
+ ...s xxx(1)="                         Total Rebills (pp)"
+ ...s xxx(2)=$p(RebillAmt1,"\",1)
+ ...s xxx(3)=$p(RebillAmt1,"\",3)
+ ...s xxx(4)=$p(RebillAmt1,"\",4)+$p(RebillAmt1,"\",5)
+ ...s xxx(5)=$p(RebillAmt1,"\",4)
+ ...s xxx(6)=$p(RebillAmt1,"\",5)
+ ...f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ...d PRINT^PRTREP00(,.N,"N"),LN k xxx
+ ..i $d(^TMP($zn,$j,report,comp,"REBILL",2)) d
+ ...d ADDLINE^PRTREP00(REPID,"PRT","?5  REBILLS (current period)"),LN
+ ...s payc="" f  s payc=$o(^TMP($zn,$j,report,comp,"REBILL",2,payc)) q:payc=""  s xx=^(payc) d
+ ....i '$$select^LVBCTPC(payc,"Y") d
+ .....s xxx(1)="      ("_PLIST(2)_") "_PLIST(3)
+ .....s xxx(2)=$p(xx,"\",1)
+ .....s xxx(3)=$p(xx,"\",3)
+ .....s xxx(4)=$p(xx,"\",4)+$p(xx,"\",5)
+ .....s xxx(5)=$p(xx,"\",4)
+ .....s xxx(6)=$p(xx,"\",5)
+ .....f j=1,3,4,5 s $p(RebillAmt2,"\",j)=$p(RebillAmt2,"\",j)+$p(xx,"\",j)
+ .....f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ .....d PRINT^PRTREP00(,.N,"N") k xxx
+ ...s xxx(1)="                         Total Rebills (cp)"
+ ...s xxx(2)=$p(RebillAmt2,"\",1)
+ ...s xxx(3)=$p(RebillAmt2,"\",3)
+ ...s xxx(4)=$p(RebillAmt2,"\",4)+$p(RebillAmt2,"\",5)
+ ...s xxx(5)=$p(RebillAmt2,"\",4)
+ ...s xxx(6)=$p(RebillAmt2,"\",5)
+ ...f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ...d PRINT^PRTREP00(,.N,"N") k xxx
+ ..D LN,ADDLINE^PRTREP00(REPID,"PRT",xLINE(1)),LN,LN
+ .. ; calculate opening and closing balances and movement
+ ..s move=""
+ ..f j=1,3,4,5 s $p(move,"\",j)=$p(DebitAmt,"\",j)+$p(JournalDebitAmt,"\",j)-$p(JournalCreditAmt,"\",j)-$s(j=1:CreditAmt,1:"")-$p(RebillAmt1,"\",j)-$p(RebillAmt2,"\",j)
+ ..i report'["-" d
+ ...s (OpenBalance,CloseBalance)=""
+ ...i $l(PAR4) s xx=$g(^TSUM(comp,PAR1,"OB",PAR4)) f j=1,3,4,5 s $p(OpenBalance,"\",j)=$p(xx,"\",j)
+ ...i '$l(PAR4) s xx=$g(^TSUM(comp,PAR1,"OB"," ")) f j=1,3,4,5 s $p(OpenBalance,"\",j)=$p(xx,"\",j)
+ ...f j=1,3,4,5 s $p(CloseBalance,"\",j)=$p(OpenBalance,"\",j)+$p(move,"\",j)
+ ...s ^TSUM(comp,PAR2+1,"OB",$s($l(PAR4):PAR4,1:" "))=CloseBalance
+ ...m ^TMPfis("OpenBalance")=OpenBalance
+ ...m ^TMPfis("DebitAmt")=DebitAmt
+ ...m ^TMPfis("JournalDebitAmt")=JournalDebitAmt
+ ...m ^TMPfis("JournalCreditAmt")=JournalCreditAmt
+ ...m ^TMPfis("CreditAmt")=CreditAmt
+ ...m ^TMPfis("RebillAmt1")=RebillAmt1
+ ...m ^TMPfis("RebillAmt2")=RebillAmt2
+ ... ; print summary
+ ...s xxx(1)="Openning Balance"
+ ...s xxx(2)=$p(OpenBalance,"\",1)
+ ...s xxx(3)=$p(OpenBalance,"\",3)
+ ...s xxx(4)=$p(OpenBalance,"\",4)+$p(OpenBalance,"\",5)
+ ...s xxx(5)=$p(OpenBalance,"\",4)
+ ...s xxx(6)=$p(OpenBalance,"\",5)
+ ...f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ..d PRINT^PRTREP00(,.N,"N") k xxx
+ ..s xxx(1)="Summary of Movement for the period"
+ ..s xxx(2)=$p(move,"\",1)
+ ..s xxx(3)=$p(move,"\",3)
+ ..s xxx(4)=$p(move,"\",4)+$p(move,"\",5)
+ ..s xxx(5)=$p(move,"\",4)
+ ..s xxx(6)=$p(move,"\",5)
+ ..f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ..d PRINT^PRTREP00(,.N,"N") k xxx
+ ..i report'["-" d
+ ...s xxx(1)="Closing Balance"
+ ...s xxx(2)=$p(CloseBalance,"\",1)
+ ...s xxx(3)=$p(CloseBalance,"\",3)
+ ...s xxx(4)=$p(CloseBalance,"\",4)+$p(CloseBalance,"\",5)
+ ...s xxx(5)=$p(CloseBalance,"\",4)
+ ...s xxx(6)=$p(CloseBalance,"\",5)
+ ...f j=2:1:6 i 'xxx(j) s xxx(j)=""
+ ...d PRINT^PRTREP00(,.N,"N") k xxx
+ s report="FIS"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+LN ; add line to report
+ d ADDLINE^PRTREP00(REPID,"PRT","!")
+ q
+]]></Routine>
+</Export>

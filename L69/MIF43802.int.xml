@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF43802" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF43802(mi) ; ML 23/7/02 ; ASTM protocol  -  CD Slide maker
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),etb=$c(23),ack=$c(6),enq=$c(5),eot=$c(4)
+ s lf=$c(10),cr=$c(13),nak=$c(21)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 e  q
+ d trace^MIF000(mi,"R=<"_R_">","H<--M")
+ i $c(R)=enq d
+ .d trace^MIF000(mi,"ENQ","H<--M")
+ .d ACK
+ .k ^TMP($zn,$j,"records") s recordOLD=""
+ .f  r *R:10 d trace^MIF000(mi,"R=<"_R_">","H<--M")  q:$c(R)=eot  q:R=-1  d
+ ..i $c(R)'=stx q
+ ..s record=$$read^MIF000("",lf) q:'$l(record)
+ ..s record=$e(record,1,$l(record)-1)
+ ..d trace^MIF000(mi,record,"H<--M")
+ .. ; check record validity
+ ..s et=$s(record[etx:etx,1:etb),chsum=$p(record,et,2),chrecord=$p(record,et,1)_et
+ ..i $$CHSUM(chrecord)'=chsum d  q
+ ...w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+ ..d ACK
+ ..s record=recordOLD_$p($e(record,2,$l(record)),et,1)
+ ..i et=etb s recordOLD=$p(record,cr,$l(record,cr)),record=$p(record,cr,1,$l(record,cr)-1)
+ ..i et=etx s recordOLD=""
+ ..f j=1:1:$l(record,cr) s x=$p(record,cr,j) i $l(x) s cnt=$o(^TMP($zn,$j,"records",""),-1)+1,^TMP($zn,$j,"records",cnt)=x
+ .d trace^MIF000(mi,$s($c(R)=eot:"EOT",1:R),"H<--M")
+ .s cnt="" f  s cnt=$o(^TMP($zn,$j,"records",cnt)) q:cnt=""  d
+ ..s record=^(cnt)
+ .. ; query record
+ ..i $e(record)="Q" s ^TMP($zn,$j,"ENQ")=""
+ i $d(^TMP($zn,$j,"ENQ")) d SCAN
+ q
+SCAN ; check all episodes for tests to be performed
+ d scanall^MIF000(mi)
+ s epis="" f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  i '$d(^TMIF(mi,12,epis)) d
+ .s ^TMIF(mi,12,epis)=""
+ .k PLIST i $$select^LVBEPVIS(epis,"Y")
+ .k ^TMIF(mi,10)
+ .s ^TMIF(mi,10,1)="H|\^&|||||||LABTRAK|||P|1"_cr
+ .s ^TMIF(mi,10,1)=^TMIF(mi,10,1)_"P|1||||"_$g(PLIST(3))_"^"_$g(PLIST(4))_"||||||||"_$g(PLIST(15))_cr
+ .s ^TMIF(mi,10,1)=^TMIF(mi,10,1)_"O|1|"_epis_"|"_cr
+ .s ^TMIF(mi,10,1)=^TMIF(mi,10,1)_"L|1|N"_cr
+ .d Send
+ .k ^TMP("MIF-SCAN",$j,mi,epis)
+ q
+Send ; send list of orders if exists
+ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M")
+ f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=enq:"ENQ",$c(R)=nak:"NAK",1:R),"H<--M")
+ i $c(R)=enq q
+ i $c(R)'=ack w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+ s (err,x)="" f  s x=$O(^TMIF(mi,10,x)) q:x=""  s xx=^(x) d  q:err
+ .f FRAME=1:1 q:'$d(^TMIF(mi,10,x,FRAME))  k ^TMIF(mi,10,x,FRAME)
+ .f FRAME=1:1 q:'$l(xx)  s ^TMIF(mi,10,x,FRAME)=$e(xx,1,240),xx=$e(xx,241,$l(xx))
+ .f FRAME=1:1 q:'$d(^TMIF(mi,10,x,FRAME))  d   q:err
+ ..s last=0 i '$d(^TMIF(mi,10,x,FRAME+1)) s last=1
+ ..s err=$$SEND(FRAME#8_^TMIF(mi,10,x,FRAME)_$s('last:etb,1:etx))
+ .i 'err k ^TMIF(mi,10,x)
+ w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ q
+SEND(str) ; send string to instrument
+ s chsum=$$CHSUM(str)
+ w stx,str,chsum,cr,lf,*-3 d trace^MIF000(mi,str_chsum,"H-->M")
+ f j=1:1:6 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 1
+ d trace^MIF000(mi,R,"H<--M")
+ q 2
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

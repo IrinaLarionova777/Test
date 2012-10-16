@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTBBUTR01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTBBUTR01	; IG 22/09/99 ; Units Transaction Report
+	q
+	; Parameters :  1. Site
+	;               2. Transaction
+	;               3. Date from
+	;               4. Sorting order : M-MRN
+	;                                  D-Date of Transaction
+	;                                  E-Expiry Date
+	;                                  B-Blood Product/Blood Group
+	;                                  L-Location
+	;               5. Display Expired Units
+	;               6. Date to
+	;               7. Product
+	;               8. Product group
+	;
+CREATE(REPID,PAR,USER,%msql)	; create report
+	n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+	k xHEADER d INIT
+	s line=1,xHEADER(line)="Units Transaction Report ("_BBTR(3)_")"
+	s line=2,xHEADER(line)=""
+	s line=3,xHEADER(line)="Site : "_$s('$l(PAR1):"All Sites",1:CTUSL(3))
+	s line=4,xHEADER(line)=""
+	i $l(PAR7) d
+	.s line=line+1,xHEADER(line)="for product <"_PAR7_"> "_BBBP(3)
+	.s line=line+1,xHEADER(line)=""
+	i $l(PAR8) d
+	.s line=line+1,xHEADER(line)="for product group <"_PAR8_"> "_BBPG(3)
+	.s line=line+1,xHEADER(line)=""
+	i PAR5="Y" d
+	.s line=line+1,xHEADER(line)="Showing Expired Units"
+	.s line=line+1,xHEADER(line)=""
+	d HEADER^PRTREP00(.xHEADER,PAR3,PAR6,,,PAR4),BODY,PRINT
+CREND	I $l(PAR1),'$$select^LVBPRPR(REPID) S PLIST(12)=PAR1 I $$update^LVBPRPR(REPID)
+	k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+	q
+INIT	; initialise parameters
+	f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+	k xSORT d H^PRTREP00(PAR10,$zn)
+	s xSORT("M")="MRN"
+	s xSORT("D")="Date of Transaction"
+	s xSORT("E")="Expiry Date"
+	s xSORT("B")="Blood Product/Blood Group"
+	s xSORT("L")="Location"
+	s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+	i $l(PAR1),'$$select^LVBCTUSL(PAR1,"Y") m CTUSL=PLIST
+	i $l(PAR7),'$$select^LVBBBBP(PAR7,"Y") m BBBP=PLIST
+	i $l(PAR8),'$$select^LVBBBPG(PAR8,"Y") m BBPG=PLIST
+	i '$$select^LVBBBTR(PAR2,"Y") m BBTR=PLIST
+	q
+BODY	; create temporary printing file
+	s date=PAR3-1 f  s date=$o(^TBBPi("TR-Date",date)) q:date=""  d
+	.i $l(PAR6),PAR6<date q
+	.s xx1="" f  s xx1=$o(^TBBPi("TR-Date",date,PAR2,xx1)) q:xx1=""  d
+	..s xx2="" f  s xx2=$o(^TBBPi("TR-Date",date,PAR2,xx1,xx2)) q:xx2=""  d
+	...s xx3="" f  s xx3=$o(^TBBPi("TR-Date",date,PAR2,xx1,xx2,xx3)) q:xx3=""  d
+	....i '$$select^LVBBBPT(xx1_"||"_xx2_"||"_xx3),PLIST(13)="Y" q
+	....s vtrid=$s($l(PLIST(14)):PLIST(14),1:PLIST(9))
+	....s mrn=$s($l(PLIST(15)):PLIST(15),1:PLIST(8))
+	....k PACK i '$$select^LVBBBP(xx1_"||"_xx2) m PACK=PLIST
+	.... ; check expiry date
+	....i $l(PAR5),PAR5'="Y",$p(PACK(13),$c(1))<$h q
+	.... ; check current location
+	....i $l(PAR1),PAR1'=$p(PACK(11),$c(1),4) q
+	.... ; check product
+	....i $l(PAR7),PAR7'=$p(PACK(8),$c(1)) q
+	....i $l(PAR8),PAR8'=$p(PACK(8),$c(1),4) q
+	....s sort="" i $l(PAR4) d
+	.....i PAR4="D" s sort=date
+	.....i PAR4="B" s sort=$p(PACK(8),$c(1))_" "_$p(PACK(9),$c(1))
+	.....i PAR4="M" s sort=$p(PACK(6),$c(1))
+	.....i PAR4="E" s sort=$p(PACK(13),$c(1))
+	.....i PAR4="L" s sort=$p(PACK(11),$c(1))
+	....s site=$p(PACK(11),$c(1),4) s:site="" site=" " s:sort="" sort=" "
+	....s ^TMP($zn,$j,"REPORT",site,sort,xx1_"||"_xx2_"||"_xx3)=vtrid_"\"_mrn
+	....s ^TMP($zn,$j,"REPORT",site,sort)=$g(^TMP($zn,$j,"REPORT",site,sort))+1
+	q
+PRINT	; print report
+	i $d(^TMP($zn,$j,"REPORT")) d
+	.s site="" f  s site=$o(^TMP($zn,$j,"REPORT",site)) q:site=""  d
+	..s xxx(1)=site i '$$select^LVBCTUSL(site,"Y") s xxx(1)=PLIST(2)_$c(1)_PLIST(3)
+	..s sort="" f  s sort=$o(^TMP($zn,$j,"REPORT",site,sort)) q:sort=""  d
+	...s trans="" f  s trans=$o(^TMP($zn,$j,"REPORT",site,sort,trans)) q:trans=""  d
+	....s vts=$p(^(trans),"\",1),mrn=$p(^(trans),"\",2),epis=""
+	....i $l(vts) s epis=$p(vts,"||",1),mrn=$$seldata^LVBEPVIS(epis,20)
+	....s stop=0
+	....i '$$select^LVBBBP($p(trans,"||")_"||"_$p(trans,"||",2)) d
+	.....s xxx(2)=PLIST(11)
+	.....s xxx(3)=PLIST(8)
+	.....s xxx(4)=PLIST(9)
+	.....s xxx(5)=PLIST(2)
+	.....s xxx(6)=$$extdate2^SSUTIL4(PLIST(4))
+	.....s xxx(7)=$$extdate2^SSUTIL4(PLIST(13))
+	.....i '$l(epis) s epis=$$seldata^LVBDEB(mrn,4) s stop=1
+	....k PLIST i $$select^LVBEPVIS(epis)
+	....i stop k PLIST(2)
+	....d PRINT^PRTREP00(.PLIST,.N) k PLIST,xxx
+	...s xxx(1)=$c(1)_"Total = "_$g(^TMP($zn,$j,"REPORT",site,sort))
+	...d PRINT^PRTREP00(,.N) k xxx
+	...d ADDLINE^PRTREP00(REPID,"PRT","!")
+	...d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+	...d ADDLINE^PRTREP00(REPID,"PRT","!")
+	.d ADDLINE^PRTREP00(REPID,"PRT","!")
+	.d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+	.d ADDLINE^PRTREP00(REPID,"PRT","!")
+	s report="BBUTR",EndLine=$$seldata^LVBCTCLR(report,9) i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+	q
+]]></Routine>
+</Export>

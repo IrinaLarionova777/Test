@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTVDA02" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTVDA02 ; IG 21/09/99 ; VISIT/DEBTOR ACTION LIST - SJOG
+ q
+ ; Parameters :  1. Visit Action list
+ ;               2. Debtor Action list
+ ;               3. Date from
+ ;               4. Date to
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Visit/Debtor Action List"
+ s line=2,xHEADER(line)=""
+ i $l(PAR1) d
+ .s line=line+1,xHEADER(line)="Visit Action : "_PAR1
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR2) d
+ .s line=line+1,xHEADER(line)="Debtor Action : "_PAR2
+ .s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,PAR3,PAR4),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+BODY ; create temporary printing file
+ ; create VA list
+ f j=1:1:$l(PAR1,",") s code=$p(PAR1,",",j) i $l(code) d
+ .s epis="" f  s epis=$o(^TIND("VA",code,epis)) q:epis=""  d
+ ..s mrn=$$seldata^LVBEPVIS(epis,20),date=$$seldata^LVBEPVIS(epis,12)
+ ..i $l(PAR3),date<PAR3 q
+ ..i $l(PAR4),date>PAR4 q
+ ..i $l(mrn) s ^TMP($zn,$j,"LIST",mrn,epis)=""
+ ; create DA list
+ f j=1:1:$l(PAR2,",") s code=$p(PAR2,",",j) i $l(code) d
+ .s epis="" f  s epis=$o(^TIND("DA",code,epis)) q:epis=""  d
+ ..s mrn=$$seldata^LVBEPVIS(epis,20),date=$$seldata^LVBEPVIS(epis,12)
+ ..i $l(mrn),$l(date) d
+ ...i $l(PAR3),date<PAR3 q
+ ...i $l(PAR4),date>PAR4 q
+ ...s rowid=mrn_"||"_date_"||"_epis
+ ...  ;---&SQL(SELECT DEBVI_Comments INTO :comments FROM DEB_DebtorVisits WHERE DEBVI_RowId=:rowid)
+  ...  ;--- ** SQL PUBLIC Variables: SQLCODE, comments, rowid
+ ... Do %0Ao
+ ...i $l(mrn) s ^TMP($zn,$j,"LIST",mrn,epis)=code_"\"_$p(comments,$c(1))
+ ; sort
+ i '$l(PAR2),$l(PAR1) d
+ .s mrn="" f  s mrn=$o(^TMP($zn,$j,"LIST",mrn)) q:mrn=""  d
+ ..s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",mrn,epis)) q:epis=""  d
+ ...s date=$$seldata^LVBEPVIS(epis,12)
+ ...i '$l(date) s date=" "
+ ...m ^TMP($zn,$j,"REPORT",date,mrn,epis)=^TMP($zn,$j,"LIST",mrn,epis)
+ .k ^TMP($zn,$j,"LIST")
+ ; sort
+ s mrn="" f  s mrn=$o(^TMP($zn,$j,"LIST",mrn)) q:mrn=""  d
+ .s epis=$o(^TMP($zn,$j,"LIST",mrn,""))
+ .s name=$$seldata^LVBEPVIS(epis,3)
+ .s name=$$ALPHAUP^SSUTIL4($p(name,$c(1))) i '$l(name) s name=" "
+ .m ^TMP($zn,$j,"REPORT",name,mrn)=^TMP($zn,$j,"LIST",mrn)
+ k ^TMP($zn,$j,"LIST")
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s sort="" f  s sort=$o(^TMP($zn,$j,"REPORT",sort)) q:sort=""  d
+ ..s mrn="" f  s mrn=$o(^TMP($zn,$j,"REPORT",sort,mrn)) q:mrn=""  d
+ ...s epis="" f cnt=0:1 s epis=$o(^TMP($zn,$j,"REPORT",sort,mrn,epis)) q:epis=""  d
+ ....s xxx(1)=$p(^(epis),"\",1),xxx(2)=$p(^(epis),"\",2)
+ ....i $l(xxx(1)),'$$select^LVBCTDA(xxx(1),"Y") s xxx(1)=xxx(1)_$c(1)_PLIST(3)
+ ....i '$$select^LVBEPVIS(epis) i cnt f j=3,4,7,20 k PLIST(j)
+ ....s x="" f  s x=$o(^TEPI(epis,"VA",x)) q:x=""  s PLIST(25)=$p(PLIST(25),$c(1)),PLIST(25)=PLIST(25)_$s($l(PLIST(25)):",",1:"")_x
+ ....d PRINT^PRTREP00(.PLIST,.N) k PLIST,xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="VDA"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(9)=0,%mmmsqld(10)=""
+ s %mmmsqld(4)=$g(rowid)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2),%mmmsqld(8)=$p(%mmmsqld(3),"||",3)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",$d(^TDEB(%mmmsqld(6),%mmmsqld(7),0,%mmmsqld(8)))
+ e  g %0ABdun
+ s %mmmsqld(17)=$g(^TDEB(%mmmsqld(6),%mmmsqld(7),0,%mmmsqld(8)))
+ s comments=$p(%mmmsqld(17),"\",4)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TDEB($p(%mmmsqld(3),"||",1),$p(%mmmsqld(3),"||",2),0,$p(%mmmsqld(3),"||",3))#"S":$zu(115,4) i $t { s %mmmsqld(9)=1,%mmmsqld(10)=$name(^TDEB($p(%mmmsqld(3),"||",1),$p(%mmmsqld(3),"||",2),0,$p(%mmmsqld(3),"||",3)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.DEB_DebtorVisits for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2),%mmmsqld(8)=$p(%mmmsqld(3),"||",3)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",$d(^TDEB(%mmmsqld(6),%mmmsqld(7),0,%mmmsqld(8)))
+ e  g %0ACdun
+ s %mmmsqld(24)=$g(^TDEB(%mmmsqld(6),%mmmsqld(7),0,%mmmsqld(8)))
+ s comments=$p(%mmmsqld(24),"\",4)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(9))=1 { l -@%mmmsqld(10) s %mmmsqld(9)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(9))=1 { l -@%mmmsqld(10) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+]]></Routine>
+</Export>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF460" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF460(mi) ; IQ 200 ASTM Protocol - Unidirectional
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),etb=$c(23),ack=$c(6),enq=$c(5),eot=$c(4),lf=$c(10),cr=$c(13),nak=$c(21),(result,epis)=""
+ i $$start^MIF000() q
+ f  s message="" d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 i $c(R)=enq d  q
+ .d trace^MIF000(mi,"ENQ","H<--M")
+ .d ACK
+ .f  r *R:10 q:$c(R)=eot  q:R=-1  d
+ ..i $c(R)'=stx d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=enq:"ENQ",$c(R)=nak:"NAK",$c(R)=eot:"EOT",1:R),"H<--M") q
+ ..s record=$$read^MIF000("",lf) q:'$l(record)
+ ..s record=$e(record,1,$l(record)-1)
+ ..d trace^MIF000(mi,record,"H<--M")
+ .. ; check record validity
+ ..s et=$s(record[etx:etx,1:etb)
+ ..s chsum=$p(record,et,2),chrecord=$p(record,et,1)_et
+ ..i $$CHSUM(chrecord)'=chsum d  q
+ ...w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+ ..d ACK
+ ..s record=$p(record,et),record=$e(record,2,$l(record))
+ ..s message=message_record
+ .s mess="" f j=1:4:$l(message) s x=$e(message,j,j+1),x=$zh(x),mess=mess_$c(x)
+ .d trace^MIF000(mi,mess,"H<--M")
+ . ; process mess
+ .s pos=0 f cnt=1:1 s pos=$f(mess,"<SA ",pos) q:'pos  s start=pos-4,pos=$f(mess,"</SA>",pos) q:'pos  s end=$s(pos:pos-1,1:$l(mess)),^TMP($zn,$j,cnt)=$e(mess,start,end)
+ .s cnt="" f  s cnt=$o(^TMP($zn,$j,cnt)) q:cnt=""  s mess=^(cnt) d
+ ..s (sample,epis,surname,result,date,time,QC)=""
+ ..s pos=$f(mess," ID=",0) i pos s epis=$p($tr($e(mess,pos,$f(mess," ",pos)-1),"""")," ")
+ ..s pos=0 f  s pos=$f(mess,"<AR ",pos) q:'pos  s start=pos-4,pos=$f(mess,"</AR>",pos),end=$s(pos:pos-1,1:$l(mess)) d
+ ...s xx=$e(mess,start,end)
+ ...s xp1=$f(xx," Key=",0) i xp1 s x1=$p($tr($e(xx,xp1,$f(xx," ",xp1)-1),"""")," ") i $l(x1) d
+ ....s xp2=$f(xx,">",0) i xp2 s x2=$p($tr($e(xx,xp2,$f(xx,"</AR>",xp2)-6),"""")," ") i $l(x2) s result=result_x1_$c(par10)_x2_$c(par11)
+ ..d Last
+ .d trace^MIF000(mi,"EOT","H<--M")
+ .d ACK
+ q
+Last ; file result if exist
+ i epis?1.99AN,$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ s (sample,epis,surname,result,date,time,QC)=""
+ q
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

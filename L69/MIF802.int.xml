@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF802" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF802(mi) ; ML 20/10/99 ; HITACHI 917 (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),frnum=0
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,etx) i '$l(record) d  q
+ .s ord="" f  s ord=$o(^TMIF(mi,10,ord)) q:ord=""  d
+ ..s data=^TMIF(mi,10,ord) d SEND(data) k ^TMIF(mi,10,ord)
+ d trace^MIF000(mi,record,"H<--M")
+ i $e(record,4)=";" d BUILD q
+ d FRAME(record) i $e(record,4)=">" q
+ ; extract number of tests
+ s num=$tr($e(record,55,57)," ")
+ i $e(record,4) d
+ .s record=$e(record,1,(num*10)+57)
+ .f  s rec=$$read^MIF000(stx,etx)  d  q:$e(rec,4)=":"
+ ..d trace^MIF000(mi,rec,"H<--M"),FRAME(rec)
+ ..s numx=$tr($e(rec,55,57)," "),num=num+numx,record=record_$e(rec,58,(numx*10)+57)
+ s record=$e(record,1,4)_$tr($e(record,5),"adfnqijklm","ADFNQIJKLM")_$e(record,6,999)
+ s (sample,epis,surname,result,date,time,QC)=""
+ s epis=$tr($e(record,21,33)," ") s:$e(record,5)'="F" epis=+epis
+ ; extract QC cup
+ i $e(record,5)="F" s QC="\"_epis
+ s spec=$tr($e(record,6)," ")                    ; specimen type
+ s res=$e(record,58,999)                         ; results
+ f i=1:1:num d
+ .n data,tst,tres,flag
+ .s data=$e(res,1,10),res=$e(res,11,999)
+ .s chan=$tr($e(data,1,3)," ","0")
+ .i spec'=1 s chan=chan_spec
+ .s resx=$tr($e(data,4,9)," ")
+ .s flag=$e(data,10) i flag=" " s flag=""
+ .s result=result_chan_$c(par10)_resx_$c(par10)_flag_$c(par11)
+ i $l(result),$l(epis) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+ ; compile string to send to instrument
+BUILD s frnum=frnum#8+1
+ s epis=$tr($e(record,21,33)," ")
+ s epis=$e(epis,$l(epis)-6,$l(epis))
+ d DETpat
+ k tst s (tst,tc,tcch,spec)=""
+ d scanone^MIF000(mi,epis)
+ f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ .i $l(tc)=4 s:spec="" spec=$e(tc,4)
+ .s tcch=$e(tc,1,3) f  q:$e(tcch,1)'="0"  s tcch=$e(tcch,2,$l(tcch))
+ .s:(tcch=87)!(tcch=88)!(tcch=89) tcch=87 i tcch'?." " s tst(tcch)=""
+ f i=1:1:88 s tst=tst_$d(tst(i))
+ i spec'="" s $e(record,6)=spec
+ s data=record_" 88"_tst_"01100"_surn_drname d SEND(data)
+ k tst,^TMP("MIF-SINGLE",$j,mi,epis)
+ q
+ ; extract patient data
+DETpat i $$select^LVBEPVIS(epis,"Y") d FRAME(record) q
+ s sex=$s(PLIST(5)="M":1,PLIST(5)="F":2,1:" ")
+ i PLIST(26)>1 s record=$e(record,1,33)_$j(PLIST(26),3)_3_$e(record,38,999)
+ s record=$e(record,1,37)_sex_$e(record,39,999)
+ s spaces="",$p(spaces," ",31)=""
+ s surn=$e(PLIST(3)_spaces,1,25)
+ s drname=$s(PLIST(15)'="":$p($g(^TTAB("DR",PLIST(15))),"\"),1:"")
+ s drname=$e(drname_spaces,1,20)
+ q
+ ; calculate check digit
+CHSUM(z) s x=0 f j=1:1:$l(z) s x=x+$a(z,j)
+ s x=x#256,x1=x\16,x2=x#16
+ q ($e("0123456789ABCDEF",x1+1)_($e("0123456789ABCDEF",x2+1)))
+ ; calculate frame number
+FRAME(z) s frnum=frnum#8+1,str=$e(z,1,3)_">"
+ d SEND(str)
+ q
+ ; send string to instrument
+SEND(str) s chsum=$$CHSUM(str)
+ w stx,str,etx,chsum,$c(13),*-3
+ d trace^MIF000(mi,str_" "_chsum,"H-->M")
+ q
+]]></Routine>
+</Export>

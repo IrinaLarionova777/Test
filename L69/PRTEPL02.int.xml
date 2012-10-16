@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTEPL02" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTEPL02 ; ML 18/05/2004 ; Episode Patient Label - SJOG
+ q
+ ; Parameters :  1. Episode number
+ ;               2. Label code
+ ;               3. Quantity
+ ;               4. Computer Name
+ ;               5. Worksheet
+ ;               6. Worksheet No.
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ ;Set ^XXX($I(^XXX))="New report"
+ ;Set ^XXX($I(^XXX))=$LB($G(REPID),$G(PAR),$G(USER),$G(%msql))
+ ;Merge ^XXX($I(^XXX))=REPID
+ ;Merge ^XXX($I(^XXX))=PAR
+ ;Merge ^XXX($I(^XXX))=USER
+ ;Merge ^XXX($I(^XXX))=%msql
+ d INIT,BODY,PRINT
+CREND i '$$select^LVBPRPR(REPID) s PLIST(12)=PAR2_"-"_PAR1,PLIST(9)="M" i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialize parameters
+INIT f J=1:1:$l(PAR,$c(1)) s @("PAR"_J)=$p(PAR,$c(1),J)
+ q
+BODY ; create temporary printing file
+ ; label and quantity entered
+ i $l(PAR1),$l(PAR2),$l(PAR3) s ^TMP($zn,$j,"REPORT",PAR1,PAR2)=PAR3 q
+ ; print labels for a patient
+ i $l(PAR1) d
+ .i $l(PAR5),$l(PAR6) d
+ ..i $$open^LVBWKSRT(PAR5_"||"_PAR6_"||"_PAR1)
+ ..f  q:$$fetch^LVBWKSRT(PAR5_"||"_PAR6_"||"_PAR1)  s ts=$p(PLIST(2),$c(1)) i $$status^LVBVIS1(PAR1_"||"_ts_"||"_$p(PLIST(3),$c(1)))'="A" s ^TMP($zn,$j,1,PAR1,ts)=$g(^TMP($zn,$j,1,PAR1,ts))+1
+ ..i $$close^LVBWKSRT()
+ .i '$l(PAR5) d
+ ..i $$open^LVBVISTS(PAR1)
+ ..f  q:$$fetch^LVBVISTS(PAR1)  s ts=$p(PLIST(3),$c(1)) i $$status^LVBVIS1(PAR1_"||"_ts_"||"_$p(PLIST(2),$c(1)))'="A" s ^TMP($zn,$j,1,PAR1,ts)=$g(^TMP($zn,$j,1,PAR1,ts))+1
+ ..i $$close^LVBVISTS()
+ i '$l(PAR1) d
+ .i $l(PAR5),$l(PAR6) d
+ ..i $$open^LVBWKSRE(PAR5_"||"_PAR6)
+ ..f  q:$$fetch^LVBWKSRE(PAR5_"||"_PAR6)  s epis=$p(PLIST(2),$c(1)) d
+ ...i $$open^LVBWKSRT(PAR5_"||"_PAR6_"||"_epis)
+ ...f  q:$$fetch^LVBWKSRT(PAR5_"||"_PAR6_"||"_epis)  s ts=$p(PLIST(2),$c(1)) i $$status^LVBVIS1(epis_"||"_ts_"||"_$p(PLIST(3),$c(1)))'="A" s ^TMP($zn,$j,1,epis,ts)=$g(^TMP($zn,$j,1,epis,ts))+1
+ ...i $$close^LVBWKSRT()
+ ..i $$close^LVBWKSRE()
+ s epis="" f  s epis=$o(^TMP($zn,$j,1,epis)) q:epis=""  d
+ .s ts="" f  s ts=$o(^TMP($zn,$j,1,epis,ts)) q:ts=""  d
+ ..s (label,max)=""
+ ..s label=$$seldata^LVBCTTS(ts,23),max=$$seldata^LVBCTLB(label,4)
+ ..i $l(label),max d
+ ...i $l(PAR2),PAR2'=label q
+ ...s ^TMP($zn,$j,"REPORT",epis,label,ts)=^TMP($zn,$j,1,epis,ts)
+ ...s (cnt,ts1)="" f  s ts1=$o(^TMP($zn,$j,"REPORT",epis,label,ts1)) q:ts1=""  s cnt=cnt+^(ts1)
+ ...s xx=cnt\max s:cnt#max xx=xx+1 s ^TMP($zn,$j,"REPORT",epis,label)=xx
+ q
+PRINT 
+ s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",epis)) q:epis=""  i '$$select^LVBEPVIS(epis) d
+ .k VISIT m VISIT=PLIST
+ .s label="" f  s label=$o(^TMP($zn,$j,"REPORT",epis,label)) q:label=""  s cnt=^(label) d
+ ..
+ .. ; micro labels
+ ..i $e(label)="M" d
+ ...s test="" f  s test=$o(^TMP($zn,$j,"REPORT",epis,label,test)) q:test=""  d
+ ....s tscnt="" f  s tscnt=$o(^TEPI(epis,1,test,tscnt)) q:tscnt=""  d
+ .....s vtsRID=epis_"||"_test_"||"_tscnt
+ .....s synonym=$$seldata^LVBCTTS(test,4),date=$$seldata^LVBEPVIS(epis,10)
+ .....k VISTS i '$$select^LVBVISTS(vtsRID) m VISTS=PLIST
+ .....k VISIT i '$$select^LVBEPVIS(epis,"Y") m VISIT=PLIST
+ .....s (stop,ws,wsN,seq)="" f  s ws=$o(^TEPI(epis,"WS",ws)) q:ws=""  d  q:stop
+ ......f  s wsN=$o(^TEPI(epis,"WS",ws,wsN)) q:wsN=""  d  q:stop
+ .......i $d(^TWKS(ws,2,wsN,"EP",epis,"TEST",test,tscnt)) s stop=1,seq=^TWKS(ws,2,wsN,"EP",epis)
+ .....i $l(ws),$l(wsN),'$l(seq) d
+ ......s (seq,ep)="" f  s ep=$o(^TWKS(ws,2,wsN,"EP",ep)) q:ep=""  i ^(ep)>seq s seq=^(ep)
+ ......s seq=seq+1,^TWKS(ws,2,wsN,"EP",epis)=seq
+ ......s x1="" f  s x1=$o(^TWKS(ws,2,wsN,"EP",epis,"TEST",x1)) q:x1=""  d
+ .......s (ok,x)="" f  s x=$o(^TTAB("TS",x1,0,x)) q:x=""  i $p(^(x),"\",8)="J6000" s ok=1 q
+ .......i ok s x2="" f  s x2=$o(^TWKS(ws,2,wsN,"EP",epis,"TEST",x1,x2)) q:x2=""  d
+ ........s ^TEPI(epis,1,x1,x2,"DATA","J6000")=ws_" "_wsN_" "_seq
+ .....s cnt=$s(" FM "[(" "_$p(VISTS(47),$c(1))_" "):2," ENT "[(" "_$p(VISTS(47),$c(1))_" "):2," STER "[(" "_$p(VISTS(47),$c(1))_" "):2," WD "[(" "_$p(VISTS(47),$c(1))_" "):2,1:1)
+ .....s LF=$c(10),LABnum=1
+ .....f j1=1:1:cnt d
+ ......d ADD^SSPRINT(REPID,"PRT",LF)
+ ......d ADD^SSPRINT(REPID,"PRT","N"_LF)
+ ......d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_LABnum_""""_LF)
+ ......d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_LABnum_""""_LF)
+ ......d ADD^SSPRINT(REPID,"PRT","FS""LABEL"_LABnum_""""_LF)
+ ......d ADD^SSPRINT(REPID,"PRT","Q200,24"_LF)
+ ......d ADD^SSPRINT(REPID,"PRT","q640"_LF)
+ ......
+ ......f j=0:1:3 d
+ .......d ADD^SSPRINT(REPID,"PRT","A"_(j*160+160)_",0,1,3,1,1,N,"""_ws_" "_wsN_" "_seq_""""_LF)
+ .......d ADD^SSPRINT(REPID,"PRT","B"_(j*160+140)_",0,1,2,2,4,50,N,"""_epis_""""_LF)
+ .......d ADD^SSPRINT(REPID,"PRT","A"_(j*160+88)_",0,1,4,1,1,N,"""_epis_""""_LF)
+ .......s xx=$$UPPER^SSUTIL4(VISIT(3))_" "_VISIT(4)
+ .......d ADD^SSPRINT(REPID,"PRT","A"_(j*160+60)_",0,1,2,1,1,N,"""_$s($l(xx)<15:xx,1:$e(xx,1,14)_"*")_""""_LF)
+ .......d ADD^SSPRINT(REPID,"PRT","A"_(j*160+41)_",0,1,1,1,1,N,"""_$p(VISTS(3),$c(1),2)_" "_$p(VISTS(47),$c(1),2)_" "_$p(VISTS(57),$c(1))_""""_LF)
+ .......d ADD^SSPRINT(REPID,"PRT","A"_(j*160+26)_",0,1,1,1,1,N,"""_$$extdate1^SSUTIL4($p($h,","))_""""_LF)
+ ......d ADD^SSPRINT(REPID,"PRT","FE"_LF)
+ ......d ADD^SSPRINT(REPID,"PRT","FR""LABEL"_LABnum_""""_LF)
+ ......d ADD^SSPRINT(REPID,"PRT","P1"_LF)
+ ..
+ .. ; generic labels
+ ..i $e(label)'="M" d
+ ...s cnt=1 f j=1:1:cnt d
+ ....s LF=$c(10),LABnum=1
+ ....d ADD^SSPRINT(REPID,"PRT","FK""*"""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FS""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","Q152,48"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","R16,0"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","B320,20,0,1,2,2,50,B,"""_PAR1_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A320,110,0,2,1,1,N,"""_$g(PLIST(3))_","_$g(VISIT(4))_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A320,130,0,1,1,1,N,"""_"DOB: "_$$extdate2^SSUTIL4($g(VISIT(6)))_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","A320,150,0,1,1,1,N,"""_"COLL:"_$$extdate2^SSUTIL4($g(VISIT(12)))_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FE"_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","FR""LABEL"_LABnum_""""_LF)
+ ....d ADD^SSPRINT(REPID,"PRT","P1"_LF)
+ q
+LN d ADD^SSPRINT(REPID,"PRT","!")
+ q
+]]></Routine>
+</Export>

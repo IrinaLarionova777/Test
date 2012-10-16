@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBEPIS17" type="INT" languagemode="0"><![CDATA[
+LVBEPIS17 ; ML 31/10/00 ; Episode control - RDWT
+ ;
+ ; supported calls:
+ ;
+ ; $$check^LVBEPIS17(site,epis)
+ ; $$medicare^LVBEPIS17(pc,deb,data)
+ ;
+check(site,epis) n (PLIST,site,epis) k PLIST
+ ; check existing TEPI
+ i $d(^TEPI(epis)) s deb="" d  g end
+ . d %0Ao
+ .s deb=$p(deb,$c(1)),ok=$s($l(deb):10,1:40) k PLIST s PLIST(1)=epis
+ ; normal request for new Episode
+ i epis="." s ok=50,x=100 d  i 'x g end
+ .s date=$$extdate^SSUTIL4(+$h),year=$e($p(date,"/",3),3,4),x=$$new(year)
+ ; check Episode format
+ s rowid=1,format=""
+ d %0Bo
+ i '$l(format) s ok=50 k PLIST s PLIST(1)=epis g end
+ i $l(format),epis?@format s ok=50 k PLIST s PLIST(1)=epis g end
+ s ok=100
+end s PLIST=$o(PLIST(""),-1)
+ q ok
+ ; data   : medicare number or
+ ;          veterans affairs number
+ ;          pensioner card number
+ ; return : 0   - ok
+ ;          40  - empty
+ ;          50  - wrong issue
+ ;          100 - wrong 
+ ; type   : 0 - Medicare
+ ;          1 - DVA
+ ;          2 - Pensioner
+medicare(pc,deb,data,type) n (pc,deb,data,type,PLIST) k ^TMP($zn,$j)
+ s pc=$g(pc),deb=$g(deb),data=$$ALPHAUP^SSUTIL4($g(data)),type=+$g(type),ok=0
+ k PAYCODE i '$$select^LVBCTPC(pc,"Y") m PAYCODE=PLIST
+ ; check Medicare
+ i type=0 d
+ .i '$l(data) s:$g(PAYCODE(34))="M" ok=40 q
+ .i $l(data)'=10 s ok=100 q
+ .i "23456"'[$e(data) s ok=100 q
+ .s check=$e(data)+($e(data,2)*3)+($e(data,3)*7)+($e(data,4)*9)+$e(data,5)+($e(data,6)*3)+($e(data,7)*7)+($e(data,8)*9)#10
+ .i check'=$e(data,9) s ok=100 q
+ ; check DVA
+ i type=1 d
+ .i '$l(data) s:$g(PAYCODE(35))="M" ok=40 q
+ .i $l(data)>9 s ok=100 q
+ ; check Pensioner
+ i type=2 d
+ .i '$l(data) s:$g(PAYCODE(36))="M" ok=40 q
+ i $l(deb),'$l(data) d  s ok=0
+ . ; Medicare
+ .i type=0 d
+ ..s x="" f cnt=1:1 s x=$o(^TDEBi(deb,"MEDICARE",x)) q:x=""  s ^TMP($zn,$j,cnt)=x
+ . ; DVA
+ .i type=1 d
+ ..s x="" f cnt=1:1 s x=$o(^TDEBi(deb,"DVA",x)) q:x=""  s ^TMP($zn,$j,cnt)=x
+ . ; Pensioner
+ .i type=2 d
+ ..s x="" f cnt=1:1 s x=$o(^TDEBi(deb,"PENSIONER",x)) q:x=""  s ^TMP($zn,$j,cnt)=x
+ m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q ok                         
+ ; get new number
+new(pref) s pref=$g(pref)
+nx k PLIST s PLIST=1
+ i pref'="",'$d(^CF("EPIS-CNT",pref)) s ^CF("EPIS-CNT",pref)=99999
+ i pref="" s PLIST(1)=$$next("^CF(""EPIS-CNT"")")
+ i pref'="" s PLIST(1)=$$next("^CF(""EPIS-CNT"",pref)")_pref
+ ; check if number already exists
+ i PLIST(1)'="",$d(^TEPI(PLIST(1))) g nx
+ q 0
+next(glo) n a
+ l +@glo
+ s a=$g(@glo)+1,@glo=a
+ l -@glo
+ q a
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(epis,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$e(epis,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p($g(%mmmsqld(3)),"||",1,1)
+ i %mmmsqld(6)'="",$d(^TEPI(%mmmsqld(6)))
+ e  g %0ABdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(6)))
+ s deb=$p(%mmmsqln,"\",18)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0BAr1 n num s num=$$numint^%qarzdt(%val,1,"","",1) s:(num="")&(%val'="") %ok=0 s %val=num
+ q  
+%0Bo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Berr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(rowid,$C(1))
+ i %mmmsqld(4)="",$L(rowid)>1 s %val=$E(rowid,2,999) d %0BAr1 s %mmmsqld(4)=%val
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^CF("LAB",%mmmsqld(3)))
+ i '$t
+ e  i 1>%mmmsqld(3),%mmmsqld(3)=+%mmmsqld(3)
+ i  g %0BBdun
+ s %mmmsqln=$g(^CF("LAB",%mmmsqld(3)))
+ s format=$p(%mmmsqln,"^",8)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Bc
+%0BBdun 
+%0BAdun 
+%0Bc q
+%0Berr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0BAdun
+]]></Routine>
+</Export>

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPMI23out" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBPMI23out ; ML 09/05/2000 ; HOSPITAL PMI INTERFACE - LABTRAK to Vital HL7 (Goulburn Valley Hospital)
+ q
+ ; loop thru and send patient details to Hospital
+INIT k (error) s $zt="error^"_$zn k ^TMP($zn,$j) s error="",client="TO",HOSP="V"
+ d trace("Starting interface as process "_$j,"*****")
+ f  q:'$$opcl(error)
+ i open f  d CREATE,SEND q:'open  h 30
+ g restart
+CREATE k ^TMP($zn,$j)
+ s x1="" f  s x1=$o(^TEDI("OUT","HL7",x1)) q:x1=""  d
+ .s x2="" f  s x2=$o(^TEDI("OUT","HL7",x1,x2)) q:x2=""  d
+ ..s x3="" f  s x3=$o(^TEDI("OUT","HL7",x1,x2,x3)) q:x3=""  d
+ ...s epis="" f  s epis=$o(^TEDI("OUT","HL7",x1,x2,x3,epis)) q:epis=""  d
+ ....s cnt="" f  s cnt=$o(^TEDI("OUT","HL7",x1,x2,x3,epis,42,epis,cnt)) q:cnt=""  d
+ .....s status=$p(^(cnt),"\",3)
+ .....i " Add Edit "[(" "_status_" ") s ^TMP($zn,$j,epis,status)=""
+ .....k ^TEDI("OUT","HL7",x1,x2,x3,epis,42,epis,cnt)
+ s epis="" f  s epis=$o(^TMP($zn,$j,epis)) q:epis=""  d
+ .f status="Add","Edit" i $d(^TMP($zn,$j,epis,status)) d
+ ..s cnt=$o(^THOS(HOSP,"OUT",""),-1)+1,^THOS(HOSP,"OUT",cnt)=epis_"\"_status
+ q
+ ; send transmission
+SEND s (Pcount,cnt)="" f  s cnt=$o(^THOS(HOSP,"OUT",cnt)) q:cnt=""  d  q:Pcount=50
+ .s Pcount=Pcount+1,epis=$p(^(cnt),"\",1),status=$p(^(cnt),"\",2)
+ .k VISIT i '$$select^LVBEPVIS(epis,"Y") m VISIT=PLIST
+ .f j=1:1:VISIT s VISIT(j)=$p(VISIT(j),$c(1))
+ .i " F M "[(" "_VISIT(5)_" "),VISIT(20)?1.7N,(status="Edit")!((status="Add")&'$d(^THOS(HOSP,"PATIENT",VISIT(20)))) d
+ ..d trace("Start of transmission "_status_" "_epis_" *****","*****")
+ ..s date=$zd(+$h,8)_$tr($zt($p($h,",",2)),":")
+ ..s xt=$s($d(^THOS(HOSP,"PATIENT",VISIT(20))):"A31",$d(^THOS(HOSP,"log-sent",VISIT(20))):"A31",1:"A28")
+ ..s str="MSH|^~\&|LABTRAK||VITAL||"_date_"|TRAKS|ADT^"_xt_"^ADT_A01|"_$tr($h,",","_")_"|P|2.3.1|||||AU||en|"
+ ..s xt=$o(^THOS("V","log-sent",VISIT(20),""),-1)+1,^THOS("V","log-sent",VISIT(20),xt)=$h
+ ..d trace(str,"L-->H") w $c(11),str,$c(13)
+ ..s str="EVN||"_date_"||||"
+ ..d trace(str,"L-->H") w str,$c(13)
+ ..s str="PID|1|"_$e(10000000+VISIT(20),2,8)_"|"
+ ..s str=str_$e(10000000+VISIT(20),2,8)_"^^^HOSP^MR^^^~"_VISIT(8)_VISIT(108)_"^^^AUSHIC^MC^^^~"_VISIT(88)_"^^^AUSHIC^PEN^^^~"_VISIT(89)_"^^^AUSDVA^DVA^^^~"_"||"
+ ..s str=str_VISIT(3)_"^"_$p(VISIT(4)," ")_"^"_$p(VISIT(4)," ",2,99)_"^^"_VISIT(7)_"^^L^||"_$zd(VISIT(6),8)_"|"_$s($l(VISIT(5)):$g(^THOS(HOSP,"SEX L-H",VISIT(5))),1:"")_"|||"_VISIT(32)_"^"_VISIT(33)_"^"_VISIT(34)_"^"_VISIT(35)_"^"_VISIT(36)_"^^P^^^^||"
+ ..i $l(VISIT(43)) s str=str_VISIT(43)_"^PRN^PH^^^^^^"
+ ..s str=str_"|"
+ ..i $l(VISIT(44)) s str=str_VISIT(44)_"^WPN^PH^^^^^^"
+ ..s str=str_"|||||||||||"
+ ..d trace(str,"L-->H") w str,$c(13)
+ ..s str="PV1|1|I"
+ ..d trace(str,"L-->H") w str,$c(13,28,13),*-3
+ ..d trace("End of transmission *****","*****")
+ ..s record=$$read^MIF000($c(11),$c(28),,10)
+ ..i $l(record) d
+ ...k msg f j=1:1:$l(record,$c(13)) i $l($p(record,$c(13),j)) s msg(j)=$p(record,$c(13),j) d trace(msg(j),"L<--H")
+ .k ^THOS(HOSP,"OUT",cnt)
+ q
+ ; way : L-->H - Labtrak to Hospital
+ ;       L<--H - Hospital to Labtrak
+ ;       ***** - packet sent/ack/nak, device opened/closed
+ ;       ERROR - error occurred
+trace(xxx,way,type) n (xxx,way,type,client) s type=$g(type) i '$l(type) s type="trace"
+ s j="" f  s j=$o(^TMPpmi(client,type,j)) q:j=""  q:j>($h-2)  k ^TMPpmi(client,type,j)
+ s j=$o(^TMPpmi(client,type,+$h,""),-1)+1
+ s time=$p($h,",",2)\60,time=$e(time\60+100,2,3)_":"_$e(time#60+100,2,3)
+ s ^TMPpmi(client,type,+$h,j)=$s(type="trace":way_" : "_time_" ",1:"")_xxx
+ q
+ ; open and close device
+opcl(error) s dev=$p($g(^CF("LAB",1,"IP",client)),"\",2),ip=$p($g(^CF("LAB",1,"IP",client)),"\",3)
+ s (timeout,open)=""
+ i $l(client) d
+ .i error c dev d trace("Device closed","*****") h 120
+ .o dev:(ip::"C"):20 e  d trace("Unable to open device","*****") q
+ .d trace("Device opened","*****")
+ .u dev s open=1
+ q 0
+ ; restart interface if unable to open port or port error occurs
+restart c dev
+ d trace("Shutting down process "_$j_" and restarting interface","*****")
+ j INIT^LVBPMI23out
+ halt
+ ; trap any 'write' errors which may occur due to VITAL side closing down
+error d trace($ze,"ERROR")
+ i $ze["WRITE" s error=1 g restart
+ i $ze["READ" s error=1 g restart
+ i $ze["COMMAND" s error=1 g restart
+ d BACK^%ETN
+ g INIT+1
+]]></Routine>
+</Export>

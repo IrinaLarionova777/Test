@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="TCLTranslation" type="INT" languagemode="0"><![CDATA[
+TCLTranslation() public {
+ 
+}
+ // Импорт уже переведенных сообщений из INI-файлов в XLS-файл с полным списком сообщений
+ // Параметры:
+ // pInFileName	- имя исходного XLS-файла 
+ // pOutFileName	- имя получаемого XLS-файла 
+ // pDir	- каталог для выгрузки INI-файлов с переводом
+Import(pInFileName,pOutFileName,pDir) public {
+	; Если лень писать в параметрах, то хардкодим пути для для непередаваемого значения (мне было удобнее для отладки)
+	Set pInFileName=$Get(pInFileName,"C:\box\TCL\all.xls") 
+	Set pOutFileName=$Get(pOutFileName,"C:\box\TCL\tcllab.xls") 
+	Set pDir=$Get(pDir,"C:\Box\TCL\Language\")
+	If $Extract(pDir,$Length(pDir))'="\" Set pDir=pDir_"\"  ; Последний символ должен быть "\"
+ 
+	; Глобалы для работы со списком сообщений 
+	Set glb=$NA(^TCL) 		; Данные выкачанные из XLS файла 
+	Set indglb=$NA(^TCLInd)	; Индексный глобал для записи соответствия строк XLS-файла, именам\сообщениям INI-файла 
+	Set rusglb=$NA(^TCLRus)	; Русский перевод сообщений
+	;
+	Do OpenExcelFile(pInFileName,.xlApp,.xlWorkBook,.xlWorkSheet,.xlCells)
+	;
+	
+	Write !,"Loading messages from Excel"
+	Do LoadFromExcel(glb,xlWorkSheet,xlCells)
+	Write !,"Completed"
+	;
+	Write !,"Making index global"
+	Do MakeIndGlb(glb,indglb)
+	Write !,"Completed"
+ 	; 
+	Write !,"Loading russian meassages"
+ 	Do LoadRussian(pDir,rusglb)
+	Write !,"Completed"
+ 	;
+ 	; 
+	Write !,"Import of russian meassages to Excel"
+	Do ImportToExcel(indglb,rusglb,xlCells)
+	Write !,"Completed"
+ 	; 
+	Do CloseExcelFile(xlApp,xlWorkBook,1,pOutFileName)
+}
+ // Загрузка в глобал pGlb сообщения из объектов XLS-файла
+LoadFromExcel(pGlb,pWorkSheet,pCells) public {
+	Kill @pGlb
+	Set maxrow=pWorkSheet.UsedRange.Rows.Count
+	For i=1:1:maxrow {
+		Set vals=""
+		For j=1:1:6 {
+             set xlCell=pCells.ItemGet(i,j)
+             s xlCell=xlCell.Become("Activate.Excel.Range")
+             Set vals=vals_$LB(xlCell.Value)
+		}
+		Set @pGlb@(i)=vals	
+	}
+}
+ 
+ImportToExcel(pIndGlb,pRusGlb,pCells) public {
+	Set ind="" 
+	For  {
+		Set ind=$Order(@pIndGlb@(ind))
+		If ind="" Quit
+		Set rus=$Get(@pRusGlb@(ind))
+		;W !,ind," ",rus R *Y
+		If rus="" Continue
+		Set id=""
+		For  {
+			Set id=$Order(@pIndGlb@(ind,id))
+			If id="" Quit
+            Do pCells.ItemSet(id,6,rus) 
+			
+		}	
+	}	
+ 
+}	
+ // Формируем по всем данным pGlb индексный глобал pIndGlb
+ // @pIndGlb@(FileName_$Char(1)_EnglishValue)=ExcelRow
+ // Нужно для быстрой записи переведенных на русский язык значений в XLS-файл
+MakeIndGlb(pGlb,pIndGlb) public {
+	Kill @pIndGlb
+	Set ind=""
+	For {
+		Set ind=$Order(@pGlb@(ind))
+		If ind="" Quit
+		Set vals=$Get(@pGlb@(ind))
+		Set newind=$LG(vals,2)_$Char(1)_$LG(vals,5)
+		Set @pIndGlb@(newind)=$Get(@pIndGlb@(newind))+1
+		Set @pIndGlb@(newind,ind)=""
+	}	
+}
+ // Загрузка из каталога pDir переведенных значений в глобал pRusGlb
+LoadRussian(pDir,pRusGlb) public {
+	Kill @pRusGlb
+	; Проходим по всем INI-файлам каталога
+	Set result=##class(%ResultSet).%New("%File:FileSet")
+	Set sc=result.Execute(pDir,"*.ini") 
+	If 'sc Do DisplayError^%apiOBJ(sc) Quit
+	While result.Next(.sc) {
+		If 'sc Quit
+		Do LoadFile(pRusGlb,result.Data("Name"))
+	}
+}
+ // Собственно обработка файла pFileName и запись его данных в pGlb
+LoadFile(pGlb,pFileName) public {
+	Set section=$P(pFileName,"\",$L(pFileName,"\"))
+	Set section=$P(section,".",1)
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=pFileName
+	Set stream.TranslateTable="CP1251"
+	Set isrussian=0
+	While 'stream.AtEnd {
+		Set str=stream.ReadLine()  
+		If str["[Russian]" Set russian=1 Continue
+		If str["[English]" Set russian=0 
+		If str["[Italian]" Set russian=0 
+		If str["[~Font." Continue
+		If 'russian Continue
+		;If str["[" Write !,section,"=",str 
+		Set eng=$ZStrip($P(str,"=",1),"<>W")
+		Set eng=$P(eng,"~",1)
+		Set rus=$ZStrip($P(str,"=",2),"<>W")
+		Set rus=$P(rus,"~",1)
+		Set ind=section_$Char(1)_eng
+		Set @pGlb@(ind)=rus
+		;ZZDUMP eng,rus R *Y
+	}
+ 
+}
+ 
+ // Открываем файл pFileName и инициализируем объекты, которые потом потребуются 
+OpenExcelFile(pFileName,pXlApp,pXlWorkBook,pXlWorkSheet,pXlCells) public {
+	Set pXlApp=##class(Activate.Excel.Application).%New() 
+	Set pXlApp.Visible = 0 
+	Set xlWorkBooks = pXlApp.Workbooks 
+	Set pXlWorkBook = xlWorkBooks.Open(pFileName) 
+	Set xlWorkSheets = pXlWorkBook.Worksheets 
+	Set pXlWorkSheet = xlWorkSheets.ItemGet(1) 
+	Set pXlWorkSheet = pXlWorkSheet.Become("Activate.Excel.uWorksheet") 
+	Set pXlCells = pXlWorkSheet.Cells 
+ 
+}	
+ // Закрываем Excel , если нужно (pSave=1), то сохраняем pXlWorkBook как pFileName
+CloseExcelFile(pXlApp,pXlWorkBook,pSave,pFileName) public {
+ 	Set pXlWorkBook.Saved = -1 
+	If $Get(pSave) {
+		Set sc=1
+		If ##class(%File).Exists(pFileName) Set ok=##class(%File).Delete(pFileName)
+		If 'sc Do DisplayError^%apiOBJ(sc) Quit
+		Do pXlWorkBook.SaveAs(pFileName) 
+	}	
+	Do pXlApp.Quit()
+}	 
+ 
+ // Экспорт переведенных сообщений из XLS-файла в указанный каталог
+ // Параметры:
+ // pFileName	- имя XLS-файла 
+ // pDir	- каталог для выгрузки INI-файлов с переводом
+Export(pFileName,pDir) public {
+	; Если лень писать в параметрах, то хардкодим пути (мне было удобнее для отладки)
+	Set pFileName=$Get(pFileName,"C:\box\TCL\tcllab.xls") 
+	Set pDir=$Get(pDir,"C:\Box\TCL\Translation\")
+	If $Extract(pDir,$Length(pDir))'="\" Set pDir=pDir_"\"  ; Последний символ должен быть "\"
+	;
+	Do OpenExcelFile(pFileName,.xlApp,.xlWorkBook,.xlWorkSheet,.xlCells)
+	;
+	Set rusglb=$NA(^TCLRus)
+	;
+	Write !,"Loading messages from Excel"
+	Do LoadTransFromExcel(rusglb,xlWorkSheet,xlCells)
+	Write !,"Completed"
+	;	
+	Write !,"Export files"
+	Do SaveTranslationToDir(rusglb,pDir)
+	Write !,"Completed"
+ 	; 
+	Do CloseExcelFile(xlApp,xlWorkBook,0)
+}
+ 
+ // Загрузка перевода из XLS файла в глобал
+LoadTransFromExcel(pGlb,pWorkSheet,pCells) public {
+	Kill @pGlb
+	Set maxrow=pWorkSheet.UsedRange.Rows.Count
+	For i=1:1:maxrow {
+		// Имя файла
+		Set xlCell=pCells.ItemGet(i,2)
+		Set xlCell=xlCell.Become("Activate.Excel.Range")
+		Set fname=xlCell.Value
+		If fname="" Continue
+		// English - значение
+		Set xlCell=pCells.ItemGet(i,5)
+		Set xlCell=xlCell.Become("Activate.Excel.Range")
+		Set englval=xlCell.Value
+		If englval="" Continue
+ 
+		// Russian - значение
+		Set xlCell=pCells.ItemGet(i,6)
+		Set xlCell=xlCell.Become("Activate.Excel.Range")
+		Set rusval=xlCell.Value
+		If rusval="" Continue
+		
+		Set @pGlb@(fname,englval)=rusval	
+	}
+}
+ // Собственно выгрузка данных закачанных в глобал pGlb в каталог pDir
+SaveTranslationToDir(pGlb,pDir) public {
+	Do ClearDir(pDir)
+	Set fname=""
+	For  {
+		Set fname=$Order(@pGlb@(fname))
+		If fname="" Quit
+		Do SaveTranslationToFile(pGlb,pDir,fname)
+		
+	}	
+}
+ 
+ // Удаление всех INI-файлов из каталога pDir
+ClearDir(pDir) public {
+	Set result=##class(%ResultSet).%New("%File:FileSet")
+	Set sc=result.Execute(pDir,"*.ini") 
+	If 'sc Do DisplayError^%apiOBJ(sc) Quit
+	While result.Next(.sc) {
+		If 'sc Quit
+		;Write !,result.Data("Name")
+		Set sc=##class(%File).Delete(result.Data("Name"))
+		If 'sc Do DisplayError^%apiOBJ(sc) Quit
+ 
+	}
+ 
+}	
+ // Выгрузка конкретного файла
+SaveTranslationToFile(pGlb,pDir,pFileName) public {
+	Set fullname=pDir_pFileName_".ini"
+	;Set ok=1
+	;If ##class(%File).Exists(fullname) Set ok=##class(%File).Delete(fullname)
+	;If 'ok Do DisplayError^%apiOBJ(sc) Quit
+ 
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=fullname
+	Set stream.TranslateTable="CP1251"
+	Do stream.WriteLine("[Russian]")
+ 
+ 
+	Set ind=""
+	For  {
+		Set ind=$Order(@pGlb@(pFileName,ind))
+		If ind="" Quit
+		Set str=ind_"~="_$Get(@pGlb@(pFileName,ind))_"~"
+		Do stream.WriteLine(str)
+	}
+	Do stream.SaveStream()	
+}							
+]]></Routine>
+</Export>

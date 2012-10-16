@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF302" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF302(mi) ; ML 23/6/98 ; BECKMAN Synchron CX5/CX7 (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s soh=$c(1),ack=$c(6),enq=$c(5),eot=$c(4),stx=$c(2),etx=$c(3),nak=$c(21)
+ s bl="",$p(bl," ",50)="",chk=0
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:15
+ q:R'=1  k res
+ i $c(R)=soh d ACK
+ f  r *R q:R=4  d
+ .i $c(R)=soh d ACK q
+ .s record="" f  r *X:10 s record=record_$c(X) q:X=10  q:X=-1
+ .s record=$c(R)_record i $e(record)'="[",record["[" f  q:$e(record)="["  s record=$e(record,2,999)
+ .d trace^MIF000(mi,record,"H<--M")
+ .d CHKREC i 'ok w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+ .d ACK
+ .s record=$p($p(record,"]",1),"[",2),str=$e($p(record,",",2),2,3)
+ .i str="01" d A1
+ .i str="02" d A2
+ q
+CHKREC ; check sum received = check sum calculated
+ s ok=$$CHSUM($p(record,"]",1)_"]")=$e($p(record,"]",2),1,2)
+ i $$CHSUM($P(record,"]",1)_"]")="0",$e($p(record,"]",2),1,2)="00" s ok=1
+ q
+CHSUM(x) ; calculate check sum for record received
+ s t=0 f j=1:1:$l(x) S t=t+$a(x,j)
+ s t=256-(t#256)
+ s t=$e("0123456789ABCDEF",t\16+1)_$e("0123456789ABCDEF",t#16+1)
+ q t
+A1 ; process request record
+ s fun=+$p(record,",",3),senteot=""
+ i fun'=6 q
+ f i=1:1:7 s epis=$tr($p(record,",",3+i)," ") i epis'="" d BUILD
+ q
+A2 ; process results record
+ s fun=+$p(record,",",3),datex=$p(record,",",4),timex=$p(record,",",5),type=$p(record,",",10)
+ s cup=$tr($p(record,",",9)," "),qcid=$tr($p(record,",",14)," ")
+ s record=$p(record,",",11,999)
+ i fun=1 d  q
+ .s (sample,epis,surname,res,date,time,QC)=""
+ .s epis=$tr($p(record,",",3)," "),epis=$p(epis,"-")
+ .s date=$e(datex,3,4)_"/"_$e(datex,1,2)_"/"_$e(datex,5,6),date=$$intdate^SSUTIL4(date)
+ .s time=$e(timex,1,2)_":"_$e(timex,3,4),time=$$inttime^SSUTIL4(time)
+ .i type="CO" s QC=cup_"\"_qcid,epis=qcid
+ i fun=3 d  q
+ .i $p(record,",",6)["#",'$d(^TMIF(mi,"FLAG")) q
+ .i $p(record,",",6)["*",'$d(^TMIF(mi,"FLAG")) q
+ .s x1=$tr($p(record,",",1)," "),x2=$tr($p(record,",",6)," ")
+ .s x3=$tr($p(record,",",18,33)," ")
+ .s res=res_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ . ; check for toxicology codes
+ .s toxres=$p(record,",",8) i toxres>1 q
+ .s res=res_$tr($p(record,",",1)_"tox"_$c(par10)_$p(record,",",8)," ")_$c(par11)
+ i fun=5 d  q
+ .i $l(res) d file^MIF000(mi,sample,epis,surname,res,date,time,QC)
+ q
+SEND(z) ; Send request to CX7
+ i senteot="" r *R d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=etx:"ETX",$c(R)=nak:"NAK",$c(R)=eot:"EOT",1:$c(R)),"H<--M")
+ f j=1:1:6 w eot,*-3,soh,*-3 r *R:10 q:R=6
+ d trace^MIF000(mi,"EOT-SOH","H-->M")
+ d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=etx:"ETX",$c(R)=nak:"NAK",1:$c(R)),"H<--M")
+ i R'=6,(R'=3) q
+ s chksum=$$CHSUM(z)
+ h 2
+ w z,chksum,$c(13,10),*-3 d trace^MIF000(mi,z_chksum,"H-->M")
+ r *R d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=etx:"ETX",$c(R)=nak:"NAK",1:$c(R)),"H<--M")
+ w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") s senteot=1
+ q
+BL(a,b) ; pad field out to correct length
+ q $e(a_bl,1,b)_","
+BUILD ; d trace^MIF000(mi,"ACK","H-->M")
+ s episx=epis,epis=$p(epis,"-",1)
+ d scanone^MIF000(mi,epis) q:'$d(^TMP("MIF-SINGLE",$j,mi,epis))
+ s (surn,givn,sex,dob,date,urno,age)=""
+ ; check for entered/pre-entered patient details
+ k PLIST i '$$select^LVBEPVIS(epis,"Y") d
+ .f j="surn;3","givn;4","sex;5","dob;6","date;12","urno;20","age;26" s @($p(j,";"))=$g(PLIST($p(j,";",2)))
+ k PLIST s sex=$p(sex,$c(1),1) s:sex="" sex="M"
+ s urno=$p(urno,$c(1),1)
+ s r="[00,701,01,00,00,0,RO,SE,"_$$BL(episx,11)_$e(bl,1,20)_","_$e(bl,1,25)_","_$e(bl,1,25)_","
+ s r=r_$$BL(surn,18)_$$BL(givn,15)_" ,"_$$BL(urno,12)_$e(bl,1,18)_","
+ s xx=$$extdate2^SSUTIL4(date) i '$l(xx) s xx="      "
+ s r=r_$p(xx,"/",1)_$p(xx,"/",2)_$e($p(xx,"/",3),3,4)
+ s r=r_",    ,"_$e(bl,1,20)_","
+ s z="000,5," i age,age<1 s agex=age*1000,z=$e("000",1,3-$l(agex))_agex_",2,"
+ i age,age'<1 s z=$e("000",1,3-$l(age))_age_",5,"
+ s r=r_z
+ i 'dob s r=r_"      ,"
+ i dob s xx=$$extdate2^SSUTIL4(dob),r=r_$p(xx,"/",1)_$p(xx,"/",2)_$e($p(xx,"/",3),3,4)_","
+ s r=r_$s(sex="PUA":"F",1:sex)_","_$e(bl,1,25)_","
+ s r=r_"       ,    ,    ,      ,"
+ k tst s (tst,tc,cnt)=""
+ f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ .i tc'?." " i '$d(tst($$BL(tc,4))) s cnt=cnt+1,tst($$BL(tc,4))=""
+ s r=r_$e("000",1,3-$l(cnt))_cnt_","
+ s tst=""
+ f  s tst=$o(tst(tst)) q:tst=""  s r=r_tst_"0,"
+ s r=$e(r,1,$l(r)-1)_"]"
+ d SEND(r)
+ k ^TMIF("MIF_SINGLE",$j,mi,epis)
+ q
+ACK ; send ack/etx alternately to instrument
+ w $s(chk=0:ack,1:etx),*-3 d trace^MIF000(mi,$s(chk=0:"ACK",1:"ETX"),"H-->M")
+ s chk=$s(chk=0:1,1:0)
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF144ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF144ESP01(mi) ; MIC 22/8/02 ; Advia 120 (Bi-Directional) LIS3
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s cr=$c(13),stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(15),eot=$c(4),lf=$c(10)
+ s spaces="",$p(spaces," ",256)=""
+ d init
+ s IM="I "_cr_lf
+ s TT="S "_cr_lf
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+init ;
+ s master=1,initialized=0,MT="0"
+ q
+Main ;
+ i master d master q
+ d Slave q
+ q
+master ; we are the master
+ i 'initialized d  q
+ . i '$$Send(IM) q
+ . i '$$Send(TT) q
+ . s master=0,initialized=1
+ i '$$Send(TT)
+ q
+Slave ;
+ i '$$Read() q
+ s type=$e(record,2)
+ i type="Q" d  q
+ . s epis=$e(record,4,17),epis=$e(epis,$l(epis)-8,$l(epis))
+ . k ^TMP("MIF-SINGLE",$j,mi) ; just to be sure
+ . d scanone^MIF000(mi,epis)
+ . d Envia(epis)
+ i type="E" d
+ . s res=$e(record,11,12)
+ . q:$e(res,2)="0"
+ . d trace^MIF000(mi,"Query result "_res,"H---M")
+ i type="R" d
+ . s (sample,epis,surname,result,date,time,QC)=""
+ . s epis=$e(record,4,17)
+ . s QC=$s(epis?1"00000009"4N1"00":"\NIV"_$e(epis,9,9),1:"")
+ . s epis=$e(epis,$l(epis)-8,$l(epis)) ; ojo con el codigo de barras
+ . i $l(QC) s epis=$p(QC,"\",2)
+ . i $l($tr($e(record,36,43)," ","")) s date=$e(record,36,41)_"20"_$e(record,42,43),date=$zdh(date,1)
+ . i $l($tr($e(record,45,52)," ","")) s time=$zth($e(record,45,52))
+ . s res=$p($e(record,58,$l(record)),cr_lf,1) ;move to the tc
+ . f  q:$l(res)<9  d
+ .. s tc=$tr($e(res,1,3)," ")
+ .. s val=+$tr($e(res,4,8)," ")
+ .. s flag=$tr($e(res,9)," ")
+ .. s res=$e(res,10,$l(res))
+ .. s result=result_tc_$c(par10)_val_$c(par10)_flag_$c(par11)
+ . i $l(epis),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ . s msg="Z"_$e(spaces,1,17)_" 0"_cr_lf
+ . i '$$Send(msg)
+ i type="S" d
+ . i '$$Send(TT) d init q
+ q
+Send(msg) ;
+ n crc,a,i,ok,zz
+ s crc=$$crc(MT_msg)
+ s ok=-1
+ f i=1,2 d  q:ok'=-1
+ . w stx,MT,msg,crc,etx,*-3
+ . d trace^MIF000(mi,MT_msg,"H-->M")
+ . r *a:5 i a=-1 s ok=0 q
+ . i $c(a)=nak d trace^MIF000(mi,"<NACK>","H<--M") q
+ . d trace^MIF000(mi,$c(a),"H<--M")
+ . i $c(a)=MT s ok=1 q
+ . s ok=0
+ i 'ok d init q 0
+ d incMT
+ q 1
+incMT ;
+ s MT=$c($a(MT)+1) i MT="[" s MT="0"
+ q
+Read() 
+ n ok,crc,i,cnt
+ s ok=0,cnt=1
+readi ;
+ i cnt=3 d init q ok
+ s record=$$read^MIF000(stx,etx,"",7)
+ i $l(record)<4 d  g readi
+ . d trace^MIF000(mi,record,"H<--M")
+ . w nak,*-3
+ . d trace^MIF000(mi,"<NACK>","H-->M")
+ . s cnt=cnt+1
+ s crc=$e(record,$l(record)),record=$e(record,1,$l(record)-1)
+ d trace^MIF000(mi,record,"H<--M")
+ h .5
+ i crc'=$$crc(record) d  g readi
+ . w nak,*-3
+ . d trace^MIF000(mi,"<NACK>","H-->M")
+ . s cnt=cnt+1
+ s MT=$e(record,1)
+ w MT,*-3
+ d trace^MIF000(mi,MT,"H-->M")
+ d incMT
+ q 1
+crc(str) 
+ n crc
+ s crc=$zcrc(str,1)
+ q $s(crc=3:$c(127),1:$c(crc))
+Envia(epis) ; build a episode query answer
+ n tc,rec
+ s tc=""
+ i $d(^TMP("MIF-SINGLE",$j,mi,epis))=1 d
+ . s rec="N R "_$tr($j(epis,14)," ","0")_cr_lf
+ i '$d(rec) d
+ . n (mi,epis,spaces,cr,lf,rec,tc,etx,stx)
+ . i $$select^LVBEPVIS(epis)
+ . s rec="Y" ; type of record
+ . s rec=rec_"  " ; space 2
+ . s rec=rec_" " ; Stat indicator
+ . s rec=rec_" " ; Update
+ . s rec=rec_" " ; space 1
+ . s rec=rec_$tr($j(epis,14)," ","0") ; Sample ID
+ . s rec=rec_$e(spaces,1,25) ; space 25
+ . s rec=rec_$e($p(PLIST(20),$c(1))_spaces,1,14) ; Patient ID
+ . s rec=rec_"   " ; space 3
+ . s rec=rec_$e($g(PLIST(3))_" "_$g(PLIST(99))_", "_$g(PLIST(4))_spaces,1,30) ; Patient name
+ . s rec=rec_" " ; space 1
+ . s AUX="          "
+ . i (+$g(PLIST(6)))>0 s AUX=$zd(+PLIST(6),1,,4) ;DOB
+ . s rec=rec_AUX
+ . s rec=rec_" " ; space 1
+ . s rec=rec_$s($p($g(PLIST(5)),$c(1))="F":"F",$p($g(PLIST(5)),$c(1))="M":"M",1:" ") ; SEX
+ . s rec=rec_" " ; space 1
+ . s rec=rec_$j("",8)
+ . s rec=rec_" " ; space 1
+ . s rec=rec_$j("",4)
+ . s rec=rec_" " ; space 1
+ . s rec=rec_$e($p(^TEPI(epis),"\",49)_$j("",6),1,6) ;$e($p(PLIST(22),$c(1),2)_spaces,1,6) ; Location
+ . s rec=rec_" " ; space 1
+ . s rec=rec_$j("",6)
+ . s rec=rec_" " ; space 1
+ . s rec=rec_cr_lf ; CR/LF
+ . f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ .. s rec=rec_$tr($j(tc,3)," ","0") ;Test Number
+ . s rec=rec_cr_lf ; CR/LF
+ i '$$Send(rec) d init
+ q 
+]]></Routine>
+</Export>

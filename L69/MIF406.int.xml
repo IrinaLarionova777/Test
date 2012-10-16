@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF406" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF406(mi) ; ML 16/7/99 ; ASTM protocol  -  BECTON DICKINSON Bactec 9000 (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),ack=$c(6),eot=$c(4),lf=$c(10),cr=$c(13),nak=$c(21),soh=$c(1),syn=$c(22)
+ s (sample,epis,surname,result,date,time,QC)=""
+ i $$start^MIF000() q
+ f count=0:1 d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10
+ i R=-1,count#60=0 d
+ .s ^TMIF(mi,10,1)="H|\^&"
+ .s ^TMIF(mi,10,2)="Q|1|ALL^ALL||^^^ALL||||||||P"
+ .s ^TMIF(mi,10,3)="L|1"
+ .d Send
+ i $c(R)=syn d
+ .d trace^MIF000(mi,"SYN","H<--M")
+ .d ACK
+ .s RECORD="" f  r *R:10 q:$c(R)=eot  q:R=-1  d
+ ..i $c(R)'=stx q
+ ..s record=$$read^MIF000() q:'$l(record)
+ ..d trace^MIF000(mi,$tr(record,$c(10,13),"  "),"H<--M")
+ .. ; check record validity
+ ..s chsum=$e(record,$l(record)-1,$l(record)),chrecord=stx_$e(record,1,$l(record)-2)
+ ..i $$CHSUM(chrecord)'=chsum d  q
+ ...w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+ ..d ACK
+ ..s RECORD=RECORD_$e(record,5,$l(record)-2)
+ .d trace^MIF000(mi,$s($c(R)=eot:"EOT",1:R),"H<--M")
+ .d ACK
+ .s RECORD=$tr(RECORD,lf)
+ .f j=1:1:$l(RECORD,cr) s record=$p(RECORD,cr,j) d
+ .. ; header record
+ ..i $e(record,2)="H" d  q
+ ...d Last s (sample,epis,surname,result,date,time,QC)=""
+ .. ; patient record
+ ..i $e(record,2)="P" d  q
+ ...d Last s (sample,epis,surname,result,date,time,QC)=""
+ ...s surname=$tr($tr($p(record,"|",6)," "),"^"," ")
+ ...s epis=$p(record,"|",4)
+ .. ; result record
+ ..i $e(record,2)="R" d  q
+ ...s x1=$tr($p($p(record,"|",3),"^",5)," "),x2=$tr($p(record,"|",4)," ")
+ ... ; date and time
+ ...s (date,time)="" i $l($tr($p(record,"|",13)," ")) d
+ ....s date=$$intdate^SSUTIL4($e($p(record,"|",13),5,6)_"/"_$e($p(record,"|",13),7,8)_"/"_$e($p(record,"|",13),1,4))
+ ....s time=($e($p(record,"|",13),9,10)*3600)+($e($p(record,"|",13),11,12)*60)
+ ...i $l(x1),$l(x2) d
+ ....i $l(epis),x2="BACTEC_NEW" s ^TMIF(mi,20,epis,x1)=date_","_time
+ ....i $l(epis),x2="BACTEC_REMOVED" k ^TMIF(mi,20,epis,x1)
+ ....s ok=0 d  i ok s result=result_x1_$c(par10)_x2_$c(par11)
+ .....i $$step(date_","_time,$g(^TMIF(mi,20,epis,x1)))>48 s ok=1
+ .....i x2="BACTEC_POS" s ok=1
+ .. ; last record
+ ..i $e(record,2)="L" d Last q
+ q
+step(hNew,hOld) s hNew=$g(hNew),hOld=$g(hOld)
+ s xx=((xNew-xOld)*24)+(($p(xNew,",",2)-$p(xOld,",",2))/3600)
+ q xx
+Last ; file result if exist
+ i epis?1.99AN,$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ s (sample,epis,surname,result,date,time,QC)=""
+ q
+Send ; send list of orders if exists
+ w syn,*-3 f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=syn) q
+ i $c(R)=syn q
+ i $c(R)'=ack w eot,*-3 q
+ s (record,x)="" f  s x=$o(^TMIF(mi,10,x)) q:x=""  s record=record_^(x)
+ i '$$SEND(stx_"0101"_record) k ^TMIF(mi,10)
+ w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ q
+SEND(str) ; send string to instrument
+ s chsum=$$CHSUM(str)
+ w stx,str,chsum,cr,lf,*-3 d trace^MIF000(mi,str_chsum,"H-->M")
+ f j=1:1:6 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 1
+ d trace^MIF000(mi,R,"H<--M")
+ q 2
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF102" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF102(mi) ; IG 4/6/98 ; MERCK Mega
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),etb=$c(23),nak=$c(15)
+ i $$start^MIF000() q
+ d Init f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Init f  d Date q:'$$Send("Z"_date_time)  h 10
+ f  d Date q:'$$Send("M"_date_time)  h 10
+ q
+Main s record=$$read^MIF000(stx,etx) d trace^MIF000(mi,$s(record=ack:"ACK",record=nak:"NAK",1:record),"H<--M")
+ i record=nak d Init q
+ i record=ack q
+ d ack(ack)
+ ; release master
+ i $e(record)="m" d  q
+ .f  d Date q:'$$Send("M"_date_time)  h 10
+ ; order request
+ i $e(record)="B" d  q
+ .s epis=$tr($e(record,14,33)," "),chain=$e(record,34,39),episx=+epis
+ .i epis="" d  q
+ ..d Date s data1="C"_date_time_$j(epis,20)_chain
+ ..f  q:'$$Send(data1_etb_etb)  h 10
+ .d scanone^MIF000(mi,episx),Date
+ .s data1="C"_date_time_$j(epis,20)_chain_"   1",data2=""
+ .s tc="" f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,episx,tc)) q:tc=""  s data2=data2_$j(tc,4)_1
+ .s data3=""
+ ..s data3=data3_$e(PLIST(3)_","_PLIST(4)_$j("",30),1,30)
+ ..s data3=data3_$e($s($p(PLIST(5),$c(1))="M":"M",$p(PLIST(5),$c(1))="F":"F",1:"")_" ",1)
+ .f i=1:1:3 i '$$Send(data1_data2_etb_data3_etb) h 10 q
+ ; result record
+ i $e(record)="D" d  q
+ .s (sample,epis,surname,result,date,time,QC,specimen)=""
+ .s data1=$p(record,etb,1),data2=$p(record,etb,2)
+ .s epis=+$tr($e(data1,14,33)," "),surname=$tr($e(data2,1,30)," ")
+ .s date=$$intdate^SSUTIL4($e(data1,6,7)_"/"_$e(data1,8,9))
+ .s time=($e(data1,10,11)*3600)+($e(data1,12,13)*60)
+ .s chain=$e(data1,34,35) i chain=44 s QC="Y"
+ .i (chain=41)!(chain=42)!(chain=44) d
+ ..f j=46:13 s data=$e(data1,j,j+12) q:data=""  d
+ ...s x1=$tr($e(data,1,4)," "),x2=$tr($e(data,5,10)," "),x3=$tr($e(data,11)," ")
+ ...i $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par10)_specimen_$c(par11)
+ ..i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+Date ; modify date/time to correct formats
+ s date=$$extdate2^SSUTIL4(+$h),date=$p(date,"/",2)_$p(date,"/",1)
+ s time=$p($h,",",2),time=$e(time\3600+100,2,3)_$e(time\60#60+100,2,3)
+ q
+ack(resp) ; ack/nak message
+ w stx,resp,etx,*-3
+ d trace^MIF000(mi,$s(resp=ack:"ACK",resp=nak:"NAK",1:resp),"H-->M")
+ q
+Send(message) ; send message to instrument
+ w stx,message,etx,*-3 d trace^MIF000(mi,message,"H-->M")
+ s reply=$$read^MIF000(stx,etx)
+ d trace^MIF000(mi,$s(reply=ack:"ACK",reply=nak:"NAK",1:reply),"H<--M")
+ i reply=ack q 0
+ q 100
+]]></Routine>
+</Export>

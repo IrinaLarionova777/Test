@@ -1,0 +1,446 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTINS01OLD" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTINS01 ; IG 19/08/99 ; Item number Statistics
+ q
+ ; Parameters :  1. Date From
+ ;               2. Date To
+ ;               3. Select criteria :    DR - Doctor
+ ;                                       DG - Doctor group
+ ;                                       HW - Hospital/Ward
+ ;                                       PC - Pay code
+ ;                                       CC - Collection centre
+ ;                                       CP - Collection personel
+ ;                                       CO - Company
+ ;                                       UL - User location
+ ;                                       MC - Marketing code
+ ;                                       DP - Department (for Item number only)
+ ;               4. Value
+ ;               5. Sort key_1 : DR - Doctor
+ ;                               HW - Hospital/Ward
+ ;                               PC - Pay code
+ ;                               DT - Date
+ ;                               CC - Collection centre
+ ;                               CP - Collection personel
+ ;                               CO - Company
+ ;                               UL - User location
+ ;                               MC - Marketing code
+ ;                               DP - Department (for Item number only)
+ ;               6. Sort key_2
+ ;               7. Type :       IN - Item number
+ ;                               II - Initiation Item
+ ;               8. Exclude initiation item : Y/N
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ i PAR7="IN" s line=1,xHEADER(line)="Item number Statistics"
+ i PAR7="II" s line=1,xHEADER(line)="Initiation Item Statistics"
+ s line=2,xHEADER(line)=""
+ i $l(PAR3) d
+ .s line=line+1,xHEADER(line)="Selection criteria : "_$$name(PAR3)_" = "_PAR4
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR8) d
+ .s line=line+1,xHEADER(line)="Exclude initiation item"
+ .s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,PAR1,PAR2,,,PAR5_"^"_PAR6),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xxx f j=1,2 s xxx=$p(PAR10,",",j),par=$s(j=1:PAR5,1:PAR6) d  s $p(PAR10,",",j)=xxx
+ .s $p(xxx,$c(2),3)=$$name(par)
+ .i j=1,'$l(PAR5) s $p(xxx,$c(2),4)=0
+ .i j=2,'$l(PAR6) s $p(xxx,$c(2),4)=0
+ k xxx,xSORT d H^PRTREP00(PAR10,$zn)
+ f j="DR","HW","PC","DT","CC","CP","CO","UL","MC","DP" s xSORT(j)=$$name(j)
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+name(par) n (par) s name=""
+ i par="DR" s name="Doctor"
+ i par="DG" s name="Doctor group"
+ i par="HW" s name="Hospital/Ward"
+ i par="PC" s name="Pay code"
+ i par="DT" s name="Collection Date"
+ i par="CC" s name="Collection centre"
+ i par="CP" s name="Collection personel"
+ i par="CO" s name="Company"
+ i par="UL" s name="User location"
+ i par="MC" s name="Marketing code"
+ i par="DP" s name="Department"
+ q name
+BODY ; create temporary printing file
+ s date=PAR1-1 f  s date=$o(^TDAY(2,date)) q:date=""  q:date>PAR2  d
+ .s epis="" f  s epis=$o(^TDAY(2,date,epis)) q:epis=""  d
+ ..i '$$select^LVBEPVIS(epis,"Y") d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...k VISIT m VISIT=PLIST
+ ... ; check if patient is invoiced
+ ...i '$l(VISIT(57)) q
+ ... ; check selection type
+ ...s ok=1 d  i 'ok q
+ ....i PAR3="DR",(","_PAR4_",")'[(","_VISIT(15)_",") s ok=0 q
+ ....i PAR3="DG" d  i 'ok q
+ .....s ok=0 f jj=1:1:$l(PAR4,","),'$$select^LVBCTDGD($p(PAR4,",",jj)_"||"_VISIT(15)) s ok=1 q
+ ....i PAR3="HW",(","_PAR4_",")'[(","_VISIT(22)_",") s ok=0 q
+ ....i PAR3="PC",(","_PAR4_",")'[(","_VISIT(9)_",") s ok=0 q
+ ....i PAR3="CC",(","_PAR4_",")'[(","_VISIT(27)_",") s ok=0 q
+ ....i PAR3="CP",(","_PAR4_",")'[(","_VISIT(28)_",") s ok=0 q
+ ....i PAR3="CO",(","_PAR4_",")'[(","_$$epcomp^LVBVIS1(epis)_",") s ok=0 q
+ ....i PAR3="UL",(","_PAR4_",")'[(","_VISIT(66)_",") s ok=0 q
+ ....i PAR3="MC" d  i (","_PAR4_",")'[(","_$p(result,$c(1))_",") s ok=0 q
+ ..... ;---s result="" &SQL(SELECT CTDR_MarketingCode_DR INTO :result FROM CT_Doctor WHERE CTDR_RowID=:VISIT(15))
+  ..... ;--- ** SQL PUBLIC Variables: SQLCODE, VISIT, result
+ .....s result="" Do %0Ao
+ ... ; Initiation item report
+ ...i PAR7="II",$l(VISIT(54)) d
+ .... ; set sorting key - 1
+ ....s SORT1="" s par=PAR5 d
+ ..... ;---i par="MC" &SQL(SELECT CTDR_MarketingCode_DR INTO :SORT1 FROM CT_Doctor WHERE CTDR_RowID=:VISIT(15)) q
+  ..... ;--- ** SQL PUBLIC Variables: SORT1, SQLCODE, VISIT
+ .....i par="MC" Do %0Co q
+ ..... ;---i par="DP" &SQL(SELECT CTBI_Department_DR INTO :SORT1 FROM CT_BillingItem WHERE CTBI_RowID=:VISIT(54)) q
+  ..... ;--- ** SQL PUBLIC Variables: SORT1, SQLCODE, VISIT
+ .....i par="DP" Do %0Eo q
+ .....s SORT1=$s(par="DR":VISIT(15),par="HW":VISIT(22),par="PC":VISIT(9),par="DT":VISIT(12),par="CC":VISIT(27),par="CP":VISIT(28),par="CO":$$epcomp^LVBVIS1(epis),par="UL":VISIT(66),1:"")
+ .... ; set sorting key - 2
+ ....s SORT2="" s par=PAR6 d
+ ..... ;---i par="MC" &SQL(SELECT CTDR_MarketingCode_DR INTO :SORT2 FROM CT_Doctor WHERE CTDR_RowID=:VISIT(15)) q
+  ..... ;--- ** SQL PUBLIC Variables: SORT2, SQLCODE, VISIT
+ .....i par="MC" Do %0Go q
+ ..... ;---i par="DP" &SQL(SELECT CTBI_Department_DR INTO :SORT2 FROM CT_BillingItem WHERE CTBI_RowID=:VISIT(54)) q
+  ..... ;--- ** SQL PUBLIC Variables: SORT2, SQLCODE, VISIT
+ .....i par="DP" Do %0Io q
+ .....s SORT2=$s(par="DR":VISIT(15),par="HW":VISIT(22),par="PC":VISIT(9),par="DT":VISIT(12),par="CC":VISIT(27),par="CP":VISIT(28),par="CO":$$epcomp^LVBVIS1(epis),par="UL":VISIT(66),1:"")
+ ....s:'$l(SORT1) SORT1=" " s:'$l(SORT2) SORT2=" "
+ ....d SetTotal(VISIT(54),4,+$g(^TEPI(epis,7,VISIT(54))),SORT1,SORT2)
+ ....d SetTotal(VISIT(54),5,1,SORT1,SORT2)
+ ... ; Item number report
+ ...i PAR7="IN" d
+ ....s item="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  s amount=+^(item) d
+ ..... ; check initiation item exclusion
+ .....i PAR8="Y",item=VISIT(54) q
+ ..... ; check selection type
+ .....i PAR3="DP" d  i (","_$p(result,$c(1))_",")'[(","_PAR4_",") q
+ ...... ;---s result="" &SQL(SELECT CTBI_Department_DR INTO :result FROM CT_BillingItem WHERE CTBI_RowID=:item) q
+  ...... ;--- ** SQL PUBLIC Variables: SQLCODE, item, result
+ ......s result="" Do %0Ko q
+ ..... ; set sorting key - 1
+ .....s SORT1="" s par=PAR5 d
+ ...... ;---i par="MC" &SQL(SELECT CTDR_MarketingCode_DR INTO :SORT1 FROM CT_Doctor WHERE CTDR_RowID=:VISIT(15)) q
+  ...... ;--- ** SQL PUBLIC Variables: SORT1, SQLCODE, VISIT
+ ......i par="MC" Do %0Mo q
+ ...... ;---i par="DP" &SQL(SELECT CTBI_Department_DR INTO :SORT1 FROM CT_BillingItem WHERE CTBI_RowID=:item) q
+  ...... ;--- ** SQL PUBLIC Variables: SORT1, SQLCODE, item
+ ......i par="DP" Do %0Oo q
+ ......s SORT1=$s(par="DR":VISIT(15),par="HW":VISIT(22),par="PC":VISIT(9),par="DT":VISIT(12),par="CC":VISIT(27),par="CP":VISIT(28),par="CO":$$epcomp^LVBVIS1(epis),par="UL":VISIT(66),1:"")
+ ..... ; set sorting key - 2
+ .....s SORT2="" s par=PAR6 d
+ ...... ;---i par="MC" &SQL(SELECT CTDR_MarketingCode_DR INTO :SORT2 FROM CT_Doctor WHERE CTDR_RowID=:VISIT(15)) q
+  ...... ;--- ** SQL PUBLIC Variables: SORT2, SQLCODE, VISIT
+ ......i par="MC" Do %0Qo q
+ ...... ;---i par="DP" &SQL(SELECT CTBI_Department_DR INTO :SORT2 FROM CT_BillingItem WHERE CTBI_RowID=:item) q
+  ...... ;--- ** SQL PUBLIC Variables: SORT2, SQLCODE, item
+ ......i par="DP" Do %0So q
+ ......s SORT2=$s(par="DR":VISIT(15),par="HW":VISIT(22),par="PC":VISIT(9),par="DT":VISIT(12),par="CC":VISIT(27),par="CP":VISIT(28),par="CO":$$epcomp^LVBVIS1(epis),par="UL":VISIT(66),1:"")
+ .....s:'$l(SORT1) SORT1=" " s:'$l(SORT2) SORT2=" "
+ .....d SetTotal(item,4,amount,SORT1,SORT2)
+ .....d SetTotal(item,5,1,SORT1,SORT2)
+ q
+SORT(par,value) n (par,value) s result="" i value'=" " d
+ .i par="DR",'$$select^LVBCTDR(value,"Y") s result=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51))
+ .i par="HW",'$$select^LVBCTHOS(value,"Y") s result=PLIST(3)
+ .i par="PC",'$$select^LVBCTPC(value,"Y") s result=PLIST(3)
+ .i par="DT" s result=$$extdate2^SSUTIL4(value)
+ .i par="CC",'$$select^LVBCTCC(value,"Y") s result=PLIST(3)
+ .i par="CP",'$$select^LVBCTPER(value,"Y") s result=PLIST(3)
+ .i par="CO",'$$select^LVBCTCO(value,"Y") s result=PLIST(3)
+ .i par="UL",'$$select^LVBCTUSL(value,"Y") s result=PLIST(3)
+ .i par="MC",'$$select^LVBCTMC(value,"Y") s result=PLIST(3)
+ .i par="DP",'$$select^LVBCTDEP(value,"Y") s result=PLIST(3)
+ q result
+ ; set totals
+SetTotal(item,piece,tot,SORT1,SORT2) n (item,piece,tot,SORT1,SORT2)
+ s $p(^TMP($zn,$j,"REPORT",item),"\",piece)=$p($g(^TMP($zn,$j,"REPORT",item)),"\",piece)+tot
+ s $p(^TMP($zn,$j,"REPORT"," ",SORT1,item),"\",piece)=$p($g(^TMP($zn,$j,"REPORT"," ",SORT1,item)),"\",piece)+tot
+ s $p(^TMP($zn,$j,"REPORT"," ",SORT1," ",SORT2,item),"\",piece)=$p($g(^TMP($zn,$j,"REPORT"," ",SORT1," ",SORT2,item)),"\",piece)+tot
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s (GTotal4,GTotal5)=""
+ .s SORT1="" f  s SORT1=$o(^TMP($zn,$j,"REPORT"," ",SORT1)) q:SORT1=""  d
+ ..s xxx(1)=$$SORT(PAR5,SORT1)
+ ..s (Total4,Total5,SORT2)="" f  s SORT2=$o(^TMP($zn,$j,"REPORT"," ",SORT1," ",SORT2)) q:SORT2=""  d
+ ...s xxx(2)=$$SORT(PAR6,SORT2)
+ ...s item="" f  s item=$o(^TMP($zn,$j,"REPORT"," ",SORT1," ",SORT2,item)) q:item=""  d
+ ....s xxx(3)=item f j=4,5 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT"," ",SORT1," ",SORT2,item)),"\",j)
+ ....s Total4=Total4+xxx(4),Total5=Total5+xxx(5) i xxx(5) s xxx(6)=+$j(xxx(4)/xxx(5),0,2)
+ ....s GTotal4=GTotal4+xxx(4),GTotal5=GTotal5+xxx(5)
+ ....d PRINT^PRTREP00(,.N) k xxx
+ ..s xxx($s($l(PAR6):2,1:1))="Total",xxx(4)=Total4,xxx(5)=Total5 i xxx(5) s xxx(6)=+$j(xxx(4)/xxx(5),0,2)
+ ..d PRINT^PRTREP00(,.N) k xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..i $l(PAR6) d
+ ...s item="" f  s item=$o(^TMP($zn,$j,"REPORT"," ",SORT1,item)) q:item=""  i item'=" " d
+ ....s xxx(2)="Total for "_$$SORT(PAR5,SORT1)
+ ....s xxx(3)=item f j=4,5 s xxx(j)=$p($g(^TMP($zn,$j,"REPORT"," ",SORT1,item)),"\",j)
+ ....i xxx(5) s xxx(6)=+$j(xxx(4)/xxx(5),0,2)
+ ....d PRINT^PRTREP00(,.N) k xxx
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .s xxx(1)="Grand Total",xxx(4)=GTotal4,xxx(5)=GTotal5 i xxx(5) s xxx(6)=+$j(xxx(4)/xxx(5),0,2)
+ .d PRINT^PRTREP00(,.N) k xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="INS",EndLine=""
+  ;---&SQL(SELECT CTCLR_EndOfReport INTO :EndLine FROM CT_ClientsReports WHERE CTCLR_RowID=:report)
+   ;--- ** SQL PUBLIC Variables: EndLine, SQLCODE, report
+ Do %0Uo
+ i $p(EndLine,$c(1))="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(VISIT(15))
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(12)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s result=$p(%mmmsqld(12),"\",13)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTAB("DR",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("DR",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Doctor for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(17)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s result=$p(%mmmsqld(17),"\",13)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(VISIT(15))
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0CBdun
+ s %mmmsqld(12)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s SORT1=$p(%mmmsqld(12),"\",13)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TTAB("DR",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("DR",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Doctor for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0CCdun
+ s %mmmsqld(17)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s SORT1=$p(%mmmsqld(17),"\",13)
+%0CBuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Eerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(VISIT(54))
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0EBdun
+ s %mmmsqld(12)=$g(^TTAB("IB",%mmmsqld(3)))
+ s SORT1=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0EBuncommitted i $zu(115,2)=1 l +^TTAB("IB",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("IB",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_BillingItem for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0ECdun
+ s %mmmsqld(17)=$g(^TTAB("IB",%mmmsqld(3)))
+ s SORT1=$p(%mmmsqld(17),"\",2)
+%0EBuncommitted ;
+ s SQLCODE=0 g %0Ec
+%0ECdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0EBdun 
+%0EAdun 
+%0Ec s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Eerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ec
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Gerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(VISIT(15))
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0GBdun
+ s %mmmsqld(12)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s SORT2=$p(%mmmsqld(12),"\",13)
+ g:$zu(115,2)=0 %0GBuncommitted i $zu(115,2)=1 l +^TTAB("DR",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("DR",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Doctor for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0GCdun
+ s %mmmsqld(17)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s SORT2=$p(%mmmsqld(17),"\",13)
+%0GBuncommitted ;
+ s SQLCODE=0 g %0Gc
+%0GCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0GBdun 
+%0GAdun 
+%0Gc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Gerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Gc
+%0Io n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Ierr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(VISIT(54))
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0IBdun
+ s %mmmsqld(12)=$g(^TTAB("IB",%mmmsqld(3)))
+ s SORT2=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0IBuncommitted i $zu(115,2)=1 l +^TTAB("IB",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("IB",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_BillingItem for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0ICdun
+ s %mmmsqld(17)=$g(^TTAB("IB",%mmmsqld(3)))
+ s SORT2=$p(%mmmsqld(17),"\",2)
+%0IBuncommitted ;
+ s SQLCODE=0 g %0Ic
+%0ICdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0IBdun 
+%0IAdun 
+%0Ic s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Ierr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ic
+%0Ko n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Kerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(item)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0KBdun
+ s %mmmsqld(12)=$g(^TTAB("IB",%mmmsqld(3)))
+ s result=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0KBuncommitted i $zu(115,2)=1 l +^TTAB("IB",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("IB",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_BillingItem for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0KCdun
+ s %mmmsqld(17)=$g(^TTAB("IB",%mmmsqld(3)))
+ s result=$p(%mmmsqld(17),"\",2)
+%0KBuncommitted ;
+ s SQLCODE=0 g %0Kc
+%0KCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0KBdun 
+%0KAdun 
+%0Kc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Kerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Kc
+%0Mo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Merr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(VISIT(15))
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0MBdun
+ s %mmmsqld(12)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s SORT1=$p(%mmmsqld(12),"\",13)
+ g:$zu(115,2)=0 %0MBuncommitted i $zu(115,2)=1 l +^TTAB("DR",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("DR",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Doctor for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0MCdun
+ s %mmmsqld(17)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s SORT1=$p(%mmmsqld(17),"\",13)
+%0MBuncommitted ;
+ s SQLCODE=0 g %0Mc
+%0MCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0MBdun 
+%0MAdun 
+%0Mc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Merr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Mc
+%0Oo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Oerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(item)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0OBdun
+ s %mmmsqld(12)=$g(^TTAB("IB",%mmmsqld(3)))
+ s SORT1=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0OBuncommitted i $zu(115,2)=1 l +^TTAB("IB",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("IB",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_BillingItem for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0OCdun
+ s %mmmsqld(17)=$g(^TTAB("IB",%mmmsqld(3)))
+ s SORT1=$p(%mmmsqld(17),"\",2)
+%0OBuncommitted ;
+ s SQLCODE=0 g %0Oc
+%0OCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0OBdun 
+%0OAdun 
+%0Oc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Oerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Oc
+%0Qo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Qerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(VISIT(15))
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0QBdun
+ s %mmmsqld(12)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s SORT2=$p(%mmmsqld(12),"\",13)
+ g:$zu(115,2)=0 %0QBuncommitted i $zu(115,2)=1 l +^TTAB("DR",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("DR",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Doctor for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("DR",%mmmsqld(3)))
+ e  g %0QCdun
+ s %mmmsqld(17)=$g(^TTAB("DR",%mmmsqld(3),0))
+ s SORT2=$p(%mmmsqld(17),"\",13)
+%0QBuncommitted ;
+ s SQLCODE=0 g %0Qc
+%0QCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0QBdun 
+%0QAdun 
+%0Qc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Qerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Qc
+%0So n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Serr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(item)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0SBdun
+ s %mmmsqld(12)=$g(^TTAB("IB",%mmmsqld(3)))
+ s SORT2=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0SBuncommitted i $zu(115,2)=1 l +^TTAB("IB",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("IB",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_BillingItem for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("IB",%mmmsqld(3)))
+ e  g %0SCdun
+ s %mmmsqld(17)=$g(^TTAB("IB",%mmmsqld(3)))
+ s SORT2=$p(%mmmsqld(17),"\",2)
+%0SBuncommitted ;
+ s SQLCODE=0 g %0Sc
+%0SCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0SBdun 
+%0SAdun 
+%0Sc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Serr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Sc
+%0Uo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Uerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(report)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("REPORT-GENERIC",%mmmsqld(3)))
+ e  g %0UBdun
+ s %mmmsqld(12)=$g(^TTAB("REPORT-GENERIC",%mmmsqld(3)))
+ s EndLine=$p(%mmmsqld(12),"\",6)
+ g:$zu(115,2)=0 %0UBuncommitted i $zu(115,2)=1 l +^TTAB("REPORT-GENERIC",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("REPORT-GENERIC",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_ClientsReports for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("REPORT-GENERIC",%mmmsqld(3)))
+ e  g %0UCdun
+ s %mmmsqld(17)=$g(^TTAB("REPORT-GENERIC",%mmmsqld(3)))
+ s EndLine=$p(%mmmsqld(17),"\",6)
+%0UBuncommitted ;
+ s SQLCODE=0 g %0Uc
+%0UCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0UBdun 
+%0UAdun 
+%0Uc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Uerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Uc
+]]></Routine>
+</Export>

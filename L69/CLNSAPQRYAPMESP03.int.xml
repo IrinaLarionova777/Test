@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="CLNSAPQRYAPMESP03" type="INT" languagemode="0"><![CDATA[
+CLNSAPQRYAPMESP03(pmrn,debug) ; Query to the Hospital SAP - Sant Pau
+ ; ------------------------------------------------------
+ ;  Mc_Fly, June 28, 2003 (Saturday)
+ ;  Mc_Fly, October 25, 2003 (support big APM messages)
+ ;  TrakHealth BCN
+ ; ------------------------------------------------------
+ ;  Parameters:
+ ;  pmrn  = Hospital MRN (with prefix)
+ ;  debug = 0-None 1-Delete/Insert 2-Full 
+ ; ------------------------------------------------------
+ ;  Return:
+ ;  1 - Ok
+ ;  0 - Fail
+ ;  FailureReason
+ ; ------------------------------------------------------
+ n (pmrn,debug,FailureReason)
+ s hosp=$e(pmrn)
+ i '$l(hosp) s FailureReason="No Hospital prefix" g end
+ i '$d(^THOS(hosp)) s FailureReason="Undefined hospital prefix" g end
+ s mrn=$e(pmrn,2,$l(pmrn))
+ i '$l(mrn) s FailureReason="No MRN" g end
+ s debug=+$g(debug)
+ d asksap("APM")
+ i $e(FailureReason,1,27)="No hay datos de movimientos" d
+ . i debug w !,"Ask for Demographics"
+ . d asksap("DEM")
+ i $l(FailureReason) g end
+ ; Clear THOS episodes
+ d kill
+ s apmrange=$$getxml("1,","ADR_A19")
+ i '$l(apmrange) s FailureReason="No episodes" g end
+ s target="ADR_A19.EVNPIDPD1ROLNK1PV1PV2ROLDB1OBXAL1DG1DRGPR1ROLGT1IN1IN2IN3ROLACCUB1UB2"
+ s from=$p(apmrange,",",1)
+ s to=$p(apmrange,",",2)
+ s toend=to
+ ; Get last movement of an episode
+ k tepi
+ s swend=0
+ f tot=1:1 d  q:swend
+ . s epirange=$$getxml(from_","_to,target)
+ . i '$l(epirange) s swend=1 q
+ . 
+ . i '$d(tepi("SENSE")) s tepi("SENSE")=epirange
+ . 
+ . s swset=1
+ . s pv1range=$$getxml(epirange,"PV1")
+ . 
+ . s pv13=$$getxml(pv1range,"PV1.3")
+ . s service=$$getxml($$getxml(pv13,"PL.4"),"HD.1",1)
+ . i service="L2000C" s swset=0 ; Extraccions
+ . 
+ . i swset d
+ .. s pv15=$$getxml(pv1range,"PV1.5")
+ .. s hosepis=$$getxml(pv15,"CX.1",1) i $e(hosepis)="0" s hosepis=+hosepis
+ .. i $l(hosepis) s tepi(hosepis)=epirange
+ . 
+ . s from=$p(epirange,",",2)
+ . s to=toend
+ ; Get all variables from an episode
+ s from=$p(apmrange,",",1)
+ s to=$p(apmrange,",",2)
+ s toend=to
+ s hosepis=""
+ f  s hosepis=$o(tepi(hosepis)) q:hosepis=""  d
+ . s epirange=tepi(hosepis)
+ . i debug=2 w !,"<ADR_A19 ",tot," [",epirange,"]"
+ . s pv1range=$$getxml(epirange,"PV1")
+ . i $l(pv1range) d pv1
+ . 
+ . s pidrange=$$getxml(epirange,"PID")
+ . i $l(pidrange) d pid
+ . i debug=2 w !,"</ADR_A19"
+ . d set
+end 
+ k ^TMP($zn,$j)
+ i $l(FailureReason) q 0
+ q 1
+asksap(type) 
+ s timeout=20
+ s port=5555
+ s host="sapbc"
+ s dev="|TCP|300"
+ s pass="c2FudDpwYXU" ; means "sant:pau" Use encode^%wldbas64
+ s FailureReason=""
+ s xml="$xmldata=<QRY_Q01><MSH>"
+ s xml=xml_"<MSH.1>|</MSH.1>"
+ s xml=xml_"<MSH.2>^~</MSH.2>"
+ s xml=xml_"<MSH.3><HD.1>Ap.Dep.1</HD.1></MSH.3>"
+ s xml=xml_"<MSH.5><HD.1>SAP%20</HD.1></MSH.5>"
+ s xml=xml_"<MSH.6><HD.1>SPAU</HD.1></MSH.6>"
+ s xml=xml_"<MSH.7><TS.1>"_$zd($h,8)_$tr($zt($p($h,",",2),2),":")_"</TS.1></MSH.7>"
+ s xml=xml_"<MSH.9><CM_MSG.1>QRY</CM_MSG.1><CM_MSG.2>Q01</CM_MSG.2></MSH.9>"
+ s xml=xml_"<MSH.10>SG00001</MSH.10>"
+ s xml=xml_"<MSH.11><PT.1>P</PT.1></MSH.11>"
+ s xml=xml_"<MSH.12><VID.1>2.3.1</VID.1></MSH.12>"
+ s xml=xml_"<MSH.13>1</MSH.13>"
+ s xml=xml_"</MSH><QRD><QRD.1>"
+ s xml=xml_"<TS.1>"_$zd($h,8)_"</TS.1></QRD.1>"
+ s xml=xml_"<QRD.2>R</QRD.2><QRD.3/><QRD.4>4387</QRD.4><QRD.7><CQ.1>1</CQ.1>"
+ s xml=xml_"<CQ.2><CE.1>RD</CE.1></CQ.2></QRD.7><QRD.8>"
+ s xml=xml_"<XCN.1>"_mrn_"</XCN.1>"
+ s xml=xml_"</QRD.8><QRD.9><CE.1>"_type_"</CE.1></QRD.9></QRD></QRY_Q01>"
+ s crlf=$c(13,10)
+ s crlf2=crlf_crlf
+ o dev:(host:port:"+S"):timeout e  s FailureReason="Device not open" q
+ u dev
+ s strcom="POST /invoke/SPEXML24/Consulta HTTP/1.1"
+ s strcom=strcom_crlf_"Accept: image/gif, image/x-xbitmap, image/jpeg, image/pjpeg, */*"
+ s strcom=strcom_crlf_"User-Agent: Microsoft URL Control - 6.00.8862"
+ s strcom=strcom_crlf_"Host: "_host_":"_port
+ s strcom=strcom_crlf_"Content-Length: "_$l(xml)
+ s strcom=strcom_crlf_"Cache-Control: no-cache"
+ w strcom_crlf2_xml,*-3
+ d read i $l(FailureReason) q
+ c dev
+ i cookie="" s FailureReason="No cookie" q
+ o dev:(host:port:"+S"):timeout e  s FailureReason="Device not open" q
+ u dev
+ w strcom_crlf_"Cookie: "_cookie_crlf_"Authorization: Basic "_pass_crlf2_xml_crlf,*-3
+ d read i $l(FailureReason) q
+ c dev
+ s errmsg=$$getxml($$getxml("1,","MSA"),"MSA.3",1)
+ i $l(errmsg) s FailureReason=errmsg q
+ q
+read 
+ n ord,sw
+ s $zt="closed"
+ k ^TMP($zn,$j)
+ s reg="",cnt=1
+ s c=-1
+ f  s clast=c r *c:timeout q:c=-1  d
+ . i c=10 d  s reg="",cnt=cnt+1 q
+ .. i clast=13 s ^TMP($zn,$j,cnt)=$e(reg,1,$l(reg)-1) q
+ .. s ^TMP($zn,$j,cnt)=reg
+ . i c=32,reg="" q
+ . s reg=reg_$c(c)
+ c dev
+ s FailureReason="Timeout"
+ q
+closed 
+ s $zt=""        
+ s ^TMP($zn,$j,cnt)=reg
+ c dev
+ s cnt=$$find("Set-Cookie: ")
+ s cookie=""
+ i cnt s cookie=$p($p(^TMP($zn,$j,cnt),"Set-Cookie: ",2),";",1)
+ q
+find(txt) 
+ n i
+ s i=""
+ f  s i=$o(^TMP($zn,$j,i)) q:i=""  i $f(^(i),txt) q
+ q +i
+getxml(fromto,tag,getval) 
+ n (fromto,tag,getval)
+ s fromto=$g(fromto)
+ s getval=+$g(getval)
+ s from=+$p(fromto,",",1)
+ ; Invalid from a nesting getxml
+ i from=0 q ""
+ s to=$p(fromto,",",2)
+ s tag1="<"_tag_">"
+ s tag2="</"_tag_">"
+ s (newfrom,newto)=""
+ s i=""
+ i $l(from) s i=from-1
+ i to="" s to=$o(^TMP($zn,$j,""),-1)
+ f  s i=$o(^TMP($zn,$j,i)) q:i=""  q:i>to  d  q:$l(newfrom)&($l(newto))
+ . i '$l(newfrom),$f(^(i),tag1) s newfrom=i
+ . i $l(newfrom),$f(^(i),tag2) s newto=i
+ s res=newfrom_","_newto
+ i res="," s res=""
+ i getval,$l(res) d
+ . s (val,sep)=""
+ . f n=$p(res,",",1):1:$p(res,",",2) s val=val_sep_^(n),sep=$c(13,10)
+ . s res=$p($p(val,tag1,2),tag2,1)
+ q res
+set 
+ ; Dummy episode
+ i hosepis="SENSE" s (ward,epistype,refdoc,service,admdate,admtime,bed)=""
+ ; HOS_HospitalPatients
+ ; --------------------
+ k PLIST
+ s PLIST=42
+ s PLIST(2)=hosp_mrn     ; HOSP_DebtorNumber
+ s PLIST(3)=hosepis      ; HOSP_Visit
+ s PLIST(4)=givenname    ; HOSP_GivenName
+ s PLIST(5)=surname      ; HOSP_Surname
+ ; s PLIST(6)=""         ; HOSP_Title_DR
+ s PLIST(7)=dob          ; HOSP_DOB
+ s PLIST(8)=sex          ; HOSP_Sex_DR
+ s PLIST(9)=addr1        ; HOSP_Address1
+ ; s PLIST(10)=""        ; HOSP_Address2
+ s PLIST(11)=pobla       ; HOSP_Address3_Suburb
+ s PLIST(12)=cp          ; HOSP_Address5_PostCode
+ s PLIST(13)=phone       ; HOSP_PhoneHome
+ ; s PLIST(14)=""        ; HOSP_Class
+ i $l(ward),'$d(^TTAB("RH",ward)) s ward=""
+ s PLIST(15)=ward        ; HOSP_Location_DR
+ s PLIST(16)=epistype    ; HOSP_AdmissionType
+ s PLIST(17)=refdoc      ; HOSP_DoctorReferring_DR
+ i $l(PLIST(17)),'$d(^TTAB("DR",PLIST(17))) k PLIST(17)
+ ; s PLIST(18)=""        ; HOSP_DoctorConsulting_DR
+ s PLIST(19)=service     ; HOSP_Service
+ ; s PLIST(20)=""        ; HOSP_DoctorAdmitting_DR
+ s PLIST(21)=admdate     ; HOSP_AdmissionDate
+ ; s PLIST(22)=""        ; HOSP_AdmissionTime
+ s extra=""
+ s $p(extra,"|",48)=service
+ s $p(extra,"|",92)=service
+ s $p(extra,"|",105)=dead
+ s $p(extra,"|",112)=bed
+ s $p(extra,"|",113)=bed
+ s $p(extra,"|",123)=ward        ; Patient Location Original
+ s $p(extra,"|",124)=admtime
+ s PLIST(23)=extra               ; HOSP_ExtraInfo
+ s PLIST(24)=cip                 ; HOSP_pc_Medicare
+ ;s PLIST(25)=""                 ; HOSP_Hospital_DR
+ ;s PLIST(26)=""                 ; HOSP_TransDate
+ ;s PLIST(27)=""                 ; HOSP_TransTime
+ ;s PLIST(28)=""                 ; HOSP_PatientSite_DR
+ ;s PLIST(29)=""                 ; HOSP_ListOfSpecimens
+ ;s PLIST(30)=""                 ; HOSP_ListOfTests
+ ;s PLIST(31)=""                 ; HOSP_Address4_State
+ s PLIST(32)=wphone
+ ;s PLIST(33)=""                 ; HOSP_Ethnicity_DR
+ ;s PLIST(34)=""                 ; HOSP_SpecialInterest_DR
+ ;s PLIST(35)=""                 ; HOSP_OperationDate
+ ;s PLIST(36)=""                 ; HOSP_pc_VA
+ ;s PLIST(37)=""                 ; HOSP_pc_Pensioner
+ ;s PLIST(38)=""                 ; HOSP_PaymentCode_DR
+ s PLIST(39)=surname2            ; HOSP_ExtraName_1
+ ;s PLIST(40)=$e("",1,30)        ; HOSP_ExtraName_2 (Text)
+ ;s PLIST(41)=$e("",1,30)        ; HOSP_ExtraName_3 (Text)
+ s PLIST(42)=mrn                 ; LabTrak MRN
+ i $d(^THOS(hosp,"PATIENT",hosp_mrn,hosepis)) d  q
+ . s err=$$update^LVBHOSP(hosp_"||"_hosp_mrn_"||"_hosepis)
+ . i debug>0 w !,"update ",hosp_mrn,",",hosepis," return=",err
+ s err=$$insert^LVBHOSP(hosp)
+ i debug>0 w !,"insert ",mrn,",",hosepis," return=",err
+ q
+kill 
+ s epis=""
+ f  s epis=$o(^THOS(hosp,"PATIENT",mrn,epis)) q:epis=""  d
+ . s err=$$delete^LVBHOSP(hosp_"||"_mrn_"||"_epis)
+ . i debug>0 w !,"delete ",mrn,",",epis," return code=",err
+ q
+pid 
+ i debug=2 w !,"  <PID [",pidrange,"]"
+ s pid2=$$getxml(pidrange,"PID.2")
+ s pid3=$$getxml(pidrange,"PID.3")
+ s pid5=$$getxml(pidrange,"PID.5")
+ s pid6=$$getxml(pidrange,"PID.6")
+ s pid7=$$getxml(pidrange,"PID.7")
+ s pid11=$$getxml(pidrange,"PID.11")
+ s pid13=$$getxml(pidrange,"PID.13")
+ s pid14=$$getxml(pidrange,"PID.14")
+ s givenname=$$getxml(pid5,"XPN.2",1)
+ s surname=$$getxml($$getxml(pid5,"XPN.1"),"FN.1",1)
+ s surname2=$$getxml($$getxml(pid6,"XPN.1"),"FN.1",1)
+ s dob=$$getxml(pid7,"TS.1",1) i dob'="" s dob=$zdh(dob,5)
+ s sex=$$getxml(pidrange,"PID.8",1),sex=$s(sex="M":"M",sex="F":"F",1:"I")
+ s dead=$$getxml(pidrange,"PID.30"),dead=$s(dead="S":"Y",1:"N")
+ s phone=$$getxml(pid13,"XTN.1",1)
+ s wphone=$$getxml(pid14,"XTN.1",1)
+ s hosmrn=$$getxml(pid3,"CX.1",1)
+ s addr1=$$getxml($$getxml(pid11,"XAD.1"),"SAD.1",1) ; Adreça 1
+ s pobla=$$getxml(pid11,"XAD.3",1) ; Poblacio 1
+ s cp=$$getxml(pid11,"XAD.5",1) ; Codi Postal
+ s cip=$$getxml(pid2,"CX.1",1) ; CIP
+ q:debug'=2
+ w !?6,"givenname=",givenname
+ w !?6,"surname=",surname
+ w !?6,"surname2=",surname2
+ w !?6,"dob=",dob
+ w !?6,"sex=",sex
+ w !?6,"dead=",dead
+ w !?6,"phone=",phone
+ w !?6,"wphone=",wphone
+ w !?6,"hosmrn=",hosmrn
+ w !?6,"addr1=",addr1
+ w !?6,"pobla=",pobla
+ w !?6,"cp=",cp
+ w !?6,"cip=",cip
+ q
+pv1 
+ i debug=2 w !,"  <PV1 [",pv1range,"]"
+ s pv13=$$getxml(pv1range,"PV1.3")
+ s pv17=$$getxml(pv1range,"PV1.7")
+ s pv143=$$getxml(pv1range,"PV1.43")
+ s pv144=$$getxml(pv1range,"PV1.44")
+ s enddate=$$getxml(pv144,"TS.1",1)
+ s admdate=$$getxml(pv143,"PL.1",1)
+ i $l(admdate) s admdate=$zdh(admdate,8)
+ s admtime=$$getxml(pv143,"PL.2",1)
+ i $l(admtime) s admtime=$e("000000",1,6-$l(admtime))_admtime,admtime=$e(admtime,1,2)_":"_$e(admtime,3,4)_":"_$e(admtime,5,6),admtime=$zth(admtime)
+ s ward=$$getxml(pv13,"PL.1",1)
+ s bed=$$getxml(pv13,"PL.3",1)
+ s service=$$getxml($$getxml(pv13,"PL.4"),"HD.1",1)
+ s epistype=$$getxml(pv1range,"PV1.2",1)
+ s refdoc=$$getxml(pv17,"XCN.1",1) i $e(refdoc)="M" s refdoc=$e(refdoc,2,$l(refdoc)) ; SAP contains an extra M
+ q:debug'=2
+ w !?6,"admdate=",admdate
+ w !?6,"admtime=",admtime
+ w !?6,"enddate=",enddate
+ w !?6,"hosepis=",hosepis
+ w !?6,"ward   =",ward
+ w !?6,"bed    =",bed
+ w !?6,"service=",service
+ w !?6,"epistype=",epistype
+ w !?6,"refdoc=",refdoc
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="at487" type="INT" languagemode="0" generated="1"><![CDATA[
+at487 ;Table QC_MTCMachineLevelData
+ ;
+CT009(level,date) n (level,date) s level=$g(level),date=$g(date)
+ s result="Y" i '$$select^LVBQCMTL(level,"Y"),$l(PLIST(10)),PLIST(10)<date s result="N"
+ q result
+PREFDEL
+ n (%e,%old)
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("PREFDEL^"_$zn_$p(^CF("SM",1),"^",28)))) d @("PREFDEL^"_$zn_$p(^CF("SM",1),"^",28))
+ i $$select^LVBQCMTD(%e(1),"Y")
+ k %old m %old=PLIST
+ q
+POFILINS
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("POFILINS^"_$zn_$p(^CF("SM",1),"^",28)))) d @("POFILINS^"_$zn_$p(^CF("SM",1),"^",28))
+ q
+POFILUPD
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("POFILUPD^"_$zn_$p(^CF("SM",1),"^",28)))) d @("POFILUPD^"_$zn_$p(^CF("SM",1),"^",28))
+ q
+POFILDEL
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("POFILDEL^"_$zn_$p(^CF("SM",1),"^",28)))) d @("POFILDEL^"_$zn_$p(^CF("SM",1),"^",28))
+ q
+ ; calculate floating MEAN and SD using current ROWID
+calc(rowid) n (rowid) s rowid=$g(rowid)
+ d MEANSD(rowid,1) 
+ ; set new floatimg MEAN and SD
+ f j=1:1:6 s @("x"_j)=$p(rowid,"||",j)
+ s $p(^TTQC(x1,"LOT",x2,"TYPE",x3,x4,"TEST",x5,"DATA",x6),"\",3)=$s(nMEAN:+$j(nMEAN,0,3),1:"")
+ s $p(^TTQC(x1,"LOT",x2,"TYPE",x3,x4,"TEST",x5,"DATA",x6),"\",4)=$s(nSD:+$j(nSD,0,3),1:"")
+ q
+ ; type  1-calculate from previous date till now
+ ;       2-calculate from previous date till rowid date(excluding)
+MEANSD(rowid,type) n (rowid,type,nMEAN,nSD)
+ s rowid=$g(rowid),type=$g(type),level=$p(rowid,"||",1,6),machine=$p(level,"||",1,5)
+ s (nMEAN,nSD,sVALUE,sNUMBER,sSQUARE1,sSQUARE2,fDATE)=""
+ i type=2 s fDATE=$p(rowid,"||",7)
+ i $l(level) d
+ . ; get previous MEAN and SD
+ .i '$$select^LVBQCMTL(level,"Y") d
+ ..s pMEAN=PLIST(8),pSD=PLIST(9),pDATE=PLIST(10),pNUM=PLIST(11)
+ ..i $l(pDATE) s sVALUE=pMEAN*pNUM,sNUMBER=pNUM
+ ..; get data start from pDATE
+ ..i $$open^LVBQCMTD(level,pDATE+1,fDATE)
+ ..f  q:$$fetch^LVBQCMTD(level,pDATE+1,fDATE)  i PLIST(5)'="Y",$l(PLIST(4)),PLIST(4)?.N.1".".N d
+ ...i type=2,fDATE=PLIST(2),$p(rowid,"||",8)'>PLIST(8) q
+ ...s sVALUE=sVALUE+PLIST(4),sNUMBER=sNUMBER+1
+ ...s sSQUARE1=sSQUARE1+(PLIST(4)**2)
+ ..i $$close^LVBQCMTD()
+ ..i sVALUE d
+ ... ; calculate MEAN
+ ...s nMEAN=sVALUE/sNUMBER
+ ... ; calculate SD
+ ...s sSQUARE2=sVALUE*sVALUE
+ ...s nSD=0 i sNUMBER>1 s nSD=$zsqr((sSQUARE1-(sSQUARE2/sNUMBER))/(sNUMBER-1))
+ q
+ ; calculate violated rules
+rules(rowid) 
+ n (rowid,RULES) 
+ s rowid=$g(rowid) i $d(^TMP("RULES",$j)) q ""
+ s level=$p(rowid,"||",1,6),machine=$p(level,"||",1,5),^TMP("RULES",$j)="START"
+ ; select new MEAN and SD
+ k MEAN,SD
+ i $$open^LVBQCMTL(machine,"Y")
+ f  q:$$fetch^LVBQCMTL(machine,"Y")  d
+ .s (MEAN(PLIST(2)),SD(PLIST(2)))=""
+ .i PLIST(7)="FX" s MEAN(PLIST(2))=PLIST(3),SD(PLIST(2))=PLIST(4)
+ .i PLIST(7)="FL" d
+ ..d MEANSD(PLIST(1)_"||"_$p(rowid,"||",7,8),2)
+ ..s MEAN(PLIST(2))=nMEAN,SD(PLIST(2))=nSD
+ i $$close^LVBQCMTL()
+ ; calculate violated rules
+ f j=1:1:8 s @("x"_j)=$p(rowid,"||",j)
+ i $$getall^LVBQCMTR(x1_"||"_x2_"||"_x3_"||"_x4)
+ k ^TMP($zn,$j) m ^TMP($zn,$j)=PLIST
+ f Xj=1:1:PLIST d  i $d(ok("R")) q
+ .s xxWR=$p($p(^TMP($zn,$j,Xj),$c(2),4),$c(28),4)
+ .i '((xxWR="W")!(xxWR="R")) q
+ . ;
+ . ; check 1-2S rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="A" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,1)'=1 q
+ ..s lev=x6 i $g(MEAN(lev)),$g(SD(lev)) d
+ ...i $p(PLIST(1),$c(2),4)>(MEAN(lev)+(SD(lev)*2)) s ok(xxWR)="A" q
+ ...i $p(PLIST(1),$c(2),4)<(MEAN(lev)-(SD(lev)*2)) s ok(xxWR)="A" q
+ . ;
+ . ; check 1-3S rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="B" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,1)'=1 q
+ ..s lev=x6 i $g(MEAN(lev)),$g(SD(lev)) d
+ ...i $p(PLIST(1),$c(2),4)>(MEAN(lev)+(SD(lev)*3)) s ok(xxWR)="B" q
+ ...i $p(PLIST(1),$c(2),4)<(MEAN(lev)-(SD(lev)*3)) s ok(xxWR)="B" q
+ . ;
+ . ; check 2-2S rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="C" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ .. ; select same level data
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,2)'=2 q
+ ..s lev=x6 i $g(MEAN(lev)),$g(SD(lev)) d  i $g(ok(xxWR))="C" q
+ ...k xPLIST,l m xPLIST=PLIST s (l(1),l(2))=lev
+ ...d sN(.l,"C",2,2)
+ .. ; select cross level data
+ ..s lev=x6,lev1="",NM(1)=lev,NM=1 f  s lev1=$o(MEAN(lev1)) q:lev1=""  i lev'=lev1,MEAN(lev1),SD(lev1) s NM=NM+1,NM(NM)=lev1
+ ..i NM>1 d
+ ...i $d(NM(1)),$d(NM(2)) d sNM(1,1,0,"C",2) i $g(ok(xxWR))="C" q
+ ...i $d(NM(1)),$d(NM(3)) d sNM(1,0,1,"C",2) i $g(ok(xxWR))="C" q
+ . ;
+ . ; check 2of3(2S) rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="D" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ .. ; select same level data
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,3)'=3 q
+ ..s lev=x6 i $g(MEAN(lev)),$g(SD(lev)) d  i $g(ok(xxWR))="D" q
+ ...k xPLIST,l s xPLIST(1)=PLIST(1),xPLIST(2)=PLIST(2),(l(1),l(2))=lev
+ ...d sN(.l,"D",2,2) i $g(ok(xxWR))="D" q
+ ...k xPLIST,l s xPLIST(1)=PLIST(1),xPLIST(2)=PLIST(3),(l(1),l(2))=lev
+ ...d sN(.l,"D",2,2) i $g(ok(xxWR))="D" q
+ ...k xPLIST,l s xPLIST(1)=PLIST(2),xPLIST(2)=PLIST(3),(l(1),l(2))=lev
+ ...d sN(.l,"D",2,2) i $g(ok(xxWR))="D" q
+ . ;
+ . ; check 4-1S rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="E" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ .. ; select same level data
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,4)'=4 q
+ ..s lev=x6 i $g(MEAN(lev)),$g(SD(lev)) d  i $g(ok(xxWR))="E" q
+ ...k xPLIST,l m xPLIST=PLIST f j=1:1:4 s l(j)=lev
+ ...d sN(.l,"E",4,1)
+ .. ; select cross level data
+ ..s lev=x6,lev1="",NM(1)=lev,NM=1 f  s lev1=$o(MEAN(lev1)) q:lev1=""  i lev'=lev1,MEAN(lev1),SD(lev1) s NM=NM+1,NM(NM)=lev1
+ ..i NM>1 d
+ ...i $d(NM(1)),$d(NM(2)) d sNM(2,2,0,"E",1) i $g(ok(xxWR))="E" q
+ ...i $d(NM(1)),$d(NM(3)) d sNM(2,0,2,"E",1) i $g(ok(xxWR))="E" q
+ . ;
+ . ; check 3-1S rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="F" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ .. ; select same level data
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,3)'=3 q
+ ..s lev=x6 i $g(MEAN(lev)),$g(SD(lev)) d  i $g(ok(xxWR))="F" q
+ ...k xPLIST,l m xPLIST=PLIST f j=1:1:3 s l(j)=lev
+ ...d sN(.l,"F",3,1)
+ . ;
+ . ; check 10X rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="G" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ .. ; select same level data
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,10)'=10 q
+ ..s lev=x6 i $g(MEAN(lev)),$g(SD(lev)) d  i $g(ok(xxWR))="G" q
+ ...k xPLIST,l m xPLIST=PLIST f j=1:1:10 s l(j)=lev
+ ...d sN(.l,"G",10,0)
+ .. ; select cross level data
+ ..s lev=x6,lev1="",NM(1)=lev,NM=1 f  s lev1=$o(MEAN(lev1)) q:lev1=""  i lev'=lev1,MEAN(lev1),SD(lev1) s NM=NM+1,NM(NM)=lev1
+ ..i NM>1 d
+ ...i $d(NM(1)),$d(NM(2)) d sNM(5,5,0,"G",0) i $g(ok(xxWR))="G" q
+ ...i $d(NM(1)),$d(NM(3)) d sNM(5,0,5,"G",0) i $g(ok(xxWR))="G" q
+ . ;
+ . ; check 7-point trend rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="H" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ .. ; select same level data
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,7)'=7 q
+ ..s lev=x6 i $g(MEAN(lev)),$g(SD(lev)) d
+ ...i $p(PLIST(1),$c(2),4)>$p(PLIST(2),$c(2),4) s ok(xxWR)="H" f j=2:1:6 i $p(PLIST(j),$c(2),4)'>$p(PLIST(j+1),$c(2),4) k ok(xxWR) q
+ ...i $p(PLIST(1),$c(2),4)<$p(PLIST(2),$c(2),4) s ok(xxWR)="H" f j=2:1:6 i $p(PLIST(j),$c(2),4)'<$p(PLIST(j+1),$c(2),4) k ok(xxWR) q
+ . ;
+ . ; check 6X rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="I" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ .. ; select same level data
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,6)'=6 q
+ ..s lev=x6 i $g(MEAN(lev)),$g(SD(lev)) d  i $g(ok(xxWR))="I" q
+ ...k xPLIST,l m xPLIST=PLIST f j=1:1:6 s l(j)=lev
+ ...d sN(.l,"I",6,0)
+ . ;
+ . ; check R-4S rule
+ . ;
+ .i $p(^TMP($zn,$j,Xj),$c(2),3)="R" d  i $d(ok("R")) q
+ ..i xxWR="W",$d(ok("W")) q
+ ..; select same level data
+ ..i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_x6,x7,x8,2)'=2 q
+ ..s lev2=x6 i $g(MEAN(lev2)),$g(SD(lev2)) d
+ ...i $p(PLIST(1),$c(2),4)>(MEAN(lev2)+(SD(lev2)*2)),$p(PLIST(2),$c(2),4)<(MEAN(lev2)-(SD(lev2)*2)) s ok(xxWR)="R" q
+ ...i $p(PLIST(2),$c(2),4)>(MEAN(lev2)+(SD(lev2)*2)),$p(PLIST(1),$c(2),4)<(MEAN(lev2)-(SD(lev2)*2)) s ok(xxWR)="R" q
+ k ^TMP($zn,$j),^TMP("RULES",$j)
+ q $s($d(ok("R")):ok("R"),$d(ok("W")):ok("W"),1:"")
+sN(l,result,N,M) s (ok,ok1)=""
+ i '$l(ok1),$p(xPLIST(1),$c(2),4)>(MEAN(l(1))+(SD(l(1))*M)) s ok1=result f j=2:1:N i $p(xPLIST(j),$c(2),4)'>(MEAN(l(j))+(SD(l(j))*M)) s ok1="" q
+ i '$l(ok1),$p(xPLIST(1),$c(2),4)<(MEAN(l(1))-(SD(l(1))*M)) s ok1=result f j=2:1:N i $p(xPLIST(j),$c(2),4)'<(MEAN(l(j))-(SD(l(j))*M)) s ok1="" q
+ i ok1=result s (ok,ok(xxWR))=result
+ q
+ ; select cross level data (N1-N2-N3)
+ ; and check with MEAN+SD
+sNM(N1,N2,N3,result,M) k xx
+ i $g(N1) s xx(1)="" d  i xx(1)'=result,ok="" q
+ .i $g(ok(xxWR))=result k ok(xxWR)
+ .i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_NM(1),x7,x8,N1)'=N1 q
+ .k xPLIST,l m xPLIST=PLIST k PLIST
+ .f j=1:1:N1 s l(j)=NM(1)
+ .d sN(.l,result,N1,M) s xx(1)=ok
+ i $g(N2) s xx(2)="" d  i xx(2)'=result,ok="" q
+ .i $g(ok(xxWR))=result k ok(xxWR)
+ .i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_NM(2),x7,x8,N2)'=N2 q
+ .k xPLIST,l m xPLIST=PLIST k PLIST
+ .f j=1:1:N2 s l(j)=NM(2)
+ .d sN(.l,result,N2,M) s xx(2)=ok
+ i $g(N3) s xx(3)="" d  i xx(3)'=result,ok="" q
+ .i $g(ok(xxWR))=result k ok(xxWR)
+ .i $$getsome^LVBQCMTD(x1_"||"_x2_"||"_x3_"||"_x4_"||"_x5_"||"_NM(3),x7,x8,N3)'=N3 q
+ .k xPLIST,l m xPLIST=PLIST k PLIST
+ .f j=1:1:N3 s l(j)=NM(3)
+ .d sN(.l,result,N3,M) s xx(3)=ok
+ q
+]]></Routine>
+</Export>

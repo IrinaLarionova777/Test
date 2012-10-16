@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTPAU01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTPAU01 ; IG 13/10/98 ; POSTINGS AUDIT
+ q
+ ; Parameters :  1. Audit Number
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Postings Audit - "_$g(AUDIT(3))
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="Number "_PAR1
+ s line=4,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ s audit=$o(^TBATi("AUDIT",PAR1,"")) i $l(audit) d
+ .s auddate=$p(^TBATi("AUDIT",PAR1,audit),"\",1)
+ .s audcode=$p(^TBATi("AUDIT",PAR1,audit),"\",2)
+ .i $l(audcode),'$$select^LVBCTAU(audcode) k AUDIT m AUDIT=PLIST
+ q
+BODY ; create report
+ s batch="" f  s batch=$o(^TBATi("AUDIT",PAR1,batch)) q:batch=""  d
+ .s bline="" f  s bline=$o(^TBAT(batch,bline)) q:bline=""  d
+ ..s bROWID=batch_"||"_bline,epis=$p(^(bline),"\"),receipt=$p(^(bline),"\",3)
+ ..s ^TMP($zn,$j,"REPORT",batch,bline)=receipt
+ ..i '$l(epis) d
+ ...s epis="" f cnt=1:1 s epis=$o(^TBAT(batch,bline,1,epis)) q:epis=""  s amount=^(epis) d
+ ....s comp=$$epcomp^LVBVIS1(epis) s:'$l(comp) comp=" "
+ ....s ^TMP($zn,$j,"COMPANY",comp)=$g(^TMP($zn,$j,"COMPANY",comp))+amount
+ ....s ^TMP($zn,$j,"COMPANY")=$g(^TMP($zn,$j,"COMPANY"))+amount
+ ....s ^TMP($zn,$j,"REPORT",batch,bline,cnt,"EPISODE")=epis
+ ..i $l(epis) s amount=$p(^TBAT(batch,bline),"\",2) d
+ ...s comp=$$epcomp^LVBVIS1(epis) s:'$l(comp) comp=" "
+ ...s ^TMP($zn,$j,"COMPANY",comp)=$g(^TMP($zn,$j,"COMPANY",comp))+amount
+ ...s ^TMP($zn,$j,"REPORT",batch,bline,1,"EPISODE")=epis
+ ..i $$open^LVBCRBLA(bROWID)
+ ..f cnt=1:1 q:$$fetch^LVBCRBLA(bROWID)  m ^TMP($zn,$j,"REPORT",batch,bline,cnt)=PLIST
+ ..i $$close^LVBCRBLA()
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s (TotalCQ,batch)="" f  s batch=$o(^TMP($zn,$j,"REPORT",batch)) q:batch=""  d
+ ..s bline="" f  s bline=$o(^TMP($zn,$j,"REPORT",batch,bline)) q:bline=""  d
+ ...s bROWID=batch_"||"_bline i '$$select^LVBCRBL(bROWID) s xxx(6)=PLIST(4)
+ ...s xxx(1)=$p(bROWID,"||",1)_" "_$p(bROWID,"||",2)
+ ...s cnt="" f  s cnt=$o(^TMP($zn,$j,"REPORT",batch,bline,cnt)) q:cnt=""  d
+ ....k plist,PLIST m plist=^TMP($zn,$j,"REPORT",batch,bline,cnt)
+ ....s epis=$g(plist("EPISODE")) i $$select^LVBEPVIS(epis)
+ ....i $d(plist(3)) d
+ .....s xxx(2)=plist(3),xxx(3)=$j(plist(4),0,2)
+ .....s xxx(4)=$p(plist(5),$c(1))_"  "_$p(plist(7),$c(1))
+ .....s xxx(5)=plist(8) i plist(3)="CC" s xxx(5)=xxx(5)_" ("_plist(9)_")"
+ .....i plist(3)="CQ" s TotalCQ=TotalCQ+1
+ ....d PRINT^PRTREP00(.PLIST,.N) k xxx
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","Total Number of Cheques : "_TotalCQ)
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .s comp="" f cnt=0:1 s comp=$o(^TMP($zn,$j,"COMPANY",comp)) q:comp=""  s amount=^TMP($zn,$j,"COMPANY",comp) d
+ ..k COMPANY i '$$select^LVBCTCO(comp,"Y") k COMPANY m COMPANY=PLIST
+ ..d ADDLINE^PRTREP00(REPID,"PRT","Total : "_$j(amount,11,2)_" for "_$g(COMPANY(3)))
+ ..D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .i cnt>1 s amount=$g(^TMP($zn,$j,"COMPANY")) d
+ ..D ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","?12 "_$j(amount,11,2)_" All companies")
+ ..D ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..D ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="PAU"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

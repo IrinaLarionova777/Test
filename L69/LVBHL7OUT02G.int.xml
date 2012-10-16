@@ -1,0 +1,303 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBHL7OUT02G" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBHL7OUT02G ; ML 13/9/2000 ; HL7 RESULT COMPILER - Labtrak to BOSS
+  q
+  ; loop thru and find unsent episodes
+create  
+  n
+  i '$$select^MVBCFLAB(1) m SYSDET=PLIST k PLIST
+  s:'$l(SYSDET(18)) SYSDET(18)="*"
+  s:'$l(SYSDET(19)) SYSDET(19)="*"
+  ; environment - T = Test
+  ;               P = Production/Live
+  s environ=$p($g(SYSDET(45)),$c(1)) i environ="L" s environ="P"
+  i " P T "[(" "_environ_" ") s Pcount=0 d
+  . ; check changes to test status
+  .s reptype="" f  s reptype=$o(^TEDI("OUT","HL7",reptype)) q:reptype=""  d  q:Pcount=250
+  ..s client="" f  s client=$o(^TEDI("OUT","HL7",reptype,client)) q:client=""  d  q:Pcount=250
+  ...s hospdoc="" f  s hospdoc=$o(^TEDI("OUT","HL7",reptype,client,hospdoc)) q:hospdoc=""  d  q:Pcount=250
+  ....s epis="" f  s epis=$o(^TEDI("OUT","HL7",reptype,client,hospdoc,epis)) q:epis=""  i $p($g(^TEPI(epis)),"\",44)'=0 k ^TEDI("OUT","HL7",reptype,client,hospdoc,epis) 
+  .... ; ignore uncoded doctors
+  ....i hospdoc["NC-" k ^TEDI("OUT","HL7",reptype,client,hospdoc) q
+  ....s epis="" f  s epis=$o(^TEDI("OUT","HL7",reptype,client,hospdoc,epis)) q:epis=""  s Pcount=Pcount+1 d  q:Pcount=250
+  .....d DETpat
+  .....s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+  ......s nnx="" f  s nnx=$o(^TEPI(epis,1,ts,nnx)) q:nnx=""  d
+  .......s vtsRID=epis_"||"_ts_"||"_nnx
+  .......d DETts
+  .......d BUILD("Update")
+  .....k ^TEDI("OUT","HL7",reptype,client,hospdoc,epis)
+  // .....d DETpat
+  // .....s vtsRID="" f  s vtsRID=$o(^TEDI("OUT","HL7",reptype,client,hospdoc,epis,46,vtsRID)) q:vtsRID=""  d
+  // ......s seq="" f  s seq=$o(^TEDI("OUT","HL7",reptype,client,hospdoc,epis,46,vtsRID,seq)) q:seq=""  s status=$p(^(seq),"\",3) d
+  // .......d DETts
+  // .......d BUILD(status)
+  // .......k ^TEDI("OUT","HL7",reptype,client,hospdoc,epis,46,vtsRID,seq)
+  // ..... ; prevent PMI updates going to BOSS
+  // .....k ^TEDI("OUT","HL7",reptype,client,hospdoc,epis,42)
+  q
+  ; extract details - patient
+DETpat  s (mrn,name,dob,sex,add,homeph,drcode,drcumul,drprov,drname)=""
+  i '$$select^LVBEPVIS(epis) m VISIT=PLIST k PLIST d
+  .s title=$p(VISIT(7),$c(1)),colldate=$p(VISIT(12),$c(1)),colltime=$p(VISIT(13),$c(1)),loc=$p(VISIT(66),$c(1))
+  .s mrn=$p(VISIT(20),$c(1))
+  .s name=$p(VISIT(3),$c(1))_"^"_$p(VISIT(4),$c(1))_"^^^"_title
+  .i VISIT(6)'=-1,(VISIT(6)'="") s dob=$$dt(VISIT(6))
+  .s sex=$p(VISIT(5),$c(1))
+  .s add=$p(VISIT(32),$c(1))_"^"_$p(VISIT(33),$c(1))_"^"_$p(VISIT(34),$c(1))_"^^"_$p(VISIT(36),$c(1))
+  .s homeph=$p(VISIT(43),$c(1))
+  . ; extract details - doctor
+  .s drcode=$p(VISIT(15),$c(1))
+  .i '$$select^LVBCTDR(drcode,"Y") m DOC=PLIST k PLIST d
+  ..s drname=$p(DOC(26),$c(1))_" "_$p(DOC(3),$c(1))_" "_$p(DOC(4),$c(1))
+  ..s drprov=$p(DOC(18),$c(1)),drcumul=$p(DOC(34),$c(1))
+  q
+  ; extract details - test set
+DETts  s ts=$p(vtsRID,"||",2),nnx=$p(vtsRID,"||",3)
+  i '$$select^LVBCTTS(ts,"Y") m TS=PLIST k PLIST d
+  .s cumul=$p(TS(7),$c(1))
+  .s:cumul'="D" format=$s(cumul="F":"C",cumul="Y":"C",1:"")
+  .s:cumul="D" format=$s(drcumul'="N":"C",1:"")
+  .s tsname=$p(TS(3),$c(1)),tssyn=$p(TS(4),$c(1)),report=$p(TS(21),$c(1)),secur=$p(TS(22),$c(1))
+  . ; test set report page for doctor
+  .k REPORT i '$$select^LVBCTRG(report,"Y") m REPORT=PLIST
+  .i (report=" ")!'$d(REPORT) s REPORT(4)=0,REPORT(5)="Y"
+  ; check DFT
+  i format="C" s mrn=$p(VISIT(20),$c(1)) i $l(mrn) d
+  .s dft="" f  s dft=$o(^TEPIi("DFT",mrn,dft)) q:dft=""  d  q:format=""
+  ..s x1="" f  s x1=$o(^TEPIi("DFT",mrn,dft,x1)) q:x1=""  d  q:format=""
+  ...s x2="" f  s x2=$o(^TEPIi("DFT",mrn,dft,x1,x2)) q:x2=""  d  q:format=""
+  ....s x3="" f  s x3=$o(^TEPIi("DFT",mrn,dft,x1,x2,"SEQ",x3)) q:x3=""  i vtsRID=$p(^(x3),"\") s format="" q
+  q
+  ; PendAuth : Add    = Pending/Entered Test
+  ;          : Auth   = Authorised Test
+  ;          : DeAuth = Deauthorised test
+  ;          : Del    = Deleted Test (Pending/Resulted)
+  ;          : Update = Updated
+  ;          : Print  = Retransmit
+  ;
+BUILD(PendAuth) ; build packet strings
+  l +^TMPclean k ^TMP($zn,$j) k PLIST,visres s uniseq=$$new()
+  s msh(6)=$$dt(+$h,$p($h,",",2))
+  s msh(9)=uniseq
+  s msh(10)=environ
+  s ^TMP($zn,$j,"MSH")="MSH|^~\&|LABTRAK||PATH_RESULTS||"_msh(6)_"||ORU^R01|"_msh(9)_"|"_msh(10)_"|2.3|||AL|NE"
+  s pid(2)=""
+  i $l($p(VISIT(65),",",2)) s pid(2)=pid(2)_$s($l(pid2):"~",1:"")_$p(VISIT(65),",",2)_"^^^^MR"
+  i $l($p(VISIT(65),",",1)),$p(VISIT(65),",",1)?1.N s pid(2)=pid(2)_$s($l(pid(2)):"~",1:"")_$p(VISIT(65),",",1)_"^^^^BOSS"
+  i $l(VISIT(20)) s pid(2)=pid(2)_$s($l(pid(2)):"~",1:"")_$p(VISIT(20),$c(1))_"^^^^MRLT"
+  i $l(VISIT(8)) s pid(2)=pid(2)_$s($l(pid(2)):"~",1:"")_VISIT(8)_VISIT(108)_"^^^^MC"
+  i $l(VISIT(89)) s pid(2)=pid(2)_$s($l(pid(2)):"~",1:"")_VISIT(89)_"^^^^DVA"
+  i $l(VISIT(88)) s pid(2)=pid(2)_$s($l(pid(2)):"~",1:"")_VISIT(88)_"^^^^PEN"
+  s pid(3)=mrn
+  s pid(5)=name
+  s pid(7)=dob
+  s pid(8)=sex
+  s pid(11)=add
+  s pid(13)=homeph
+  s ^TMP($zn,$j,"PID")="PID||"_pid(2)_"|"_pid(3)_"||"_pid(5)_"||"_pid(7)_"|"_pid(8)_"|||"_pid(11)_"||"_pid(13)_"|"
+  ; extract copy-to doctors
+  s (copyto,copycnt)="" i $l(VISIT(22)) s copyto="^"_$p(VISIT(22),$c(1),2)_"^^^^",copycnt=1
+  s x="" f  s x=$o(^TEPI(epis,5,x)) q:x=""  d  q:copycnt=5
+  .s copy=$p(^TEPI(epis,5,x),"\",1) i $l(copy),'$$select^LVBCTDR(copy,"Y") d  q
+  ..s copyto=copyto_$s($l(copyto):"~",1:"")_PLIST(18)_"^"_PLIST(3)_"^"_PLIST(4)_"^^^"_PLIST(26)
+  ..s copycnt=copycnt+1
+  .s copy=$p(^TEPI(epis,5,x),"\",15) i $l(copy),'$$select^LVBCTHOS(copy,"Y") d  q
+  ..s copyto=copyto_$s($l(copyto):"~",1:"")_"^"_PLIST(3)_"^^^^"
+  ..s copycnt=copycnt+1
+  .s copy=$p(^TEPI(epis,5,x),"\",2) i $l(copy) d
+  ..s copyto=copyto_$s($l(copyto):"~",1:"")_"^"_copy_"^^^^"
+  ..s copycnt=copycnt+1
+  ; build pending/deleted/deauthorised test packet
+  i '((PendAuth="Auth")!(PendAuth="Update")!(PendAuth="Print")) d  g BUILDend
+  .s ^TMP($zn,$j,"OBR")=$g(^TMP($zn,$j,"OBR"))+1
+  .s obr(1)=^TMP($zn,$j,"OBR")
+  .s obr(3)=$tr(vtsRID,"||"," ")_"^PLS"
+  .s obr(4)=tssyn_"^"_tsname
+  .s obr(7)=$$dt(colldate,+colltime)
+  .s obr(12)=secur
+  .s obr(16)=drprov_"^"_drcode_"^"_drname
+  .s obr(20)="ATOMIC"
+  .s obr(25)=$s(PendAuth="Add":"P",PendAuth="Del":"X",1:"D")
+  .s obr(27)="^^^"_$$dt(VISIT(14),+VISIT(111))
+  .s obr(28)=copyto
+  .s ^TMP($zn,$j,"OBR",obr(1))="OBR|"_obr(1)_"||"_obr(3)_"|"_obr(4)_"|||"_obr(7)_"|||||"_obr(12)_"||||"_obr(16)_"||||"_obr(20)_"|||||"_obr(25)_"||"_obr(27)_"|"_obr(28)
+  k VISTS q:$$select^LVBVISTS(vtsRID)  m VISTS=PLIST k PLIST
+  k FORMAT i '$$getit^LVBCTTSF(,vtsRID,"Y") m FORMAT=PLIST
+  ; check confidentiality
+  s conf=$$conf^LVBVISTS(vtsRID)
+  ; build authorised result packet
+  s status=$s($$status^LVBVIS1(vtsRID)="A":"A",1:"U")
+  i status'="A","DI"[$e($p(vtsRID,"||",2)) g BUILDend
+  k visres
+  i " Y P "[(" "_conf_" ") s PLIST=1,PLIST(1)=vtsRID_"||T"_$c(1)_"T"_$c(1)_"Confidential result. Please call pathology on <>"
+  e  i $$results^LVBVISTS(vtsRID)
+  m visres=PLIST k PLIST
+  ; remove nonreportable items
+  s i="" f  s i=$o(visres(i)) q:i=""  i $p(visres(i),$c(1),22)="Y" k visres(i)
+  s i="" f  s i=$o(visres(i)) q:i=""  s tc=$p(visres(i),$c(1),2) d
+  .s j="" f  s j=$o(FORMAT(j)) q:j=""  i tc=$p(FORMAT(j),$c(2),10) d  q
+  ..i $p(FORMAT(j),$c(2),15)'="Y" k visres(i)
+  k vs
+  s j="" f  s j=$o(FORMAT(j)) q:j=""  s tc=$p(FORMAT(j),$c(2),10) i $l(tc) d
+  .s order=$p(FORMAT(j),$c(2),27) i '$l(order) s order=$p(FORMAT(j),$c(2),2)
+  .s i="" f  s i=$o(visres(i)) q:i=""  i tc=$p(visres(i),$c(1),2) s vs(order,j)=visres(i)
+  k visres s order="" f  s order=$o(vs(order)) q:order=""  d
+  .s j="" f  s j=$o(vs(order,j)) q:j=""  s jj=$o(visres(""),-1)+1,visres(jj)=vs(order,j)
+  k vs
+  ; Updated = P, Authorised = A
+  s ^TMP($zn,$j,"OBR")=$g(^TMP($zn,$j,"OBR"))+1
+  s obr(1)=^TMP($zn,$j,"OBR")
+  s obr(3)=$tr(vtsRID,"||"," ")_"^PLS"
+  s obr(4)=tssyn_"^"_tsname
+  s obr(7)=$$dt(colldate,+colltime)
+  s obr(12)=secur
+  s obr(16)=drprov_"^"_drcode_"^"_drname
+  s obr(20)="ATOMIC"
+  s obr(25)=$s(PendAuth="Add":"P",PendAuth="Del":"X",1:"D")
+  s obr(27)="^^^"_$$dt(VISIT(14),0)
+  s obr(28)=copyto
+  s ^TMP($zn,$j,"OBR",obr(1))="OBR|"_obr(1)_"||"_obr(3)_"|"_obr(4)_"|||"_obr(7)_"|||||"_obr(12)_"||||"_obr(16)_"||||"_obr(20)_"|||||"_obr(25)_"||"_obr(27)_"|"_obr(28)
+  s i="" f  s i=$o(visres(i)) q:i=""  s tc=$p(visres(i),$c(1),2) i '$$select^LVBCTTC(tc) d
+  .k CTTC m CTTC=PLIST k PLIST
+  .s res=$p(visres(i),$c(1),3),units=$tr(CTTC(4),$c(16),"^"),normal=$p(visres(i),$c(1),5)
+  .s CTTC(14)=$s(CTTC(14)'="":CTTC(14),1:CTTC(3)),zItem=0
+  .i 'zItem,$e(CTTC(5),1)="N" s zItem=1 d
+  ..s range=$$ranges^LVBVIS1(tc,VISIT(26),$p(VISIT(5),$c(1)),,"0",$s($l(VISTS(7)):VISTS(7),1:+$h),VISIT(98),VISIT(22),,VISIT(64)_$c(1)_$p(VISIT(60),$c(1))_$c(1)_$p(VISIT(167),$c(1)))
+  ..s range1=$p(range,$c(1)),range2=$p(range,$c(1),2),range=range1_"-"_range2 s:range="-" range="" s range=$tr(range,"^","*")
+  ..s obx(1)=$o(^TMP($zn,$j,"OBX",obr(1),""),-1)+1
+  ..s obx(2)="NM"
+  ..s obx(3)=CTTC(14)_"^"_CTTC(3)_"^L"
+  ..s obx(5)=res
+  ..s obx(6)=units
+  ..s obx(7)=range
+  ..s obx(8)=$s(normal="L":SYSDET(18),normal="H":SYSDET(19),1:"")
+  ..s ^TMP($zn,$j,"OBX",obr(1),obx(1))="OBX|"_obx(1)_"|"_obx(2)_"|"_obx(3)_"||"_obx(5)_"|"_obx(6)_"|"_obx(7)_"|"_obx(8)
+  .i 'zItem,$e(CTTC(5),1)="S",'$$select^LVBCTTCT(tc_"||"_res) s zItem=1 d
+  ..s res=$$translate^LVBCOM01(res,"\","\E\")
+  ..s res="" f j=1:1:$l(PLIST(3),"|") s res=res_$s($l(res):"\.br\",1:"")_$p(PLIST(3),"|",j)
+  ..s res=$$translate^LVBCOM01(res,"|","\F\")
+  ..s res=$$translate^LVBCOM01(res,"^","\S\")
+  ..s res=$$translate^LVBCOM01(res,"&","\T\")
+  ..s res=$$translate^LVBCOM01(res,"~","\R\")
+  ..s obx(1)=$o(^TMP($zn,$j,"OBX",obr(1),""),-1)+1
+  ..s obx(2)="FT"
+  ..s obx(3)=$s($l(CTTC(14)):CTTC(14),1:"")_"^"_CTTC(3)_"^L"
+  ..s obx(5)=res
+  ..s obx(6)=units
+  ..s ^TMP($zn,$j,"OBX",obr(1),obx(1))="OBX|"_obx(1)_"|"_obx(2)_"|"_obx(3)_"||"_obx(5)_"|"_obx(6)_"||"
+  .i 'zItem,$l(res) s zItem=1 d
+  ..s XX=res,res="" f j=1:1:$l(XX,"|") s res=res_$s($l(res):" ",1:"")_$p(XX,"|",j)
+  ..s obx(1)=$o(^TMP($zn,$j,"OBX",obr(1),""),-1)+1
+  ..s obx(2)="NM"
+  ..s obx(3)=CTTC(14)_"^"_CTTC(3)_"^L"
+  ..s obx(5)=res
+  ..s obx(6)=units
+  ..s ^TMP($zn,$j,"OBX",obr(1),obx(1))="OBX|"_obx(1)_"|"_obx(2)_"|"_obx(3)_"||"_obx(5)_"|"_obx(6)_"||"
+  .i $p(visres(i),$c(1),4)'="" d
+  ..k PLIST,COMM,comm s PLIST=1,PLIST(1)=1_$c(1)_tc_$c(1)_$p(visres(i),$c(1),4)
+  ..i '$$COMMENTS^LVBCOM01("",$p(vtsRID,"||",2),"P") m COMM=PLIST k PLIST d
+  ...s j1="" f  s j1=$o(COMM(j1)) q:j1=""  s COMM(j1)=$tr(COMM(j1),"^")
+  ...s j1="" f  s j1=$o(COMM(j1)) q:j1=""  f j2=1:1:$l(COMM(j1),$c(16)) s comm(j1)=$g(comm(j1))_$s($l($g(comm(j1))):"\S\",1:"")_$p(COMM(j1),$c(16),j2)
+  ..s (res,j1)="" f  s j1=$o(comm(j1)) q:j1=""  s res=res_$s($l(res):"\.br\",1:"")_comm(j1)
+  ..i $e(res,1,5)'="\.br\" s res="\.br\"_res
+  ..s obx(1)=$o(^TMP($zn,$j,"OBX",obr(1),""),-1)+1
+  ..s obx(2)="FT"
+  ..s obx(3)=$s($l(CTTC(14)):CTTC(14),1:"")_"^"_CTTC(3)_"^L"
+  ..s obx(5)=$tr(res,$c(18)_"|","!!")
+  ..s ^TMP($zn,$j,"OBX",obr(1),obx(1))="OBX|"_obx(1)_"|"_obx(2)_"|"_obx(3)_"||"_obx(5)_"|||"
+  ; always compile non cumulative formatted result
+  k SingRes,CumRes,AllRes,CompRes
+  i '$$SINGLE^PRTDR00(vtsRID,"E","") d
+  .d adjust(.PLIST) i PLIST f j=1:1:PLIST s PLIST(j+.5)="!"
+  .i PLIST m SingRes=PLIST k PLIST
+  ; compile cumulative format
+  i format="C" d
+  .k ^TMP($zn,$j,"EpisodeList")
+  .s visit="" f j=1:1:VISIT s $p(visit,$c(28),j)=$g(VISIT(j))
+  .s visit=$tr(visit,"""","'")
+  .d CumList^PRTDR00($p(vtsRID,"||",2),$p(vtsRID,"||",1),visit,$s(REPORT(4)=1:"Y",REPORT(4)=4:"Y",1:""))
+  .m ^TMP($zn,$j,"EpisodeList")=PLIST k PLIST
+  .s (col,EpisodeList)="" f  s col=$o(^TMP($zn,$j,"EpisodeList",col)) q:col=""  s EpisodeList=$s($l(EpisodeList):EpisodeList_",",1:"")_^(col)
+  .k ^TMP($zn,$j,"EpisodeList")
+  .i '$$SINGLE^PRTDR00(vtsRID,"E","C",EpisodeList) d
+  ..d adjust(.PLIST) i PLIST f j=1:1:PLIST s PLIST(j+.5)="!"
+  ..d adjust(.HEADER) i HEADER f j=1:1:HEADER s HEADER(j+.5)="!"
+  ..i PLIST m CumRes=PLIST k PLIST
+  ; merge single result and cumulative results together
+  s cnt="" f  s cnt=$o(SingRes(cnt)) q:cnt=""  s AllRes(cnt)=SingRes(cnt)
+  i $d(SingRes) f i=1:1:2 s cntx=$o(AllRes(""),-1)+1,AllRes(cntx)="!"
+  s cnt="" f  s cnt=$o(HEADER(cnt)) q:cnt=""  s cntx=$o(AllRes(""),-1)+1,AllRes(cntx)=HEADER(cnt)
+  s cnt="" f  s cnt=$o(CumRes(cnt)) q:cnt=""  s cntx=$o(AllRes(""),-1)+1,AllRes(cntx)=CumRes(cnt)
+  ; compile for sending
+  s (cnt,count,text,textx)="",string="~",i="" f  s i=$o(AllRes(i)) q:i=""  d
+  .i $e(AllRes(i))="~" q
+  .s text=AllRes(i) i text=$c(13) q
+  .i ($e(text)="!")!($e(text)="#") d  q
+  ..i textx'="" s cnt=cnt+1,CompRes(cnt)=textx
+  ..s cnt=cnt+1,CompRes(cnt)="!",textx="",textx=$e($tr(text,"~","^"),2,99)
+  .s text=$tr(text,"~","^")
+  .s len=$l(text) f x=1:1 q:$e(text,x)'=" "
+  .f j=x:1:len s $e(textx,j)=$e(text,j)
+  s string="\.br\",i="" f  s i=$o(CompRes(i)) q:i=""  d
+  .i CompRes(i)="!" s string=string_"\.br\" q
+  .s string=string_$$translate^LVBCOM01(CompRes(i),"\","\E\")
+  s str="" f i=1:1:$l(string,"^") s str=str_$p(string,"^",i)_"\S\"
+  s string=$p(str,"\S\",1,$l(str,"\S\")-1)
+  s string=$$translate^LVBCOM01(string,"|","\F\")
+  s string=$$translate^LVBCOM01(string,"^","\S\")
+  s string=$$translate^LVBCOM01(string,"&","\T\")
+  s string=$$translate^LVBCOM01(string,"~","\R\")
+  s obx(1)=$o(^TMP($zn,$j,"OBX",obr(1),""),-1)+1
+  s obx(2)="FT"
+  s obx(3)="IMAGE^IMAGE^"
+  s obx(5)=string
+  s ^TMP($zn,$j,"OBX",obr(1),obx(1))="OBX|"_obx(1)_"|"_obx(2)_"|"_obx(3)_"||"_obx(5)
+  s x1=$p(vtsRID,"||",1)
+  s x2=$p(vtsRID,"||",2)
+  s x3=$p(vtsRID,"||",3)
+  s $p(^TEPI(x1,1,x2,x3),"\",35)=uniseq
+  k PLIST,visres,TC,TS,^TMP("PRT",$j)
+  ; get packets in order of transmission
+BUILDend s system=client
+  l +^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq)
+  i $d(^TMP($zn,$j)) d
+  .f type="MSH","PID" s str=$g(^TMP($zn,$j,type)) d:$l(str) SET(str,system)
+  .s j="" f  s j=$o(^TMP($zn,$j,"OBR",j)) q:j=""  s str=^TMP($zn,$j,"OBR",j) d:$l(str) SET(str,system) d
+  ..s k="" f  s k=$o(^TMP($zn,$j,"OBX",j,k)) q:k=""  s str=^TMP($zn,$j,"OBX",j,k) d:$l(str) SET(str,system)
+  l -^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq)
+  k ^TMP($zn,$j) l -^TMPclean
+  q
+dt(date,time) n (date,time) s date=$g(date),time=$g(time),result=""
+ i date?5N s result=$tr($zd(date,3),"-","") i $l(time),time?1.5N s result=result_$tr($zt(time,2),":")
+ q result
+  ; adjust into one line
+adjust(ARRAY) k array s x2=1
+  s x1="" f  s x1=$o(ARRAY(x1)) q:x1=""  d
+  .i ARRAY(x1)=$c(13) q
+  .i ARRAY(x1)="!" s x2=x2+1 q
+  .i $e(ARRAY(x1))="~" q
+  .i $e(ARRAY(x1))="?" d  q
+  ..s tab=+$e(ARRAY(x1),2,4),ARRAY(x1)=$e(ARRAY(x1),5,$l(ARRAY(x1)))
+  ..i tab>$l($g(array(x2))) s array(x2)=$e($g(array(x2))_$j("",tab),1,tab)
+  ..i $l(ARRAY(x1)) s array(x2)=$g(array(x2))_ARRAY(x1)
+  .i $l(ARRAY(x1)) s array(x2)=$g(array(x2))_ARRAY(x1)
+  k ARRAY m ARRAY=array s ARRAY=$o(ARRAY(""),-1)
+  f j=1:1:ARRAY i '$d(ARRAY(j)) s ARRAY(j)=""
+  q
+  ; build transmission global
+SET(line,system) s line=$g(line)
+  s x=$o(^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq,""),-1)+1
+  s ^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq,x)=line
+  q
+  ; create new sequence number for MSH record
+new()  s num=$$next("^CF(""HOSP-SEQ"")")
+  q num
+next(glo) n a
+  l +@glo
+  s a=$g(@glo)+1,@glo=a
+  l -@glo
+  q a
+]]></Routine>
+</Export>

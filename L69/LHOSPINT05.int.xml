@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LHOSPINT05" type="INT" languagemode="0" generated="1"><![CDATA[
+LHOSPINT05 ; IG 12/07/98 ; Hospital Interface - WestPath
+ Q
+ ; check hospital files for updates
+START(HOSP) N (HOSP) k ^TMP($zn,$j)
+ i $$select^LVBHOS(HOSP) Q
+ s file=PLIST(5),$zt="ERROR^"_$zn
+ l +^THOS(HOSP):10 e  q
+ i HOSP="H" d
+ .o file::0 e  l -^THOS(HOSP) q
+ .f  u file r MESSAGE q:'$l(MESSAGE)  d
+ ..k x f j=1:1:9 s x(j)=$$space($p(MESSAGE,",",j))
+ .. ; check sex
+ ..i $l(x(4)) d
+ ...n (HOSP,x)
+ ...s X="" i '$$select^LVBHOSCS(HOSP_"||"_x(4)) s X=PLIST(3)
+ ...s x(4)=X
+ .. ; check date fields
+ ..f j=5 i $l(x(j)) s x(j)=$$intdate^SSUTIL4($e(x(j),1,4)_"/"_$e(x(j),5,6)_"/"_$e(x(j),7,8))
+ .. ; check if admission already exists
+ ..s exist="N" i '$$select^LVBHOSP(HOSP_"||H"_x(1)_"||"_x(2)) s exist="Y"
+ .. ; file data
+ ..k PLIST
+ ..s PLIST(2)="H"_x(1)
+ ..s PLIST(3)=x(2)
+ ..s PLIST(24)=x(1)
+ ..s PLIST(5)=x(3)
+ ..s PLIST(8)=x(4)
+ ..s PLIST(7)=x(5)
+ ..s PLIST(13)=x(7)
+ ..s PLIST(9)=x(8)
+ ..s PLIST(12)=x(9)
+ ..s PLIST=$o(PLIST(""),-1)
+ .. ; update patient information
+ ..i exist="Y" d  q
+ ...i $$update^LVBHOSP(HOSP_"||H"_x(1)_"||"_x(2))
+ .. ; insert new patient information
+ ..i exist="N" d  q
+ ...i $$insert^LVBHOSP(HOSP)
+ .c file
+end      ; update hospital level information
+ l -^THOS(HOSP)
+ i '$$select^LVBHOS(HOSP) d
+ .s PLIST(3)=+$h,PLIST(4)=$P($h,",",2)
+ .i $$update^LVBHOS(HOSP)
+ q
+ ; delete end spaces
+space(x)
+ f  q:'$l(x)  q:$e(x,$l(x))'=" "  s x=$e(x,1,$l(x)-1)
+ f  q:'$l(x)  q:$e(x)'=" "  s x=$e(x,2,$l(x))
+ q x
+ ; Import results
+RESULT(HOSP) N (HOSP) k ^TMP($zn,$j)
+ i $$select^LVBCTRL(HOSP) q
+ s dir=PLIST(7),x=$s(dir["\":"\",1:"/") i $e(dir,$l(dir))'=x s dir=dir_x
+ s dir=dir_"*.pit"
+ ; MS-DOS based system
+ i $zf(-1,"DIR "_dir_" /B > ""results.txt""")
+ ; UNIX based system
+ ;i $zf(-1,"ls "_dir_" > ""results.txt""")
+ s $zt="Error1^"_$zn
+ s FILE="results.txt"
+ o FILE:("RS"::$c(10,13))
+ f  u FILE r x s xFILE=$p(x," ",$l(x," ")) i xFILE[".",$l(xFILE) s ^TMP($zn,$j," ",xFILE)=""
+END1     c FILE
+END2     s $zt="Error2^"_$zn
+ s xxFILE=$o(^TMP($zn,$j," ","")) i $l(xxFILE) d
+ .s x=$s(dir["\":"\",1:"/"),xFILE=$p(dir,x,1,$l(dir,x)-1)_x_xxFILE
+ .o xFILE:("RS"::$c(10,13)):1 e  q
+ .s Error="" f  u xFILE r MESS s seq=$o(^TMP($zn,$j,xxFILE,"IN",""),-1)+1,^TMP($zn,$j,xxFILE,"IN",seq)=MESS
+ s $zt=""
+ s xFile="" f  s xFile=$o(^TMP($zn,$j,xFile)) q:xFile=""  d
+ .s (vts,seq)="" f  s seq=$o(^TMP($zn,$j,xFile,"IN",seq)) q:seq=""  s xx=^(seq) d
+ ..i $e(xx,1,3)="110" d
+ ...k result s cnt=0
+ ...s x=$tr($e(xx,27,99)," "),vts=$p(x,"-",1)_"||"_$p(x,"-",2)_"||"_$p(x,"-",3)
+ ... ; only file results in Word/RTF test set
+ ...s test=$p(vts,"||",2) i $$select^LVBCTTS(test,"Y") s vts="" q
+ ...i '((PLIST(31)="Y")!(PLIST(54)="Y")) s vts=""
+ ..i $e(xx,1,3)="301",$l(vts) d
+ ...s cnt=cnt+1,result(cnt)=$e(xx,5,$l(xx)),res="" k dd2
+ ...s prev=0 f j=2:1:$l(result(cnt),"~")-1 d
+ ....s (DD,dd1)=$p(result(cnt),"~",j),(stop,dd2(j))=""
+ ....f  q:'$l(dd1)  d  q:stop
+ .....i $e(dd1,1,4)="SBLD" s dd1=$e(dd1,5,$l(dd1)),prev=1 q
+ .....i $e(dd1,1,4)="EBLD" s dd1=$e(dd1,5,$l(dd1)),prev=1 q
+ .....i " SUND EUND SBLK EBLK DFLT "[(" "_$e(dd1,1,4)_" ") s dd1=$e(dd1,5,$l(dd1)),prev=1 q
+ .....i $e(dd1,1,4)="FG04" s dd1=$e(dd1,5,$l(dd1)),prev=1 q
+ .....i $e(dd1,1,4)?1"FG"2N s dd1=$e(dd1,5,$l(dd1)),prev=1 q
+ .....i $e(dd1,1,4)?1"BG"2N s dd1=$e(dd1,5,$l(dd1)),prev=1 q
+ .....s stop=1,dd2(j)=$s(prev:"",1:"~")_DD
+ ...s result(cnt)=$tr(result(cnt),"~",$c(1))
+ ...f j=2:1:$l(result(cnt),$c(1))-1 s $p(result(cnt),$c(1),j)=dd2(j)
+ ...s result(cnt)=$tr(result(cnt),$c(1))
+ ..i ($e(xx,1,3)="309")!($e(xx,1,3)="390"),$l(vts),$d(result) d
+ ...m ^TMP($zn,$j,xFile,"OUT",vts,"T")=result
+ ...k result s vts=""
+ .s vts="" f  s vts=$o(^TMP($zn,$j,xFile,"OUT",vts)) q:vts=""  d
+ ..s epis=$p(vts,"||",1),ts=$p(vts,"||",2),tscnt=$p(vts,"||",3)
+ ..i $$vtsLock^SSLOCK("IM",epis,vts,"trak")=-1 d
+ ...s text=""
+ ...s cnt="" f  s cnt=$o(^TMP($zn,$j,xFile,"OUT",vts,"T",cnt)) q:cnt=""  s text=text_$s($l(text):"|",1:"")_^(cnt)
+ ...i $$status^LVBVIS1(vts)="A" d  q
+ ....k xx m xx=^TEPI(epis,1,ts,tscnt,"DATA","T","REM")
+ ....k ^TEPI(epis,1,ts,tscnt,"DATA","T","REM")
+ ....s max=0
+ ....f j=1:1 q:'$d(xx(j))  i max<$l(xx(j)) s max=$l(xx(j))
+ ....f j=1:1:$l(text,"|") i max<$l($p(text,"|",j)) s max=$l($p(text,"|",j))
+ ....s line="",$p(line,"-",max+1)=""
+ ....s text=$j("",max-22\2)_"--- Amended Result ---"_"||"_text_"||"_line
+ ....f j=1:1:$l(text,"|") s x=$o(^TEPI(epis,1,ts,tscnt,"DATA","T","REM",""),-1)+1,^TEPI(epis,1,ts,tscnt,"DATA","T","REM",x)=$p(text,"|",j)
+ ....f j=1:1 q:'$d(xx(j))  s x=$o(^TEPI(epis,1,ts,tscnt,"DATA","T","REM",""),-1)+1,^TEPI(epis,1,ts,tscnt,"DATA","T","REM",x)=xx(j)
+ ....s x=$o(^TEPI(epis,1,ts,tscnt,"DATA","T","REM",""),-1),^TEPI(epis,1,ts,tscnt,"DATA","T","REM",0)=x
+ ...i $$status^LVBVIS1(vts)'="A" d  q
+ ....k PLIST s PLIST(1)="T\"_text
+ ....s PLIST=$o(PLIST(""),-1)
+ ....i $$save^LVBVIS4(vts,"E","TRAK","N")
+ ..i $$vtsLockClr^SSLOCK("IM",epis,vts)
+ k ^TMP($zn,$j)
+ q
+ ; Error log
+Error1   i $ze["ENDOFFILE" g END1
+ d BACK^%ETN
+ q
+ ; Error log
+Error2   i $ze'["ENDOFFILE" d BACK^%ETN q
+ c xFILE k ^TMP($zn,$j," ",xxFILE)
+ ; Move the file
+ s x=$s(dir["\":"\",1:"/"),xFILEN=x_$p(xFILE,x,$l(xFILE,x))
+ ; MS-DOS based system
+ i '$zf(-1,"copy "_xFILE_" "_$p(dir,x,1,$l(dir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN),$zf(-1,"del "_xFILE)
+ ; UNIX based system
+ ;i $zf(-1,"mv "_xFILE_" "_$p(dir,x,1,$l(dir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN)
+ g END2
+]]></Routine>
+</Export>

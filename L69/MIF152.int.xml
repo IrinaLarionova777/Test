@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF152" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF152(mi)	; IG 2/6/98 ; J_J AutoVue
+	s mi=$g(mi) i '$l(mi) q
+	i $$select^LVBMIMP(mi) q
+	f j=1:1:PLIST s @("par"_j)=PLIST(j)
+	s stx=$c(2),etx=$c(3),ack=$c(6),end=$c(13,10)
+	s (sample,epis,surname,result,date,time,QC,abo,M1,M2,M3)=""
+	i $$start^MIF000() q
+	f  d Main h 10 i $$stop^MIF000() q
+	c par4
+	q
+	; Error log
+Error1	i $ze["ENDOFFILE" g END1
+	d BACK^%ETN
+	q
+	; Error log
+Error2	i $ze'["ENDOFFILE" d BACK^%ETN s Error=1
+	c xFILE k ^TMP($zn,$j," ",xxFILE)
+	; Move the file
+	s x=$s(dir["\":"\",1:"/"),xFILEN=x_$p(xFILE,x,$l(xFILE,x))
+	; MS-DOS based system
+	i '$zf(-1,"copy "_xFILE_" "_$p(dir,x,1,$l(dir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN),$zf(-1,"del "_xFILE)
+	; UNIX based system
+	;i $zf(-1,"mv "_xFILE_" "_$p(dir,x,1,$l(dir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN)
+	g END2
+Main	; check download folder
+	s dir=par20,x=$s(dir["\":"\",1:"/") i $e(dir,$l(dir))'=x s dir=dir_x
+	s dir=dir_"UPL"_x_"*.upl"
+	; MS-DOS based system
+	i $zf(-1,"DIR "_dir_" /B > ""autovue.txt""")
+	; UNIX based system
+	;i $zf(-1,"ls "_dir_" > ""autovue.txt""")
+	s $zt="Error1^"_$zn
+	s FILE="autovue.txt"
+	o FILE:("RS"::end)
+	f  u FILE r x s xFILE=$p(x," ",$l(x," ")) i xFILE[".",$l(xFILE) s ^TMP($zn,$j," ",xFILE)="" 
+END1	c FILE
+END2	s $zt="Error2^"_$zn
+	s xxFILE=$o(^TMP($zn,$j," ","")) i $l(xxFILE) d
+	.s x=$s(dir["\":"\",1:"/"),xFILE=$p(dir,x,1,$l(dir,x)-1)_x_xxFILE
+	.o xFILE:("RS"::$c(10,13)):1 e  q
+	.s Error="" f  u xFILE r MESS s seq=$o(^TMP($zn,$j,"upload",xxFILE,"IN",""),-1)+1,^TMP($zn,$j,"upload",xxFILE,"IN",seq)=MESS
+	s $zt=""
+	s xFile="" f  s xFile=$o(^TMP($zn,$j,"upload",xFile)) q:xFile=""  d
+	.s seq="" f  s seq=$o(^TMP($zn,$j,"upload",xFile,"IN",seq)) q:seq=""  s record=^(seq) d
+	..d trace^MIF000(mi,record,"H<--M")
+	..i $e(record)="P" d Last
+	..i $e(record)="Q" s epis=$p($p(record,"|",3),"^",2) i $l(epis),$d(^TEPI(epis,1)) s ^TMP($zn,$j,"download",epis)=""
+	..i $e(record)="O" d Last s epis=$p(record,"|",3),test=$p(record,"|",5)
+	..i $e(record)="R" d
+	...s x1=$p(record,"|",3),x2=$tr($p(record,"|",4)," ")
+	...i $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par11)
+	...i x1="ABO" s abo=x2
+	...i x1="Rh",$l(abo) s result=result_"ABO"_x1_$c(par10)_abo_x2_$c(par11)
+	..i $e(record)="M" d
+	...s x1=$p(record,"|",3),x2=$p($p(record,"|",6),"^")
+	...i $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par11)
+	...i '$l(M1) s m4=$p(record,"|",4),m44=$tr($p(m4,"^",4)," "),m45=$e($tr($p(m4,"^",5)," "),1,8) i $l(m44)!$l(m45) s M1=m44_" "_m45
+	...i '$l(M2) s m5=$p(record,"|",5),m52=$tr($p(m5,"^",2)," "),m53=$e($tr($p(m5,"^",3)," "),1,8) i $l(m52)!$l(m53) s M2=m52_" "_m53
+	...i '$l(M3) s m6=$p(record,"|",6),m62=$tr($p(m6,"^",2)," ") i m62="M" s M3="M"
+	..i $e(record)="L" d Last
+	i $d(^TMP($zn,$j,"download")) d
+	.s dir=par20,x=$s(dir["\":"\",1:"/") i $e(dir,$l(dir))'=x s dir=dir_x
+	.s FILE=dir_"DNL"_x_$zd($h,8)_$tr($$exttime^SSUTIL4($p($h,",",2)),":")_"00.dnl"
+	.o FILE:"NSW" u FILE
+	.u FILE w "H|\^&|||LABTRAK||||||||1|"_$zd($h,8)_$tr($$exttime^SSUTIL4($p($h,",",2)),":")_"00",!
+	.s epis="" f cnt=1:1 s epis=$o(^TMP($zn,$j,"download",epis)) q:epis=""  d
+	..f j=3:1:6,20 s VISIT(j)=$$seldata^LVBEPVIS(epis,j)
+	..u FILE w "P|"_cnt_"|"_VISIT(20)_"|||"_VISIT(3)_"^"_VISIT(4)_"||"_$zd(VISIT(6),8)_"000000|"_VISIT(5),!
+	..s (x,ts)="" f  s ts=$o(^TMIF(mi,20,epis,"TS",ts)) q:ts=""  d
+	...s syn=$$seldata^LVBCTTS(ts,4)
+	...i $l(syn) s x=x+1 u FILE w "O|1|"_epis_"||"_syn_"|N||||||N||||CENTBLOOD",!
+	.u FILE w "L|1|N",!
+	.c FILE
+	k ^TMP($zn,$j)
+	q
+Last	; file result if exist
+	i epis?1.99AN,$l(result) d
+	.i $l(M1) s result=result_"M1_"_test_$c(par10)_M1_$c(par11)
+	.i $l(M2) s result=result_"M2_"_test_$c(par10)_M2_$c(par11)
+	.i $l(M3) s result=result_"M3_"_test_$c(par10)_M3_$c(par11)
+	.d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+	s (sample,epis,surname,result,date,time,QC,abo,M1,M2,M3)=""
+	q
+]]></Routine>
+</Export>

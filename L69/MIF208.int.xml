@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF208" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF208(mi) ; ML 16/7/99 ; DADE Microscan Walkaway
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),eot=$c(4),enq=$c(5),ack=$c(6),lf=$c(10),cr=$c(13),nak=$c(21)
+ s (sample,epis,surname,result,date,time,QC)="" k arr
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 e  q
+ i $c(R)=enq d
+ .d trace^MIF000(mi,"ENQ","H<--M")
+ .d SEND(ack)
+ .f  d  q:'$l(record)
+ ..s record=$$read^MIF000(stx,etx) q:'$l(record)
+ ..s chsum=$p(record,lf,2),chrecord=stx_$p(record,lf)_lf
+ ..i $$CHSUM(chrecord)'=chsum d  q
+ ...d SEND(nak),trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+ ..s record=$p(record,cr)
+ ..d trace^MIF000(mi,record,"H<--M")
+ ..d SEND(ack)
+ .. ; header record
+ ..i $e(record)="H" k arr q
+ .. ; request record
+ ..i $e(record)="A" k arr s ^TMP($zn,$j,"ENQ")="" q
+ .. ; patient record
+ ..i $e(record)="P" d  q
+ ...s (sample,epis,surname,result,date,time,QC)="" k arr
+ ...s epis=$p(record,",",3),surname=$p(record,",",4)
+ ..i $e(record)="B" s epis=$p(record,",",3) q
+ .. ; result record - contains organism
+ ..i $e(record)="R" d  q
+ ...s date=$p(record,",",7),time=$p(record,",",8)
+ ...s date=$$intdate^SSUTIL4(date) s:time'="" time=$$inttime^SSUTIL4(time)
+ ...s org=$p(record,",",3),arr(org)=$p(record,",",12)
+ .. ; antibiotic record - contains antibiotic and sensitivities
+ ..i $e(record)="M" d  q
+ ...s ant=$p(record,",",3),mic=$p(record,",",5),sens=$p(record,",",8) i '$l(sens) s sens=$p(record,",",9)
+ ...i $l(epis),$l(org),$l(ant) s arr(org,ant)=sens_"\"_mic
+ .. ; end of patient
+ ..i $e(record)="L" d  q
+ ...s org="" f  s org=$o(arr(org)) q:org=""  d
+ ....s result=arr(org)_$c(par10)
+ ....s ant="" f  s ant=$o(arr(org,ant)) q:ant=""  d
+ .....s result=result_ant_$c(par28)
+ .....s result=result_$p(arr(org,ant),"\",1)_$c(par28)
+ .....s result=result_$p(arr(org,ant),"\",2)_$c(par27)
+ ....i $l(result) d
+ .....d file^MIF000(mi,sample,epis,surname,"ABC"_$c(par10)_"Y",date,time,QC)
+ .....s $p(result,$c(par10),3)="ORG"_org
+ .....d fileant^MIF000(mi,sample,epis,result,"X")
+ ...k arr
+ i $d(^TMP($zn,$j,"ENQ")) d
+ .k ^TMP($zn,$j,"ENQ")
+ .d scanall^MIF000(mi)
+ .d SEND(enq)
+ .f j=1:1:5 r *x:1 q:$c(x)=enq  q:$c(x)=eot  q:$c(x)=ack
+ .d trace^MIF000(mi,"R="_x,"H<--M")
+ .i $c(x)=ack d
+ ..s x=""
+ ..i $d(^TMP("MIF-SCAN",$j,mi)) d
+ ...s cnt=0
+ ...s epis="" f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  d
+ ....k VISIT i '$$select^LVBEPVIS(epis,"Y") m VISIT=PLIST
+ ....f j=1:1:VISIT s VISIT(j)=$p(VISIT(j),$c(1))
+ ....s cnt=cnt+1 i $o(^TMP("MIF-SCAN",$j,mi,epis))="" s cnt="L"
+ ....s str=stx_"P,"_cnt_","_$g(VISIT(20))_","_$g(VISIT(4))_","_$g(VISIT(3))_","_$$extdate3^SSUTIL4($g(VISIT(6)))_","_$g(VISIT(5))_",,,,,,,,,,,,,N,N,,,0,"_cr_lf
+ ....s str=str_$$CHSUM(str)_etx
+ ....d SEND(str)
+ ....f j=1:1:5 r *x:1 q:$c(x)=enq  q:$c(x)=eot  q:$c(x)=ack
+ ....d trace^MIF000(mi,"R="_x,"H<--M")
+ ....i $c(x)=ack d
+ .....s str=stx_"B,L,"_$g(VISIT(2))_","_$g(VISIT(20))_",,,,,N,,,,,,,,F,0,N,,,,,"_cr_lf
+ .....s str=str_$$CHSUM(str)_etx
+ .....d SEND(str)
+ .....f j=1:1:5 r *x:1 q:$c(x)=enq  q:$c(x)=eot  q:$c(x)=ack
+ .....d trace^MIF000(mi,"R="_x,"H<--M")
+ .....i $c(x)=ack d
+ ......s str=stx_"L,"_cnt_","_$s(cnt:"N",1:"Y")_",0"_cr_lf
+ ......s str=str_$$CHSUM(str)_etx
+ ......d SEND(str)
+ ......f j=1:1:5 r *x:1 q:$c(x)=enq  q:$c(x)=eot  q:$c(x)=ack
+ ......d trace^MIF000(mi,"R="_x,"H<--M")
+ ..i '$d(^TMP("MIF-SCAN",$j,mi)) d
+ ...s str=stx_"L,L,Y,1"_cr_lf
+ ...s str=str_$$CHSUM(str)_etx
+ ...d SEND(str)
+ ...f j=1:1:5 r *x:1 q:$c(x)=enq  q:$c(x)=eot  q:$c(x)=ack
+ ...d trace^MIF000(mi,"R="_x,"H<--M")
+ ..i $c(x)=ack d SEND(eot)
+ ..k ^TMP("MIF-SCAN",$j,mi)
+ q
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+SEND(str) ; send string to instrument
+ w str,*-3
+ d trace^MIF000(mi,$s(str=ack:"ACK",str=nak:"NAK",str=enq:"ENQ",str=eot:"EOT",1:$tr(str,stx_etx_cr_lf,"    ")),"H-->M")
+ q
+]]></Routine>
+</Export>

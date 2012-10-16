@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF459" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF459(mi) ; ML 30/08/2002 ; ASTM protocol  -  GEM 4000
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),lf=$c(10),cr=$c(13),nak=$c(21),(result,epis)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 e  q
+ i $c(R)=enq d
+ .d trace^MIF000(mi,"ENQ","H<--M")
+ .d ACK
+ .s cnt="" k record
+ .f  r *R:10 q:$c(R)=eot  q:R=-1  d
+ ..i $c(R)'=stx q
+ ..s cnt=cnt+1
+ ..s record(cnt)=$$read^MIF000("",lf) q:'$l(record(cnt))
+ ..s record(cnt)=$e(record(cnt),1,$l(record(cnt))-1)
+ ..d trace^MIF000(mi,$tr(record(cnt),$c(13,3)," "),"H<--M")
+ ..d ACK
+ . ; reunite split records
+ .s record="" s cnt="" f  s cnt=$o(record(cnt)) q:cnt=""  s record=$g(record)_record(cnt)
+ .s record=$tr(record,$c(23))
+ .f i=1:1:$l(record,$c(13)) s rec=$p(record,$c(13),i) d
+ .. ; header record
+ ..i $e(rec,2)="H" d  q
+ ...d Last s (sample,epis,surname,result,date,time,QC)=""
+ .. ; patient record
+ ..i $e(rec)="P" d  q
+ ...d Last s (sample,epis,surname,result,date,time,QC)=""
+ ...s epis=$tr($p($p(rec,"|",4),"^",1)," ")
+ ...s surname=$tr($tr($p(rec,"|",6)," "),"^"," "),surname=$p(surname,cr,1)
+ .. ; order record
+ ..i $e(rec)="O" d  q
+ ...s QC=$tr($p(rec,"|",12)," ") s:'$l(epis) epis=$tr($p($p(rec,"|",4),"^",1)," ")
+ ...s cup=$p($p(rec,"|",4),"^",3)
+ ... ; remove punctuation from QC id
+ ...i QC="Q" s epis=$tr(epis,"-,.<>?/':;{[}]+-=)(*&^%$#@!|\ ",""),QC=cup_"\"_epis
+ .. ; result record
+ ..i $e(rec)="R" d  q
+ ...s x1=$tr($p($p(rec,"|",3),"^",4)," "),x2=$tr($p(rec,"|",4)," ")
+ ...i $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par11)
+ ... ; date and time
+ ...i $l($tr($p(rec,"|",13)," ")) d
+ ....s date=$$intdate^SSUTIL4($e($p(rec,"|",13),5,6)_"/"_$e($p(rec,"|",13),7,8)_"/"_$e($p(rec,"|",13),1,4))
+ ....s time=($e($p(rec,"|",13),9,10)*3600)+($e($p(rec,"|",13),11,12)*60)
+ .. ; last record
+ ..i $e(rec)="L" d Last q
+ .d trace^MIF000(mi,$s($c(R)=eot:"EOT",1:R),"H<--M")
+ q
+Last ; file result if exist
+ i epis?1.99AN,$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ s (sample,epis,surname,result,date,time,QC)=""
+ q
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

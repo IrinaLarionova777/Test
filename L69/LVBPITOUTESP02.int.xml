@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPITOUTESP02" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBPITOUTESP02 ; CREATE PIT FORMAT FILE - BADALONA
+ ; ---------------------------------
+ ; CREATE PIT FORMAT FILE - BADALONA
+ ; June 2003, by Mc_Fly
+ ; Trakhealth BCN
+ ;
+ ; supported calls:
+ ;
+ ; create^LVBPITOUTESP02
+ ; start^LVBPITOUTESP02(type)
+ ; ---------------------------------
+create 
+ s type="PIT"
+ d start(type)
+ q
+ ; type : PIT
+start(type) 
+ n (type)
+ s type=$g(type)
+ l +^TMPclean k ^TMP($zn,$j)
+ l +^TEDI("OUT",type)
+ m ^TMP($zn,$j)=^TEDI("OUT",type)
+ k ^TEDI("OUT",type)
+ l -^TEDI("OUT",type)
+ s tab=46
+ s (doh,cli,doc,epi,tid,ord)=""
+ f  s doh=$o(^TMP($zn,$j,doh)) q:doh=""  d
+ . f  s cli=$o(^TMP($zn,$j,doh,cli)) q:cli=""  d
+ .. f  s doc=$o(^TMP($zn,$j,doh,cli,doc)) q:doc=""  d
+ ... f  s epi=$o(^TMP($zn,$j,doh,cli,doc,epi)) q:epi=""  d
+ .... f  s tid=$o(^TMP($zn,$j,doh,cli,doc,epi,tab,tid)) q:tid=""  d
+ ..... f  s ord=$o(^TMP($zn,$j,doh,cli,doc,epi,tab,tid,ord)) q:ord=""  d proc
+ s (cen,epi)=""
+ f  s cen=$o(^TEDI("TOSEND",cen)) q:cen=""  d
+ . i $$select^LVBCTCC(cen)'=0 q
+ . s inttype=PLIST(14)
+ . 
+ . i inttype="M" d omi q
+ . 
+ . f  s epi=$o(^TEDI("TOSEND",cen,epi)) q:epi=""  d
+ .. i inttype="G" d gesdohc
+ k ^TMP($zn,$j) l -^TMPclean
+ q
+proc 
+ n (ord,epi)
+ s r=^(ord)
+ s swsend=0
+ s status=$p(r,"\",3)
+ i status["Auth" s swsend=1
+ i status="Print" s swsend=1
+ q:'swsend
+ ; Print: Send this test
+ ; Auth: Send all Authorized tests
+ i $$select^LVBEPVIS(epi,"Y")'=0 q
+ s centre=PLIST(27)
+ i centre="" q
+ s hosepimrn=PLIST(65)
+ s hosepi=$p(hosepimrn,",",1)
+ s hosmrn=$p(hosepimrn,",",2)
+ i hosepi="" q
+ i hosmrn="" q
+ i status="Print" d tosend q
+ s (ts,cnt,tc)=""
+ f  s ts=$o(^TEPI(epi,1,ts)) q:ts=""  d
+ . f  s cnt=$o(^TEPI(epi,1,ts,cnt)) q:cnt=""  d
+ .. s regts=$g(^TEPI(epi,1,ts,cnt))
+ .. i $p(regts,"\",4)="" q  ; no Autoritzat
+ .. s tid=epi_"||"_ts_"||"_cnt
+ .. d tosend
+ q
+tosend 
+ i '$$printable^LVBCTTS($p(tid,"||",2),tid) q
+ s ^TEDI("TOSEND",centre,epi)=hosepimrn
+ s ^TEDI("TOSEND",centre,epi,tid)=""
+ q
+gesdohc 
+ ; ---------------------------------
+ ;  GesDocHC Format
+ ; ---------------------------------
+ n (cen,epi,type)
+ s cli=1 ; Fixed
+ s gdepi=$p(^TEDI("TOSEND",cen,epi),",",1)
+ ; *** Old Gesdoch file ***
+ s fileno=$g(^TEDI("OUT-DATA",type,cli))+1,^TEDI("OUT-DATA",type,cli)=fileno
+ k ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ s ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)="^ges\dat\"_gdepi_".dat"
+ s ^TMP($zn,$j,"OUT-DATA",type,cli,fileno,"EPIS",epi)=""
+ s r=$G(^TEPI(epi))
+ s sex=$p(r,"\",3) i sex="" s sex="X"
+ s age=$p(r,"\",25)
+ k result
+ s tid=""
+ f  s tid=$o(^TEDI("TOSEND",cen,epi,tid)) q:tid=""  d
+ . s ts=$p(tid,"||",2)
+ . s cnt=$p(tid,"||",3)
+ . s regts=$g(^TEPI(epi,1,ts,cnt))
+ . 
+ . s result(ts)=$zd($p(regts,"\",4),4)_"#"_$zt($p(regts,"\",5)*60,2)
+ . s tc=""
+ . f  s tc=$o(^TEPI(epi,1,ts,cnt,"DATA",tc)) q:tc=""  d
+ .. d range(tc,sex,age)
+ .. s range=lo_"#"_hi
+ .. s value=$p($g(^TEPI(epi,1,ts,cnt,"DATA",tc)),"\")
+ .. i value'="" s value=$s(($d(^TTAB("TC",tc,2,value,1))#2):$p(^(1),"\",1),$d(^TTAB("RC",value))#2:$p(^(value),"\",1),1:value)
+ .. s com="",lc=0
+ .. i $g(^TEPI(epi,1,ts,cnt,"DATA",tc,"REM",lc)) d
+ ... f  s lc=$o(^TEPI(epi,1,ts,cnt,"DATA",tc,"REM",lc)) q:lc=""  s com=com_"|"_$tr($g(^TEPI(epi,1,ts,cnt,"DATA",tc,"REM",lc)),"#","\")
+ ... i $l(com) s com=$e(com,2,$l(com))
+ .. s result(ts,tc)=value_"#"_com_"#"_range
+ s (ts,tc)=""
+ f  s ts=$o(result(ts)) q:ts=""  d
+ . f  s tc=$o(result(ts,tc)) q:tc=""  d
+ .. d SET(gdepi_"#"_ts_"#"_tc_"#"_result(ts,tc)_"#"_result(ts))
+ d SET("") ; Do not remove. GesDoHC needs it
+ l +^TEDI("OUT-DATA",type,cli,fileno)
+ m ^TEDI("OUT-DATA",type,cli,fileno)=^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ l -^TEDI("OUT-DATA",type,cli,fileno)
+ k ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ ; *** New Gesdoch file ***
+ s fileno=$g(^TEDI("OUT-DATA",type,cli))+1,^TEDI("OUT-DATA",type,cli)=fileno
+ k ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ s ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)="^ges\txt\"_gdepi_".txt"
+ s ^TMP($zn,$j,"OUT-DATA",type,cli,fileno,"EPIS",epi)=""
+ ; Calculate Header variables
+ i $$select^LVBEPVIS(epi)
+ m VISIT=PLIST k PLIST
+ ; find location
+ i VISIT(22)'="" s location=$p(VISIT(22),$c(1),2)
+ e  s location=$p(DOC(9),$c(1))
+ s specimen=""
+ k DOC
+ i '$$select^LVBCTDR($p(VISIT(15),$c(1)),"Y") m DOC=PLIST
+ i $p(VISIT(27),$c(1))'="" s specimen=$p($g(^TTAB("CC",$p(VISIT(27),$c(1)))),"\")
+ ; Get first auth test set date/time
+ s (ts,dta)=""
+ f  s ts=$o(^TEPI(epi,1,ts)) q:ts=""  s z=$g(^(ts,1)) i $p(z,"\",4)>$p(dta,"\",4) s dta=z
+ i dta'="" s z=dta,dta=$$extdate2^SSUTIL4($p(z,"\",4))_" "_$e($p(z,"\",5)\60+100,2,3)_":"_$e($p(z,"\",5)#60+100,2,3)
+ ; Line 1---------------------------------------
+ s r=$$setlon("N.H.C",15)
+ s r=r_"|"_$$setlon("Cognoms",25)
+ s r=r_"|"_$$setlon("Nom",15)
+ s r=r_"|"_$$setlon("Data Naixement",14)
+ s r=r_"|"_$$setlon("Sexe",7)
+ d SET(r)
+ s r=$$setlon($p($p(VISIT(65),$c(1)),",",2,99),15)
+ s r=r_"|"_$$setlon($p(VISIT(3),$c(1)),25)
+ s r=r_"|"_$$setlon($p(VISIT(4),$c(1)),15)
+ s dob=VISIT(6)
+ i '$l($p(dob,$c(1))) s dob="Desconeguda"
+ i dob'="Desconeguda" s dob=$$extdate2^SSUTIL4(dob)
+ s r=r_"|"_$$setlon(dob,14)
+ s r=r_"|"_$$setlon($p(VISIT(5),$c(1),2),7)
+ d SET(r)
+ d SET($tr($j("",80)," ","-"))
+ ; Line 2 --------------------------------------
+ s r=$$setlon("Metge Sol·licitant",26)
+ s r=r_"|"_$$setlon("No Llit",26)
+ s r=r_"|"_$$setlon("Servei",26)
+ d SET(r)
+ s r=$$setlon($$name($g(DOC(26)),$g(DOC(4)),$g(DOC(3))),26)
+ s r=r_"|"_$$setlon(VISIT(112),26)
+ s r=r_"|"_$$setlon(location,26)
+ d SET(r)
+ d SET($tr($j("",80)," ","-"))
+ ; Line 3 -------------------------------
+ s r=$$setlon("No Lab",8)
+ s r=r_"|"_$$setlon("Data recollida",14)
+ s r=r_"|"_$$setlon("Data Recepció a Lab",19)
+ s r=r_"|"_$$setlon("Centre Peticionari",19)
+ s r=r_"|"_$$setlon("Data Validació",16)
+ d SET(r)
+ s r=$$setlon($p(VISIT(2),$c(1)),8)
+ s r=r_"|"_$$setlon($$dt($p(VISIT(12),$c(1))),14)
+ s r=r_"|"_$$setlon($$dt($p(VISIT(61),$c(1)),$p(VISIT(62),$c(1))),19)
+ s r=r_"|"_$$setlon(specimen,19)
+ s r=r_"|"_$$setlon(dta,16)
+ d SET(r)
+ d SET($tr($j("",80)," ","-"))
+ ; Line 4 ------------------------------------------------------------
+ s cln=$p(VISIT(53),"|")
+ i $l(cln)>80 f j=1:1 i $l($p(cln," ",1,j))>80 s cln=$p(cln," ",1,j) q
+ d SET("Notes Clíniques")        
+ d SET(cln)
+ d SET($tr($j("",80)," ","-"))
+ ; End of header -----------------------------------------------------
+ s (tid,ts)=""
+ f  s tid=$o(^TEDI("TOSEND",cen,epi,tid)) q:tid=""  d
+ . s tsa=ts,ts=$p(tid,"||",2)
+ .
+ . i $e(tsa)'=$e(ts) d SET(""),SET($p(^TTAB("DEP",$e(ts)),"\",1)),SET("") 
+ . i '$$SINGLE^PRTDR00(tid,"E-PIT") d adjust(.PLIST) f j=1:1:PLIST d SET(PLIST(j))
+ d SET("")
+ d SET($$allautho(epi))
+ l +^TEDI("OUT-DATA",type,cli,fileno)
+ m ^TEDI("OUT-DATA",type,cli,fileno)=^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ l -^TEDI("OUT-DATA",type,cli,fileno)
+ k ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ k ^TEDI("TOSEND",cen,epi)
+ q
+omi 
+ ; ---------------------------------
+ ;  OMI Format
+ ; ---------------------------------
+ n (cen,type,PLIST)
+ s cli=1 ; Fixed
+ s destination=$tr(PLIST(15),"-","^")
+ s fileno=$g(^TEDI("OUT-DATA",type,cli))+1,^TEDI("OUT-DATA",type,cli)=fileno
+ k ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ s wfileno=fileno
+ i $l(wfileno)<4 s wfileno=$e("0000",1,4-$l(wfileno))_wfileno
+ s code=$p(destination,"^",1)
+ i $l(code)=1 s code="0"_code
+ s file="C"_code_wfileno
+ s ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)="^OMI\RDO\"_file_".COR"
+ s tl=1
+ d SET("H|^~\&|||753^HOSPITAL MUNICIPAL DE BADALONA||ORU|||"_destination_"||P|A2.2|"_$zd($h,8)_$tr($zt($p($h,",",2)),":")_"|")
+ s epi=""
+ k tot
+epi s epi=$o(^TEDI("TOSEND",cen,epi))
+ i epi="" g end
+ s ^TMP($zn,$j,"OUT-DATA",type,cli,fileno,"EPIS",epi)=""
+ l +^OMI(epi)
+ i '$d(^TEPI(epi)) g epi
+ s r=^TEPI(epi)
+ s surnam=$p(r,"\",1)
+ s givnam=$p(r,"\",2)
+ s sex=$p(r,"\",3)
+ s dob=$p(r,"\",4)
+ s dob=$zd(dob,8)
+ s date=$p(r,"\",8)
+ s time=$p(r,"\",9)
+ s epitime=$zd(date,8)_$tr($zt(time),":")
+ s doc=$p(r,"\",13)
+ s age=$p(r,"\",25)
+ s hassdeb=$p(r,"\",37)
+ s hass=$p(hassdeb,",",1)
+ s hdeb=$p(hassdeb,",",2)
+ s tot("P")=$g(tot("P"))+1
+ s tl=tl+1
+ d SET("P|"_tot("P")_"|"_hdeb_"|||"_surnam_"^"_givnam_"^||"_dob_"|"_sex_"|||||||||||||||"_$zd($h,8)_"|")    
+ k tot("OBR")
+ s tid=""
+ts s tid=$o(^TEDI("TOSEND",cen,epi,tid))
+ i tid="" g epi
+ s ts=$p(tid,"||",2)
+ s cnt=$p(tid,"||",3)
+ s tot("OBR")=$g(tot("OBR"))+1
+ s tsdes=$p($g(^TTAB("TS",ts)),"\",1)
+ s tl=tl+1
+ d SET("OBR|"_tot("OBR")_"|"_hass_"|^"_hass_"|"_ts_"^"_tsdes_"^L^|R|"_epitime_"|"_epitime_"||||R|||"_epitime_"||"_doc_"|||")
+ k tot("OBX")
+ s ti=""
+ti s ti=$o(^TEPI(epi,1,ts,cnt,"DATA",ti)) g:ti="" ts
+ s rti=$g(^TTAB("TC",ti))
+ s tides=$p(rti,"\",1)
+ s units=$p(rti,"\",2)
+ s format=$p(rti,"\",3)
+ s format=$s($e(format)="N":"NM",format="M":"NM",1:"TX")
+ s r=^TEPI(epi,1,ts,cnt,"DATA",ti)
+ s value=$p(r,"\",1)
+ d range(ti,sex,age)
+ s lohi=""
+ i $num(value)'="" d
+ . i lo'="",value<lo s lohi="L" q
+ . i hi'="",value>hi s lohi="H" q
+ . i lo'="" s lohi="N"
+ . i hi'="" s lohi="N"
+ s range=lo_"-"_hi
+ i range="-" s range=""
+ i value'="" 
+ s titype="B" ; TODO: Microbiologia (M-Microorganisme A-Antibiotic)
+ s tot("OBX")=$g(tot("OBX"))+1
+ s tl=tl+1
+ d SET("OBX|"_tot("OBX")_"|"_format_"|"_ti_"^"_tides_"^"_titype_"^L^||"_value_"|"_units_"|"_range_"|"_lohi_"|||F|")
+ ; Comments
+ s c=0 f  s c=$o(^TEPI(epi,1,ts,cnt,"DATA",ti,"REM",c)) q:c=""  d
+ . 
+ . s value=^(c)
+ . s tot("OBX")=$g(tot("OBX"))+1
+ .       
+ . s tl=tl+1
+ . d SET("OBX|"_tot("OBX")_"|CE|"_ti_"^"_tides_"^"_titype_"^L^||"_value_"|"_units_"|"_range_"|"_lohi_"|||F|")
+ g ti
+end 
+ s tl=tl+1
+ d SET("L|||"_tot("P")_"|"_tl_"||")
+ l +^TEDI("OUT-DATA",type,cli,fileno)
+ m ^TEDI("OUT-DATA",type,cli,fileno)=^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ l -^TEDI("OUT-DATA",type,cli,fileno)
+ k ^TMP($zn,$j,"OUT-DATA",type,cli,fileno)
+ ; Semaphor file
+ s fileno=$g(^TEDI("OUT-DATA",type,cli))+1,^TEDI("OUT-DATA",type,cli)=fileno     
+ l +^TEDI("OUT-DATA",type,cli,fileno)
+ s ^TEDI("OUT-DATA",type,cli,fileno)="^OMI\RDO\"_file_".OK"
+ l -^TEDI("OUT-DATA",type,cli,fileno)
+ k ^TEDI("TOSEND",cen)
+ q
+range(ti,sex,age) 
+ n (ti,sex,age,lo,hi)
+ s (lo,hi)=""
+ s w1=$o(^TTAB("TC",ti,4,""),-1) i w1="" q ""
+ s s="\",sw=0
+ s ran=""
+ f  s ran=$o(^TTAB("TC",ti,4,w1,0,ran)) q:ran=""  d  q:sw
+ . s reg=^TTAB("TC",ti,4,w1,0,ran)
+ . q:$p(reg,s,22)'=sex
+ . s ag=$p(reg,s,23) i ag["-",$p(ag,"-",1)>age!($p(ag,"-",2)<age) q
+ . s lo=$p(reg,s,1)
+ . s hi=$p(reg,s,2)
+ . s sw=1
+ q               
+ ; compile transmission global
+SET(line) s line=$g(line)
+ s seq=$o(^TMP($zn,$j,"OUT-DATA",type,cli,fileno,"SEQ",""),-1)+1
+ s ^TMP($zn,$j,"OUT-DATA",type,cli,fileno,"SEQ",seq)=line
+ q
+allautho(epis) ; String of non authorised TestSets Mc_Fly June 17, 2003
+ n (epis)
+ s (pend,sep,ts,cn)=""
+ f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . f  s cn=$o(^TEPI(epis,1,ts,cn)) q:cn=""  d
+ .. i $p(^(cn),"\",31)="A" q
+ .. s pend=pend_sep_$p(^TTAB("TS",ts),"\",2),sep=","
+ i pend="" q "*** Final ***"
+ q "Pendent: "_pend
+setlon(txt,lon) 
+ s txt=$e(txt_$j("",lon),1,lon)
+ q txt
+ ; adjust into one line
+adjust(ARRAY) 
+ k array
+ s x2=1,x1="",tab=1
+ f  s x1=$o(ARRAY(x1)) q:x1=""  d
+ . i ARRAY(x1)=$c(13) q
+ . i ARRAY(x1)="!" s x2=x2+1,tab=1 q
+ .
+ . i $e(ARRAY(x1))="~" q
+ . 
+ . i $e(ARRAY(x1))="?" s tab=+$e(ARRAY(x1),2,4),ARRAY(x1)=$e(ARRAY(x1),5,$l(ARRAY(x1)))
+ .
+ . i ARRAY(x1)="" q
+ . s $e(array(x2),tab,tab+$l(ARRAY(x1))-1)=ARRAY(x1)
+ . s tab=tab+$l(ARRAY(x1))
+ k ARRAY m ARRAY=array s ARRAY=$o(ARRAY(""),-1)
+ f j=1:1:ARRAY i '$d(ARRAY(j)) s ARRAY(j)=""
+ q
+name(Title,Name,Surname) n (Title,Name,Surname) s result=""
+ s Title=$g(Title),Name=$g(Name),Surname=$g(Surname)
+ s result=Surname_", "_$s($l(Title):Title_" ",1:"")_" "_Name
+ q result
+ q
+dt(date,time) n (date,time) s date=$g(date),result=""
+ i $g(time) s result=$e(time\3600+100,2,3)_":"_$e(time\60#60+100,2,3)_" "_$$extdate2^SSUTIL4(date)
+ i '$d(time)!('$g(time)) s result=$$extdate2^SSUTIL4(date)
+ q result
+]]></Routine>
+</Export>

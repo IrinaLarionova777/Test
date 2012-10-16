@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBHL7COMUK01" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBHL7COMUK01 ; ML 17/09/2002 ; HL7 COMMUNICATIONS - Labtrak to Anglia ICE - Norfolk and Norwich, UK
+ ;
+ ; Parameters : 1. System - ICE = Anglia ICE
+ ;
+ q
+create n  s system="ICE" d INIT(system)
+ q
+ ; loop thru and find unsent episodes
+INIT(system) 
+ s $zt="error^"_$zn k ^TMP($zn,$j) s system=$g(system)
+ q:$$select^MVBCFLIP("1||"_system)  s tcp=$p(PLIST(4),$c(1)),ip=$p(PLIST(5),$c(1)) k PLIST
+ q:$$opcl(0,system,tcp,ip)  s opcl=1
+ ; check for new packets to send
+ s epis="" f  s epis=$o(^TEDI("OUT-DATA","HL7",system,epis)) q:epis=""  d
+ .s vtsRID="" f  s vtsRID=$o(^TEDI("OUT-DATA","HL7",system,epis,vtsRID)) q:vtsRID=""  d
+ ..s uniseq="" f  s uniseq=$o(^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq)) q:uniseq=""  d
+ ...d TRANS
+ ...i nak="" d
+ ....s ^TEDI("SENT-DATA","HL7",system,uniseq)=+$h
+ ....m ^TEDI("SENT-DATA","HL7",system,uniseq,epis,vtsRID)=^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq)
+ ....k ^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq)
+ ; print rejected episodes
+ i $d(^TEDI("REJECTIONS",system,+$h)) w $$START^PRTREP00("demo","",+$h_"\"_system_"\"_$zn,"LCR","")
+ c tcp d trace("Device closed *****","*****")
+ q
+ ; transmit packets to caresys
+TRANS s (pass,nak,norespcnt)="" f  d  q:pass=1  q:nak=1
+ .s epis=$p(vtsRID,"||",1),ts=$p(vtsRID,"||",2)
+ .i norespcnt=3 q:$$opcl(1,system,tcp,ip)
+ .s string="",string=$c(11) k str
+ . ; trace, compile into packets 256 chars or less and send
+ .s x="" f  s x=$o(^TEDI("OUT-DATA","HL7",system,epis,vtsRID,uniseq,x)) q:x=""  s packet=^(x),string=string_packet_$c(13) d trace(packet,"L-->I")
+ .s string=string_$c(28)_$c(13)
+ .s strcnt="" f  s strcnt=$g(strcnt)+1 d  q:'$l(string)
+ ..i $l(string)>256 s str(strcnt)=$e(string,1,256),string=$e(string,257,99999) q
+ ..i $l(string)<256 s str(strcnt)=string,string="" q
+ ..i $l(string)=256 s str(strcnt)=string,string=""
+ .f i=1:1:strcnt w str(i),*-3
+ .k str d trace("Test set "_ts_" on episode "_epis_" sent to "_system_" *****","*****")
+ .r *r:30 e  d  q
+ ..s norespcnt=norespcnt+1
+ ..d trace("No response from "_system_" for test set "_ts_" on episode "_epis_" *****","*****")
+ .i r'=11 d  q
+ ..s norespcnt=norespcnt+1
+ ..d trace("No response from "_system_" for test set "_ts_" on episode "_epis_" *****","*****")
+ . ; read in 'ack/nak' from ICE
+ .s ack="" f  r *r:0 q:r=28  s ack=ack_$c(r)
+ . ; extract remaining carriage return from buffer
+ .r *r:10 d trace($tr(ack,$c(13)," "),"L<--I")
+ .i '(($p(ack,$c(13),2)["|CA|")!($p(ack,$c(13),2)["|AA|")),$g(fail)=3 d nak e  s fail=$g(fail)+1 q
+ .q:nak
+ .i ($p(ack,$c(13),2)["|CA|")!($p(ack,$c(13),2)["|AA|") s pass=1,norespcnt=""
+ .d trace("Test set "_ts_" on episode "_epis_" accepted by "_system_" *****","*****")
+ q
+ ; message rejection
+nak s nak=1 s rejdate=+$h
+ d trace("Test set "_ts_" on episode "_epis_" rejected by "_system_" *****","*****")
+ s nakcnt=$g(^TEDI("REJECTIONS",$zn,system,rejdate))+1,^TEDI("REJECTIONS",$zn,system,rejdate)=nakcnt
+ s ^TEDI("REJECTIONS",$zn,system,rejdate,nakcnt)=$h_"\"_epis_"\"_ts_"\"_nnx
+ q
+ ; way : L-->I - Labtrak to ICE
+ ;       L<--I - ICE to Labtrak
+ ;       ***** - packet sent/ack/nak, device opened/closed
+ ;       ERROR - error occurred
+trace(record,way) ; trace file
+ s z="" s z=$o(^TEDI("TRACE",system,z)) i z,z<($h-2) k ^TEDI("TRACE",system,z)
+ s z=$g(^TEDI("TRACE",system,+$h))+1 s @$zr=z
+ s time=$p($h,",",2)\60,time=time\60_":"_$e(100+(time#60),2,3)
+ s ^TEDI("TRACE",system,+$h,z)=way_" : "_time_" "_record
+ q
+ ; open and close device
+opcl(opclx,system,tcp,ip) s tcp=$g(tcp),ip=$g(ip)
+ i opclx c tcp d trace("Device closed *****","*****") s norespcnt=""
+ o tcp:(ip::"C"):20 e  d trace("Unable to open device *****","*****") q 100
+ d trace("Device opened *****","*****")
+ u tcp
+ q 0
+ ; trap any 'write' errors which may occur due to ICE side closing down
+error d trace($ze,"ERROR")
+ i $ze["WRITE" c tcp d trace("Device closed *****","*****") q
+ i $ze["READ" c tcp d trace("Device closed *****","*****") q
+ i $ze["COMMAND" c tcp d trace("Device closed *****","*****") q
+ d BACK^%ETN
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF207UK01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF207UK01(mi) ; ML 5/6/98 ; DADE Dimension (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(21),del=$c(28)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:15 e  q
+ i $c(R)'=stx q
+ s record="" f  r *R q:$c(R)=etx  s record=record_$c(R)
+ ; s record=$$read^MIF000(stx,etx) q:'$l(record)
+ s type=$e(record,1) d trace^MIF000(mi,record,"H<--M")
+ i type="P" d ACK,POL q    ; polling message
+ i type="M" d ACK q        ; request acceptance message
+ i type="R" d ACK,RES q    ; result message
+ i type="C" d ACK,CAL q    ; calibration result message
+ i type="I" d ACK,QUE q    ; query message
+ w nak,*-3 d trace^MIF000(mi,"NAK","H-->M")
+ q
+READ ; wait for 'ack' from instrument
+ s x="" f  r *R:30 q:$c(R)=ack  q:R=-1  s x=x_"<"_R_">"
+ i $l(x) d trace^MIF000(mi,x,"H<--M")
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M")
+ q
+POL ; check polling message
+ s rq=$p(record,del,2),xx1=$p(record,del,3),xx2=$p(record,del,4),xx3=$p(record,del,5)
+ i xx1 d N5 q
+ i xx2=0 d N51 q
+ i '$d(^TMIF(mi,10)) d  q
+ .d N5
+ .d:" L "[(" "_par9_" ") loadlist^MIF000(mi)
+ s ord="",ord=$o(^TMIF(mi,10,ord)) i ord'="" d
+ .s rec=^TMIF(mi,10,ord) d SEND(rec)
+ .k ^TMIF(mi,10,ord)
+ q
+RES ; process result record
+ f r=4,3 d  q:epis'=""
+ .s (sample,epis,surname,result,date,time,QC)=""
+ .s epis=$p(record,del,r),epis=$tr(epis," ")
+ i epis="" d CAL q
+ d trace^MIF000(mi,"R record = "_record,"H<--M")
+ s typ=$p(record,del,7),timedate=$p(record,del,8),time=$e(timedate,1,6),date=$e(timedate,7,12)
+ s time=$e(time,5,6)+($e(time,3,4)*60)+($e(time,1,2)*3600)
+ s date=$e(date,5,6)_$e(date,3,4)_$e(date,1,2),date=$$intdate^SSUTIL4(date)
+ s cup=$p(record,del,9),record=$p(record,del,10,999) f d=1:1:cup d
+ .s test=$p(record,del,2) f j=1:1:test d
+ ..s x1=$p(record,del,j-1*4+3),x2=$p(record,del,j-1*4+4),x3=$p(record,del,j-1*4+6)
+ ..i " 1 4 5 6 7 8 9 10 11 12 14 "[(" "_x3_" ") s x2="UNS",x3="UNS"
+ ..i " 2 "[(" "_x3_" ") s x3="CAL"
+ ..i " 3 "[(" "_x3_" ") s x3="RANGE"
+ ..i " 15 "[(" "_x3_" ") s x3="DIL"
+ ..i " 16 "[(" "_x3_" ") s x2="UNS",x3="BELOW"
+ ..i " 17 "[(" "_x3_" ") s x2="UNS",x3="ABOVE"
+ ..s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ .s record=$p(record,del,test*4+3,999)
+ i typ<3,$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ i typ>2,$l(result) d QC
+CAL s rec="M"_del_"A"_del_del
+ d SEND(rec)
+ q
+QC ; process QC record
+ s time=$e(date,1,6)
+ s date=$e(date,11,12)_$e(date,9,10)_$e(date,7,8)
+ s date=$$intdate^SSUTIL4(date),time=$e(time,5,6)+($e(time,3,4)*60)+($e(time,1,2)*3600)
+ s QC=cup_"\"_epis d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+QUE ; build string to send to instrument
+ s epis=$tr($p(record,del,2)," "),(z1,z2)=""
+ d scanone^MIF000(mi,epis)
+ k tst s tc="" f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ .f i=1:1:$l(tc,",") s y=$p(tc,",",i) i y'="" s tst(y)=""
+ f j="HDL","TIBC","DIG" k tst(j)
+ s tst="" f j=0:1 s tst=$o(tst(tst)) i tst="" s tst=j q
+ i 'tst d N5 q
+ s z1=$p(^TEPI(epis),"\",2)_" "_$p(^TEPI(epis),"\",1)
+ s rec="D"_del_0_del_0_del_"A"_del_z1_del_epis_del_1_del_z2_del_0_del_1_del_"**"_del_1_del_tst_del
+ s tst="" f  s tst=$o(tst(tst)) q:tst=""  s rec=rec_tst_del
+ d SEND(rec)
+ q
+N5 s rec="N"_del d SEND(rec)
+ q
+N51 s rec="W"_del d SEND(rec)
+ q
+SAVE(mi) ; create loadlist records
+ s stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(21),del=$c(28)
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+ s (z,test)="" f  s z=$o(^TMP("MIF000",$j,"LL","TEST",z)) q:z=""  s test=test_$s($l(test):"\",1:"")_z
+ d SET(epis,test,sample)
+ q 0
+SET(epis,tests,cup) ; set record to be sent to instrument
+ s del=$c(28),test="",test=$p(tests,"\",1) i test="" s rec="N"_del d SEND(rec) q
+ s specimen=$p($g(^TMP("MIF000",$j,"LL","SPECIMEN")),$c(1)) s specimen=$s(specimen="RAN":3,specimen="U":3,specimen="EDTA":4,specimen="BLOOD":4,1:1)
+ s (name,loc)="",num=$l(tests,"\")
+ i $d(^TEPI(epis)) s name=$p(^TEPI(epis),"\",1)_","_$p(^(epis),"\",2),loc=$p(^TEPI(epis),"\",20)
+ s rec="D"_del_0_del_0_del_"A"_del_$e(name,1,26)_del_epis_del_specimen_del_loc_del_0_del_1_del_0_del_1_del_num_del_test_del
+ s test="" f j=2:1 s test=$p(tests,"\",j) q:test=""  s rec=rec_test_del
+ s rec=rec_del
+ s cnt=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,cnt)=rec
+ q
+CHSUM(x) ; calculate check sum
+ n y,z s z=0
+ f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=z#256
+ s z=$e("0123456789ABCDEF",z\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+SEND(x) ; send data string
+ s str=x_$$CHSUM(x) w stx,str,etx,*-3
+ d trace^MIF000(mi,str,"H-->M"),READ
+ q
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

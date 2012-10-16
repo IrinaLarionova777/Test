@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTR3ER01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTR3ER01 ; IG 07/10/98 ; Rule 3 exempt request
+ Q
+ ; Parameters :  1.Collection Date from
+ ;               2.Collection Date to
+ ;               3.Collection centre
+ ;               4.Episode (only from the form)
+ ;               5.Additional requests (only from the form)
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+ K xHEADER D INIT
+ s line=1,xHEADER(line)="List of Rule 3 Exemption Test Requests (Originals)"
+ s line=2,xHEADER(line)=""
+ i $l(PAR3) d
+ .s line=3,xHEADER(line)="for Collection centre - ( "_CTCC(2)_" ) "_CTCC(3)
+ .s line=4,xHEADER(line)=""
+ D HEADER^PRTREP00(.xHEADER,PAR1,PAR2),BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=PAR3 I $$update^LVBPRPR(REPID)
+ K ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$zn)
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+ i $l(PAR3),'$$select^LVBCTCC(PAR3,"Y") m CTCC=PLIST
+ Q
+ ; create temporary printing file
+BODY i $l(PAR1)!$l(PAR2) d
+ .s DATE=$s($l(PAR1):PAR1-1,1:"") f  s DATE=$o(^TDAY(1,DATE)) q:DATE=""  q:$l(PAR2)&(DATE>PAR2)  d
+ ..s epis="" f  s epis=$o(^TDAY(1,DATE,0,epis)) q:epis=""  d
+ ...s lcc=$$seldata^LVBEPVIS(epis,27),mrn=$$seldata^LVBEPVIS(epis,20)
+ ...i $l(PAR3),PAR3'=lcc q
+ ...i $l(mrn) s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ....s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d
+ .....s vtsRID=epis_"||"_ts_"||"_tscnt
+ .....s seq=$$seldata^LVBVISTS(vtsRID,12),date=$$seldata^LVBVISTS(vtsRID,20)
+ .....s seq=$p(seq,$c(1)),date=$p(date,$c(1)) i $l(date),seq=1 d
+ ......i $p($g(^TEPIi("RULE-3",mrn,ts,date,1)),"\",2)="Y" q
+ ......s ^TMP($zn,$j,"REPORT",1,vtsRID)=lcc
+ i '$l(PAR1),'$l(PAR2) d
+ .i '$l(PAR4) d
+ ..s mrn="" f  s mrn=$o(^TEPIi("RULE-3",mrn)) q:mrn=""  d
+ ...s ts="" f  s ts=$o(^TEPIi("RULE-3",mrn,ts)) q:ts=""  d
+ ....s date="" f  s date=$o(^TEPIi("RULE-3",mrn,ts,date)) q:date=""  d
+ .....i $d(^TEPIi("RULE-3",mrn,ts,date,1)) d
+ ......s vtsRID=$p(^(1),"\"),epis=$p(vtsRID,"||")
+ ......s lcc=$$seldata^LVBEPVIS(epis,27)
+ ......s lcc=$p(lcc,$c(1)),mrn=$p(mrn,$c(1)) i $l(PAR3),PAR3'=lcc q
+ ......i $p($g(^TEPIi("RULE-3",mrn,ts,date,1)),"\",2)="Y" q
+ ......s ^TMP($zn,$j,"REPORT",1,vtsRID)=lcc
+ .i $l(PAR4) d
+ ..s mrn=$$mrn^LVBEPVIS(PAR4) i $l(mrn) d
+ ...s ts="" f  s ts=$o(^TEPIi("RULE-3",mrn,ts)) q:ts=""  d
+ ....s date="" f  s date=$o(^TEPIi("RULE-3",mrn,ts,date)) q:date=""  d
+ .....i $d(^TEPIi("RULE-3",mrn,ts,date,1)) d
+ ......s ok=0 f j=1:1 q:'$d(^TEPIi("RULE-3",mrn,ts,date,j))  i $p($p(^TEPIi("RULE-3",mrn,ts,date,j),"\"),"||")=PAR4 s ok=1 q
+ ......i ok d
+ .......s vtsRID=$p(^TEPIi("RULE-3",mrn,ts,date,1),"\"),epis=$p(vtsRID,"||")
+ .......s lcc=$$seldata^LVBEPVIS(epis,27)
+ .......s lcc=$p(lcc,$c(1)),mrn=$p(mrn,$c(1))
+ .......s ^TMP($zn,$j,"REPORT",1,vtsRID)=lcc
+ ; sort
+ s vtsRID="" f  s vtsRID=$o(^TMP($zn,$j,"REPORT",1,vtsRID)) q:vtsRID=""  d
+ .s lcc=^(vtsRID),epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2)
+ .i '$$select^LVBVISTS(vtsRID,"Y") d
+ ..s max=PLIST(14),date=PLIST(20),comm=PLIST(56) i '$l(lcc) s lcc=" "
+ ..i $l(PAR5),PAR4=epis s max=PAR5
+ ..s ^TMP($zn,$j,"REPORT",0,lcc,epis,test)=date_"\"_max_"\"_comm
+ q
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s lcc="" f  s lcc=$O(^TMP($zn,$j,"REPORT",0,lcc)) q:lcc=""  d
+ ..i lcc'=" ",$$select^LVBCTCC(lcc,"Y") d
+ ...D ADDLINE^PRTREP00(REPID,"PRT","~BOLD")
+ ...D ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...D ADDLINE^PRTREP00(REPID,"PRT","?10 ("_PLIST(2)_") "_PLIST(3))
+ ...D ADDLINE^PRTREP00(REPID,"PRT","~NORMAL")
+ ...D ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..s epis="" f  s epis=$O(^TMP($zn,$j,"REPORT",0,lcc,epis)) q:epis=""  d
+ ...k VISIT i '$$select^LVBEPVIS(epis) m VISIT=PLIST
+ ...k NOTES f j=1:1:$l(VISIT(53),"|") s NOTES(j)=$p(VISIT(53),"|",j)
+ ...s NOTES=$o(NOTES(""),-1)
+ ...f NOTES=NOTES:-1:1 q:$l($tr(NOTES(NOTES)," "))  k NOTES(NOTES)
+ ...s test="" f  s test=$O(^TMP($zn,$j,"REPORT",0,lcc,epis,test)) q:test=""  d
+ ....s date=$p(^(test),"\",1),max=$p(^(test),"\",2)
+ ....s x1=$$seldata^LVBCTTS(test,4),x2=$$seldata^LVBCTTS(test,3)
+ ....s xxx(1)=$p(x1,$c(1))_$c(1)_$p(x2,$c(1))
+ ....s xxx(2)=date_$c(1)_$$extdate2^SSUTIL4(date)
+ ....s xxx(3)=max
+ ....s xxx(4)=$g(NOTES(1))
+ ....d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+ ....f j=2:1:NOTES s xxx(4)=NOTES(j) d PRINT^PRTREP00(,.N) k xxx
+ ..D ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="R3ER"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

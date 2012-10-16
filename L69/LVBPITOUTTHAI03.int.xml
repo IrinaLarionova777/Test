@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPITOUTTHAI03" type="INT" languagemode="0"><![CDATA[
+LVBPITOUTTHAI03 ; ML 25/07/2002 ; CREATE PIT FORMAT FILE - Thailand - Sri Raj  ; Compiled August 8, 2002 12:48:21 for Cache for Windows
+ ;
+ ; supported calls:
+ ;
+ ; create^LVBPITOUTTHAI03
+ ;
+create n
+ i $$select^MVBCFSM(1) q 100
+ s labname=PLIST(9),table=46
+ s type="PIT"
+ k ^TMP($zn,$j) l +^TEDI("OUT",type) m ^TMP($zn,$j)=^TEDI("OUT",type) k ^TEDI("OUT",type) l -^TEDI("OUT",type)
+ s dh="" f  s dh=$o(^TMP($zn,$j,dh)) q:dh=""  d
+ .s client="" f  s client=$o(^TMP($zn,$j,dh,client)) q:client=""  d
+ ..s doc="" f  s doc=$o(^TMP($zn,$j,dh,client,doc)) q:doc=""  d
+ ...s epis="" f  s epis=$o(^TMP($zn,$j,dh,client,doc,epis)) q:epis=""  d
+ ....s vtsRID="" f  s vtsRID=$o(^TMP($zn,$j,dh,client,doc,epis,table,vtsRID)) q:vtsRID=""  d
+ .....i '$$printable^LVBCTTS($p(vtsRID,"||",2)) k ^TMP($zn,$j,dh,client,doc,epis,table,vtsRID) q
+ .....s seq="" f  s seq=$o(^TMP($zn,$j,dh,client,doc,epis,table,vtsRID,seq)) q:seq=""  d
+ ......s status=$p(^(seq),"\",3)
+ ......i " Add Del DeAuth Update "[(" "_status_" ") k ^TMP($zn,$j,dh,client,doc,epis,table,vtsRID,seq) q
+ s dh="" f  s dh=$o(^TMP($zn,$j,dh)) q:dh=""  d
+ .s client="" f  s client=$o(^TMP($zn,$j,dh,client)) q:client=""  d
+ ..s fileno=$g(^TMP($zn,$j,dh,client)),^TEDI("OUT",type,dh,client)=fileno,found=0
+ ..i $d(^TMP($zn,$j,dh,client))<10 k ^TMP($zn,$j,dh,client) q
+ ..s fileno=$g(fileno)+1,^TEDI("OUT",type,dh,client)=fileno
+ ..s doc="" f  s doc=$o(^TMP($zn,$j,dh,client,doc)) q:doc=""  d
+ ...s epis="" f  s epis=$o(^TMP($zn,$j,dh,client,doc,epis)) q:epis=""  i '$$select^LVBEPVIS(epis,"Y") d
+ ....m VISIT=PLIST k PLIST
+ ....s vtsRID="" f  s vtsRID=$o(^TMP($zn,$j,dh,client,doc,epis,table,vtsRID)) q:vtsRID=""  d
+ .....s found=1
+ .....d SingleTest(vtsRID) s test=$p(vtsRID,"||",2)
+ .....s ^TMP($zn,$j,"OUT-DATA",type,client,fileno,"EPIS",epis,test)=""
+ ..i found d
+ ...l +^TEDI("OUT-DATA",type,client,fileno)
+ ...m ^TEDI("OUT-DATA",type,client,fileno)=^TMP($zn,$j,"OUT-DATA",type,client,fileno)
+ ...l -^TEDI("OUT-DATA",type,client,fileno)
+ ..k ^TMP($zn,$j,"OUT-DATA",type,client,fileno)
+ k ^TMP($zn,$j)
+ q
+ ; compile results for single test
+SingleTest(vtsRID) n (vtsRID,VISIT,dh,DOC,HOSP,line,type,client,fileno,underline,doc) s vtsRID=$g(vtsRID),epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2)
+ ; get authorised details
+ k VISTS i $$select^LVBVISTS(vtsRID) q
+ m VISTS=PLIST k PLIST
+ ; make sure authorised
+ i $p(VISTS(7),$c(1))="" q
+ s AuthUser="" i $p(VISTS(9),$c(1))'="" s AuthUser=$p($g(^SSU("SSUSR",1,$p(VISTS(9),$c(1)))),"^",2)
+ i AuthUser="" s AuthUser=$p(VISTS(9),$c(1))
+ s AuthDate="" s AuthDate=$zd($p(VISTS(7),$c(1)),8)
+ s AuthTime="" s AuthTime=$tr($$exttime^SSUTIL4($p(VISTS(8),$c(1))),":")_"00"
+ ; extract results
+ k visres i $$results^LVBVISTS(vtsRID) q
+ m visres=PLIST k PLIST
+ ; check for 'authorised by' test item
+ f i=1:1 q:'$d(visres(i))  d
+ .s tc=$p(visres(i),$c(1),2),res=$p(visres(i),$c(1),3)
+ . ; check if 'authorised by' test item
+ .i tc="E9000" d
+ ..i res="SISSW" s AuthUser=12191
+ ..i res="SISSV" s AuthUser=13083
+ ..i res="SITDR" s AuthUser=11119
+ f i=1:1 q:'$d(visres(i))  d
+ .s tc=$p(visres(i),$c(1),2),res=$p(visres(i),$c(1),3),comm=$p(visres(i),$c(1),4)
+ . ; ignore 'authorised by' test item
+ .i tc="E9000" q
+ .k CTTC i '$$select^LVBCTTC(tc,"Y") m CTTC=PLIST k PLIST
+ .i $e(CTTC(5),1)="S",'$$select^LVBCTTCT(tc_"||"_res) d
+ ..s res=$tr(PLIST(3),"|","\.br\")
+ .i $l(comm) d
+ ..k PLIST
+ ..s res=comm f ii=1:1:$l(res,"|") s PLIST(ii)=ii_$c(1)_tc_$c(1)_$p(res,"|",ii)
+ ..s PLIST=$o(PLIST(""),-1)
+ ..i '$$COMMENTS^LVBCOM01("",$p(vtsRID,"||",2))
+ .. ; strip out bolding sequences etc
+ ..f ii=1:1:PLIST s PLIST(ii)=$p(PLIST(ii),"^",1)_$s($e($p(PLIST(ii),"^",1),$l($p(PLIST(ii),"^",1)))=" ":"",1:" ")_$p(PLIST(ii),"^",3)
+ ..s comm="" f ii=1:1:PLIST s comm=comm_$s($l(comm):"\.br\",1:"")_PLIST(ii)
+ . ; build lines
+ .s string=""
+ .s string=$$Line(epis,string),string=$$Line(VISIT(20),string),string=$$Line($p(vtsRID,"||",2),string)
+ .s string=$$Line(tc,string),string=$$Line(res,string),string=$$Line($tr(CTTC(4),$c(16),"^"),string)
+ .s string=$$Line(comm,string),string=$$Line(AuthUser,string),string=$$Line(AuthDate,string),string=$$Line(AuthTime,string)
+ .d SET(string)
+ q
+ ; compile transmission global
+SET(line) s line=$g(line)
+ s seq=$o(^TMP($zn,$j,"OUT-DATA",type,client,fileno,"SEQ",""),-1)+1
+ s ^TMP($zn,$j,"OUT-DATA",type,client,fileno,"SEQ",seq)=line
+ q
+ ; compile single line
+Line(text,string) n (text,string) s text=$g(text),string=$g(string)
+ s string=$g(string)_$s($l(string)'=0:$c(9),1:"")_text
+ q string
+]]></Routine>
+</Export>

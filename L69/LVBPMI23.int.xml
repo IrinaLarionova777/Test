@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPMI23" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBPMI23 ; ML 09/05/2000 ; HOSPITAL PMI INTERFACE - VITAL TO LABTRAK HL7 (Goulburn Valley Hospital)
+ q
+ ; loop thru and receive patient details from Hospital
+INIT k (error) s $zt="error^"_$zn k ^TMP($zn,$j) s error="",client="FROM",HOSP="V"
+ f  q:'$$opcl(error)
+ i open f  d READ q:'open
+ g INIT
+ ; receive transmission
+READ s record=$$read^MIF000($c(11),$c(28),,10)
+ i '$l(record) d  q
+ .s timeout=timeout+1
+ .i timeout=20 d trace("Timeout occurred - closing device *****","*****") i $$opcl(1)
+ d trace("Start of transmission *****","*****") s timeout=0
+ k msg f j=1:1:$l(record,$c(13)) i $l($p(record,$c(13),j)) s msg(j)=$p(record,$c(13),j) d trace(msg(j),"L<--H")
+ d trace("End of transmission *****","*****")
+ s (careid,packid,sno,date,caremrn,version)=""
+ s j="" f  s j=$o(msg(j)) q:j=""  d
+ .i $p(msg(j),"|")="MSH" s careid=$p(msg(j),"|",10),packid=$p(msg(j),"|",11),version=$p(msg(j),"|",12),sno=$p(msg(j),"|",13,999),date=$p(msg(j),"|",7)
+ .i $p(msg(j),"|")="PID" s caremrn=$p($p(msg(j),"|",3),"^")
+ .i $p(msg(j),"|")="PV1" s carepis=$p($p(msg(j),"|",19),"^")
+ s str="MSH|^~\&|LABTRAK||VITAL||"_date_"|TRAKS|ACK|"_careid_"|"_packid_"|"_version_"|"_sno
+ d trace(str,"L-->H") w $c(11),str,$c(13)
+ s str="MSA|AA|"_careid_"|"
+ d trace(str,"L-->H") w str,$c(13,28,13),*-3
+ s msgn=$o(^THOS(HOSP,"IN",""),-1)+1,^THOS(HOSP,"IN",msgn)=record
+ q
+ ; way : L-->H - Labtrak to Hospital
+ ;       L<--H - Hospital to Labtrak
+ ;       ***** - packet sent/ack/nak, device opened/closed
+ ;       ERROR - error occurred
+trace(xxx,way,type) n (xxx,way,type,client) s type=$g(type) i '$l(type) s type="trace"
+ s j="" f  s j=$o(^TMPpmi(client,type,j)) q:j=""  q:j>($h-2)  k ^TMPpmi(client,type,j)
+ s j=$o(^TMPpmi(client,type,+$h,""),-1)+1
+ s time=$p($h,",",2)\60,time=$e(time\60+100,2,3)_":"_$e(time#60+100,2,3)
+ s ^TMPpmi(client,type,+$h,j)=$s(type="trace":way_" : "_time_" ",1:"")_xxx
+ q
+ ; open and close device
+opcl(error) s dev=$p($g(^CF("LAB",1,"IP",client)),"\",2),(timeout,open)=""
+ i $l(client) d
+ .i error c dev d trace("Device closed *****","*****") h 120
+ .o dev::10 e  d trace("Unable to open device *****","*****") q
+ .d trace("Device opened *****","*****")
+ .u dev s open=1
+ q 0
+ ; trap any 'write' errors which may occur due to VITAL side closing down
+error d trace($ze,"ERROR")
+ i $ze["WRITE" s error=1 g INIT+1
+ i $ze["READ" s error=1 g INIT+1
+ i $ze["COMMAND" s error=1 g INIT+1
+ d BACK^%ETN
+ g INIT+1
+]]></Routine>
+</Export>

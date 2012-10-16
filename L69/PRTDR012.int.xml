@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR012" type="INT" languagemode="0"><![CDATA[
+PRTDR012 ; IG 23/03/99 ; Doctor's Report HEADER - NSW
+ q
+ ; supported calls
+ ;
+ ; INIT^PRTDR012
+ ; Header^PRTDR012(page,par1,par2)
+ ; Footer^PRTDR012(page,par1,par2)
+ ;
+ ; client specific parameters
+INIT s MaxLine=42
+ q
+ ; print header
+Header(page,par1,par2) n (page,par1,par2,VISIT,DOC,HOSP,REPID,CopyToDoctor)
+ i '$d(^PR(REPID,"HDR")) d QDR
+ d ADD^PRTREP00(REPID,"PRT","#")
+ s (copyto,copyfrom,specimen)="",epis=$p(VISIT(2),$c(1))
+ ; find copy-to only for DR's copies
+ i $d(DOC),$p(VISIT(15),$c(1))=$p(DOC(2),$c(1)) d
+ .i $$open^LVBVISDC(epis)
+ .f  q:$$fetch^LVBVISDC(epis)  s copyto=copyto_$s($l(copyto):", ",1:"")_$p(PLIST(4),$c(1))
+ .i $$close^LVBVISDC()
+ ; find copy-from
+ i $d(DOC),$p(VISIT(15),$c(1))'=$p(DOC(2),$c(1)) d
+ .i '$$select^LVBCTDR($p(VISIT(15),$c(1)),"Y") s copyfrom=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51))
+ i $d(HOSP),$p(VISIT(22),$c(1))'=$p(HOSP(2),$c(1)) d
+ .i '$$select^LVBCTDR($p(VISIT(15),$c(1)),"Y") s copyfrom=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3),PLIST(49),PLIST(50),PLIST(51))
+ ; find specimens
+ i $$open^LVBVISSP(epis)
+ f  q:$$fetch^LVBVISSP(epis)  s specimen=specimen_$s($l(specimen):", ",1:"")_$p(PLIST(2),$c(1))
+ i $$close^LVBVISSP()
+ i $l(specimen)>20 f j=1:1 i $l($p(specimen,",",1,j))>20 s specimen=$p(specimen,",",1,j-1) q
+ s coltime="" i $l(VISIT(13)) s coltime=$e(VISIT(13)\3600+100,2,3)_":"_$e(VISIT(13)\60#60+100,2,3)
+ s coldate="" i $l(VISIT(12)) s coldate=$$extdate2^SSUTIL4(VISIT(12))
+ s recdate="" i $l(VISIT(61)) s recdate=$$extdate2^SSUTIL4(VISIT(61))
+ s reptime=$$exttime^SSUTIL4($p($h,",",2)),repdate=$$extdate2^SSUTIL4(+$h)
+ ; format Doctor's address
+ i $d(DOC) d Address(DOC(9),DOC(10),DOC(11),DOC(12),DOC(13),.dAddress)
+ i $d(HOSP) d Address(HOSP(4),HOSP(5),HOSP(6),HOSP(7),HOSP(8),.hAddress)
+ ; format Patient's address
+ d Address(VISIT(32),VISIT(33),VISIT(34),VISIT(35),VISIT(36),.pAddress)
+ s dob="Unknown" i $l(VISIT(6)) s dob=$$extdate2^SSUTIL4(VISIT(6))
+ s sex="Unknown" i $l(VISIT(5)) s sex=$p(VISIT(5),$c(1),2)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p9v0s1b4101T")
+ ; find if report is interim
+ i $o(^TMP("REPORT",$j,page))="" d
+ .i $l(copyfrom) d
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h7400V")
+ ..d ADD^PRTREP00(REPID,"PRT","Referred by : "_copyfrom)
+ .i $l(copyto) d
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h7400V")
+ ..d ADD^PRTREP00(REPID,"PRT","Copy sent to : "_copyto)
+ .i VISIT(29)'="F" d
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h7500V")
+ ..d ADD^PRTREP00(REPID,"PRT","*** INTERIM REPORT ***")
+ .i VISIT(29)="F" d
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h7500V")
+ ..d ADD^PRTREP00(REPID,"PRT","*** FINAL REPORT. Please File ***                         Many thanks for referring this patient")
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h7600V")
+ .d ADD^PRTREP00(REPID,"PRT","Tests Requested : "_VISIT(68))
+ .s ttf=$$TTF(epis) i ttf'="" d
+ ..d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h7700V")
+ ..d ADD^PRTREP00(REPID,"PRT","Tests Pending : "_ttf)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a5000h7400V")
+ d ADD^PRTREP00(REPID,"PRT","Page "_page_" / "_$o(^TMP("REPORT",$j,""),-1))
+ ; patient details
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p12v0s0b4101T")
+ i $d(DOC) d
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h1070V"_$$NameFormat^LVBCOM03("DR",DOC(26),DOC(4),DOC(3),DOC(49),DOC(50),DOC(51)))
+ .f j=1:1:3 i $l(dAddress(j)) d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h"_(j*120+1070)_"V"_dAddress(j))
+ i $d(HOSP) d
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h1070V"_HOSP(3))
+ .f j=1:1:3 i $l(hAddress(j)) d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a100h"_(j*120+1070)_"V"_hAddress(j))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a2100h1070V"_$$UPPER^SSUTIL4(VISIT(4))_" ")
+ d ADD^PRTREP00(REPID,"PRT","~BOLD")
+ d ADD^PRTREP00(REPID,"PRT","~UNDERLINE")
+ d ADD^PRTREP00(REPID,"PRT",$$UPPER^SSUTIL4(VISIT(3)))
+ d ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ f j=1:1:3 i $l(pAddress(j)) d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a2100h"_(j*120+1070)_"V"_pAddress(j))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4750h1020V"_dob_"("_VISIT(26)_")")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4750h1130V"_sex)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4750h1240V"_$p(VISIT(2),$c(1)))
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4750h1350V"_coldate)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4750h1460V"_coltime)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4750h1570V"_repdate)
+ i $l(VISIT(16)) d
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p12v0s0b4101T")
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4000h1680VYour Ref")
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4700h1680V:")
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a4750h1680V"_VISIT(16))
+ .d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s1p12v0s0b4101T")
+ ; clinical history
+ i '$l(VISIT(53)) s VISIT(53)="NO CLINICAL NOTES"
+ s xx=$p(VISIT(53),"|",1)
+ f  q:$l(xx)<70  s xx=$p(xx," ",1,$l(xx," ")-1)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a1000h1800V"_xx)
+ s xx=$p(VISIT(53),"|",2)
+ f  q:$l(xx)<70  s xx=$p(xx," ",1,$l(xx," ")-1)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a1000h1900V"_xx)
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"(s0p12h0s0b4099T")
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a0h2050V")
+ d ADD^PRTREP00(REPID,"PRT","!")
+ q
+QDR s QDR="NSW",a="" f  s a=$o(^SS("QDR",QDR,a)) q:a=""  d ADD^PRTREP00(REPID,"HDR",^(a))
+ q
+dt(date,time) n (date,time) s date=$g(date),time=$g(time),result=""
+ s result=$e(time\3600+100,2,3)_":"_$e(time\60#60+100,2,3)_" "_$$extdate2^SSUTIL4(date)
+ q result
+path(dep) n (dep) s dep=$g(dep),result=""
+ i $l(dep),'$$select^LVBCTDEP(dep) s result=$p(PLIST(10),$c(1),2)
+ q result
+ ; Tests to Follow
+TTF(epis) n (epis) s epis=$g(epis),result=""
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . ; do not look at empty tests
+ .i '$d(^TTAB("TS",ts,0)) q
+ . ; do not look at non printable tests
+ .s (ok,x)="" f  s x=$o(^TTAB("TS",ts,0,x)) q:x=""  i $p(^(x),"\",8)'="",$p(^(x),"\",13)="Y" s ok=1 q
+ .i ok s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ ..s rowid=epis_"||"_ts_"||"_cnt,status=""
+ ..s status=$$seldata^LVBVISTS(rowid,31),test=$$seldata^LVBCTTS($$seldata^LVBVISTS(rowid,3),4)
+ ..i $p(status,$c(1))'="Y" s result=result_$s($l(result):" ",1:"")_test
+ q result
+ ; print footer
+Footer(page,par1,par2) q
+Address(x1,x2,x3,x4,x5,Address) n (x1,x2,x3,x4,x5,Address) k Address s cnt=0 f j=1:1:3 s Address(j)=""
+ i $l(x1) s cnt=cnt+1,Address(cnt)=x1
+ i $l(x2) s cnt=cnt+1,Address(cnt)=x2
+ s cnt=cnt+1
+ i $l(x3) s Address(cnt)=Address(cnt)_$s($l(Address(cnt)):",",1:"")_x3
+ i $l(x4) s Address(cnt)=Address(cnt)_$s($l(Address(cnt)):",",1:"")_x4
+ i $l(x5) d
+ .i cnt>1,'$l(Address(cnt)) s cnt=cnt-1
+ .s Address(cnt)=Address(cnt)_$s($l(Address(cnt)):",",1:"")_x5
+ q
+]]></Routine>
+</Export>

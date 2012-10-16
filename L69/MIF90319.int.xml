@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF90319" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF90319(mi) ; ML 22/01/2003 ; OLYMPUS AU2700 with sample ID-10char : MedLab Australia (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(15),etb=$c(23)
+ s (sample,epis,surname,result,date,time,QC)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,etb_","_etx) q:'$l(record)
+ d trace^MIF000(mi,record,"H<--M")
+ d ACK
+ ; process host query
+ i $e(record,1,2)="R " d  q
+ .k ^TMIF(mi,10)
+ . ; create order to send to instrument
+ .s str="S "_$e(record,3,23)_"    E",epis=$tr($e(record,14,23)," "),tg=$s($e(record,9)="U":$e(record,9),1:$e(record,10))
+ .d scanone^MIF000(mi,epis,tg)
+ .s tc="" f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  s str=str_$e(tc,1,2)
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)=str
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="SE"
+ .d SEND k ^TMIF(mi,10)
+ i $e(record,1,2)="RB" k ^TMIF(mi,10) q
+ i $e(record,1,2)="RH" d  q
+ . ; create order to send to instrument
+ .s str="SH"_$e(record,3,23)_"    E",epis=$tr($e(record,14,23)," "),tg=$s($e(record,9)="U":$e(record,9),1:$e(record,10))
+ .d scanone^MIF000(mi,epis,tg)
+ .s tc="" f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  s str=str_$e(tc,1,2)_"0"
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)=str
+ .s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="SE"
+ i $e(record,1,2)="RE" d SEND k ^TMIF(mi,10) q
+ ; process result record
+ i $e(record,1,2)="D "!($e(record,1,2)="d ")!($e(record,1,2)="DQ")!($e(record,1,2)="DH")!($e(record,1,2)="dH") d  q
+ .f i=1:1:$l(record,etb) s rec=$p(record,etb,i) d
+ ..q:rec=""  s:$e(rec)=$c(2) rec=$p(rec,stx,2)
+ ..s (sample,epis,surname,result,date,time,QC)=""
+ ..s epis=$e(rec,14,23),epis=$tr(epis," "),samptype=$e(rec,9),xrec=$e(rec,29,999)
+ ..f  s res=$e(xrec,1,13) d  q:$l(xrec)<13
+ ...s xrec=$e(xrec,14,999)
+ ...s x1=$tr($e(res,1,2)," ")_$s(samptype="U":"U",1:""),x3=$tr($e(res,12)," ")_"^"_$tr($e(res,13)," ")
+ ... ; extract haemolysis, lipid, ict results
+ ...i x1=96 d
+ ....s x2=$tr($e(res,3,5)," "),result=result_x1_"L"_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ....s x2=$tr($e(res,6,8)," "),result=result_x1_"I"_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ....s x2=$tr($e(res,9,11)," "),result=result_x1_"H"_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ... ; extract other result
+ ...i x1'=96 s x2=$tr($e(res,3,11)," "),result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ...s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ .. ; extract QC details
+ ..i $e(record,1,2)="DQ"
+ .i $l(epis),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+ ; send 'ack' to instrument
+ACK w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+ ; send string to instrument
+SEND s x="" f  s x=$o(^TMIF(mi,10,x)) q:x=""  d
+ .s str=^(x) f i=1:1:2 d  q:ok
+ ..s ok="" w stx,str,etx,*-3 d trace^MIF000(mi,str,"H-->M")
+ ..r *a:5 d trace^MIF000(mi,$s($c(a)=ack:"ACK",$c(a)=nak:"NAK",1:$c(a)),"H<--M")
+ ..i $c(a)=ack s ok=1
+ q
+]]></Routine>
+</Export>

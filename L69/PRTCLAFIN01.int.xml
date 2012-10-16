@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLAFIN01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTCLAFIN01 ; ML 15/2/2000 ; Collection List
+ q
+ ; Parameters :  1. Collection list
+ ;               2. Collection list number
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Collection List : "_CollName
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="Collection Date : "_CollDate_"     Time : "_CollTime_"     Collected By : "_CollBy
+ s line=4,xHEADER(line)=""
+ i $l(UserLoc) d
+ .s line=5,xHEADER(line)="User Location : "_UserLoc
+ .s line=6,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER),BODY,PRINT
+CREND i '$$select^LVBPRPR(REPID) s PLIST(12)=PAR1_"-"_PAR2 i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialize parameters
+INIT f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ i '$$select^LVBCL(PAR1) m CL=PLIST k PLIST
+ s CollName=$p($g(CL(3)),$c(1))_" ("_PAR1_") - "_PAR2
+ i '$$select^LVBCLN(PAR1_"||"_PAR2) m CLN=PLIST k PLIST
+ s CollBy=$p($g(CLN(6)),$c(1),2)
+ s CollDate=$p($g(CLN(5)),$c(1)),CollTime=""
+ i $l(CollDate) s CollDate=$$extdate2^SSUTIL4(CollDate)
+ s UserLoc=$p($g(CLN(9)),$c(1),2)
+ ; last collection time
+ i $l(PAR1),$l(PAR2) d
+ .s ep="" f  s ep=$o(^TTCL(PAR1,"LIST",PAR2,"PAT",ep)) q:ep=""  d
+ ..i CollTime<$p($g(^TEPI(ep)),"\",11) s CollTime=$p(^TEPI(ep),"\",11)
+ i $l(CollTime) s CollTime=$$exttime^SSUTIL4(CollTime*60)
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+ ; create temporary printing file
+BODY s rowid=PAR1_"||"_PAR2
+ ; extract episodes on collection list
+ i '$$fetchall^LVBCLNP(rowid) q:'$l(PLIST)  f i=1:1:PLIST s ^TMP($zn,$j,"LIST",$p(PLIST(i),$c(28),2))=""
+ s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",epis)) q:epis=""  d
+ . ; extract labels for episode
+ .i '$$fetchall^LVBCLNPL(rowid_"||"_epis) q:'$l(PLIST)  m EPLAB=PLIST k PLIST
+ . ; extract patient details
+ .q:$$select^LVBEPVIS(epis,"Y")  m VISIT=PLIST k PLIST
+ . ; extract label details
+ .f i1=1:1:EPLAB d
+ ..s label=$p($p(EPLAB(i1),$c(28),2),$c(1)),tests=$p(EPLAB(i1),$c(28),3),tscnt=$l(tests,",")
+ ..q:$$select^LVBCTLB(label)  m LABEL=PLIST k PLIST
+ ..s max=$p(LABEL(4),$c(1)),spec=$p(LABEL(5),$c(1),2) i '$l(spec) s spec=" "
+ ..i tscnt'>max s ts(1)=tests
+ ..i tscnt>max f i2=1:1 q:tests=""  s ts(i2)=$p(tests,",",1,max),tests=$p(tests,",",max+1,99)
+ ..s ward=$s($l(VISIT(22)):$tr(VISIT(22),$c(1)," "),1:" ")
+ ..s room=$s($l(VISIT(44)):VISIT(44),1:" "),bed=$s($l(VISIT(60)):$tr(VISIT(60),$c(1)," "),1:" ")
+ ..f i3=1:1 q:'$d(ts(i3))  s ^TMP($zn,$j,"REPORT",ward,room,bed,epis,spec,i3)=ts(i3)
+ q
+ ; print report
+PRINT s $p(space," ",200)=""
+ s ward="" f  s ward=$o(^TMP($zn,$j,"REPORT",ward)) q:ward=""  d
+ .s PatWard=ward i '$$select^LVBCTHOS(ward,"Y") s PatWard=PLIST(2)_" "_PLIST(3)
+ .d LN,ADDLINE^PRTREP00(REPID,"PRT","|"_PatWard_$e(space,1,$l(xLINE(1))-$l(PatWard)-2)_"|")
+ .d LN,ADDLINE^PRTREP00(REPID,"PRT","|"_$e(space,1,$l(xLINE(1))-2)_"|")
+ .s room="" f  s room=$o(^TMP($zn,$j,"REPORT",ward,room)) q:room=""  d
+ ..s bed="" f  s bed=$o(^TMP($zn,$j,"REPORT",ward,room,bed)) q:bed=""  d
+ ...s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",ward,room,bed,epis)) q:epis=""  i '$$select^LVBEPVIS(epis,"Y") d
+ ....s spec="" f  s spec=$o(^TMP($zn,$j,"REPORT",ward,room,bed,epis,spec)) q:spec=""  d
+ .....s cnt="" f  s cnt=$o(^TMP($zn,$j,"REPORT",ward,room,bed,epis,spec,cnt)) q:cnt=""  s tests=^(cnt) d
+ ......i $d(PLIST) d
+ .......s xxx(2)=$p(PLIST(44),$c(1))
+ .......s xxx(3)=$p(PLIST(60),$c(1))
+ .......s xxx(4)=$p(PLIST(20),$c(1)) i '$l(xxx(4)) s xxx(4)=$p(PLIST(30),$c(1))
+ .......s xxx(5)=$$NameFormat^LVBCOM03("PT","",PLIST(4),PLIST(3),PLIST(99),PLIST(100),PLIST(101))
+ .......s xxx(6)=$p(PLIST(52),$c(1))
+ ......s (test,testsSyn)="" f j=1:1:$l(tests,",") s test=$p(tests,",",j) d
+ ....... ;---s syn="" &SQL(SELECT CTTS_Synonym INTO :syn FROM CT_TestSet WHERE CTTS_RowID=:test)
+  ....... ;--- ** SQL PUBLIC Variables: SQLCODE, syn, test
+ .......s syn="" Do %0Ao
+ .......s syn=$p(syn,$c(1)) i $l(syn) s testsSyn=testsSyn_$s($l(testsSyn):",",1:"")_syn
+ ......s xxx(7)=spec,xxx(8)=testsSyn
+ ......d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+ .d LN,ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ d LN
+ s report="CLA",EndLine=""
+  ;---&SQL(SELECT CTCLR_EndOfReport INTO :EndLine FROM CT_ClientsReports WHERE CTCLR_RowID=:report)
+   ;--- ** SQL PUBLIC Variables: EndLine, SQLCODE, report
+ Do %0Co
+ i $p(EndLine,$c(1))="Y" d PRINTEND^PRTREP00(xLINE(1))
+ q
+ ; add line to report
+LN d ADD^PRTREP00(REPID,"PRT","!")
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(test)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(12)=$g(^TTAB("TS",%mmmsqld(3)))
+ s syn=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("TS",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(17)=$g(^TTAB("TS",%mmmsqld(3)))
+ s syn=$p(%mmmsqld(17),"\",2)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(report)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("REPORT-GENERIC",%mmmsqld(3)))
+ e  g %0CBdun
+ s %mmmsqld(12)=$g(^TTAB("REPORT-GENERIC",%mmmsqld(3)))
+ s EndLine=$p(%mmmsqld(12),"\",6)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TTAB("REPORT-GENERIC",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("REPORT-GENERIC",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_ClientsReports for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("REPORT-GENERIC",%mmmsqld(3)))
+ e  g %0CCdun
+ s %mmmsqld(17)=$g(^TTAB("REPORT-GENERIC",%mmmsqld(3)))
+ s EndLine=$p(%mmmsqld(17),"\",6)
+%0CBuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+]]></Routine>
+</Export>

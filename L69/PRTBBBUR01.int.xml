@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTBBBUR01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTBBBUR01 ; ML 12/4/99 ; BLOOD USAGE REPORT
+ q
+ ; Parameters :  1. Site
+ ;               2. Date From
+ ;               3. Date To
+ ;               4. List of Products
+ ;               5. Sorting order : D-Requesting Doctor
+ ;                                  L-Patient Location
+ ;               6. Product Group
+ ;               7. Summary only
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Blood Usage Report"
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="Site : "_$s('$l(PAR1):"All Sites",1:CTUSL(3))
+ s line=4,xHEADER(line)=""
+ i $l(PAR4) d
+ .s line=line+1,xHEADER(line)="for product <"_PAR4_"> "
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR6) d
+ .s line=line+1,xHEADER(line)="for product group <"_PAR6_"> "_BBPG(3)
+ .s line=line+1,xHEADER(line)=""
+ i PAR7="Y" d
+ .s line=line+1,xHEADER(line)="Summary only"
+ .s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,PAR2,PAR3,,,PAR5),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ s xSORT("D")="Requesting Doctor"
+ s xSORT("L")="Patient Location"
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ i $l(PAR1),'$$select^LVBCTUSL(PAR1,"Y") m CTUSL=PLIST
+ i $l(PAR6),'$$select^LVBBBPG(PAR6,"Y") m BBPG=PLIST
+ q
+BODY ; create temporary printing file
+ ; find all XM transactions
+ k XMtran i '$$getall^LVBBBTR(4,,"ANY") m XMtran=PLIST
+ ; find transfusion transaction
+ i $$getall^LVBBBTR()
+ f j=1:1:PLIST i $p($p(PLIST(j),$c(2),4),$c(28),5)="Y" s XMtran(0_" "_$e(1000+j,2,4))=$p($p(PLIST(j),$c(2),4),$c(28),2)
+ s date=PAR2-1 f  s date=$o(^TBBPi("TR-Date",date)) q:date=""  q:date>PAR3  d
+ .s xx0="" f  s xx0=$o(XMtran(xx0)) q:xx0=""  s tran=$p(XMtran(xx0),$c(2)) d
+ ..s xx1="" f  s xx1=$o(^TBBPi("TR-Date",date,tran,xx1)) q:xx1=""  d
+ ...s xx2="" f  s xx2=$o(^TBBPi("TR-Date",date,tran,xx1,xx2)) q:xx2=""  d
+ ....k PACK i '$$select^LVBBBP(xx1_"||"_xx2) m PACK=PLIST
+ .... ; check current location
+ ....i $l(PAR1),PAR1'=$p(PACK(11),$c(1),4) q
+ .... ; check product
+ ....i $l(PAR4),(","_PAR4_",")'[(","_$p(PACK(8),$c(1),1)_",") q
+ ....i $l(PAR6),PAR6'=$p(PACK(8),$c(1),4) q
+ ....s xx3="" f  s xx3=$o(^TBBPi("TR-Date",date,tran,xx1,xx2,xx3),-1) q:xx3=""  d
+ .....k PACKtr i '$$select^LVBBBPT(xx1_"||"_xx2_"||"_xx3) m PACKtr=PLIST
+ ..... ; check if transaction is active
+ .....i PACKtr(13)="Y" q
+ ..... ; check if transaction is XM transaction
+ .....i xx0,$l(PACKtr(9)) d
+ ......s vtsRID=PACKtr(9)
+ ......k VISTE i '$$select^LVBVISTE(vtsRID_"||"_xx1_"||"_xx2) m VISTE=PLIST
+ ...... ; check if phases had been entered
+ ......s ok=0
+ ......i $g(VISTE(15))="Y" s ok=1
+ ......i 'ok f j=1:1:$l($g(VISTE(6)),",") i $l($p($g(VISTE(6)),",",j)) s ok=1 q
+ ......i 'ok q
+ ......k EPVIS i '$$select^LVBEPVIS($p(vtsRID,"||"),"Y") m EPVIS=PLIST
+ ......s sort="" i $l(PAR5) d
+ .......i PAR5="D" s sort=EPVIS(15)
+ .......i PAR5="L" s sort=EPVIS(22)
+ ......s site=$p(PACK(11),$c(1),4),prod=$p(PACK(8),$c(1)),group=$p(PACK(8),$c(1),4)
+ ......s:site="" site=" " s:sort="" sort=" " s:prod="" prod=" " s:group="" group=" "
+ ......i $d(^TMP($zn,$j," ",1,site,sort,group,prod,vtsRID,vtsRID_"||"_xx1_"||"_xx2)) q
+ ......s ^TMP($zn,$j," ",1,site,sort,group,prod,vtsRID,vtsRID_"||"_xx1_"||"_xx2)=1
+ ......s ^TMP($zn,$j," ",1,site,sort,group,prod,vtsRID)=$g(^TMP($zn,$j," ",1,site,sort,group,prod,vtsRID))+1
+ ..... ; check if transaction is transfuse transaction
+ .....i 'xx0,$l(PACKtr(9)) d
+ ......s epis=$p(PACKtr(9),"||"),vtsRID=PACKtr(9)
+ ......i '$l(epis) s epis=$$seldata^LVBDEB(PACKtr(8),4)
+ ......k EPVIS i '$$select^LVBEPVIS(epis,"Y") m EPVIS=PLIST d
+ .......s sort="" i $l(PAR5) d
+ ........i PAR5="D" s sort=EPVIS(15)
+ ........i PAR5="L" s sort=EPVIS(22)
+ .......s site=$p(PACK(11),$c(1),4),prod=$p(PACK(8),$c(1)),group=$p(PACK(8),$c(1),4)
+ .......s:site="" site=" " s:sort="" sort=" " s:prod="" prod=" " s:group="" group=" "
+ .......s ^TMP($zn,$j," ",3,site,sort,group,prod,vtsRID)=$g(^TMP($zn,$j," ",3,site,sort,group,prod,vtsRID))+1
+ s x0="" f  s x0=$o(^TMP($zn,$j," ",x0)) q:x0=""  d
+ .s x1="" f  s x1=$o(^TMP($zn,$j," ",x0,x1)) q:x1=""  d
+ ..s x2="" f  s x2=$o(^TMP($zn,$j," ",x0,x1,x2)) q:x2=""  d
+ ...s x3="" f  s x3=$o(^TMP($zn,$j," ",x0,x1,x2,x3)) q:x3=""  d
+ ....s x4="" f  s x4=$o(^TMP($zn,$j," ",x0,x1,x2,x3,x4)) q:x4=""  d
+ .....s x5="" f cnt=0:1 s x5=$o(^TMP($zn,$j," ",x0,x1,x2,x3,x4,x5)) q:x5=""  d
+ ......s $p(^TMP($zn,$j,"REPORT"," ",x1,x2,x3,x4),"\",x0+1)=$p($g(^TMP($zn,$j,"REPORT"," ",x1,x2,x3,x4)),"\",x0+1)+^TMP($zn,$j," ",x0,x1,x2,x3,x4,x5)
+ ......s $p(^TMP($zn,$j,"REPORT"," ",x1,x2,x3),"\",x0+1)=$p($g(^TMP($zn,$j,"REPORT"," ",x1,x2,x3)),"\",x0+1)+^TMP($zn,$j," ",x0,x1,x2,x3,x4,x5)
+ ......s $p(^TMP($zn,$j,"REPORT"," ",x1,x2),"\",x0+1)=$p($g(^TMP($zn,$j,"REPORT"," ",x1,x2)),"\",x0+1)+^TMP($zn,$j," ",x0,x1,x2,x3,x4,x5)
+ ......s $p(^TMP($zn,$j,"REPORT"," ",x1),"\",x0+1)=$p($g(^TMP($zn,$j,"REPORT"," ",x1)),"\",x0+1)+^TMP($zn,$j," ",x0,x1,x2,x3,x4,x5)
+ ......s $p(^TMP($zn,$j,"REPORT"),"\",x0+1)=$p($g(^TMP($zn,$j,"REPORT")),"\",x0+1)+^TMP($zn,$j," ",x0,x1,x2,x3,x4,x5)
+ ......s $p(^TMP($zn,$j,"REPORT",x3),"\",x0+1)=$p($g(^TMP($zn,$j,"REPORT",x3)),"\",x0+1)+^TMP($zn,$j," ",x0,x1,x2,x3,x4,x5)
+ .....s $p(^TMP($zn,$j,"REPORT"," ",x1,x2,x3,x4),"\",x0)=cnt
+ .....s $p(^TMP($zn,$j,"REPORT"," ",x1,x2,x3),"\",x0)=$p($g(^TMP($zn,$j,"REPORT"," ",x1,x2,x3)),"\",x0)+cnt
+ .....s $p(^TMP($zn,$j,"REPORT"," ",x1,x2),"\",x0)=$p($g(^TMP($zn,$j,"REPORT"," ",x1,x2)),"\",x0)+cnt
+ .....s $p(^TMP($zn,$j,"REPORT"," ",x1),"\",x0)=$p($g(^TMP($zn,$j,"REPORT"," ",x1)),"\",x0)+cnt
+ .....s $p(^TMP($zn,$j,"REPORT"),"\",x0)=$p($g(^TMP($zn,$j,"REPORT")),"\",x0)+cnt
+ .....s $p(^TMP($zn,$j,"REPORT",x3),"\",x0)=$p($g(^TMP($zn,$j,"REPORT",x3)),"\",x0)+cnt
+ .....s $p(^TMP($zn,$j,"REPORT",x3,x4),"\",x0)=$p($g(^TMP($zn,$j,"REPORT",x3,x4)),"\",x0)+cnt
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s (ig1,ig10)=""
+ .s site="" f  s site=$o(^TMP($zn,$j,"REPORT"," ",site)) q:site=""  d
+ ..s (ig1,xxx(1))=site i '$$select^LVBCTUSL(site,"Y") s (ig1,xxx(1))=PLIST(2)_$c(1)_PLIST(3)
+ ..s sort="" f  s sort=$o(^TMP($zn,$j,"REPORT"," ",site,sort)) q:sort=""  d
+ ...i sort'=" " d
+ ....i PAR5="D",'$$select^LVBCTDR(sort,"Y") s (ig10,xxx(10))=PLIST(2)_$c(1)_$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3))
+ ....i PAR5="L",'$$select^LVBCTHOS(sort,"Y") s (ig10,xxx(10))=PLIST(2)_$c(1)_PLIST(3)
+ ...s group="" f  s group=$o(^TMP($zn,$j,"REPORT"," ",site,sort,group)) q:group=""  d
+ ....i '$$select^LVBBBPG(group,"Y") d
+ .....d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .....d ADDLINE^PRTREP00(REPID,"PRT",PLIST(2)_"   "_PLIST(3))
+ .....d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ....s prod="" f  s prod=$o(^TMP($zn,$j,"REPORT"," ",site,sort,group,prod)) q:prod=""  d
+ .....i '$$select^LVBBBBP(prod,"Y") s xxx(2)=PLIST(2)_$c(1)_PLIST(3)
+ .....s xxx(3)=$p(^TMP($zn,$j,"REPORT"," ",site,sort,group,prod),"\",1)
+ .....s xxx(4)=$p(^TMP($zn,$j,"REPORT"," ",site,sort,group,prod),"\",3)
+ .....s xxx(5)=$p(^TMP($zn,$j,"REPORT"," ",site,sort,group,prod),"\",2)
+ .....s xxx(6)=$p(^TMP($zn,$j,"REPORT"," ",site,sort,group,prod),"\",4)
+ .....i xxx(3) s xxx(7)=xxx(5)/xxx(3)
+ .....i xxx(4) s xxx(8)=xxx(6)/xxx(4)
+ .....i xxx(6) s xxx(9)=xxx(5)/xxx(6)
+ .....d:PAR7'="Y" PRINT^PRTREP00(,.N) k xxx
+ ....i PAR7="Y" s xxx(1)=ig1,xxx(10)=ig10
+ ....s xxx(2)="for Group"
+ ....s xxx(3)=$p(^TMP($zn,$j,"REPORT"," ",site,sort,group),"\",1)
+ ....s xxx(4)=$p(^TMP($zn,$j,"REPORT"," ",site,sort,group),"\",3)
+ ....s xxx(5)=$p(^TMP($zn,$j,"REPORT"," ",site,sort,group),"\",2)
+ ....s xxx(6)=$p(^TMP($zn,$j,"REPORT"," ",site,sort,group),"\",4)
+ ....i xxx(3) s xxx(7)=xxx(5)/xxx(3)
+ ....i xxx(4) s xxx(8)=xxx(6)/xxx(4)
+ ....i xxx(6) s xxx(9)=xxx(5)/xxx(6)
+ ....d PRINT^PRTREP00(,.N) k xxx
+ ....d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ....d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ ....d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...i PAR7="Y" s xxx(1)=ig1,xxx(10)=ig10
+ ...s xxx(2)="Total"
+ ...s xxx(3)=$p(^TMP($zn,$j,"REPORT"," ",site,sort),"\",1)
+ ...s xxx(4)=$p(^TMP($zn,$j,"REPORT"," ",site,sort),"\",3)
+ ...s xxx(5)=$p(^TMP($zn,$j,"REPORT"," ",site,sort),"\",2)
+ ...s xxx(6)=$p(^TMP($zn,$j,"REPORT"," ",site,sort),"\",4)
+ ...i xxx(3) s xxx(7)=xxx(5)/xxx(3)
+ ...i xxx(4) s xxx(8)=xxx(6)/xxx(4)
+ ...i xxx(6) s xxx(9)=xxx(5)/xxx(6)
+ ...d PRINT^PRTREP00(,.N) k xxx
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..i PAR7="Y" s xxx(1)=ig1
+ ..s xxx(10)="Total"
+ ..s xxx(3)=$p(^TMP($zn,$j,"REPORT"," ",site),"\",1)
+ ..s xxx(4)=$p(^TMP($zn,$j,"REPORT"," ",site),"\",3)
+ ..s xxx(5)=$p(^TMP($zn,$j,"REPORT"," ",site),"\",2)
+ ..s xxx(6)=$p(^TMP($zn,$j,"REPORT"," ",site),"\",4)
+ ..i xxx(3) s xxx(7)=xxx(5)/xxx(3)
+ ..i xxx(4) s xxx(8)=xxx(6)/xxx(4)
+ ..i xxx(6) s xxx(9)=xxx(5)/xxx(6)
+ ..d PRINT^PRTREP00(,.N) k xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .s xxx(1)="Total"
+ .s xxx(3)=$p(^TMP($zn,$j,"REPORT"),"\",1)
+ .s xxx(4)=$p(^TMP($zn,$j,"REPORT"),"\",3)
+ .s xxx(5)=$p(^TMP($zn,$j,"REPORT"),"\",2)
+ .s xxx(6)=$p(^TMP($zn,$j,"REPORT"),"\",4)
+ .i xxx(3) s xxx(7)=xxx(5)/xxx(3)
+ .i xxx(4) s xxx(8)=xxx(6)/xxx(4)
+ .i xxx(6) s xxx(9)=xxx(5)/xxx(6)
+ .d PRINT^PRTREP00(,.N) k xxx
+ .s prod="" f  s prod=$o(^TMP($zn,$j,"REPORT",prod)) q:prod=""  i prod'=" " d
+ ..i '$$select^LVBBBBP(prod,"Y") s xxx(2)=PLIST(2)_$c(1)_PLIST(3)
+ ..s xxx(3)=$p(^TMP($zn,$j,"REPORT",prod),"\",1)
+ ..s xxx(4)=$p(^TMP($zn,$j,"REPORT",prod),"\",3)
+ ..s xxx(5)=$p(^TMP($zn,$j,"REPORT",prod),"\",2)
+ ..s xxx(6)=$p(^TMP($zn,$j,"REPORT",prod),"\",4)
+ ..i xxx(3) s xxx(7)=xxx(5)/xxx(3)
+ ..i xxx(4) s xxx(8)=xxx(6)/xxx(4)
+ ..i xxx(6) s xxx(9)=xxx(5)/xxx(6)
+ ..d PRINT^PRTREP00(,.N) k xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="BBBUR"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

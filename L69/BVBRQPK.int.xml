@@ -1,0 +1,362 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="BVBRQPK" type="INT" languagemode="0"><![CDATA[
+BVBRQPK ; IG 4/12/98 ; MVB Control data access for BB_RequestPacks   ; Compiled May 22, 2000 13:25:03 for Cache for Windows
+ ; 
+ ; supported calls: 
+ ; 
+ ; $$open^BVBRQPK(parentID,trans,site,yn,p4,p5,p6,p7,p8,p9) 
+ ; $$fetch^BVBRQPK(parentID,trans,site,yn,p4,p5,p6,p7,p8,p9) 
+ ; $$fetchbuffer^BVBRQPK(parentID,trans,site,yn,p4,p5,p6,p7,p8,p9) 
+ ; $$fetchall^BVBRQPK(parentID,trans,site,yn,p4,p5,p6,p7,p8,p9) 
+ ; $$close^BVBRQPK() 
+ ; 
+ ; $$select^BVBRQPK(RowID) 
+ ; $$insert^BVBRQPK(parentID) 
+ ; $$update^BVBRQPK(RowID) 
+ ; $$delete^BVBRQPK(RowID) 
+ ; 
+ ; 
+open(parentID,trans,site,yn,p4,p5,p6,p7,p8,p9) 
+ s site=$g(site),trans=$g(trans),yn=$g(yn)
+ i yn'="Y" d %RQPK10o 
+ i yn="Y" d %RQPK20o 
+ q 0 
+ ; 
+fetch(parentID,trans,site,yn,p4,p5,p6,p7,p8,p9)       n j 
+ s site=$g(site),trans=$g(trans),yn=$g(yn)
+ K PLIST 
+nx ;
+ i yn'="Y" d %0Go 
+ i yn="Y" d %0Ho 
+ ;validate transaction dr
+ i 'SQLCODE,$g(trans),$$val(PLIST(3),trans) g nx         
+ s PLIST=$o(PLIST(""),-1) 
+ i 'SQLCODE d adjust 
+ q SQLCODE 
+ ; Fetch all data
+fetchbuffer(parentID,trans,site,yn,p4,p5,p6,p7,p8,p9) k ^TMP($zn,$j)
+ s site=$g(site),trans=$g(trans),yn=$g(yn)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100)
+ f xxx=1:1:max s SQLCODE=$$fetch(parentID,trans,site,yn) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(parentID,trans,site,yn,p4,p5,p6,p7,p8,p9) N (parentID,trans,site,yn,PLIST) K ^TMP($zn,$j)
+ s site=$g(site),trans=$g(trans),yn=$g(yn)
+ i $$open(parentID,trans,site,yn)
+ f cnt=1:1 Q:$$fetch(parentID,trans,site,yn)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ; 
+close() d %RQPK10c 
+ d %RQPK20c 
+ q 0 
+ ; 
+select(RowID) k PLIST s RowID=$g(RowID)
+ d %0Ko 
+ s PLIST=$o(PLIST(""),-1) 
+ i 'SQLCODE d adjust 
+ q SQLCODE 
+ ; 
+insert(parentID) s PLIST(0)=parentID,PLIST(1)="" K PLIST(2) 
+ d %0Lo 
+ I 'SQLCODE q $$select(%ROWID) 
+ q SQLCODE 
+ ; 
+ ; 
+update(RowID) s RowID=$g(RowID)
+ d %0Mo 
+ q SQLCODE 
+ ; 
+ ; 
+delete(RowID) s RowID=$g(RowID)
+ d %0No 
+ q SQLCODE 
+ ; 
+ ; Adjust certain fields 
+adjust N J F J=1:1:PLIST I $D(PLIST(J)) S PLIST(J)=$P(PLIST(J),$C(1))
+ n plist,SQLCODE
+ ;
+ I $G(PLIST(3))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^BVBPACK1(plist(3))
+ .S X="" I 'SQLCODE S X=$p(PLIST(1),$c(1))_$C(1)_PLIST(2)_$c(1)_$p($g(^CT("PR",+PLIST(8))),"^",2)_$c(1)_$p($g(^CT("BG",+PLIST(10))),"^",1)_$c(1)_$p(PLIST(18),$c(1))
+ .K PLIST M PLIST=plist S PLIST(3)=X K plist
+ ;
+ q
+val(pack,trans) ;check if pack status is valid for transaction
+ ;0-valid,1-invalid
+ n (pack,trans)
+ q:'pack 0
+ q:'trans 0
+ s stat=$p($g(^BB("PK",+pack)),"^",4)
+ s found=0,st=0 f  s st=$o(^CT("TRANS",+trans,"ST",st)) q:st=""  q:found  s s=^(st) d
+ .q:s-stat
+ .s found=1
+ q 'found
+ ; PLIST(1) : E-no packs
+ ;            Y-all have transaction
+ ;            N-not all have transaction
+ ; flag     : N-do not check for an episode
+reqtran(req,tran,flag,packrow) n (packrow,req,tran,flag,PLIST) s req=$g(req),tran=$g(tran),flag=$g(flag),packrow=$g(packrow)
+ s result="E",epis=""
+ d %0Oo
+ i $l(epis) d
+ .i $$open(req)
+ .f  q:$$fetch(req)  s result="Y" d  q:result="N"
+ ..s pack=$P(PLIST(3),$C(1)) i packrow,pack-packrow q
+ ..i $$open^BVBPKTRN(pack,"",tran)
+ ..s result="N" f  q:$$fetch^BVBPKTRN(pack,"",tran)  d  i result="Y" q
+ ...i flag="N" s result="Y" q
+ ...i $p(PLIST(11),$c(1))=epis s result="Y"
+ ..i $$close^BVBPKTRN()
+ .i $$close()
+ K PLIST s PLIST(1)=$g(result)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+getreq(epis,pack) ;get last transaction for pack and request rowid
+ n (epis,pack,PLIST)
+ k PLIST s PLIST=""
+ q:epis="" 0
+ s found="",req="" f  s req=$o(^BB("RQ",0,"Lab",epis,req)) q:req=""  q:found  d
+ .s pk=0 f  s pk=$o(^BB("RQ",req,"PK",pk)) q:pk=""  q:found  s s=^(pk) d
+ ..s pack1=$p(s,"^") q:pack1-pack
+ ..s found=req
+ s stat=""
+ s trn="" f  s trn=$o(^BB("PK",+pack,"TRANS",trn),-1) q:'trn  q:$l(stat)  s s=^(trn) d
+ .s trans=$p(s,"^",4),trans1=$p($g(^CT("TRANS",+trans)),"^")
+ .i trans1="X" s stat="XM"
+ .i trans1="DI" s stat="DI"
+ k PLIST s PLIST(1)=found,PLIST(2)=stat
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ q
+%0AAr1 s %val=$s("Yy"[$e(%val):"Y","Nn"[$e(%val):"N",1:"") s:%val="" %ok=0
+ q  
+%0ABs1 s %val=$s(%val'=+%val:"",1:$fn(%val,"")) q
+%0ABs2 s %val=$p("Compatible|Not Compatible","|",$l($p("|C|N|","|"_%val_"|"),"|")) q
+%0ABs3 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,1,-1,2) q
+%0ABs4 s %val=$$timeext^%qarzdt(%val,1) q
+%0ABs5 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%RQPK10o s SQLCODE=$s($g(%RQPK10c):-101,1:0) q:SQLCODE'=0
+ s %RQPK10c=1 k %RQPK10m
+ s %RQPK10E=$zt,%RQPK10f=0,%RQPK10e=0,%RQPK10L=""
+ s %RQPK10d(2)=$P(parentID,$C(1)),%RQPK10d(4)=$P(site,$C(1)),%RQPK10d(5)=$P(site,$C(1))
+ s:%RQPK10d(2)="" %RQPK10d(2)=$E(parentID,2,999)
+ s:%RQPK10d(4)="" %RQPK10d(4)=$E(site,2,999)
+ s %val="Y" d %0AAr1 s %RQPK10d(7)=%val
+ q
+%0Afirst   ;  init
+ ; asl MOD# 2
+ s %RQPK10d(1)=$g(%RQPK10d(2))
+ i %RQPK10d(1)="" g %0ABdun
+ s $P(%RQPK10d(10),$C(1))=""
+%0ABk1 s $P(%RQPK10d(10),$C(1))=$o(^BB("RQ",%RQPK10d(1),"PK",$P(%RQPK10d(10),$C(1))))
+ i $P(%RQPK10d(10),$C(1))="" g %0ABdun
+ i 1>$P(%RQPK10d(10),$C(1)),$P(%RQPK10d(10),$C(1))=+$P(%RQPK10d(10),$C(1)) g %0ABk1
+ i $P(%RQPK10d(10),$C(1))'=+$P(%RQPK10d(10),$C(1)) g %0ABdun
+ s %RQPK10n=$g(^BB("RQ",%RQPK10d(1),"PK",$P(%RQPK10d(10),$C(1))))
+ s %RQPK10d(6)=$p(%RQPK10n,"^",9)
+ g:'(($P(%RQPK10d(6),$C(1)))'=(%RQPK10d(7))) %0ABk1
+ s %RQPK10d(11)=$p(%RQPK10n,"^",1) s %RQPK10d(12)=$p(%RQPK10n,"^",2) s %RQPK10d(13)=$p(%RQPK10n,"^",3) s %RQPK10d(14)=$p(%RQPK10n,"^",4) s %RQPK10d(15)=$p(%RQPK10n,"^",5) s %RQPK10d(16)=$p(%RQPK10n,"^",6) s %RQPK10d(17)=$p(%RQPK10n,"^",7) s %RQPK10d(18)=$p(%RQPK10n,"^",8)
+ s %RQPK10d(9)=(%RQPK10d(1))_"||"_($P(%RQPK10d(10),$C(1)))
+ s %val=$P(%RQPK10d(10),$C(1)) d %0ABs1:%val'="" s $P(%RQPK10d(10),$C(1),2)=%val
+ s %val=$P(%RQPK10d(15),$C(1)) d %0ABs2:%val'="" s $P(%RQPK10d(15),$C(1),2)=%val
+ s %val=$P(%RQPK10d(16),$C(1)) d %0ABs3:%val'="" s $P(%RQPK10d(16),$C(1),2)=%val
+ s %val=$P(%RQPK10d(17),$C(1)) d %0ABs4:%val'="" s $P(%RQPK10d(17),$C(1),2)=%val
+ s %val=$P(%RQPK10d(6),$C(1)) d %0ABs5:%val'="" s $P(%RQPK10d(6),$C(1),2)=%val
+ s %RQPK10d(21)=$g(%RQPK10d(11))
+ i %RQPK10d(21)'="",$d(^BB("PK",%RQPK10d(21)))
+ i '$t
+ e  i 1>%RQPK10d(21),%RQPK10d(21)=+%RQPK10d(21)
+ i  s (%RQPK10d(19),%RQPK10d(21))="" g %0ABp2
+ s %RQPK10n=$g(^BB("PK",%RQPK10d(21)))
+ s %RQPK10d(19)=$p(%RQPK10n,"^",10)
+%0ABp2 
+ s %RQPK10d(20)=$g(%RQPK10d(19))
+ i %RQPK10d(20)'="",$d(^CT("LO",%RQPK10d(20)))
+ i '$t
+ e  i 1>%RQPK10d(20),%RQPK10d(20)=+%RQPK10d(20)
+ i  s (%RQPK10d(20),%RQPK10d(3))="" g %0ABp3
+ s %RQPK10n=$g(^CT("LO",%RQPK10d(20)))
+ s %RQPK10d(3)=$p(%RQPK10n,"^",3)
+%0ABp3 
+ g:'(((%RQPK10d(3))=(%RQPK10d(4)))!(%RQPK10d(5)="")) %0ABk1
+ s SQLCODE=0 s:SQLCODE=0 %RQPK10f=%RQPK10f+1 s %RQPK10c=10 q
+%RQPK10f i '$g(%RQPK10c) s SQLCODE=-102 q
+ i %RQPK10c=100 s SQLCODE=100 q
+ s $zt="%0Aerr^"_$zn s $ze="" n %val g %0Afirst:%RQPK10c=1
+ g %0ABk1
+%0ABdun 
+%0AAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %RQPK10c=100 q
+%RQPK10c i '$g(%RQPK10c) s SQLCODE=-102 q
+ k %RQPK10c,%RQPK10d,%RQPK10e,%RQPK10E,%RQPK10f,%RQPK10l,%RQPK10L,%RQPK10n,%RQPK10r,%RQPK10R s SQLCODE=0 q
+%0Aerr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%RQPK10E),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%RQPK20o s SQLCODE=$s($g(%RQPK20c):-101,1:0) q:SQLCODE'=0
+ s %RQPK20c=1 k %RQPK20m
+ s %RQPK20E=$zt,%RQPK20f=0,%RQPK20e=0,%RQPK20L=""
+ s %RQPK20d(2)=$P(parentID,$C(1)),%RQPK20d(4)=$P(site,$C(1)),%RQPK20d(5)=$P(site,$C(1))
+ s:%RQPK20d(2)="" %RQPK20d(2)=$E(parentID,2,999)
+ s:%RQPK20d(4)="" %RQPK20d(4)=$E(site,2,999)
+ q
+%0Dfirst   ;  init
+ ; asl MOD# 2
+ s %RQPK20d(1)=$g(%RQPK20d(2))
+ i %RQPK20d(1)="" g %0DBdun
+ s $P(%RQPK20d(8),$C(1))=""
+%0DBk1 s $P(%RQPK20d(8),$C(1))=$o(^BB("RQ",%RQPK20d(1),"PK",$P(%RQPK20d(8),$C(1))))
+ i $P(%RQPK20d(8),$C(1))="" g %0DBdun
+ i 1>$P(%RQPK20d(8),$C(1)),$P(%RQPK20d(8),$C(1))=+$P(%RQPK20d(8),$C(1)) g %0DBk1
+ i $P(%RQPK20d(8),$C(1))'=+$P(%RQPK20d(8),$C(1)) g %0DBdun
+ s %RQPK20n=$g(^BB("RQ",%RQPK20d(1),"PK",$P(%RQPK20d(8),$C(1))))
+ s %RQPK20d(9)=$p(%RQPK20n,"^",1) s %RQPK20d(10)=$p(%RQPK20n,"^",2) s %RQPK20d(11)=$p(%RQPK20n,"^",3) s %RQPK20d(12)=$p(%RQPK20n,"^",4) s %RQPK20d(13)=$p(%RQPK20n,"^",5) s %RQPK20d(14)=$p(%RQPK20n,"^",6) s %RQPK20d(15)=$p(%RQPK20n,"^",7) s %RQPK20d(16)=$p(%RQPK20n,"^",8) s %RQPK20d(17)=$p(%RQPK20n,"^",9)
+ s %RQPK20d(7)=(%RQPK20d(1))_"||"_($P(%RQPK20d(8),$C(1)))
+ s %val=$P(%RQPK20d(8),$C(1)) d %0ABs1:%val'="" s $P(%RQPK20d(8),$C(1),2)=%val
+ s %val=$P(%RQPK20d(13),$C(1)) d %0ABs2:%val'="" s $P(%RQPK20d(13),$C(1),2)=%val
+ s %val=$P(%RQPK20d(14),$C(1)) d %0ABs3:%val'="" s $P(%RQPK20d(14),$C(1),2)=%val
+ s %val=$P(%RQPK20d(15),$C(1)) d %0ABs4:%val'="" s $P(%RQPK20d(15),$C(1),2)=%val
+ s %val=$P(%RQPK20d(17),$C(1)) d %0ABs5:%val'="" s $P(%RQPK20d(17),$C(1),2)=%val
+ s %RQPK20d(20)=$g(%RQPK20d(9))
+ i %RQPK20d(20)'="",$d(^BB("PK",%RQPK20d(20)))
+ i '$t
+ e  i 1>%RQPK20d(20),%RQPK20d(20)=+%RQPK20d(20)
+ i  s (%RQPK20d(18),%RQPK20d(20))="" g %0DBp1
+ s %RQPK20n=$g(^BB("PK",%RQPK20d(20)))
+ s %RQPK20d(18)=$p(%RQPK20n,"^",10)
+%0DBp1 
+ s %RQPK20d(19)=$g(%RQPK20d(18))
+ i %RQPK20d(19)'="",$d(^CT("LO",%RQPK20d(19)))
+ i '$t
+ e  i 1>%RQPK20d(19),%RQPK20d(19)=+%RQPK20d(19)
+ i  s (%RQPK20d(19),%RQPK20d(3))="" g %0DBp2
+ s %RQPK20n=$g(^CT("LO",%RQPK20d(19)))
+ s %RQPK20d(3)=$p(%RQPK20n,"^",3)
+%0DBp2 
+ g:'(((%RQPK20d(3))=(%RQPK20d(4)))!(%RQPK20d(5)="")) %0DBk1
+ s SQLCODE=0 s:SQLCODE=0 %RQPK20f=%RQPK20f+1 s %RQPK20c=10 q
+%RQPK20f i '$g(%RQPK20c) s SQLCODE=-102 q
+ i %RQPK20c=100 s SQLCODE=100 q
+ s $zt="%0Derr^"_$zn s $ze="" n %val g %0Dfirst:%RQPK20c=1
+ g %0DBk1
+%0DBdun 
+%0DAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %RQPK20c=100 q
+%RQPK20c i '$g(%RQPK20c) s SQLCODE=-102 q
+ k %RQPK20c,%RQPK20d,%RQPK20e,%RQPK20E,%RQPK20f,%RQPK20l,%RQPK20L,%RQPK20n,%RQPK20r,%RQPK20R s SQLCODE=0 q
+%0Derr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%RQPK20E),SQLCODE=-20603,%msg=$ze s $ze="" g %0DAdun
+%0Go d %RQPK10f q:SQLCODE'=0
+ s PLIST(0)=%RQPK10d(1),PLIST(1)=%RQPK10d(9),PLIST(2)=%RQPK10d(10),PLIST(3)=%RQPK10d(11),PLIST(4)=%RQPK10d(12),PLIST(5)=%RQPK10d(13),PLIST(6)=%RQPK10d(14),PLIST(7)=%RQPK10d(15),PLIST(8)=%RQPK10d(16),PLIST(9)=%RQPK10d(17),PLIST(10)=%RQPK10d(18),PLIST(11)=%RQPK10d(6)
+ q
+%0Ho d %RQPK20f q:SQLCODE'=0
+ s PLIST(0)=%RQPK20d(1),PLIST(1)=%RQPK20d(7),PLIST(2)=%RQPK20d(8),PLIST(3)=%RQPK20d(9),PLIST(4)=%RQPK20d(10),PLIST(5)=%RQPK20d(11),PLIST(6)=%RQPK20d(12),PLIST(7)=%RQPK20d(13),PLIST(8)=%RQPK20d(14),PLIST(9)=%RQPK20d(15),PLIST(10)=%RQPK20d(16),PLIST(11)=%RQPK20d(17)
+ q
+%0Ko n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Kerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(3)=$P(RowID,$C(1))
+ s:%mmmsqld(3)="" %mmmsqld(3)=$E(RowID,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(16)=$p($g(%mmmsqld(3)),"||",1,1),$P(PLIST(2),$C(1))=$p($g(%mmmsqld(3)),"||",2,2)
+ s PLIST(1)=$g(%mmmsqld(3))
+ i %mmmsqld(16)'="",$P(PLIST(2),$C(1))'="",$d(^BB("RQ",%mmmsqld(16),"PK",$P(PLIST(2),$C(1))))
+ i '$t
+ e  i 1>$P(PLIST(2),$C(1)),$P(PLIST(2),$C(1))=+$P(PLIST(2),$C(1))
+ i  g %0KBdun
+ s %mmmsqln=$g(^BB("RQ",%mmmsqld(16),"PK",$P(PLIST(2),$C(1))))
+ s PLIST(3)=$p(%mmmsqln,"^",1) s PLIST(4)=$p(%mmmsqln,"^",2) s PLIST(5)=$p(%mmmsqln,"^",3) s PLIST(6)=$p(%mmmsqln,"^",4) s PLIST(7)=$p(%mmmsqln,"^",5) s PLIST(8)=$p(%mmmsqln,"^",6) s PLIST(9)=$p(%mmmsqln,"^",7) s PLIST(10)=$p(%mmmsqln,"^",8) s PLIST(11)=$p(%mmmsqln,"^",9)
+ s PLIST(0)=$p(PLIST(1),"||",1,1)
+ s %val=$P(PLIST(2),$C(1)) d %0ABs1:%val'="" s $P(PLIST(2),$C(1),2)=%val
+ s %val=$P(PLIST(7),$C(1)) d %0ABs2:%val'="" s $P(PLIST(7),$C(1),2)=%val
+ s %val=$P(PLIST(8),$C(1)) d %0ABs3:%val'="" s $P(PLIST(8),$C(1),2)=%val
+ s %val=$P(PLIST(9),$C(1)) d %0ABs4:%val'="" s $P(PLIST(9),$C(1),2)=%val
+ s %val=$P(PLIST(11),$C(1)) d %0ABs5:%val'="" s $P(PLIST(11),$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Kc
+%0KBdun 
+%0KAdun 
+%0Kc q
+%0Kerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0KAdun
+%0Lo n %insert,icol,ir
+ f icol=0:1:11 i $D(PLIST(icol)) s %insert(icol)=PLIST(icol) i $D(PLIST(icol,1)) f ir=1:1:PLIST(icol) s %insert(icol,ir)=PLIST(icol,ir)
+ d insert^mt2291("1")
+ q
+%0Mo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Merr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(3)=$P(RowID,$C(1))
+ s:%mmmsqld(3)="" %mmmsqld(3)=$E(RowID,2,999)
+ n %data,%edit,icol,ir
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(4)=$p($g(%mmmsqld(3)),"||",1,1),$P(%mmmsqld(5),$C(1))=$p($g(%mmmsqld(3)),"||",2,2)
+ s %mmmsqld(2)=$g(%mmmsqld(3))
+ i %mmmsqld(4)'="",$P(%mmmsqld(5),$C(1))'="",$d(^BB("RQ",%mmmsqld(4),"PK",$P(%mmmsqld(5),$C(1))))
+ i '$t
+ e  i 1>$P(%mmmsqld(5),$C(1)),$P(%mmmsqld(5),$C(1))=+$P(%mmmsqld(5),$C(1))
+ i  g %0MBdun
+ k %data,%edit
+ f icol=0:1:11 i $D(PLIST(icol)) s %data(icol)=PLIST(icol) i $D(PLIST(icol,1)) f ir=1:1:PLIST(icol) s %data(icol,ir)=PLIST(icol,ir)
+ d update^mt2291(%mmmsqld(2),"1",1)
+ q:SQLCODE<0
+ s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1
+%0MBdun 
+%0MAdun 
+ q
+%0Merr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0MAdun
+%0No n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Nerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(2)=$P(RowID,$C(1))
+ s:%mmmsqld(2)="" %mmmsqld(2)=$E(RowID,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=$p($g(%mmmsqld(2)),"||",1,1),$P(%mmmsqld(4),$C(1))=$p($g(%mmmsqld(2)),"||",2,2)
+ s %mmmsqld(1)=$g(%mmmsqld(2))
+ i %mmmsqld(3)'="",$P(%mmmsqld(4),$C(1))'="",$d(^BB("RQ",%mmmsqld(3),"PK",$P(%mmmsqld(4),$C(1))))
+ i '$t
+ e  i 1>$P(%mmmsqld(4),$C(1)),$P(%mmmsqld(4),$C(1))=+$P(%mmmsqld(4),$C(1))
+ i  g %0NBdun
+ d delete^mt2291(%mmmsqld(1),"1")
+ q:SQLCODE<0
+ s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1
+%0NBdun 
+%0NAdun 
+ q
+%0Nerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0NAdun
+%0OAr1 n num s num=$$numint^%qarzdt(%val,1,"","",1) s:(num="")&(%val'="") %ok=0 s %val=num
+ q  
+%0OBr1 s epis=$p($g(%mmmsqld(6)),"||",1) q
+%0Oo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Oerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(req,$C(1))
+ i %mmmsqld(4)="",$L(req)>1 s %val=$E(req,2,999) d %0OAr1 s %mmmsqld(4)=%val
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(3)'="",$d(^BB("RQ",%mmmsqld(3)))
+ i '$t
+ e  i 1>%mmmsqld(3),%mmmsqld(3)=+%mmmsqld(3)
+ i  g %0OBdun
+ s %mmmsqln=$g(^BB("RQ",%mmmsqld(3)))
+ s %mmmsqld(6)=$p(%mmmsqln,"^",8)
+ d %0OBr1
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Oc
+%0OBdun 
+%0OAdun 
+%0Oc q
+%0Oerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0OAdun
+]]></Routine>
+</Export>

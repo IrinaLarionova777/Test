@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBAT201" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBAT201 ; IG 24/07/96 ; Accounts EDI Transmit/Receive
+ ; supported calls :
+ ;
+ ; $$auto^LVBAT201(Type,PayCode,claim,cnt1,cnt2)
+ ; $$claim^LVBAT201(Type,PayCode,InvoiceBatch)
+ ; $$trans^LVBAT201(Type)
+ ; $$getall^LVBAT201(Type)
+ ; $$receive^LVBAT201(Type,create,user)
+ ; $$Log^LVBAT201(Type,xx)
+ ;
+auto(Type,PayCode,claim,cnt1,cnt2) n (Type,PayCode,claim,cnt1,cnt2,PLIST) k ^TMP($zn,$j,"auto-1"),^TMP($zn,$j,"auto-2")
+ s Type=$g(Type),MVType=$p($g(PayCode),$c(1),2),PayCode=$p($g(PayCode),$c(1)),claim=$g(claim),cnt1=$g(cnt1),cnt2=$g(cnt2)
+ i $$open^LVBINVB("HIC",PayCode,MVType)
+ s jjCnt=0 f  q:$$fetch^LVBINVB("HIC",PayCode,MVType)  d  q:jjCnt=cnt1
+ .s rowid=PLIST(1) i '$$select^LVBINVB(rowid),'$l(PLIST(7)) d
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..s jjCnt=jjCnt+1,PLIST(7)=claim,claim=$e(claim)_$e(10000+$e(claim,2,5)+1,2,5)
+ ..i '$$update^LVBINVB(rowid) s x=$o(^TMP($zn,$j,"auto-1",""),-1)+1,^TMP($zn,$j,"auto-1",x)=rowid_"\"_PLIST(7)
+ i $$close^LVBINVB()
+ k ^TMP($zn,$j,"auto-0") m ^TMP($zn,$j,"auto-0")=^TMP($zn,$j,"auto-1")
+ f  q:'$d(^TMP($zn,$j,"auto-0"))  d
+ .s (jjCnt,x)="" f  s x=$o(^TMP($zn,$j,"auto-0",x)) q:x=""  d  q:jjCnt=cnt2
+ ..s xx=$p(^(x),"\") i $$claim(Type,$p(xx,"||",1),$p(xx,"||",2))
+ ..k ^TMP($zn,$j,"auto-0",x)
+ ..s jjCnt=jjCnt+1
+ .s x=$o(^TMP($zn,$j,"auto-2",""),-1)+1,^TMP($zn,$j,"auto-2",x)=$$trans(Type)
+ k PLIST
+ s j1="" f  s j1=$o(^TMP($zn,$j,"auto-1",j1)) q:j1=""  s j2=$o(PLIST(""),-1)+1,PLIST(j2)=^TMP($zn,$j,"auto-1",j1)
+ s j2=$o(PLIST(""),-1)+1,PLIST(j2)="***"
+ s j1="" f  s j1=$o(^TMP($zn,$j,"auto-2",j1)) q:j1=""  s j2=$o(PLIST(""),-1)+1,PLIST(j2)=^TMP($zn,$j,"auto-2",j1)
+ k ^TMP($zn,$j,"auto-1"),^TMP($zn,$j,"auto-2")
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+claim(Type,PayCode,InvoiceBatch) n (Type,PayCode,InvoiceBatch)
+ s Type=$g(Type),PayCode=$p($g(PayCode),$c(1)),InvoiceBatch=$g(InvoiceBatch)
+ i Type="HIC" d claim^LVBAT2HIC(PayCode,InvoiceBatch)
+ i Type="HBA" d claim^LVBAT2HBA(PayCode,InvoiceBatch)
+ q 0
+ ; CREATE CLAIM-FILE
+trans(Type) n (Type) s Type=$g(Type)
+ i Type="HIC" q $$trans^LVBAT2HIC()
+ i Type="HBA" q $$trans^LVBAT2HBA()
+ q ""
+ ; Log file for receiving EDI
+getall(Type,Continue) s Type=$g(Type),Continue=$g(Continue)
+ k PLIST s (sum,x)="" f j=1:1 s x=$o(^TMP("EDI",$j,"LOG",Type,x)) q:x=""  q:(sum+$l(^(x)))>15000  s PLIST(j)=^(x),sum=sum+$l(^(x)) k ^TMP("EDI",$j,"LOG",Type,x)
+ s PLIST=$o(PLIST(""),-1)
+ q $s($d(^TMP("EDI",$j,"LOG")):0,1:100)
+ ; Log file for receiving EDI
+receive(Type,create,user) s Type=$g(Type),create=$g(create),user=$g(user)
+ i Type="HIC" i $$start^LVBAT3HIC(Type,create,user)
+ i Type="HBA" i $$start^LVBAT3HBA(Type,create,user)
+ i Type="BPAY" d
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","AT1-1")),"\",1)
+ .i $l(%routine) x "i $$start^"_%routine_"("""_Type_""",,"""_user_""")"
+ i Type="VRP" d
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","AT1-1")),"\",1)
+ .i $l(%routine) x "i $$start^"_%routine_"("""_Type_""",,"""_user_""")"
+ i Type="EPV" i $$start^LVBAT3EPV(Type,create,user)
+ q ""
+Log(Type,xx) n (Type,xFILE,L,LL,ClaimID,xx) s Type=$g(Type),xx=$g(xx),xFILE=$g(xFILE),L=$g(L),LL=$g(LL)
+ i Type="HIC" d
+ .i xx=1 d  q
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="ERROR Reading TRANSMISSION FILE < "_xFILE_" > FROM HIC..."
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="Error code < 1 > - BILL STATEMENT HEADER RECORD INCORRECT..."
+ .i xx=2 d  q
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="ERROR Reading TRANSMISSION FILE < "_xFILE_" > FROM HIC..."
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="Error code < 2 > - BILL CLAIM STATEMENT RECORD INCORRECT..."
+ .i xx=3 d  q
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="ERROR Reading TRANSMISSION FILE < "_xFILE_" > FROM HIC..."
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="Error code < 3 > - BILL CLAIM EXCEPTION RECORD INCORRECT..."
+ .i xx=4 d  q
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="ERROR Reading TRANSMISSION FILE < "_xFILE_" > FROM HIC..."
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="Error code < 4 > - CLAIM < "_ClaimID_" > HAS NOT BEEN TRANSMITED..."
+ .i xx=5 d  q
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="ERROR Reading TRANSMISSION FILE < "_xFILE_" > FROM HIC..."
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="Error code < 5 > - CLAIM < "_ClaimID_" > LINE < "_L_"-"_LL_" > HAS NOT BEEN TRANSMITED..."
+ .i xx=6 d  q
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="ERROR Reading TRANSMISSION FILE < "_xFILE_" > FROM HIC..."
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="Error code < 6 > - CLAIM < "_ClaimID_" > HAS BEEN ALREADY PROCESSED..."
+ .i xx=10 d  q
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="ERROR Reading TRANSMISSION FILE < "_xFILE_" > FROM HIC..."
+ ..s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)="Error code < 10 > - TIMEOUT ERROR..."
+ .s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)=xx
+ i (Type="BPAY")!(Type="VRP")!(Type="EPV") d
+ .s x=$o(^TMP("EDI",$j,"LOG",Type,""),-1)+1,^TMP("EDI",$j,"LOG",Type,x)=xx
+ q
+]]></Routine>
+</Export>

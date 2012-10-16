@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF480ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF480ESP01(mi) ; AtheNA Multy-Lyte - ZEUS ASTM Protocol - Unidirectional
+                         ; 22/06/2005 KingDava
+                         ; Hospital Universitario La Paz - Madrid
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4)
+ s lf=$c(10),cr=$c(13),nak=$c(21),(result,epis)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 i $c(R)=enq d  q
+ .d trace^MIF000(mi,"ENQ","H<--M")
+ .d ACK
+ .f  r *R:10 q:$c(R)=eot  q:R=-1  d
+ ..i $c(R)'=stx d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=enq:"ENQ",$c(R)=nak:"NAK",$c(R)=eot:"EOT",1:R),"H<--M") q
+ ..s record=$$read^MIF000("",lf,,5) q:'$l(record)
+ ..s record=$e(record,1,$l(record)-1)
+ ..d trace^MIF000(mi,$tr(record,$c(13,3)," "),"H<--M")
+ .. ; check record validity
+ ..s chsum=$p(record,etx,2),chrecord=$p(record,etx,1)_etx
+ ..i $$CHSUM(chrecord)'=chsum d  q
+ ...w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+ ..d ACK
+ ..s record=$P(record,cr)
+ ..s (sample,epis,surname,result,date,time,QC)=""
+ ..i $e(record,2)="R" d RES        ; Entrega de Resultados
+ ..i $e(record,2)="O" d ORD        ; Order
+ .d trace^MIF000(mi,"EOT","H<--M")
+ .d ACK
+ q
+ORD ; order record
+ s epp=$p(record,"|",3)
+ q
+ ; Envio de Resultados ***************************************
+ ; Entrega de Resultados ****************************************
+RES 
+ s x1=$tr($p($p(record,"|",3),"^",4)," ")
+ s x2=$tr($p(record,"|",4)," ") 
+ s x3=$tr($p(record,"|",7)," ")
+ i $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ; Fecha y Hora **********************************************
+ s (date,time,QC)=""
+ i $l($tr($p(record,"|",13)," ")) d
+ .s date=$$intdate^SSUTIL4($e($p(record,"|",13),5,6)_"/"_$e($p(record,"|",13),7,8)_"/"_$e($p(record,"|",13),1,4))
+ .s time=($e($p(record,"|",13),9,10)*3600)+($e($p(record,"|",13),11,12)*60)
+ i $l(result) d file^MIF000(mi,sample,epp,surname,result,date,time,QC)
+ q
+Send ; send list of orders if exists
+ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M")
+ f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=enq:"ENQ",$c(R)=nak:"NAK",1:R),"H<--M")
+ i $c(R)=enq q
+ i $c(R)'=ack w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+ q:$$SEND("1H|\^&|||LABTRAK|||||||P|1")
+ s x="" f FRAME=2:1 s x=$O(^TMIF(mi,10,x)) q:x=""  q:$$SEND(FRAME#8_^TMIF(mi,10,x))
+ i x="" k ^TMIF(mi,10)
+ w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ q
+SEND(str) ; send string to instrument
+ s str=str_cr_etx,chsum=$$CHSUM(str)
+ w stx,str,chsum,cr,lf,*-3 d trace^MIF000(mi,str_chsum,"H-->M")
+ f j=1:1:6 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 2
+ d trace^MIF000(mi,R,"H<--M")
+ q 1
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

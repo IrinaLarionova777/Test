@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLB01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTCLB01 ; ML 23/2/00 ; Collection Labels
+ q
+ ; Parameters :  1. Collection list
+ ;               2. Collection list number
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ d INIT,BODY,PRINT
+CREND i '$$select^LVBPRPR(REPID) s PLIST(12)=PAR1_"-"_PAR2 i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialize parameters
+INIT f J=1:1:$L(PAR,$C(1)) s @("PAR"_J)=$P(PAR,$C(1),J)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+ ; create temporary printing file
+BODY s rowid=PAR1_"||"_PAR2
+ ; extract episodes on collection list
+ i '$$fetchall^LVBCLNP(rowid) q:'$l(PLIST)  f i=1:1:PLIST s ^TMP($zn,$j,"LIST",$p(PLIST(i),$c(28),2))=""
+ s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",epis)) q:epis=""  d
+ . ; extract labels for episode
+ .i '$$fetchall^LVBCLNPL(rowid_"||"_epis) q:'$l(PLIST)  m EPLAB=PLIST k PLIST
+ . ; extract patient details
+ .q:$$select^LVBEPVIS(epis,"Y")  m VISIT=PLIST k PLIST
+ . ; extract label details
+ .f i1=1:1:EPLAB d
+ ..s label=$p($p(EPLAB(i1),$c(28),2),$c(1)),tests=$p(EPLAB(i1),$c(28),3),tscnt=$l(tests,",")
+ ..q:$$select^LVBCTLB(label)  m LABEL=PLIST k PLIST
+ ..s max=$p(LABEL(4),$c(1)),spec=$p(LABEL(5),$c(1),2) i '$l(spec) s spec=" "
+ ..i tscnt'>max s ts(1)=tests
+ ..i tscnt>max f i2=1:1 q:tests=""  s ts(i2)=$p(tests,",",1,max),tests=$p(tests,",",max+1,99)
+ ..s ward=$s($l(VISIT(22)):$tr(VISIT(22),$c(1)," "),1:" ")
+ ..s room=$s($l(VISIT(44)):VISIT(44),1:" "),bed=$s($l(VISIT(60)):$tr(VISIT(60),$c(1)," "),1:" ")
+ ..f i3=1:1 q:'$d(ts(i3))  s ^TMP($zn,$j,"REPORT",ward,room,bed,epis,spec,i3)=ts(i3)
+ . ; find labels for patient
+ .s epis=VISIT(2) k ^TMP($zn,$j,1)
+ .i $$open^LVBVISTS(epis)
+ .f  q:$$fetch^LVBVISTS(epis)  s ts=$p(PLIST(3),$c(1)),^TMP($zn,$j,1,ts)=$g(^TMP($zn,$j,1,ts))+1
+ .i $$close^LVBVISTS()
+ .s ts="" f  s ts=$o(^TMP($zn,$j,1,ts)) q:ts=""  d
+ ..s (label,max)=""
+ ..s label=$p($g(^TTAB("TS",ts)),"\",23)
+ ..i $l(label) s max=$p($g(^TTAB("LB",label)),"\",2)
+ ..i $l(label),max d
+ ...s ^TMP($zn,$j,"REPORT-1",epis,label,ts)=^TMP($zn,$j,1,ts)
+ ...s (cnt,ts1)="" f  s ts1=$o(^TMP($zn,$j,"REPORT-1",epis,label,ts1)) q:ts1=""  s cnt=cnt+^(ts1)
+ ...s xx=cnt\max s:cnt#max xx=xx+1 s ^TMP($zn,$j,"REPORT-1",epis,label)=xx
+ q
+ ; print report
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s (xCol,xRow)=0
+ . ; CL header
+ .s date=$tr($$extdate2^SSUTIL4(+$h),"/"),date=$e(date,1,4)_$e(date,7,8)
+ .s time=$tr($$exttime^SSUTIL4($p($h,",",2)),":")
+ .s UserName="" i $l(USER) s UserName=$p(^SSU("SSUSR",1,USER),"^",2)
+ .d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,1)_"Nay...")
+ .d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,2)_PAR1_PAR2_" "_date_" "_time)
+ .d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,3)_UserName)
+ .s x1="" f  s x1=$O(^TMP($zn,$j,"REPORT",x1)) q:x1=""  d
+ ..s x2="" f  s x2=$O(^TMP($zn,$j,"REPORT",x1,x2)) q:x2=""  d
+ ...s x3="" f  s x3=$O(^TMP($zn,$j,"REPORT",x1,x2,x3)) q:x3=""  d
+ ....s epis="" f  s epis=$O(^TMP($zn,$j,"REPORT",x1,x2,x3,epis)) q:epis=""  d
+ .....i $$select^LVBEPVIS(epis,"Y") q
+ .....k VISIT m VISIT=PLIST
+ .....s xCol=xCol+1 i xCol>3 s xCol=0,xRow=xRow+1 i xRow>7 s (xCol,xRow)=0 d ADD^SSPRINT(REPID,"PRT","#")
+ ..... ; patient label
+ .....s name=$$NameFormat^LVBCOM03("PT",$p($g(PLIST(7)),$c(1),2),$g(PLIST(4)),$g(PLIST(3)),$g(PLIST(99)),$g(PLIST(100)),$g(PLIST(101)))
+ .....s date=$tr($$extdate2^SSUTIL4(VISIT(12)),"/")
+ .....s time=$tr($$exttime^SSUTIL4(VISIT(13)),":")
+ .....s fssn=$s($l(VISIT(20)):VISIT(20),1:VISIT(30))
+ .....s sig=VISIT(51) i $l(sig) s sig=$p($g(^TTAB("SI",sig)),"\",1)
+ .....d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,1)_$p(VISIT(22),$c(1))_"   "_date_" "_time)
+ .....d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,2)_name)
+ .....d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,3)_fssn_" "_epis)
+ .....d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,4)_"Huone "_$e(VISIT(43)_"   ",1,3)_" Vuode "_$e(VISIT(44)_"   ",1,3))
+ .....d LABEL
+ q
+LABEL s label="" f  s label=$o(^TMP($zn,$j,"REPORT-1",epis,label)) q:label=""  d
+ .s cm="",ts="*"
+ .i $o(^TMP($zn,$j,"REPORT-1",label,""))=$o(^TMP($zn,$j,"REPORT",epis,label,""),-1) s x=$o(^TMP($zn,$j,"REPORT-1",epis,label,"")) i $l(x) s ts=$p(^TTAB("TS",x),"\",2),cm=$p($g(^TTAB("TS",x,"MANUAL-2",1)),$c(10),1)
+ .s cnt=$g(^TMP($zn,$j,"REPORT-1",epis,label)) f j=1:1:cnt d
+ ..s xCol=xCol+1 i xCol>3 s xCol=0,xRow=xRow+1 i xRow>7 s (xCol,xRow)=0 d ADD^SSPRINT(REPID,"PRT","#")
+ ..d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,1)_"  "_VISIT(22)_"   "_$e(date,1,4)_$e(date,7,8)_" "_time)
+ ..d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,2)_"  "_name)
+ ..d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,3)_"  "_fssn_"  "_epis)
+ ..d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,4)_"  "_ts)
+ ..d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,5)_"  "_cm)
+ ..d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,5)_"  !R! UNIT D; BARC 19,Y,'"_epis_"',120,120,3,6,6,6,3,6,6,6; EXIT;")
+ ..i $l(sig) d
+ ...d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,1)_$e(sig,1))
+ ...d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,2)_$e(sig,2))
+ ...d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,3)_$e(sig,3))
+ ...d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,4)_$e(sig,4))
+ ...d ADD^SSPRINT(REPID,"PRT",$$pos(xCol,xRow,5)_$e(sig,5))
+ q
+pos(x,y,z) q " !R! UNIT C; MAP "_(x*5)_","_(y*3.5+(z*.3))_"; FONT 48; EXIT;"
+]]></Routine>
+</Export>

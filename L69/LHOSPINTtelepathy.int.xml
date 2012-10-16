@@ -1,0 +1,514 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LHOSPINTtelepathy" type="INT" languagemode="0" generated="1"><![CDATA[
+LHOSPINTtelepathy ; IG 12/07/98 ; Hospital Interface - Telepathy request receive
+ Q
+mess(d) ; reading message
+ h 1 s mess="" f i=1:1 r *len:10 q:len=-1  d  q
+ .s mess=$c(len)
+ .s cnt=1 i len=250 s len=0 d
+ ..r *len1:10 q:len1=-1
+ ..s mess=mess_$c(len1)
+ ..f j=1:1:len1 r *x:10 q:x=-1  s mess=mess_$c(x),len=len+(x*(256**(j-1)))
+ ..s cnt=len1+2
+ .s len=len-cnt f j=1:1:len r *x:10 q:x=-1  s mess=mess_$c(x)
+ i $l(mess) d log(mess,"From <"_d_"> : "_$p($h,",",2)_" : ")
+ q mess
+log(mess,xx) n j,x
+ ;s x=$o(^is(""),-1)+1,^is(x)=xx
+ ;f j=1=1:1:$l(mess) s ^is(x)=^is(x)_$s($a(mess,j)<32:"<"_$a(mess,j)_">",1:$e(mess,j))
+ q
+start1 s HOSP="TL",dev="|TCP|3001",ip="" i '$$select^MVBCFLAB(1),$l(PLIST(34)) s ip=PLIST(34)
+ i $l(ip) d
+ .k ^TMP($zn,$j)
+ .o dev:(ip::"C"):10 e  q
+ .u dev f  r *x:0 q:x=-1
+ .f k=1:1:10 d Session1,Process1 i '$d(^TMP($zn,$j,"PID")) q
+ .c dev
+ .k ^TMP($zn,$j)
+ q
+start2 s HOSP="TL",dev="|TCP|3001",ip="" i '$$select^MVBCFLAB(1),$l(PLIST(34)) s ip=PLIST(34)
+ i $l(ip) d
+ .k ^TMP($zn,$j)
+ .o dev:(ip::"C"):10 e  q
+ .u dev f  r *x:0 q:x=-1
+ .i $d(^TEDI("OUT-DATA","TEL")) f k=1:1:10 d Session2a i '$d(^TEDI("OUT-DATA","TEL")) q
+ .i $d(^TEDI("OUT-DATA","TEP")) f k=1:1:10 d Session2b i '$d(^TEDI("OUT-DATA","TEP")) q
+ .c dev
+ .k ^TMP($zn,$j)
+ q
+start3 s HOSP="TL",dev="|TCP|3001",ip="" i '$$select^MVBCFLAB(1),$l(PLIST(34)) s ip=PLIST(34)
+ i $l(ip) d
+ .k ^TMP($zn,$j)
+ .o dev:(ip::"C"):10 e  q
+ .u dev f  r *x:0 q:x=-1
+ .f k=1:1:10 d Session3 i '$d(^TEDI("TEL-RECEIVED")) q
+ .c dev
+ .k ^TMP($zn,$j)
+ q
+Session1 ; Receive orders from Telepathy
+ s x(1)="SGMHDR",x(2)="ReqConnection" s mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ s mess=mess_$c(1)_$c(0)
+ s x(1)="EOS",x(2)="EOF" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ s mess=$c($l(mess)+1)_mess
+ d log(mess,"To <"_dev_"> : "_$p($h,",",2)_" : ")
+ u dev w mess,*-3
+ s mess=$$mess(dev) i mess["AckMethod",mess["ReqConnection" s mess=$$mess(dev)
+ i mess'["PortNumber" q
+ s x=$p(mess,"PortNumber",2),len=$a(x) i $e(x,2,len+1)'?1.99N q
+ s dev1="|TCP|"_$e(x,2,len+1) h 2
+ s x=$p(mess,"StatCode",2),len=$a(x) i $e(x,2,len+1)'=0 q
+ d log("","Open Session 1 <"_dev1_"> : "_$p($h,",",2)_" : ")
+ o dev1:(ip::"C"):10 e  q
+ u dev1 f  r *x:0 q:x=-1
+ d log("","Done Session 1 <"_dev1_"> : "_$p($h,",",2)_" : ")
+ i $d(^TMP($zn,$j,"PID")) d  q
+ .s pid=$o(^TMP($zn,$j,"PID",""))
+ .s x(1)="SGMHDR",x(2)="GetOrder" s mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ .s mess=mess_$c(1)_$c(3)
+ .s x(1)="Style",x(2)="NAT",x(3)="Trx-ID",x(4)=pid,x(5)="RecCount",x(6)="",x(7)="EOS",x(8)="EOF" f i=1:1:8 s mess=mess_$c($l(x(i)))_x(i)
+ .s mess=$c($l(mess)+1)_mess
+ .d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ .u dev1 w mess,*-3
+ .s mess=$$mess(dev1) i mess["AckMethod",mess["GetOrder" s mess=$$mess(dev1)
+ .i mess["PlaceOrder" d
+ ..s segment=$p(mess,"EOS",1),mess=$p(mess,"EOS",2,$l(mess,"EOS"))
+ ..s x=mess k mess s mess=x
+ ..s xx=$p(segment,"Trx-ID",2),x=$e(xx),len=$a(x),trid=$e(xx,2,len+1)
+ ..i trid=pid d
+ ...f j=1:2:$l(mess,"EOS") s mess(j\2+1)=$p(mess,"EOS",j,j+1)
+ ...f j=1:1 q:'$d(mess(j))  d
+ ....s xx=$p(mess(j),"RECBDY",2) f  q:'$l(xx)  d
+ .....s x=$e(xx),len=$a(x),name=$e(xx,2,len+1),xx=$e(xx,len+2,$l(xx))
+ .....s x=$e(xx),len=$a(x),data=$e(xx,2,len+1),xx=$e(xx,len+2,$l(xx)) i data="No Value" s data=""
+ .....i $l(name),$l(data) d
+ ......i name="pkc_LabServCode" s cnt=$o(^TMP($zn,$j,"RECORD",pid,name,""),-1)+1,^TMP($zn,$j,"RECORD",pid,name,cnt)=data
+ ......e  s ^TMP($zn,$j,"RECORD",pid,name)=data
+ ... ; 'ack' method
+ ...s x(1)="SGMHDR",x(2)="AckMethod",mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ ...s mess=mess_$c(1)_$c(2)
+ ...s x(1)="MethodName",x(2)="PlacerOrder",x(3)="StatCode",x(4)="0",x(5)="EOS",x(6)="EOF" f i=1:1:6 s mess=mess_$c($l(x(i)))_x(i)
+ ...s mess=$c($l(mess)+1)_mess
+ ...d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ ...u dev1 w mess,*-3 s mess=""
+ ... ; 'ack' order
+ ...s x(1)="SGMHDR",x(2)="AckOrder" s mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ ...s mess=mess_$c(1)_$c(2)
+ ...s x(1)="Trx-ID",x(2)=trid,x(3)="StatCode",x(4)="0",x(5)="EOS",x(6)="EOF"
+ ...f i=1:1:6 s mess=mess_$c($l(x(i)))_x(i)
+ ...s mess=$c($l(mess)+1)_mess
+ ...d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ ...u dev1 w mess,*-3
+ .s stop=0 f  s mess=$$mess(dev1) q:mess["CloseConnection"  s:'$l(mess) stop=stop+1 q:stop=3
+ .k ^TMP($zn,$j,"PID",pid)
+ i '$d(^TMP($zn,$j,"PID")) d  q
+ .s x(1)="SGMHDR",x(2)="GetOrder" s mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ .s mess=mess_$c(1)_$c(3)
+ .s x(1)="Style",x(2)="NAT",x(3)="Trx-ID",x(4)="",x(5)="RecCount",x(6)="10",x(7)="EOS",x(8)="EOF" f i=1:1:8 s mess=mess_$c($l(x(i)))_x(i)
+ .s mess=$c($l(mess)+1)_mess
+ .d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ .u dev1 w mess,*-3
+ .s mess=$$mess(dev1) i mess["AckMethod",mess["GetOrder" s mess=$$mess(dev1)
+ .i mess["PlaceOrderList" d
+ ..s segment=$p(mess,"EOS",1),mess=$p(mess,"EOS",2,$l(mess,"EOS"))
+ ..s x=mess k mess s mess=x
+ ..s xx=$p(segment,"ActualReqCount",2),x=$e(xx),len=$a(x),NumberOfRecords=$e(xx,2,len+1)
+ ..s xx=$p(mess,"RECBDY",2) f j=1:1:NumberOfRecords q:'$l(xx)  d
+ ...s x=$e(xx),len=$a(x),pid=$e(xx,2,len+1),xx=$e(xx,len+2,$l(xx))
+ ...i $l(pid) s ^TMP($zn,$j,"PID",pid)=""
+ .. ; 'ack' method
+ ..s x(1)="SGMHDR",x(2)="AckMethod",mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ ..s mess=mess_$c(1)_$c(2)
+ ..s x(1)="MethodName",x(2)="PlaceOrderList",x(3)="StatCode",x(4)="0",x(5)="EOS",x(6)="EOF" f i=1:1:6 s mess=mess_$c($l(x(i)))_x(i)
+ ..s mess=$c($l(mess)+1)_mess
+ ..d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ ..u dev1 w mess,*-3 s mess=""
+ .. ; 'ack' AckPlaceOrderList
+ ..s x(1)="SGMHDR",x(2)="AckPlaceOrderList" s mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ ..s mess=mess_$c(1)_$c(1)
+ ..s x(1)="StatCode",x(2)="0",x(3)="EOS",x(4)="EOF" f i=1:1:4 s mess=mess_$c($l(x(i)))_x(i)
+ ..s mess=$c($l(mess)+1)_mess
+ ..d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ ..u dev1 w mess,*-3
+ .s stop=0 f  s mess=$$mess(dev1) q:mess["CloseConnection"  s:'$l(mess) stop=stop+1 q:stop=3
+ ;c dev1
+ q
+Process1 ; Process orders from Telepathy
+ s id="" f  s id=$o(^TMP($zn,$j,"RECORD",id)) q:id=""  d  k ^TMP($zn,$j,"RECORD",id)
+ .k x s x="" f  s x=$o(^TMP($zn,$j,"RECORD",id,x)) q:x=""  d
+ ..i $d(^(x))=1 s x(x)=$$space(^(x))
+ ..e  m x(x)=^(x)
+ . ; check title
+ .i $l($g(x("cPatTitle"))) d
+ ..n (HOSP,x)
+ ..s X="" i '$$select^LVBHOSCT(HOSP_"||"_x("cPatTitle")) s X=PLIST(3)
+ ..s x("cPatTitle")=X
+ . ; check sex
+ .i $l($g(x("cPatSex"))) d
+ ..n (HOSP,x)
+ ..s X="" i '$$select^LVBHOSCS(HOSP_"||"_x("cPatSex")) s X=PLIST(3)
+ ..s x("cPatSex")=X
+ . ; find doctor
+ .i $l($g(x("cDrProviderNo"))) d
+ ..n (HOSP,x)
+ ..s X="" i '$$select^LVBHOSCD(HOSP_"||"_x("cDrProviderNo")) s X=PLIST(3)
+ ..s x("cDrProviderNo")=X
+ . ; check date fields
+ .f j="dPatDoB","dDateCreate" i $l($g(x(j))) s x(j)=$$intdate^SSUTIL4($e(x(j),4,5)_"/"_$e(x(j),1,2)_"/"_$e(x(j),7,10))
+ . ; check test
+ . ; i $d(x("pkc_LabServCode")) d
+ . ; .f jj1=1:1 q:'$d(x("pkc_LabServCode",jj1))  d
+ . ; ..n (HOSP,x,jj1)
+ . ; ..s X="" i '$$select^LVBHOSTS(HOSP_"||"_x("pkc_LabServCode",jj1)) s X=PLIST(3)
+ . ; ..s x("pkc_LabServCode",jj1)=X
+ . ; check if admission already exists
+ .s exist="N" i '$$select^LVBHOSP(HOSP_"||"_HOSP_id_"||"_id) s exist="Y"
+ . ; file data
+ .k PLIST
+ .s PLIST(2)=HOSP_id
+ .s PLIST(3)=id
+ .s PLIST(4)=$g(x("cPatGivenName"))
+ .s PLIST(5)=$g(x("cPatSurname"))
+ .s PLIST(6)=$g(x("cPatTitle"))
+ .s PLIST(7)=$g(x("dPatDoB"))
+ .s PLIST(8)=$g(x("cPatSex"))
+ .s PLIST(9)=$g(x("cPatAddress1"))
+ .s PLIST(10)=$g(x("cPatAddress2"))
+ .s PLIST(11)=$g(x("cPatCity"))
+ .s PLIST(12)=$g(x("cPatPCode"))
+ .s PLIST(13)=$g(x("cPatTelNo"))
+ .s PLIST(17)=$g(x("cDrProviderNo"))
+ .s PLIST(20)=$g(x("cDrProviderNo"))
+ .s $p(PLIST(23),"|",14)=$g(x("dDateCreate"))
+ .s $p(PLIST(23),"|",111)=$g(x("iTimeCreate"))
+ .s PLIST(24)=$g(x("cPatMedicareNo"))
+ .s PLIST(25)=HOSP
+ .s PLIST(26)=$g(x("dDateCreate"))
+ .s PLIST(27)=$g(x("iTimeCreate"))
+ .s PLIST(32)=$g(x("cPatTelNoB"))
+ .s PLIST(36)=$g(x("cPatVANo"))
+ .s PLIST=$o(PLIST(""),-1)
+ . ; update patient information
+ .i exist="Y" d  q
+ ..i '$$update^LVBHOSP(HOSP_"||"_HOSP_id_"||"_id) s rowid=%ROWID d
+ ...f jj1=1:1 q:'$d(x("pkc_LabServCode",jj1))  i $l(x("pkc_LabServCode",jj1)) d
+ ....k PLIST
+ ....s PLIST(2)=x("pkc_LabServCode",jj1)
+ ....s PLIST=$o(PLIST(""),-1)
+ ....i $$insert^LVBHOSPT(rowid)
+ . ; insert new patient information
+ .i exist="N" d  q
+ ..i '$$insert^LVBHOSP(HOSP) s rowid=%ROWID d
+ ...f jj1=1:1 q:'$d(x("pkc_LabServCode",jj1))  i $l(x("pkc_LabServCode",jj1)) d
+ ....k PLIST
+ ....s PLIST(2)=x("pkc_LabServCode",jj1)
+ ....s PLIST=$o(PLIST(""),-1)
+ ....i $$insert^LVBHOSPT(rowid)
+ q
+ ; delete end spaces
+space(x) 
+ f  q:'$l(x)  q:$e(x,$l(x))'=" "  s x=$e(x,1,$l(x)-1)
+ f  q:'$l(x)  q:$e(x)'=" "  s x=$e(x,2,$l(x))
+ q x
+Session2a ; Send PIT results to Telepathy
+ s x(1)="SGMHDR",x(2)="ReqConnection" s mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ s mess=mess_$c(1)_$c(0)
+ s x(1)="EOS",x(2)="EOF" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ s mess=$c($l(mess)+1)_mess
+ d log(mess,"To <"_dev_"> : "_$p($h,",",2)_" : ")
+ u dev w mess,*-3
+ s mess=$$mess(dev) i mess["AckMethod",mess["ReqConnection" s mess=$$mess(dev)
+ i mess'["PortNumber" q
+ s x=$p(mess,"PortNumber",2),len=$a(x) i $e(x,2,len+1)'?1.99N q
+ s dev1="|TCP|"_$e(x,2,len+1) h 2
+ i $e(x,2,len+1)=-1 q
+ d log("","Open Session 2a <"_dev1_"> : "_$p($h,",",2)_" : ")
+ o dev1:(ip::"PSTE"::32767:32767):10 e  q
+ u dev1 f  r *x:0 q:x=-1
+ d log("","Done Session 2a <"_dev1_"> : "_$p($h,",",2)_" : ")
+ s client=$o(^TEDI("OUT-DATA","TEL","")) i $l(client) d
+ .s ClientID="" i '$$select^LVBCTCLN(client) s ClientID=PLIST(5)
+ .s fileno=$o(^TEDI("OUT-DATA","TEL",client,"")) i $l(fileno) d
+ ..i '$d(^TEDI("OUT-DATA","TEL",client,fileno,"EPIS")) k ^TEDI("OUT-DATA","TEL",client,fileno) q
+ ..s epis=$o(^TEDI("OUT-DATA","TEL",client,fileno,"EPIS","")) i $l(epis) d
+ ...s ts=$o(^TEDI("OUT-DATA","TEL",client,fileno,"EPIS",epis,"")) i $l(ts) d
+ ....s doc=^(ts),(pid,req)=""
+ ....  ;---&sql(SELECT EPVIS_Hospital_EpisodeUR_Number,EPVIS_DoctorCode_DR INTO :pid,:req FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  ....  ;--- ** SQL PUBLIC Variables: SQLCODE, epis, pid, req
+ .... Do %0Ao
+ ....s pid=$p(pid,$c(1)),req=$p(req,$c(1))
+ ....i (pid="")!(doc'=req)!($e($p(pid,",",2),1,2)'="TL") s pid=ClientID
+ ....e  s pid=$e($p(pid,",",2),3,99) i pid="" s pid=ClientID
+ ....s x(1)="SGMHDR",x(2)="PlaceOReport" s mess1="" f i=1:1:2 s mess1=mess1_$c($l(x(i)))_x(i)
+ ....s mess1=mess1_$c(1)_$c(4)
+ ....s x(1)="Style",x(2)="PIT",x(3)="Trx-ID",x(4)=pid,x(5)="HL7StatCode",x(6)="F",x(7)="LabPatID",x(8)=epis,x(9)="EOS" f i=1:1:9 s mess1=mess1_$c($l(x(i)))_x(i)
+ ....s x(1)="RECHDR",x(2)="TrResult",x(3)="EOS",x(4)="RECBDY" s mess2="" f i=1:1:4 s mess2=mess2_$c($l(x(i)))_x(i)
+ ....s seq="" f  s seq=$o(^TEDI("OUT-DATA","TEL",client,fileno,"SEQ",seq)) q:seq=""  s mess2=mess2_$c($l(^(seq)))_^(seq)
+ ....s x(1)="EOS",x(2)="EOF" f i=1:1:2 s mess2=mess2_$c($l(x(i)))_x(i)
+ .... ; calculate upto EOS
+ ....i $l(mess2)>249 d
+ .....s x1=$l(mess2)\256
+ .....s x2=$l(mess2)-(x1*256)
+ .....s mess2=$c(250)_$c(2)_$c(x2)_$c(x1)_mess2
+ ....e  s mess2=$c($l(mess2)+1)_mess2
+ ....s mess=mess1_mess2
+ .... ; calculate upto EOF
+ ....i $l(mess)>249 d
+ .....s x1=($l(mess)+4)\256
+ .....s x2=($l(mess)+4)-(x1*256)
+ .....s mess=$c(250)_$c(2)_$c(x2)_$c(x1)_mess
+ ....e  s mess=$c($l(mess)+1)_mess
+ ....d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ ....u dev1 w mess,*-3
+ ....s mess=$$mess(dev1) i mess["AckMethod",mess["PlaceOReport" s mess=$$mess(dev1)
+ ....i mess["AckOReport" d
+ .....s x=$p(mess,"StatCode",2),len=$a(x),status=$e(x,2,len+1)
+ ..... ; 'ack' method
+ .....s x(1)="SGMHDR",x(2)="AckMethod",mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ .....s mess=mess_$c(1)_$c(2)
+ .....s x(1)="MethodName",x(2)="AckOReport",x(3)="StatCode",x(4)="0",x(5)="EOS",x(6)="EOF" f i=1:1:6 s mess=mess_$c($l(x(i)))_x(i)
+ .....s mess=$c($l(mess)+1)_mess
+ .....d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ .....u dev1 w mess,*-3 s mess="" h 5
+ ..... ; create history on episodes for sent tests
+ .....i status=0 d
+ ......s ts="" f  s ts=$o(^TEDI("OUT-DATA","TEL",client,fileno,"EPIS",epis,ts)) q:ts=""  d
+ ....... ;---s syn="" &SQL(SELECT CTTS_Synonym INTO :syn FROM CT_TestSet WHERE CTTS_RowID=:ts)
+  ....... ;--- ** SQL PUBLIC Variables: SQLCODE, syn, ts
+ .......s syn="" Do %0Co
+ .......i $l(syn) d events^LVBCOM01(epis,"ER","Electronic Report PIT <via Telepathy - "_pid_"> "_syn)
+ ......m ^TEDI("SENT-DATA","TEL",client,fileno)=^TEDI("OUT-DATA","TEL",client,fileno)
+ ......s ^TEDI("SENT-DATA","TEL",client,fileno)=$h
+ ......k ^TEDI("OUT-DATA","TEL",client,fileno)
+ .....i " 40 41 42 43 44 "[(" "_status_" ") d
+ ......m ^TEDI("ERROR-DATA","TEL",client,fileno)=^TEDI("OUT-DATA","TEL",client,fileno)
+ ......s ^TEDI("ERROR-DATA","TEL",client,fileno,"STATUS")=status
+ ......s ^TEDI("ERROR-DATA","TEL",client,fileno)=$h
+ ......k ^TEDI("OUT-DATA","TEL",client,fileno)
+ .s stop=0 f  s mess=$$mess(dev1) q:mess["CloseConnection"  s:'$l(mess) stop=stop+1 q:stop=3
+ ;c dev1
+ q
+Session2b ; Send HL7 results to Telepathy
+ s x(1)="SGMHDR",x(2)="ReqConnection" s mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ s mess=mess_$c(1)_$c(0)
+ s x(1)="EOS",x(2)="EOF" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ s mess=$c($l(mess)+1)_mess
+ d log(mess,"To <"_dev_"> : "_$p($h,",",2)_" : ")
+ u dev w mess,*-3
+ s mess=$$mess(dev) i mess["AckMethod",mess["ReqConnection" s mess=$$mess(dev)
+ i mess'["PortNumber" q
+ s x=$p(mess,"PortNumber",2),len=$a(x) i $e(x,2,len+1)'?1.99N q
+ s dev1="|TCP|"_$e(x,2,len+1) h 2
+ i $e(x,2,len+1)=-1 q
+ d log("","Open Session 2b <"_dev1_"> : "_$p($h,",",2)_" : ")
+ o dev1:(ip::"PSTE"::32767:32767):10 e  q
+ u dev1 f  r *x:0 q:x=-1
+ d log("","Done Session 2b <"_dev1_"> : "_$p($h,",",2)_" : ")
+ s client=$o(^TEDI("OUT-DATA","TEP","")) i $l(client) d
+ .s ClientID="" i '$$select^LVBCTCLN(client) s ClientID=PLIST(5)
+ .s fileno=$o(^TEDI("OUT-DATA","TEP",client,"")) i $l(fileno) d
+ ..i '$d(^TEDI("OUT-DATA","TEP",client,fileno,"EPIS")) k ^TEDI("OUT-DATA","TEP",client,fileno) q
+ ..s epis=$o(^TEDI("OUT-DATA","TEP",client,fileno,"EPIS","")) i $l(epis) d
+ ...s ts=$o(^TEDI("OUT-DATA","TEP",client,fileno,"EPIS",epis,"")) i $l(ts) d
+ ....s doc=^(ts),(pid,req)=""
+ ....  ;---&sql(SELECT EPVIS_Hospital_EpisodeUR_Number,EPVIS_DoctorCode_DR INTO :pid,:req FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  ....  ;--- ** SQL PUBLIC Variables: SQLCODE, epis, pid, req
+ .... Do %0Eo
+ ....s pid=$p(pid,$c(1)),req=$p(req,$c(1))
+ ....i (pid="")!(doc'=req)!($e($p(pid,",",2),1,2)'="TL") s pid=ClientID
+ ....e  s pid=$e($p(pid,",",2),3,99) i pid="" s pid=ClientID
+ ....s x(1)="SGMHDR",x(2)="PlaceOReport" s mess1="" f i=1:1:2 s mess1=mess1_$c($l(x(i)))_x(i)
+ ....s mess1=mess1_$c(1)_$c(4)
+ ....s x(1)="Style",x(2)="HL7",x(3)="Trx-ID",x(4)="",x(5)="HL7StatCode",x(6)="F",x(7)="LabPatID",x(8)=epis,x(9)="EOS" f i=1:1:9 s mess1=mess1_$c($l(x(i)))_x(i)
+ ....s x(1)="RECHDR",x(2)="TrResult",x(3)="EOS",x(4)="RECBDY" s mess2="" f i=1:1:4 s mess2=mess2_$c($l(x(i)))_x(i)
+ ....s seq="" f  s seq=$o(^TEDI("OUT-DATA","TEP",client,fileno,"SEQ",seq)) q:seq=""  d
+ .....s xx=^(seq) i $p(xx,"|")="MSH" s $p(xx,"|",5)=pid
+ .....i $l(xx)>249 s x1=$l(xx)\256,x2=$l(xx)-(x1*256),lenXX=$c(250)_$c(2)_$c(x2)_$c(x1)
+ .....e  s lenXX=$c($l(xx))
+ .....s mess2=mess2_lenXX_xx
+ ....s x(1)="EOS",x(2)="EOF" f i=1:1:2 s mess2=mess2_$c($l(x(i)))_x(i)
+ .... ; calculate upto EOS
+ ....i $l(mess2)>249 s x1=$l(mess2)\256,x2=$l(mess2)-(x1*256),mess2=$c(250)_$c(2)_$c(x2)_$c(x1)_mess2
+ ....e  s mess2=$c($l(mess2)+1)_mess2
+ ....s mess=mess1_mess2
+ .... ; calculate upto EOF
+ ....i $l(mess)>249 s x1=($l(mess)+4)\256,x2=($l(mess)+4)-(x1*256),mess=$c(250)_$c(2)_$c(x2)_$c(x1)_mess
+ ....e  s mess=$c($l(mess)+1)_mess
+ ....d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ ....u dev1 w mess,*-3
+ ....s mess=$$mess(dev1) i mess["AckMethod",mess["PlaceOReport" s mess=$$mess(dev1)
+ ....i mess["AckOReport" d
+ .....s x=$p(mess,"StatCode",2),len=$a(x),status=$e(x,2,len+1)
+ ..... ; 'ack' method
+ .....s x(1)="SGMHDR",x(2)="AckMethod",mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ .....s mess=mess_$c(1)_$c(2)
+ .....s x(1)="MethodName",x(2)="AckOReport",x(3)="StatCode",x(4)="0",x(5)="EOS",x(6)="EOF" f i=1:1:6 s mess=mess_$c($l(x(i)))_x(i)
+ .....s mess=$c($l(mess)+1)_mess
+ .....d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ .....u dev1 w mess,*-3 s mess="" h 5
+ ..... ; create history on episodes for sent tests
+ .....i status=0 d
+ ......s ts="" f  s ts=$o(^TEDI("OUT-DATA","TEP",client,fileno,"EPIS",epis,ts)) q:ts=""  d
+ ....... ;---s syn="" &SQL(SELECT CTTS_Synonym INTO :syn FROM CT_TestSet WHERE CTTS_RowID=:ts)
+  ....... ;--- ** SQL PUBLIC Variables: SQLCODE, syn, ts
+ .......s syn="" Do %0Go
+ .......i $l(syn) d events^LVBCOM01(epis,"ER","Electronic Report HL7 <via Telepathy - "_pid_"> "_syn)
+ ......m ^TEDI("SENT-DATA","TEP",client,fileno)=^TEDI("OUT-DATA","TEP",client,fileno)
+ ......s ^TEDI("SENT-DATA","TEP",client,fileno)=$h
+ ......k ^TEDI("OUT-DATA","TEP",client,fileno)
+ .....i " 40 41 42 43 44 "[(" "_status_" ") d
+ ......m ^TEDI("ERROR-DATA","TEP",client,fileno)=^TEDI("OUT-DATA","TEP",client,fileno)
+ ......s ^TEDI("ERROR-DATA","TEP",client,fileno,"STATUS")=status
+ ......s ^TEDI("ERROR-DATA","TEP",client,fileno)=$h
+ ......k ^TEDI("OUT-DATA","TEP",client,fileno)
+ .s stop=0 f  s mess=$$mess(dev1) q:mess["CloseConnection"  s:'$l(mess) stop=stop+1 q:stop=3
+ ;c dev1
+ q
+Session3 ; Send received specimen message to Telepathy
+ s x(1)="SGMHDR",x(2)="ReqConnection" s mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ s mess=mess_$c(1)_$c(0)
+ s x(1)="EOS",x(2)="EOF" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ s mess=$c($l(mess)+1)_mess
+ d log(mess,"To <"_dev_"> : "_$p($h,",",2)_" : ")
+ u dev w mess,*-3
+ s mess=$$mess(dev) i mess["AckMethod",mess["ReqConnection" s mess=$$mess(dev)
+ i mess'["PortNumber" q
+ s x=$p(mess,"PortNumber",2),len=$a(x) i $e(x,2,len+1)'?1.99N q
+ s dev1="|TCP|"_$e(x,2,len+1) h 2
+ i $e(x,2,len+1)=-1 q
+ d log("","Open Session 3 <"_dev1_"> : "_$p($h,",",2)_" : ")
+ o dev1:(ip::"PSTE"::32767:32767):10 e  q
+ u dev1 f  r *x:0 q:x=-1
+ d log("","Done Session 3 <"_dev1_"> : "_$p($h,",",2)_" : ")
+ s epis=$o(^TEDI("TEL-RECEIVED","")) i $l(epis) d
+ . ;---s pid="" &sql(SELECT EPVIS_Hospital_EpisodeUR_Number INTO :pid FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  . ;--- ** SQL PUBLIC Variables: SQLCODE, epis, pid
+ .s pid="" Do %0Io
+ .s pid=$e($p($p(pid,$c(1)),",",2),3,99)
+ .i '$l(pid) k ^TEDI("TEL-RECEIVED",epis)
+ .i $l(pid) d
+ ..s x(1)="SGMHDR",x(2)="SpecimenReceived" s mess="" f i=1:1:2 s mess=mess_$c($l(x(i)))_x(i)
+ ..s mess=mess_$c(1)_$c(1)
+ ..s x(1)="Trx-ID",x(2)=pid,x(3)="EOS",x(4)="EOF" f i=1:1:4 s mess=mess_$c($l(x(i)))_x(i)
+ ..s mess=$c($l(mess)+1)_mess
+ ..d log(mess,"To <"_dev1_"> : "_$p($h,",",2)_" : ")
+ ..u dev1 w mess,*-3
+ ..s mess=$$mess(dev1)
+ ..d events^LVBCOM01(epis,"ER","Received specimen message sent - "_pid)
+ ..s stop=0 f  s mess=$$mess(dev1) q:mess["CloseConnection"  s:'$l(mess) stop=stop+1 q:stop=3
+ ..s ^TEDI("TEL-SENT",epis)=$h
+ ..k ^TEDI("TEL-RECEIVED",epis)
+ ;c dev1
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(8)=0,%mmmsqld(9)=""
+ s %mmmsqld(6)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0ABdun
+ s %mmmsqld(12)=$g(^TEPI(%mmmsqld(5)))
+ s pid=$p(%mmmsqld(12),"\",37) s req=$p(%mmmsqld(12),"\",13)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(5),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(8)=1,%mmmsqld(9)=$name(^TEPI($p(%mmmsqld(5),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0ACdun
+ s %mmmsqld(15)=$g(^TEPI(%mmmsqld(5)))
+ s pid=$p(%mmmsqld(15),"\",37) s req=$p(%mmmsqld(15),"\",13)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) s %mmmsqld(8)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(ts)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0CBdun
+ s %mmmsqld(12)=$g(^TTAB("TS",%mmmsqld(3)))
+ s syn=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("TS",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0CCdun
+ s %mmmsqld(17)=$g(^TTAB("TS",%mmmsqld(3)))
+ s syn=$p(%mmmsqld(17),"\",2)
+%0CBuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Eerr" s %mmmsqld(8)=0,%mmmsqld(9)=""
+ s %mmmsqld(6)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0EBdun
+ s %mmmsqld(12)=$g(^TEPI(%mmmsqld(5)))
+ s pid=$p(%mmmsqld(12),"\",37) s req=$p(%mmmsqld(12),"\",13)
+ g:$zu(115,2)=0 %0EBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(5),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(8)=1,%mmmsqld(9)=$name(^TEPI($p(%mmmsqld(5),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0ECdun
+ s %mmmsqld(15)=$g(^TEPI(%mmmsqld(5)))
+ s pid=$p(%mmmsqld(15),"\",37) s req=$p(%mmmsqld(15),"\",13)
+%0EBuncommitted ;
+ s SQLCODE=0 g %0Ec
+%0ECdun i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) s %mmmsqld(8)=0 }
+%0EBdun 
+%0EAdun 
+%0Ec s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) } q
+%0Eerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ec
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Gerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(ts)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0GBdun
+ s %mmmsqld(12)=$g(^TTAB("TS",%mmmsqld(3)))
+ s syn=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0GBuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("TS",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0GCdun
+ s %mmmsqld(17)=$g(^TTAB("TS",%mmmsqld(3)))
+ s syn=$p(%mmmsqld(17),"\",2)
+%0GBuncommitted ;
+ s SQLCODE=0 g %0Gc
+%0GCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0GBdun 
+%0GAdun 
+%0Gc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Gerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Gc
+%0Io n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Ierr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0IBdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3)))
+ s pid=$p(%mmmsqld(10),"\",37)
+ g:$zu(115,2)=0 %0IBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ICdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3)))
+ s pid=$p(%mmmsqld(13),"\",37)
+%0IBuncommitted ;
+ s SQLCODE=0 g %0Ic
+%0ICdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0IBdun 
+%0IAdun 
+%0Ic s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Ierr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ic
+]]></Routine>
+</Export>

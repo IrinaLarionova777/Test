@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCOM08" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCOM08 ; IG 27/10/2000 ; Common routines
+ ;
+ ; supported calls:
+ ;
+ ; $$PatientGraph^LVBCOM08(mi,ti,start,end,type,Continue)
+ ; adjustInvisible^LVBCOM08
+adjustInvisible
+	f j=1:1:PLIST d
+	.i PLIST(j)="~VISIBLE",$g(PLIST(j+1))=$c(13) d
+	..i $g(PLIST(j+2))="~INVISIBLE",$g(PLIST(j+3))=$c(13) s PLIST(j)="",PLIST(j+1)=""
+	..i $g(PLIST(j+2))="~VISIBLE",$g(PLIST(j+3))=$c(13) s PLIST(j)="",PLIST(j+1)=""
+	.i PLIST(j)="~INVISIBLE",$g(PLIST(j+1))=$c(13) d
+	..i $g(PLIST(j+2))="~INVISIBLE",$g(PLIST(j+3))=$c(13) s PLIST(j)="",PLIST(j+1)=""
+	..i $g(PLIST(j+2))="~VISIBLE",$g(PLIST(j+3))=$c(13) s PLIST(j)="",PLIST(j+1)=""
+	k ^TMP($zn,$j) m ^TMP($zn,$j)=PLIST k PLIST
+	s (cnt,x)="" f  s x=$o(^TMP($zn,$j,x)) q:x=""   i $l(^(x)) s cnt=cnt+1,PLIST(cnt)=^(x)
+	s PLIST=$o(PLIST(""),-1)
+	k ^TMP($zn,$j)
+	q
+ ; Type : D-Daily
+ ;        W-Weekly
+ ;        M-Monthly
+ ; send : Send all the data (Y/N)
+PatientGraph(mi,ti,start,end,type,Continue) n (mi,ti,start,end,type,Continue,PLIST)
+ s mi=$g(mi),ti=$g(ti),start=$g(start),end=$g(end),type=$g(type),Continue=$g(Continue)
+ i Continue'="Y" d
+ .k ^TMP($zn,$j)
+ .i '$$select^MVBCFLAB(1) m CFLAB=PLIST
+ .i '$$select^LVBCTTC(ti) m CTTC=PLIST i $e(CTTC(5))="N" d
+ ..s date=$o(^TTAB("TC",ti,4,$h+1),-1) i $l(date) d
+ ...i $$open^LVBCTTCR(ti_"||0",date,"Y")
+ ...f  q:$$fetch^LVBCTTCR(ti_"||0",date,"Y")  i PLIST(3)="",PLIST(4)="",PLIST(26)="" d  q
+ ....s xx=PLIST(6)-PLIST(5) i xx d
+ .....s xx=$j(xx/4,0,$e(CTTC(5),2,4))
+ .....s ^TMP($zn,$j,"RR")=(PLIST(5)-xx)_"\"_(PLIST(6)+xx)_"\"_PLIST(5)_"\"_PLIST(6)
+ ...i $$close^LVBCTTCR()
+ .i $d(^TMP($zn,$j,"RR")) f date=start:1:end d
+ ..s ep="" f  s ep=$o(^TEPIi("AUTHORISED",date,ep)) q:ep=""  d
+ ... ; exclude from Patient mean
+ ...i $p(^TEPI(ep),"\",51)="Y" q
+ ...s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,ep,ts)) q:ts=""  d
+ ....s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,ep,ts,tscnt)) q:tscnt=""  d
+ ..... ; exclude from Patient mean
+ .....i $p(^TEPI(ep,1,ts,tscnt),"\",25)="Y" q
+ .....s res=$g(^TEPI(ep,1,ts,tscnt,"DATA",ti)) i $l($p(res,"\")) d
+ ...... ; exclude Standard comments and numeric comments
+ ......i $d(^TTAB("TC",ti,2,$p(res,"\")))!$d(^TTAB("RC",$p(res,"\"))) q
+ ...... ; exclude Alternate result
+ ......i $p(res,"\")=$p(CFLAB(69),"-") q
+ ...... ; exclude from Patient mean
+ ......i $p(res,"\",2)="Y" q
+ ......i $l(mi),mi'=$p(res,"\",6) q
+ ......i $p(res,"\")<$p(^TMP($zn,$j,"RR"),"\",1) q
+ ......i $p(res,"\")>$p(^TMP($zn,$j,"RR"),"\",2) q
+ ......s sort="" d
+ .......i type="D" s sort=date
+ .......i type="W" s sort=$s("456"[(date#7):date\7+1,1:date\7)*7-3
+ .......i type="M" s sort=date-$p($zd(date,4),"/")+1
+ ......i $l(sort) s x=$o(^TMP($zn,$j,"result",sort,date,""),-1)+1,^TMP($zn,$j,"result",sort,date,x)=$p(res,"\")_$c(1)_(ep_"||"_ts_"||"_tscnt_"||"_ti)
+ .k PLIST
+ .i $d(^TMP($zn,$j,"result")) f date=start:1:end d
+ ..s sort="" d
+ ...i type="D" s sort=date
+ ...i type="W" s sort=$s("456"[(date#7):date\7+1,1:date\7)*7-3
+ ...i type="M" s sort=date-$p($zd(date,4),"/")+1
+ ..i $l(sort) s ^TMP($zn,$j,"result",sort)=""
+ .s x1="" f j1=1:1 s x1=$o(^TMP($zn,$j,"result",x1)) q:x1=""  d
+ ..s (sum,j2,x2)="" f  s x2=$o(^TMP($zn,$j,"result",x1,x2)) q:x2=""  d
+ ...s x3="" f  s x3=$o(^TMP($zn,$j,"result",x1,x2,x3)) q:x3=""  s sum=sum+^(x3),j2=j2+1
+ ..s PLIST(j1)=x1_$c(1)_$s(j2:+$j(sum/j2,0,$e(CTTC(5),2,4)),1:"")_$c(1)_$s(j2:"Y",1:"N")
+ i Continue="Y" d
+ .k PLIST
+ .s (stop,sum,x1)="" f  s x1=$o(^TMP($zn,$j,"result",x1)) q:x1=""  d  q:stop
+ ..s x2="" f  s x2=$o(^TMP($zn,$j,"result",x1,x2)) q:x2=""  d  q:stop
+ ...s x3="" f  s x3=$o(^TMP($zn,$j,"result",x1,x2,x3)) q:x3=""  d  q:stop
+ ....i sum+$l(x1_$c(1)_x2_$c(1)_^(x3))>20000 s stop=1 q
+ ....s j=$o(PLIST(""),-1)+1,PLIST(j)=x1_$c(1)_x2_$c(1)_^(x3),sum=sum+$l(PLIST(j)) k ^TMP($zn,$j,"result",x1,x2,x3)
+ .s x1="" f  s x1=$o(^TMP($zn,$j,"result",x1)) q:x1=""  i $d(^TMP($zn,$j,"result",x1))=1 k ^TMP($zn,$j,"result",x1)
+ s PLIST=$o(PLIST(""),-1)
+ i '$d(^TMP($zn,$j,"result")) k ^TMP($zn,$j)
+ q $s(Continue'="Y":$p($g(^TMP($zn,$j,"RR")),"\",1,4),$d(^TMP($zn,$j,"result")):0,1:100)
+]]></Routine>
+</Export>

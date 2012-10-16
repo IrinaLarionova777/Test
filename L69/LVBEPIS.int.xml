@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBEPIS" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBEPIS ; IG 10/12/98 ;Get patient details by Episode Code
+ ;
+ ; supported calls:
+ ;
+ ; $$select^LVBEPIS(epis,testset,cnt)
+ ; $$gethist^LVBEPIS(epis)
+ ; $$open^LVBEPIS(testset,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBEPIS(testset,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBEPIS(testset,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBEPIS(testset,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBEPIS()
+ ;
+ q
+select(epis,testset,cnt) ;
+ n (testset,epis,cnt,PLIST)
+ k PLIST
+ q:epis="" 100
+ q:'$d(^TEPI(epis)) 100
+ s testset=$g(testset)
+ s exist=0 f j=1:1:$l(testset,"^") i $p(testset,"^",j)'="",$d(^TEPI(epis,1,$p(testset,"^",j))),$d(^TBB($p(testset,"^",j),epis)) s exist=1
+ s s=^TEPI(epis),surname=$p(s,"\"),dob=$p(s,"\",4),age=$p(s,"\",25),urn=$p(s,"\",18)
+ s name=$p(s,"\",2),coldate=$p(s,"\",10),dr=$p(s,"\",13),ward=$p($g(^TEPI(epis)),"\",20),sex=$p(s,"\",3),coltime=$p(s,"\",11)*60
+ s (test2,test)="",ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  s test=test_ts_"," i testset[ts s test2=test2_ts_","
+ i test2'="" s test2=$e(test2,1,$l(test2)-1)
+ i test'="" s test=$e(test,1,$l(test)-1)
+ s pregn="N"     ;pregnancy
+ s abs="N"       ;antibody register
+ s bgr=""        ;bloodgroup
+ i urn'="",$d(^TBBC(urn,"ABS")) s abs="Y"
+ i urn'="" s bgr=$g(^TBBC(urn,"GP"))
+ s:'dob dob=""
+ s pregn=$p(s,"\",34) s:pregn="" pregn="N"
+ s PLIST(1)=urn
+ S PLIST(2)=surname
+ S PLIST(3)=name
+ S PLIST(4)=dob
+ S PLIST(5)=age
+ S PLIST(6)=sex
+ S PLIST(7)=dr
+ S PLIST(8)=ward
+ S PLIST(9)=$s(testset'="":test2,1:test)
+ S PLIST(10)=""
+ S PLIST(11)=coldate
+ S PLIST(12)=epis
+ S PLIST(13)=$s(dr="":"",1:$p($g(^TTAB("DR",dr)),"\",2)_" "_$p($g(^TTAB("DR",dr)),"\"))
+ S PLIST(14)=pregn
+ S PLIST(15)=abs
+ S PLIST(16)=coltime
+ S PLIST(17)=bgr
+ S PLIST(18)=$s(testset="":"",1:epis_"||"_testset_"||"_$g(cnt))
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ;
+ ;get history
+gethist(epis) k PLIST s epis=$g(epis)
+ i $l(epis) s hist="",hs="" f  s hs=$o(^TEPI(epis,3,hs)) q:hs=""  s hs1=^(hs),PLIST(hs)=hs1
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ;
+ ;get list of episodes based on list of test sets
+open(testset,p1,p2,p3,p4,p5,p6,p7,p8,p9) s testset1=testset
+ k ^TMP("MVB",$j) f i=1:1:$l(testset,"^") i $p(testset,"^",i)'="" s ^TMP("MVB",$j,1,$p(testset,"^",i))=""
+ s ts1="" f  s ts1=$o(^TBB(ts1)) q:ts1=""  s ts2=$p(ts1,".") i $l(ts2),$d(^TMP("MVB",$j,1,ts2)) s ^TMP("MVB",$j,1,ts1)="" s:testset1'[ts1 testset1=testset1_"^"_ts1
+ s tset=0,epis=""
+ q 0
+ ;
+fetch(testset,p1,p2,p3,p4,p5,p6,p7,p8,p9) s tset=$g(tset),epis=$g(epis)
+ g ts2
+ts1 s tset=$o(^TMP("MVB",$j,1,tset)),epis=""
+ ;
+ts2 q:tset="" 100
+ s epis=$o(^TBB(tset,epis))
+ g:epis="" ts1
+ i $d(^TMP("MVB",$j,2,epis)) g ts2
+ i '$d(^TEPI(epis)) g ts2
+ s ^TMP("MVB",$j,2,epis)=""
+ q $$select(epis,$g(testset1))         
+ ; Fetch all data
+fetchbuffer(ts,p1,p2,p3,p4,p5,p6,p7,p8,p9) s ts=$g(ts) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(ts) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(ts,p1,p2,p3,p4,p5,p6,p7,p8,p9) N (ts,PLIST) s ts=$g(ts) K ^TMP($zn,$j)
+ i $$open(ts)
+ f cnt=1:1 Q:$$fetch(ts)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+close() k ^TMP("MVB",$j)
+ q 0
+ ;
+]]></Routine>
+</Export>

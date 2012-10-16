@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTMCEPV01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTMCEPV01	; BJ 01/08/2008 ; MEDICARE EPV CREATION
+	Q
+	; Parameters :  1.Payment Code
+	;
+CREATE(REPID,PAR,USER,%msql)	; Create report
+	N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+	K xHEADER D INIT
+	s line=1,xHEADER(line)="MEDICARE EPV FILE"
+	s line=2,xHEADER(line)=""
+	s line=3,xHEADER(line)="Paycode : "_xx1_" <"_PAR1_" >"
+	s line=4,xHEADER(line)=""
+	D HEADER^PRTREP00(.xHEADER),BODY,PRINT,FILE
+CREND	I '$$select^LVBPRPR(REPID) S PLIST(12)=PAR1 I $$update^LVBPRPR(REPID)
+	K ^TMP($zn,$j),^TMP("PRTREP00",$j)
+	Q
+	; initialize parameters
+INIT	F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+	K xSORT D H^PRTREP00(PAR10,$zn)
+	S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+	s xx1="" i '$$select^LVBCTPC(PAR1) s xx1=PLIST(3)
+	Q
+	; create temporary printing file
+BODY	
+	i $l(PAR1) d
+	.s (count,comp)="" f  s comp=$o(^TBIL(2,comp)) q:comp=""  d
+	..s epis="" f  s epis=$o(^TBIL(2,comp,PAR1,epis)) q:epis=""  d
+	...s card=$tr($$seldata^LVBEPVIS(epis,8),"."),ref=$tr($$seldata^LVBEPVIS(epis,108),".")
+	...i '$l(card)!'$l(ref) d
+	....s count=count+1
+	....s ^TMP($zn,$j,"REPORT","FILE"_(count\1000),epis)=""
+	Q
+PRINT	i $d(^TMP($zn,$j,"REPORT")) d
+	.s file="" f  s file=$o(^TMP($zn,$j,"REPORT",file)) q:file=""  d
+	..s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",file,epis)) q:epis=""  d
+	...i '$$select^LVBEPVIS(epis,"Y") d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+	s report="MCEPV",EndLine=$$seldata^LVBCTCLR(report,9) i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+	q
+FILE
+	i $d(^TMP($zn,$j,"REPORT")) d
+	.s locid="0" i '$$select^LVBCTPCT("HIC") s locid=PLIST(5)
+	.s dir="" i '$$select^LVBCTPCT("EPV") s dir=$tr(PLIST(7),$c(16,17,18),"^\|")
+	.i $l(dir) d
+	..s cnt=0 i $d(^CF("EPV-CNT")) s cnt=^CF("EPV-CNT")
+	..s cnt=cnt+1 i cnt>9000 s cnt=1
+	..s ^CF("EPV-CNT")=cnt
+	..s file="" f  s file=$o(^TMP($zn,$j,"REPORT",file)) q:file=""  d
+	...s delim="" f j="\","/" i dir[j s delim=j i $e(dir,$l(dir))'=j s dir=dir_j
+	...s dt=$$extdate2^SSUTIL4(+$h),fn=dir_"epvIn_"_locid_"_"_$p(dt,"/",3)_$p(dt,"/",2)_$p(dt,"/")_"_"_cnt_".txt"
+	...o fn:"WNS":2 e  q
+	...s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",file,epis)) q:epis=""  d
+	....s card=$tr($$seldata^LVBEPVIS(epis,8),"."),fname=$e($$seldata^LVBEPVIS(epis,4),1,40)
+	....s sname=$e($$seldata^LVBEPVIS(epis,3),1,40),dob=$$extdate2^SSUTIL4($$seldata^LVBEPVIS(epis,6))
+	....s ref=$tr($$seldata^LVBEPVIS(epis,108),".")
+	....i $l(card) d
+	.....s line=epis_"~"_card_"~"_fname_"~"_sname_"~"_dob_"~"_ref
+	.....u fn w line,!
+	...c fn
+	q
+]]></Routine>
+</Export>

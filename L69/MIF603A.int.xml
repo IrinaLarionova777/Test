@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF603A" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF603A(mi) ; ML 1/3/2001 ; COULTER Handshaking - Including Scatterplot/Histogram v.2A
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),crlf=$c(13,10),dc1=$c(17),dle=$c(16),nak=$c(21),syn=$c(22),soh=$c(1),enq=$c(5)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *x:20 i $c(x)'=syn d  q
+ .d:" BU "[(" "_par9_" ") SCAN
+ d trace^MIF000(mi,"SYN - Synchronising","H<--M")
+ w syn,*-3 d trace^MIF000(mi,"SYN - Synchronising","H-->M")
+ ; get block count
+ r *x1:10 e  w nak,*-3 d trace^MIF000(mi,"NAK - No block count (1) received","H-->M") q
+ i x1<32 w nak,*-3 d trace^MIF000(mi,"NAK - Invalid block count (1) received","H-->M") q
+ r *x2:10 e  w nak,*-3 d trace^MIF000(mi,"NAK - No block count (2) received","H-->M") q
+ i x2<32 w nak,*-3 d trace^MIF000(mi,"NAK - Invalid block count (2) received","H-->M") q
+ s BlockCnt=$zh($c(x1)_$c(x2)) d trace^MIF000(mi,"Block Count - "_BlockCnt_" ("_x1_","_x2_")","H<--M")
+ i 'BlockCnt w nak,*-3 d trace^MIF000(mi,"NAK - Bad block count","H-->M") q
+ w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ k ^TMP($zn,$j)
+Read s er=0 f i=1:1:BlockCnt d  i er q
+ .s rec=$$read^MIF000(stx,etx) i '$l(rec) e  s er=er+1 q
+ .s record=$tr($e(rec,3,$l(rec)-4),crlf,"\"),record=$tr(record,$c(0)," "),record=$tr(record,dc1,""),^TMP($zn,$j,i)=record,er=0
+ .d trace^MIF000(mi,record,"H<--M")
+ .w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ i er=1 w syn,*-3 d trace^MIF000(mi,"SYN - Resend data","H-->M") k ^TMP($zn,$j) g Read
+ i er q
+ r *x:2 i $c(x)'=syn w nak,*-3 d trace^MIF000(mi,"NAK - Did not receive synch after data","H-->M") q
+ d trace^MIF000(mi,"SYN - Packet transfer completed","H<--M")
+ w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ s record="" f i=1:1:BlockCnt s record=record_^TMP($zn,$j,i)
+ i $e(record,1,21)="\\\\\\--------------\" s record=$e(record,22,$l(record))
+ i $e(record)="S" d
+ .s (sample,epis,result,res,surname,date,time,QC)="" k ScatRes
+ .s xTests=$zh($e($p(record,"\"),2,3))
+ .i $p(record,"\",2)="5CC" s record=$p(record,"\",3,$l(record,"\"))
+ .e  s record=$p(record,"\",xTests+2,$l(record,"\"))
+ .f j1=1:1:xTests i $e(record)="T" d
+ ..s xTestType=$p(record,"\"),xGroup=$zh($p(record,"\",2)),record=$p(record,"\",3,$l(record,"\"))
+ ..f j2=1:1:xGroup i $e(record)="G" d
+ ...s xField=$zh($p(record,"\",2)),record=$p(record,"\",3,$l(record,"\"))
+ ...f j3=1:1:xField s res=$p(record,"\",j3) i $l(res) d
+ .... ; extract record type
+ ....s x1=$p(res," ",1) i " .. -- ++ ?? :: "[(" "_$e(x1,1,2)_" ") q
+ ....i x1="ID1",'$l(epis) s (com,sus,def)="",epis=$p(res,"ID1 ",2),epis=$tr(epis," -") i xTestType="5CC" s QC="\"_epis
+ ....i x1="PID1",'$l(epis) s (com,sus,def)="",epis=$p(res,"PID1 ",2),epis=$tr(epis," -") i xTestType="5CC" s QC="\"_epis
+ ....i x1="CASSPOS",'$l(epis) s (com,sus,def)="",epis=$p(res,"CASSPOS ",2),epis=$tr(epis,"/ -","_") i xTestType="5CC" s QC="\"_epis
+ ....i x1="PCASSPOS",'$l(epis) s (com,sus,def)="",epis=$p(res,"PCASSPOS ",2),epis=$tr(epis,"/ -","_") i xTestType="5CC" s QC="\"_epis
+ ....i x1="LOT#" s (com,sus,def)="",epis=$p(res,"LOT# ",2),epis=$tr(epis,"/ -","_"),QC="\"_epis
+ ....i x1="DEFINIT" s def=def_$s($l(def):" ",1:"")_$p(res,"DEFINIT ",2)
+ ....i x1="SUSPECT" s sus=sus_$s($l(sus):" ",1:"")_$p(res,"SUSPECT ",2)
+ ....i x1="COMMENT" s com=com_$s($l(com):" ",1:"")_$p(res,"COMMENT ",2)
+ ....s group=0
+ ....i (" WBC RBC HGB HCT MCV MCH MCHC RDW PLT PCT MPV PDW ")[(" "_x1_" ") s group=1
+ ....i (" LY# MO# NE# EO# BA# LY% MO% NE% EO% BA% ")[(" "_x1_" ") s group=1
+ ....i (" RET% RET# MRV MI OTHER ")[(" "_x1_" ") s group=1
+ ....i (" VAL1 VAL2 VAL3 VAL4 VAL5 DF1 ")[(" "_x1_" ") s group=2
+ ....i (" RBCH PLTH PLTF V C S WBCH WBCF ")[(" "_x1_" ") s group=2
+ ....i group=1 d
+ ..... ; extract result
+ .....s x2=$p(res," ",2) i " .. -- ++ ?? :: "[(" "_$e(x2,1,2)_" ") q
+ ..... ; extract flag
+ .....s x3=$p(res," ",3)
+ .....i $l(x1),$l(x2) s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ....i group=2 d
+ ..... ; extract result
+ .....s x2=$p(res," ",2) i x2="" q
+ .....i $e(x1,1,3)="VAL" s ScatRes(x1)=x2 q
+ .....i x1="DF1" f j=1:1:($l(res)\64) s ScatRes("DIFF",j)="DIFF"_$c(par10)_j_$c(par10)_$e(x2,(j-1)*64+1,j*64)_$c(par11)
+ .....i " RBCH PLTH PLTF V C S WBCH WBCF "[(" "_x1_" ") s ScatRes(x1,1)=x1_$c(par10)_1_$c(par10)_x2_$c(par11)
+ ...s record=$p(record,"\",xField+1,$l(record,"\"))
+ i $l(result) d
+ .i $l(def) s result=result_"DEF"_$c(par10)_def_$c(par11)
+ .i $l(sus) s result=result_"SUS"_$c(par10)_sus_$c(par11)
+ .i $l(com) s result=result_"COM"_$c(par10)_com_$c(par11)
+ .d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ i $d(ScatRes) d
+ .s result="DIFF"_$c(par10)_"0"_$c(par10)_$g(ScatRes("VAL1"))_$c(20)_$g(ScatRes("VAL2"))_$c(20)_$g(ScatRes("VAL3"))_$c(20)_$g(ScatRes("VAL4"))_$c(20)_$g(ScatRes("VAL5"))_$c(par11)
+ .f i="DIFF" s x="" f  s x=$o(ScatRes(i,x)) q:x=""  s result=result_ScatRes(i,x)
+ .f i="RBCH","PLTH","PLTF","V","C","S","WBCH","WBCF" i $d(ScatRes(i,1)) s result=result_ScatRes(i,1)
+ .i $l(result) d filesp^MIF000(mi,sample,epis,result)
+ k ^TMP($zn,$j)
+ q
+SCAN ; check all episodes for tests to be performed
+ d scanall^MIF000(mi)
+ s epis="" f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  d
+ .i '$$select^LVBEPVIS(epis,"Y") d
+ ..k EPVIS,CTDR,CTHOS m EPVIS=PLIST
+ ..i '$$select^LVBCTDR(EPVIS(15),"Y") m CTDR=PLIST
+ ..i '$$select^LVBCTHOS(EPVIS(22),"Y") m CTHOS=PLIST
+ ..s nr=0
+ ..s record=record_"WL AD"_crlf,nr=nr+1
+ ..s record=record_"ID "_epis_crlf,nr=nr+1
+ ..i $l(EPVIS(3)) s record=record_"PL "_$e(EPVIS(3),1,16)_crlf,nr=nr+1
+ ..i $l(EPVIS(4)) s record=record_"PF "_$e(EPVIS(4),1,16)_crlf,nr=nr+1
+ ..i $l(EPVIS(6)) s record=record_"BD "_$$extdate2^SSUTIL4(EPVIS(6))_crlf,nr=nr+1
+ ..s record=record_"SX "_$s($p(EPVIS(5),$c(1))="M":"M",$p(EPVIS(5),$c(1))="F":"F",1:"U")_crlf,nr=nr+1
+ ..i $l($g(CTHOS(3))) s record=record_"BD "_$e(CTHOS(3),1,16)_crlf,nr=nr+1
+ ..i $l($g(CTDR(3))) s record=record_"DL "_$e(CTDR(3),1,16)_crlf,nr=nr+1
+ ..i $l($g(CTDR(4))) s record=record_"DF "_$e(CTDR(4),1,16)_crlf,nr=nr+1
+ ..s record=record_"TS DIFF,"_epis_crlf,nr=nr+1
+ ..s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)=soh_"0"_$zh(nr)_crlf_record
+ .k ^TMP("MIF-SCAN",$j,mi,epis)
+ i $d(^TMIF(mi,10)) d Send
+ q
+Send ; send list of orders if exists
+ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M")
+ f j=1:1:10 r *R:1 i ($c(R)=syn)!($c(R)=enq) q
+ d trace^MIF000(mi,$s($c(R)=syn:"SYN",$c(R)=enq:"ENQ",1:R),"H<--M")
+ i $c(R)'=enq q
+ w "01",*-3 d trace^MIF000(mi,"01","H-->M")
+ f j=1:1:10 r *R:1 i ($c(R)=ack)!($c(R)=nak) q
+ d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=nak:"NAK",1:R),"H<--M")
+ i $c(R)'=ack q
+ s x=$o(^TMIF(mi,10,"")) i $l(^TMIF(mi,10,x)) d
+ .s str=stx_"01"_$e(^(x)_$j("",256),1,256)_$$CHSUM($e(^(x)_$j("",256),1,256))_etx
+ .w str,*-3 d trace^MIF000(mi,str,"H-->M")
+ .f j=1:1:10 r *R:1 i ($c(R)=ack)!($c(R)=nak)!($c(R)=enq) q
+ .d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=nak:"NAK",$c(R)=enq:"ENQ",1:R),"H<--M")
+ .i $c(R)=ack d
+ ..w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M")
+ ..f j=1:1:10 r *R:1 i ($c(R)=ack)!($c(R)=nak)!($c(R)=dle) q
+ ..i $c(R)=dle r *R:10
+ ..d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=nak:"NAK","ABCDEF"[$c(R):"DLE_"_$c(R),1:R),"H<--M")
+ ..i ($c(R)=ack)!("AB"[$c(R)) k ^TMIF(mi,10,x)
+ q
+ ; calculate check sum
+CHSUM(str) n (str)
+ s crclsb=255
+ s crcmsb=255
+ for j=1:1:$l(str) d
+ .s d=$a($e(str,j))
+ .s x=$zcrc($c(d,crcmsb),1) ; X = D XOR (CRCMSB)
+ .s x=$zcrc($c(x,(x\16)),1) ; X = X XOR (X>>4)
+ .s crcmsb=$zcrc($c(crclsb,(x\8),(x*16#256)),1) ; CRCMSB = CRCLSB XOR (X>>3) XOR (X<<4)
+ .s crclsb=$zcrc($c(x,(x*32#256)),1) ; CRCLSB = X XOR (X<<5)
+ s crcmsb=$zcrc($c(crcmsb,255),1)
+ s crclsb=$zcrc($c(crclsb,255),1)
+ q $zh(crcmsb)_$zh(crclsb) 
+]]></Routine>
+</Export>

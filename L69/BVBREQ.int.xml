@@ -1,0 +1,587 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="BVBREQ" type="INT" languagemode="0"><![CDATA[
+BVBREQ ; IG 10/12/98 ; MVB Control data access for BB_Request  ; Compiled July 25, 2000 12:22:27 for Cache for Windows
+ ; 
+ ; supported calls: 
+ ; 
+ ; $$select^BVBREQ(ROWID) 
+ ; $$insert^BVBREQ() 
+ ; $$update^BVBREQ(ROWID) 
+ ; $$delete^BVBREQ(ROWID) 
+ ; $$open^BVBREQ(lab,ts,pat,stat,site,newborn,p6,p7,p8,p9) 
+ ; $$fetch^BVBREQ(lab,ts,pat,stat,site,newborn,p6,p7,p8,p9) 
+ ; $$fetchbuffer^BVBREQ(lab,ts,pat,stat,site,newborn,p6,p7,p8,p9) 
+ ; $$fetchall^BVBREQ(lab,ts,pat,stat,site,newborn,p6,p7,p8,p9) 
+ ; $$close^BVBREQ() 
+ ; 
+ 
+ 
+ 
+ 
+ 
+ q 
+open(lab,ts,pat,STAT,site,newborn,p6,p7,p8,p9) 
+ s lab=$g(lab),ts=$g(ts),pat=$g(pat),STAT=$g(STAT),site=$g(site),newborn=$g(newborn)
+ s stat=STAT,GLOBALSTAT="" i STAT["||" s stat=$p(STAT,"||"),GLOBALSTAT=STAT
+ d
+ .i lab'="" d %REQ100o q
+ .i pat'="" d %REQ200o q
+ .i stat'="" d %REQ500o q
+ .i ts'="" d %REQ300o q
+ . d %REQ400o
+ q 0
+ ;
+fetch(lab,ts,pat,STAT,site,newborn,p6,p7,p8,p9) k PLIST
+ s lab=$g(lab),site=$g(site),ts=$g(ts),pat=$g(pat),STAT=$g(STAT),newborn=$g(newborn)
+ i $l(GLOBALSTAT) s stat=$p(GLOBALSTAT,"||")
+nx d
+ .i lab'="" d %0No q
+ .i pat'="" d %0Oo q
+ .i stat'="" d %0Po q
+ .i ts'="" d %0Qo q
+ . d %0Ro q
+ i 'SQLCODE,$$val(PLIST(1),lab,ts,pat,stat,site,newborn) g nx
+ i SQLCODE,$l($p(GLOBALSTAT,"||",2,99)) d  g nx
+ .i $$close()
+ .s GLOBALSTAT=$p(GLOBALSTAT,"||",2,99),stat=$p(GLOBALSTAT,"||")
+ .i $$open(lab,ts,pat,stat,site,newborn)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(lab,ts,pat,STAT,site,newborn,p6,p7,p8,p9) k ^TMP($zn,$j)
+ s lab=$g(lab),ts=$g(ts),pat=$g(pat),STAT=$g(STAT),site=$g(site),newborn=$g(newborn)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100)
+ f xxx=1:1:max s SQLCODE=$$fetch(lab,ts,pat,STAT,site,newborn) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(lab,ts,pat,STAT,site,newborn,p6,p7,p8,p9) N (lab,ts,pat,STAT,site,newborn,PLIST) K ^TMP($zn,$j)
+ s lab=$g(lab),ts=$g(ts),pat=$g(pat),STAT=$g(STAT),site=$g(site),newborn=$g(newborn)
+ i $$open(lab,ts,pat,STAT,site,newborn)
+ f cnt=1:1 Q:$$fetch(lab,ts,pat,STAT,site,newborn)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ; 
+close() ;
+ d %REQ100c 
+ d %REQ200c 
+ d %REQ300c 
+ d %REQ400c 
+ d %REQ500c 
+ q 0 
+ ;        
+insert() d pre K PLIST(1) 
+ d %0Xo 
+ i 'SQLCODE q $$select(%ROWID) 
+ q SQLCODE 
+ ; 
+update(RowID) k PLIST(1) d pre s RowID=$g(RowID)
+ d %0Yo 
+ i 'SQLCODE q $$select(%ROWID)
+ q SQLCODE 
+ ; 
+delete(ROWID) s ROWID=$g(ROWID)
+ d %0Zo
+ q 0 
+ ; 
+ ; Adjust certain fields 
+adjust f j=11 k XX m XX=PLIST(j) i '$$remarks^LVBCOM01("IE",.XX) k PLIST(j) m PLIST(j)=XX
+ q 
+ ;
+select(ROWID) k PLIST s ROWID=$g(ROWID)
+ d %00o 
+ s PLIST=$O(PLIST(""),-1) 
+ i 'SQLCODE d adjust
+ q SQLCODE 
+ ; 
+ ; 
+val(row,lab,ts,pat,stat,site,newborn) ;validate request, 0-valid,1-invalid 
+ n (row,lab,ts,pat,stat,site,newborn) s DD=$p(^CF("BB",1),"^",30)
+ s flag="" i stat="||" s flag="Y",stat=""
+ s epis=$p($g(^BB("RQ",+row)),"^")
+ i site'="",epis'="",$p($g(^TEPI(epis)),"\",36)'=site q 1
+ i newborn="Y",epis'="",($h-$p($g(^TEPI(epis)),"\",4)>DD) q 1
+ i newborn="N",epis'="",($h-$p($g(^TEPI(epis)),"\",4)'>DD) q 1
+ d %01o
+ q SQLCODE
+ ; 
+ ;clear antibody screen
+clear(row) n (row)
+ s err=$$select(row) q:err err
+ s PLIST(10)=$o(^CT("RQST",0,"Code","A","")),err=$$update(row)
+ ;update packs
+ s err=$$open^BVBRQPK(row)
+ f  s err=$$fetch^BVBRQPK(row) q:err  d
+ .f j=4:1:10 s PLIST(j)=""
+ .s err1=$$update^BVBRQPK(PLIST(1))
+ s err=$$close^BVBRQPK()        
+ ;update results
+ s err=$$open^BVBRQRES(row)
+ f  s err=$$fetch^BVBRQRES(row) q:err  d
+ .f j=4:1:7 s PLIST(j)=""
+ .s err1=$$update^BVBRQRES(PLIST(1))
+ s err=$$close^BVBRQRES()        
+ q 0
+pre f j=11 k XX m XX=PLIST(j) i '$$remarks^LVBCOM01("EI",.XX) k PLIST(j) m PLIST(j)=XX
+ q
+%0ABr10 s $P(%REQ100d(8),$C(1))=$$CT006^at228($g(%REQ100d(11))) q
+%0ABr11 s %REQ100d(9)=$p($g(%REQ100d(11)),"||",2) q
+%0ABr12 s %REQ100d(10)=$$CT008^at228($g(%REQ100d(11))) q
+%0ABr7 s %REQ100d(1)=$p($g(%REQ100d(11)),"||",1) q
+%0ABr8 s %REQ100d(5)=$$CT003^at228($g(%REQ100d(1))) q
+%0ABr9 s $P(%REQ100d(6),$C(1))=$$CT004^at228($g(%REQ100d(11)))
+ s:$c(1)'[$P($g(%REQ100d(6)),$C(1)) $P(%REQ100d(6),$C(1))=+$j($P($g(%REQ100d(6)),$C(1)),"",$l($p($P($g(%REQ100d(6)),$C(1)),".",2)))  ; Proper Decimal Places
+ q
+%0ABs1 s %val=$s(%val'=+%val:"",1:$fn(%val,"")) q
+%0ABs2 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,1,-1,2) q
+%0ABs3 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,4,-1,4) q
+%0ABs4 s %val=$$timeext^%qarzdt(%val,2) q
+%0ABs5 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%0ABs6 i %val'=+%val s %val=""
+ e  s %val=$fn(%val,"")
+ q
+%REQ100o s SQLCODE=$s($g(%REQ100c):-101,1:0) q:SQLCODE'=0
+ s %REQ100c=1 k %REQ100m
+ s %REQ100E=$zt,%REQ100f=0,%REQ100e=0,%REQ100L=""
+ s %REQ100d(2)=$P(lab,$C(1))
+ s:%REQ100d(2)="" %REQ100d(2)=$E(lab,2,999)
+ q
+%0Afirst   ;  init
+ ; asl MOD# 2
+ s %REQ100d(1)=$g(%REQ100d(2))
+ i %REQ100d(1)="" g %0ABdun
+ s $P(%REQ100d(4),$C(1))=""
+%0ABk1 s $P(%REQ100d(4),$C(1))=$o(^BB("RQ",0,"Lab",%REQ100d(1),$P(%REQ100d(4),$C(1))))
+ i $P(%REQ100d(4),$C(1))="" g %0ABdun
+ i $P(%REQ100d(4),$C(1))'=+$P(%REQ100d(4),$C(1)) g %0ABdun
+ 
+ s %val=$P(%REQ100d(4),$C(1)) d %0ABs1:%val'="" s $P(%REQ100d(4),$C(1),2)=%val
+ i $P(%REQ100d(4),$C(1))'="",$d(^BB("RQ",$P(%REQ100d(4),$C(1))))
+ i '$t
+ e  i 1>$P(%REQ100d(4),$C(1)),$P(%REQ100d(4),$C(1))=+$P(%REQ100d(4),$C(1))
+ i  g %0ABk1
+ s %REQ100n=$g(^BB("RQ",$P(%REQ100d(4),$C(1))))
+ s %REQ100d(7)=$p(%REQ100n,"^",4) s %REQ100d(11)=$p(%REQ100n,"^",8) s %REQ100d(12)=$p(%REQ100n,"^",9) s %REQ100d(14)=$p(%REQ100n,"^",10) s %REQ100d(15)=$p(%REQ100n,"^",11) s %REQ100d(16)=$p(%REQ100n,"^",12) s %REQ100d(17)=$p(%REQ100n,"^",13) s %REQ100d(18)=$p(%REQ100n,"^",14) s %REQ100d(19)=$p(%REQ100n,"^",15)
+ k %REQ100d(13) s %REQ100d(13)=$g(^BB("RQ",$P(%REQ100d(4),$C(1)),"REM",0)) s:'%REQ100d(13) %REQ100d(13)="" f %irep=1:1:%REQ100d(13) s %REQ100d(13,%irep)=$g(^(%irep))
+ 
+ s %val=$P(%REQ100d(7),$C(1)) d %0ABs2:%val'="" s $P(%REQ100d(7),$C(1),2)=%val
+ s %val=$P(%REQ100d(14),$C(1)) d %0ABs2:%val'="" s $P(%REQ100d(14),$C(1),2)=%val
+ s %val=$P(%REQ100d(16),$C(1)) d %0ABs3:%val'="" s $P(%REQ100d(16),$C(1),2)=%val
+ s %val=$P(%REQ100d(17),$C(1)) d %0ABs4:%val'="" s $P(%REQ100d(17),$C(1),2)=%val
+ s %val=$P(%REQ100d(18),$C(1)) d %0ABs5:%val'="" s $P(%REQ100d(18),$C(1),2)=%val
+ s %val=$P(%REQ100d(19),$C(1)) d %0ABs6:%val'="" s $P(%REQ100d(19),$C(1),2)=%val
+ d %0ABr7
+ d %0ABr8
+ d %0ABr9
+ s %val=$P(%REQ100d(6),$C(1)) d %0ABs1:%val'="" s $P(%REQ100d(6),$C(1),2)=%val
+ d %0ABr10
+ s %val=$P(%REQ100d(8),$C(1)) d %0ABs3:%val'="" s $P(%REQ100d(8),$C(1),2)=%val
+ d %0ABr11
+ d %0ABr12
+ s SQLCODE=0 s:SQLCODE=0 %REQ100f=%REQ100f+1 s %REQ100c=10 q
+%REQ100f i '$g(%REQ100c) s SQLCODE=-102 q
+ i %REQ100c=100 s SQLCODE=100 q
+ s $zt="%0Aerr^"_$zn s $ze="" n %val g %0Afirst:%REQ100c=1
+ g %0ABk1
+%0ABdun 
+%0AAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %REQ100c=100 q
+%REQ100c i '$g(%REQ100c) s SQLCODE=-102 q
+ k %REQ100c,%REQ100d,%REQ100e,%REQ100E,%REQ100f,%REQ100l,%REQ100L,%REQ100n,%REQ100r,%REQ100R s SQLCODE=0 q
+%0Aerr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%REQ100E),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0EBr1 s %REQ200d(5)=$p($g(%REQ200d(11)),"||",1) q
+%0EBr2 s $P(%REQ200d(6),$C(1))=$$CT004^at228($g(%REQ200d(11)))
+ s:$c(1)'[$P($g(%REQ200d(6)),$C(1)) $P(%REQ200d(6),$C(1))=+$j($P($g(%REQ200d(6)),$C(1)),"",$l($p($P($g(%REQ200d(6)),$C(1)),".",2)))  ; Proper Decimal Places
+ q
+%0EBr3 s $P(%REQ200d(8),$C(1))=$$CT006^at228($g(%REQ200d(11))) q
+%0EBr4 s %REQ200d(9)=$p($g(%REQ200d(11)),"||",2) q
+%0EBr5 s %REQ200d(10)=$$CT008^at228($g(%REQ200d(11))) q
+%REQ200o s SQLCODE=$s($g(%REQ200c):-101,1:0) q:SQLCODE'=0
+ s %REQ200c=1 k %REQ200m
+ s %REQ200E=$zt,%REQ200f=0,%REQ200e=0,%REQ200L=""
+ s %REQ200d(2)=$P(pat,$C(1))
+ s:%REQ200d(2)="" %REQ200d(2)=$E(pat,2,999)
+ q
+%0Efirst   ;  init
+ ; asl MOD# 2
+ s %REQ200d(1)=$g(%REQ200d(2))
+ i %REQ200d(1)="" g %0EBdun
+ s $P(%REQ200d(4),$C(1))=""
+%0EBk1 s $P(%REQ200d(4),$C(1))=$o(^BB("RQ",0,"Pat",%REQ200d(1),$P(%REQ200d(4),$C(1))))
+ i $P(%REQ200d(4),$C(1))="" g %0EBdun
+ i $P(%REQ200d(4),$C(1))'=+$P(%REQ200d(4),$C(1)) g %0EBdun
+ 
+ s %val=$P(%REQ200d(4),$C(1)) d %0ABs1:%val'="" s $P(%REQ200d(4),$C(1),2)=%val
+ i $P(%REQ200d(4),$C(1))'="",$d(^BB("RQ",$P(%REQ200d(4),$C(1))))
+ i '$t
+ e  i 1>$P(%REQ200d(4),$C(1)),$P(%REQ200d(4),$C(1))=+$P(%REQ200d(4),$C(1))
+ i  g %0EBk1
+ s %REQ200n=$g(^BB("RQ",$P(%REQ200d(4),$C(1))))
+ s %REQ200d(7)=$p(%REQ200n,"^",4) s %REQ200d(11)=$p(%REQ200n,"^",8) s %REQ200d(12)=$p(%REQ200n,"^",9) s %REQ200d(14)=$p(%REQ200n,"^",10) s %REQ200d(15)=$p(%REQ200n,"^",11) s %REQ200d(16)=$p(%REQ200n,"^",12) s %REQ200d(17)=$p(%REQ200n,"^",13) s %REQ200d(18)=$p(%REQ200n,"^",14) s %REQ200d(19)=$p(%REQ200n,"^",15)
+ k %REQ200d(13) s %REQ200d(13)=$g(^BB("RQ",$P(%REQ200d(4),$C(1)),"REM",0)) s:'%REQ200d(13) %REQ200d(13)="" f %irep=1:1:%REQ200d(13) s %REQ200d(13,%irep)=$g(^(%irep))
+ 
+ s %val=$P(%REQ200d(7),$C(1)) d %0ABs2:%val'="" s $P(%REQ200d(7),$C(1),2)=%val
+ s %val=$P(%REQ200d(14),$C(1)) d %0ABs2:%val'="" s $P(%REQ200d(14),$C(1),2)=%val
+ s %val=$P(%REQ200d(16),$C(1)) d %0ABs3:%val'="" s $P(%REQ200d(16),$C(1),2)=%val
+ s %val=$P(%REQ200d(17),$C(1)) d %0ABs4:%val'="" s $P(%REQ200d(17),$C(1),2)=%val
+ s %val=$P(%REQ200d(18),$C(1)) d %0ABs5:%val'="" s $P(%REQ200d(18),$C(1),2)=%val
+ s %val=$P(%REQ200d(19),$C(1)) d %0ABs6:%val'="" s $P(%REQ200d(19),$C(1),2)=%val
+ d %0EBr1
+ d %0EBr2
+ s %val=$P(%REQ200d(6),$C(1)) d %0ABs1:%val'="" s $P(%REQ200d(6),$C(1),2)=%val
+ d %0EBr3
+ s %val=$P(%REQ200d(8),$C(1)) d %0ABs3:%val'="" s $P(%REQ200d(8),$C(1),2)=%val
+ d %0EBr4
+ d %0EBr5
+ s SQLCODE=0 s:SQLCODE=0 %REQ200f=%REQ200f+1 s %REQ200c=10 q
+%REQ200f i '$g(%REQ200c) s SQLCODE=-102 q
+ i %REQ200c=100 s SQLCODE=100 q
+ s $zt="%0Eerr^"_$zn s $ze="" n %val g %0Efirst:%REQ200c=1
+ g %0EBk1
+%0EBdun 
+%0EAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %REQ200c=100 q
+%REQ200c i '$g(%REQ200c) s SQLCODE=-102 q
+ k %REQ200c,%REQ200d,%REQ200e,%REQ200E,%REQ200f,%REQ200l,%REQ200L,%REQ200n,%REQ200r,%REQ200R s SQLCODE=0 q
+%0Eerr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%REQ200E),SQLCODE=-20603,%msg=$ze s $ze="" g %0EAdun
+%0FBr1 s %REQ300d(5)=$p($g(%REQ300d(11)),"||",1) q
+%0FBr2 s %REQ300d(6)=$$CT003^at228($g(%REQ300d(5))) q
+%0FBr3 s $P(%REQ300d(7),$C(1))=$$CT004^at228($g(%REQ300d(11)))
+ s:$c(1)'[$P($g(%REQ300d(7)),$C(1)) $P(%REQ300d(7),$C(1))=+$j($P($g(%REQ300d(7)),$C(1)),"",$l($p($P($g(%REQ300d(7)),$C(1)),".",2)))  ; Proper Decimal Places
+ q
+%0FBr4 s $P(%REQ300d(9),$C(1))=$$CT006^at228($g(%REQ300d(11))) q
+%0FBr5 s %REQ300d(10)=$$CT008^at228($g(%REQ300d(11))) q
+%REQ300o s SQLCODE=$s($g(%REQ300c):-101,1:0) q:SQLCODE'=0
+ s %REQ300c=1 k %REQ300m
+ s %REQ300E=$zt,%REQ300f=0,%REQ300e=0,%REQ300L=""
+ s %REQ300d(2)=$P(ts,$C(1))
+ s:%REQ300d(2)="" %REQ300d(2)=$E(ts,2,999)
+ q
+%0Ffirst   ;  init
+ ; asl MOD# 2
+ s %REQ300d(1)=$g(%REQ300d(2))
+ i %REQ300d(1)="" g %0FBdun
+ s $P(%REQ300d(4),$C(1))=""
+%0FBk1 s $P(%REQ300d(4),$C(1))=$o(^BB("RQ",0,"TS",%REQ300d(1),$P(%REQ300d(4),$C(1))))
+ i $P(%REQ300d(4),$C(1))="" g %0FBdun
+ i $P(%REQ300d(4),$C(1))'=+$P(%REQ300d(4),$C(1)) g %0FBdun
+ 
+ s %val=$P(%REQ300d(4),$C(1)) d %0ABs1:%val'="" s $P(%REQ300d(4),$C(1),2)=%val
+ i $P(%REQ300d(4),$C(1))'="",$d(^BB("RQ",$P(%REQ300d(4),$C(1))))
+ i '$t
+ e  i 1>$P(%REQ300d(4),$C(1)),$P(%REQ300d(4),$C(1))=+$P(%REQ300d(4),$C(1))
+ i  g %0FBk1
+ s %REQ300n=$g(^BB("RQ",$P(%REQ300d(4),$C(1))))
+ s %REQ300d(8)=$p(%REQ300n,"^",4) s %REQ300d(11)=$p(%REQ300n,"^",8) s %REQ300d(12)=$p(%REQ300n,"^",9) s %REQ300d(14)=$p(%REQ300n,"^",10) s %REQ300d(15)=$p(%REQ300n,"^",11) s %REQ300d(16)=$p(%REQ300n,"^",12) s %REQ300d(17)=$p(%REQ300n,"^",13) s %REQ300d(18)=$p(%REQ300n,"^",14) s %REQ300d(19)=$p(%REQ300n,"^",15)
+ k %REQ300d(13) s %REQ300d(13)=$g(^BB("RQ",$P(%REQ300d(4),$C(1)),"REM",0)) s:'%REQ300d(13) %REQ300d(13)="" f %irep=1:1:%REQ300d(13) s %REQ300d(13,%irep)=$g(^(%irep))
+ 
+ s %val=$P(%REQ300d(8),$C(1)) d %0ABs2:%val'="" s $P(%REQ300d(8),$C(1),2)=%val
+ s %val=$P(%REQ300d(14),$C(1)) d %0ABs2:%val'="" s $P(%REQ300d(14),$C(1),2)=%val
+ s %val=$P(%REQ300d(16),$C(1)) d %0ABs3:%val'="" s $P(%REQ300d(16),$C(1),2)=%val
+ s %val=$P(%REQ300d(17),$C(1)) d %0ABs4:%val'="" s $P(%REQ300d(17),$C(1),2)=%val
+ s %val=$P(%REQ300d(18),$C(1)) d %0ABs5:%val'="" s $P(%REQ300d(18),$C(1),2)=%val
+ s %val=$P(%REQ300d(19),$C(1)) d %0ABs6:%val'="" s $P(%REQ300d(19),$C(1),2)=%val
+ d %0FBr1
+ d %0FBr2
+ d %0FBr3
+ s %val=$P(%REQ300d(7),$C(1)) d %0ABs1:%val'="" s $P(%REQ300d(7),$C(1),2)=%val
+ d %0FBr4
+ s %val=$P(%REQ300d(9),$C(1)) d %0ABs3:%val'="" s $P(%REQ300d(9),$C(1),2)=%val
+ d %0FBr5
+ s SQLCODE=0 s:SQLCODE=0 %REQ300f=%REQ300f+1 s %REQ300c=10 q
+%REQ300f i '$g(%REQ300c) s SQLCODE=-102 q
+ i %REQ300c=100 s SQLCODE=100 q
+ s $zt="%0Ferr^"_$zn s $ze="" n %val g %0Ffirst:%REQ300c=1
+ g %0FBk1
+%0FBdun 
+%0FAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %REQ300c=100 q
+%REQ300c i '$g(%REQ300c) s SQLCODE=-102 q
+ k %REQ300c,%REQ300d,%REQ300e,%REQ300E,%REQ300f,%REQ300l,%REQ300L,%REQ300n,%REQ300r,%REQ300R s SQLCODE=0 q
+%0Ferr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%REQ300E),SQLCODE=-20603,%msg=$ze s $ze="" g %0FAdun
+%0GBr1 s %REQ400d(3)=$p($g(%REQ400d(10)),"||",1) q
+%0GBr2 s %REQ400d(4)=$$CT003^at228($g(%REQ400d(3))) q
+%0GBr3 s $P(%REQ400d(5),$C(1))=$$CT004^at228($g(%REQ400d(10)))
+ s:$c(1)'[$P($g(%REQ400d(5)),$C(1)) $P(%REQ400d(5),$C(1))=+$j($P($g(%REQ400d(5)),$C(1)),"",$l($p($P($g(%REQ400d(5)),$C(1)),".",2)))  ; Proper Decimal Places
+ q
+%0GBr4 s $P(%REQ400d(7),$C(1))=$$CT006^at228($g(%REQ400d(10))) q
+%0GBr5 s %REQ400d(8)=$p($g(%REQ400d(10)),"||",2) q
+%0GBr6 s %REQ400d(9)=$$CT008^at228($g(%REQ400d(10))) q
+%REQ400o s SQLCODE=$s($g(%REQ400c):-101,1:0) q:SQLCODE'=0
+ s %REQ400c=1 k %REQ400m
+ s %REQ400E=$zt,%REQ400f=0,%REQ400e=0,%REQ400L=""
+ q
+%0Gfirst   ;  init
+ ; asl MOD# 2
+ s $P(%REQ400d(2),$C(1))=""
+%0GBk1 s $P(%REQ400d(2),$C(1))=$o(^BB("RQ",$P(%REQ400d(2),$C(1))))
+ i $P(%REQ400d(2),$C(1))="" g %0GBdun
+ i 1>$P(%REQ400d(2),$C(1)),$P(%REQ400d(2),$C(1))=+$P(%REQ400d(2),$C(1)) g %0GBk1
+ i $P(%REQ400d(2),$C(1))'=+$P(%REQ400d(2),$C(1)) g %0GBdun
+ s %REQ400n=$g(^BB("RQ",$P(%REQ400d(2),$C(1))))
+ s %REQ400d(6)=$p(%REQ400n,"^",4) s %REQ400d(10)=$p(%REQ400n,"^",8) s %REQ400d(11)=$p(%REQ400n,"^",9) s %REQ400d(13)=$p(%REQ400n,"^",10) s %REQ400d(14)=$p(%REQ400n,"^",11) s %REQ400d(15)=$p(%REQ400n,"^",12) s %REQ400d(16)=$p(%REQ400n,"^",13) s %REQ400d(17)=$p(%REQ400n,"^",14) s %REQ400d(18)=$p(%REQ400n,"^",15)
+ k %REQ400d(12) s %REQ400d(12)=$g(^BB("RQ",$P(%REQ400d(2),$C(1)),"REM",0)) s:'%REQ400d(12) %REQ400d(12)="" f %irep=1:1:%REQ400d(12) s %REQ400d(12,%irep)=$g(^(%irep))
+ 
+ s %val=$P(%REQ400d(2),$C(1)) d %0ABs1:%val'="" s $P(%REQ400d(2),$C(1),2)=%val
+ s %val=$P(%REQ400d(6),$C(1)) d %0ABs2:%val'="" s $P(%REQ400d(6),$C(1),2)=%val
+ s %val=$P(%REQ400d(13),$C(1)) d %0ABs2:%val'="" s $P(%REQ400d(13),$C(1),2)=%val
+ s %val=$P(%REQ400d(15),$C(1)) d %0ABs3:%val'="" s $P(%REQ400d(15),$C(1),2)=%val
+ s %val=$P(%REQ400d(16),$C(1)) d %0ABs4:%val'="" s $P(%REQ400d(16),$C(1),2)=%val
+ s %val=$P(%REQ400d(17),$C(1)) d %0ABs5:%val'="" s $P(%REQ400d(17),$C(1),2)=%val
+ s %val=$P(%REQ400d(18),$C(1)) d %0ABs6:%val'="" s $P(%REQ400d(18),$C(1),2)=%val
+ d %0GBr1
+ d %0GBr2
+ d %0GBr3
+ s %val=$P(%REQ400d(5),$C(1)) d %0ABs1:%val'="" s $P(%REQ400d(5),$C(1),2)=%val
+ d %0GBr4
+ s %val=$P(%REQ400d(7),$C(1)) d %0ABs3:%val'="" s $P(%REQ400d(7),$C(1),2)=%val
+ d %0GBr5
+ d %0GBr6
+ s SQLCODE=0 s:SQLCODE=0 %REQ400f=%REQ400f+1 s %REQ400c=10 q
+%REQ400f i '$g(%REQ400c) s SQLCODE=-102 q
+ i %REQ400c=100 s SQLCODE=100 q
+ s $zt="%0Gerr^"_$zn s $ze="" n %val g %0Gfirst:%REQ400c=1
+ g %0GBk1
+%0GBdun 
+%0GAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %REQ400c=100 q
+%REQ400c i '$g(%REQ400c) s SQLCODE=-102 q
+ k %REQ400c,%REQ400d,%REQ400e,%REQ400E,%REQ400f,%REQ400l,%REQ400L,%REQ400n,%REQ400r,%REQ400R s SQLCODE=0 q
+%0Gerr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%REQ400E),SQLCODE=-20603,%msg=$ze s $ze="" g %0GAdun
+%0HBr1 s %REQ500d(5)=$p($g(%REQ500d(12)),"||",1) q
+%0HBr2 s %REQ500d(6)=$$CT003^at228($g(%REQ500d(5))) q
+%0HBr3 s $P(%REQ500d(7),$C(1))=$$CT004^at228($g(%REQ500d(12)))
+ s:$c(1)'[$P($g(%REQ500d(7)),$C(1)) $P(%REQ500d(7),$C(1))=+$j($P($g(%REQ500d(7)),$C(1)),"",$l($p($P($g(%REQ500d(7)),$C(1)),".",2)))  ; Proper Decimal Places
+ q
+%0HBr4 s $P(%REQ500d(9),$C(1))=$$CT006^at228($g(%REQ500d(12))) q
+%0HBr5 s %REQ500d(10)=$p($g(%REQ500d(12)),"||",2) q
+%0HBr6 s %REQ500d(11)=$$CT008^at228($g(%REQ500d(12))) q
+%REQ500o s SQLCODE=$s($g(%REQ500c):-101,1:0) q:SQLCODE'=0
+ s %REQ500c=1 k %REQ500m
+ s %REQ500E=$zt,%REQ500f=0,%REQ500e=0,%REQ500L=""
+ s %REQ500d(2)=$P(stat,$C(1))
+ s:%REQ500d(2)="" %REQ500d(2)=$E(stat,2,999)
+ q
+%0Hfirst   ;  init
+ ; asl MOD# 2
+ s %REQ500d(1)=$g(%REQ500d(2))
+ i %REQ500d(1)="" g %0HBdun
+ s $P(%REQ500d(4),$C(1))=""
+%0HBk1 s $P(%REQ500d(4),$C(1))=$o(^BB("RQ",0,"Stat",%REQ500d(1),$P(%REQ500d(4),$C(1))))
+ i $P(%REQ500d(4),$C(1))="" g %0HBdun
+ i $P(%REQ500d(4),$C(1))'=+$P(%REQ500d(4),$C(1)) g %0HBdun
+ 
+ s %val=$P(%REQ500d(4),$C(1)) d %0ABs1:%val'="" s $P(%REQ500d(4),$C(1),2)=%val
+ i $P(%REQ500d(4),$C(1))'="",$d(^BB("RQ",$P(%REQ500d(4),$C(1))))
+ i '$t
+ e  i 1>$P(%REQ500d(4),$C(1)),$P(%REQ500d(4),$C(1))=+$P(%REQ500d(4),$C(1))
+ i  g %0HBk1
+ s %REQ500n=$g(^BB("RQ",$P(%REQ500d(4),$C(1))))
+ s %REQ500d(8)=$p(%REQ500n,"^",4) s %REQ500d(12)=$p(%REQ500n,"^",8) s %REQ500d(14)=$p(%REQ500n,"^",10) s %REQ500d(15)=$p(%REQ500n,"^",11) s %REQ500d(16)=$p(%REQ500n,"^",12) s %REQ500d(17)=$p(%REQ500n,"^",13) s %REQ500d(18)=$p(%REQ500n,"^",14) s %REQ500d(19)=$p(%REQ500n,"^",15)
+ k %REQ500d(13) s %REQ500d(13)=$g(^BB("RQ",$P(%REQ500d(4),$C(1)),"REM",0)) s:'%REQ500d(13) %REQ500d(13)="" f %irep=1:1:%REQ500d(13) s %REQ500d(13,%irep)=$g(^(%irep))
+ 
+ s %val=$P(%REQ500d(8),$C(1)) d %0ABs2:%val'="" s $P(%REQ500d(8),$C(1),2)=%val
+ s %val=$P(%REQ500d(14),$C(1)) d %0ABs2:%val'="" s $P(%REQ500d(14),$C(1),2)=%val
+ s %val=$P(%REQ500d(16),$C(1)) d %0ABs3:%val'="" s $P(%REQ500d(16),$C(1),2)=%val
+ s %val=$P(%REQ500d(17),$C(1)) d %0ABs4:%val'="" s $P(%REQ500d(17),$C(1),2)=%val
+ s %val=$P(%REQ500d(18),$C(1)) d %0ABs5:%val'="" s $P(%REQ500d(18),$C(1),2)=%val
+ s %val=$P(%REQ500d(19),$C(1)) d %0ABs6:%val'="" s $P(%REQ500d(19),$C(1),2)=%val
+ d %0HBr1
+ d %0HBr2
+ d %0HBr3
+ s %val=$P(%REQ500d(7),$C(1)) d %0ABs1:%val'="" s $P(%REQ500d(7),$C(1),2)=%val
+ d %0HBr4
+ s %val=$P(%REQ500d(9),$C(1)) d %0ABs3:%val'="" s $P(%REQ500d(9),$C(1),2)=%val
+ d %0HBr5
+ d %0HBr6
+ s SQLCODE=0 s:SQLCODE=0 %REQ500f=%REQ500f+1 s %REQ500c=10 q
+%REQ500f i '$g(%REQ500c) s SQLCODE=-102 q
+ i %REQ500c=100 s SQLCODE=100 q
+ s $zt="%0Herr^"_$zn s $ze="" n %val g %0Hfirst:%REQ500c=1
+ g %0HBk1
+%0HBdun 
+%0HAdun 
+ s:$g(SQLCODE)'<0 SQLCODE=100 s %REQ500c=100 q
+%REQ500c i '$g(%REQ500c) s SQLCODE=-102 q
+ k %REQ500c,%REQ500d,%REQ500e,%REQ500E,%REQ500f,%REQ500l,%REQ500L,%REQ500n,%REQ500r,%REQ500R s SQLCODE=0 q
+%0Herr ; Cursor-Based Error Trap Module...
+ s $zt=$g(%REQ500E),SQLCODE=-20603,%msg=$ze s $ze="" g %0HAdun
+%0No d %REQ100f q:SQLCODE'=0
+ s PLIST(1)=%REQ100d(4),PLIST(2)=%REQ100d(1),PLIST(3)=%REQ100d(5),PLIST(4)=%REQ100d(6),PLIST(5)=%REQ100d(7),PLIST(6)=%REQ100d(8),PLIST(7)=%REQ100d(9),PLIST(8)=%REQ100d(10),PLIST(9)=%REQ100d(11),PLIST(10)=%REQ100d(12)
+ k PLIST(11) s PLIST(11)=%REQ100d(13) n ir f ir=1:1:PLIST(11) s PLIST(11,ir)=%REQ100d(13,ir)
+ s PLIST(12)=%REQ100d(14),PLIST(13)=%REQ100d(15),PLIST(14)=%REQ100d(16),PLIST(15)=%REQ100d(17),PLIST(16)=%REQ100d(18),PLIST(17)=%REQ100d(19)
+ q
+%0Oo d %REQ200f q:SQLCODE'=0
+ s PLIST(1)=%REQ200d(4),PLIST(2)=%REQ200d(5),PLIST(3)=%REQ200d(1),PLIST(4)=%REQ200d(6),PLIST(5)=%REQ200d(7),PLIST(6)=%REQ200d(8),PLIST(7)=%REQ200d(9),PLIST(8)=%REQ200d(10),PLIST(9)=%REQ200d(11),PLIST(10)=%REQ200d(12)
+ k PLIST(11) s PLIST(11)=%REQ200d(13) n ir f ir=1:1:PLIST(11) s PLIST(11,ir)=%REQ200d(13,ir)
+ s PLIST(12)=%REQ200d(14),PLIST(13)=%REQ200d(15),PLIST(14)=%REQ200d(16),PLIST(15)=%REQ200d(17),PLIST(16)=%REQ200d(18),PLIST(17)=%REQ200d(19)
+ q
+%0Po d %REQ500f q:SQLCODE'=0
+ s PLIST(1)=%REQ500d(4),PLIST(2)=%REQ500d(5),PLIST(3)=%REQ500d(6),PLIST(4)=%REQ500d(7),PLIST(5)=%REQ500d(8),PLIST(6)=%REQ500d(9),PLIST(7)=%REQ500d(10),PLIST(8)=%REQ500d(11),PLIST(9)=%REQ500d(12),PLIST(10)=%REQ500d(1)
+ k PLIST(11) s PLIST(11)=%REQ500d(13) n ir f ir=1:1:PLIST(11) s PLIST(11,ir)=%REQ500d(13,ir)
+ s PLIST(12)=%REQ500d(14),PLIST(13)=%REQ500d(15),PLIST(14)=%REQ500d(16),PLIST(15)=%REQ500d(17),PLIST(16)=%REQ500d(18),PLIST(17)=%REQ500d(19)
+ q
+%0Qo d %REQ300f q:SQLCODE'=0
+ s PLIST(1)=%REQ300d(4),PLIST(2)=%REQ300d(5),PLIST(3)=%REQ300d(6),PLIST(4)=%REQ300d(7),PLIST(5)=%REQ300d(8),PLIST(6)=%REQ300d(9),PLIST(7)=%REQ300d(1),PLIST(8)=%REQ300d(10),PLIST(9)=%REQ300d(11),PLIST(10)=%REQ300d(12)
+ k PLIST(11) s PLIST(11)=%REQ300d(13) n ir f ir=1:1:PLIST(11) s PLIST(11,ir)=%REQ300d(13,ir)
+ s PLIST(12)=%REQ300d(14),PLIST(13)=%REQ300d(15),PLIST(14)=%REQ300d(16),PLIST(15)=%REQ300d(17),PLIST(16)=%REQ300d(18),PLIST(17)=%REQ300d(19)
+ q
+%0Ro d %REQ400f q:SQLCODE'=0
+ s PLIST(1)=%REQ400d(2),PLIST(2)=%REQ400d(3),PLIST(3)=%REQ400d(4),PLIST(4)=%REQ400d(5),PLIST(5)=%REQ400d(6),PLIST(6)=%REQ400d(7),PLIST(7)=%REQ400d(8),PLIST(8)=%REQ400d(9),PLIST(9)=%REQ400d(10),PLIST(10)=%REQ400d(11)
+ k PLIST(11) s PLIST(11)=%REQ400d(12) n ir f ir=1:1:PLIST(11) s PLIST(11,ir)=%REQ400d(12,ir)
+ s PLIST(12)=%REQ400d(13),PLIST(13)=%REQ400d(14),PLIST(14)=%REQ400d(15),PLIST(15)=%REQ400d(16),PLIST(16)=%REQ400d(17),PLIST(17)=%REQ400d(18)
+ q
+%0Xo n %insert,icol,ir
+ f icol=0:1:17 i $D(PLIST(icol)) s %insert(icol)=PLIST(icol) i $D(PLIST(icol,1)) f ir=1:1:PLIST(icol) s %insert(icol,ir)=PLIST(icol,ir)
+ d insert^mt2281("1")
+ q
+%0YAr1 n num s num=$$numint^%qarzdt(%val,1,"","",1) s:(num="")&(%val'="") %ok=0 s %val=num
+ q  
+%0Yo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Yerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(3)=$P(RowID,$C(1))
+ i %mmmsqld(3)="",$L(RowID)>1 s %val=$E(RowID,2,999) d %0YAr1 s %mmmsqld(3)=%val
+ n %data,%edit,icol,ir
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s $P(%mmmsqld(2),$C(1))=$g(%mmmsqld(3))
+ i $P(%mmmsqld(2),$C(1))'="",$d(^BB("RQ",$P(%mmmsqld(2),$C(1))))
+ i '$t
+ e  i 1>$P(%mmmsqld(2),$C(1)),$P(%mmmsqld(2),$C(1))=+$P(%mmmsqld(2),$C(1))
+ i  g %0YBdun
+ 
+ s %val=$P(%mmmsqld(2),$C(1)) d %0ABs1:%val'="" s $P(%mmmsqld(2),$C(1),2)=%val
+ k %data,%edit
+ f icol=0:1:17 i $D(PLIST(icol)) s %data(icol)=PLIST(icol) i $D(PLIST(icol,1)) f ir=1:1:PLIST(icol) s %data(icol,ir)=PLIST(icol,ir)
+ d update^mt2281(%mmmsqld(2),"1",1)
+ q:SQLCODE<0
+ s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1
+%0YBdun 
+%0YAdun 
+ q
+%0Yerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0YAdun
+%0Zo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Zerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(2)=$P(ROWID,$C(1))
+ i %mmmsqld(2)="",$L(ROWID)>1 s %val=$E(ROWID,2,999) d %0YAr1 s %mmmsqld(2)=%val
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(1)=$g(%mmmsqld(2))
+ i %mmmsqld(1)'="",$d(^BB("RQ",%mmmsqld(1)))
+ i '$t
+ e  i 1>%mmmsqld(1),%mmmsqld(1)=+%mmmsqld(1)
+ i  g %0ZBdun
+ d delete^mt2281(%mmmsqld(1),"1")
+ q:SQLCODE<0
+ s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1
+%0ZBdun 
+%0ZAdun 
+ q
+%0Zerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0ZAdun
+%00Br1 s PLIST(2)=$p($g(PLIST(9)),"||",1) q
+%00Br2 s PLIST(3)=$$CT003^at228($g(PLIST(2))) q
+%00Br3 s $P(PLIST(4),$C(1))=$$CT004^at228($g(PLIST(9)))
+ s:$c(1)'[$P($g(PLIST(4)),$C(1)) $P(PLIST(4),$C(1))=+$j($P($g(PLIST(4)),$C(1)),"",$l($p($P($g(PLIST(4)),$C(1)),".",2)))  ; Proper Decimal Places
+ q
+%00Br4 s $P(PLIST(6),$C(1))=$$CT006^at228($g(PLIST(9))) q
+%00Br5 s PLIST(7)=$p($g(PLIST(9)),"||",2) q
+%00Br6 s PLIST(8)=$$CT008^at228($g(PLIST(9))) q
+%00o n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%00err^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(3)=$P(ROWID,$C(1))
+ i %mmmsqld(3)="",$L(ROWID)>1 s %val=$E(ROWID,2,999) d %0YAr1 s %mmmsqld(3)=%val
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s $P(PLIST(1),$C(1))=$g(%mmmsqld(3))
+ i $P(PLIST(1),$C(1))'="",$d(^BB("RQ",$P(PLIST(1),$C(1))))
+ i '$t
+ e  i 1>$P(PLIST(1),$C(1)),$P(PLIST(1),$C(1))=+$P(PLIST(1),$C(1))
+ i  g %00Bdun
+ s %mmmsqln=$g(^BB("RQ",$P(PLIST(1),$C(1))))
+ s PLIST(5)=$p(%mmmsqln,"^",4) s PLIST(9)=$p(%mmmsqln,"^",8) s PLIST(10)=$p(%mmmsqln,"^",9) s PLIST(12)=$p(%mmmsqln,"^",10) s PLIST(13)=$p(%mmmsqln,"^",11) s PLIST(14)=$p(%mmmsqln,"^",12) s PLIST(15)=$p(%mmmsqln,"^",13) s PLIST(16)=$p(%mmmsqln,"^",14) s PLIST(17)=$p(%mmmsqln,"^",15)
+ k PLIST(11) s PLIST(11)=$g(^BB("RQ",$P(PLIST(1),$C(1)),"REM",0)) s:'PLIST(11) PLIST(11)="" f %irep=1:1:PLIST(11) s PLIST(11,%irep)=$g(^(%irep))
+ 
+ s %val=$P(PLIST(1),$C(1)) d %0ABs1:%val'="" s $P(PLIST(1),$C(1),2)=%val
+ s %val=$P(PLIST(5),$C(1)) d %0ABs2:%val'="" s $P(PLIST(5),$C(1),2)=%val
+ s %val=$P(PLIST(12),$C(1)) d %0ABs2:%val'="" s $P(PLIST(12),$C(1),2)=%val
+ s %val=$P(PLIST(14),$C(1)) d %0ABs3:%val'="" s $P(PLIST(14),$C(1),2)=%val
+ s %val=$P(PLIST(15),$C(1)) d %0ABs4:%val'="" s $P(PLIST(15),$C(1),2)=%val
+ s %val=$P(PLIST(16),$C(1)) d %0ABs5:%val'="" s $P(PLIST(16),$C(1),2)=%val
+ s %val=$P(PLIST(17),$C(1)) d %0ABs6:%val'="" s $P(PLIST(17),$C(1),2)=%val
+ d %00Br1
+ d %00Br2
+ d %00Br3
+ s %val=$P(PLIST(4),$C(1)) d %0ABs1:%val'="" s $P(PLIST(4),$C(1),2)=%val
+ d %00Br4
+ s %val=$P(PLIST(6),$C(1)) d %0ABs3:%val'="" s $P(PLIST(6),$C(1),2)=%val
+ d %00Br5
+ d %00Br6
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %00c
+%00Bdun 
+%00Adun 
+%00c q
+%00err ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %00Adun
+%01o n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%01err^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(3)=$P(row,$C(1)),%mmmsqld(5)=$P(lab,$C(1)),%mmmsqld(6)=$P(lab,$C(1)),%mmmsqld(8)=$P(pat,$C(1)),%mmmsqld(9)=$P(pat,$C(1)),%mmmsqld(11)=$P(ts,$C(1)),%mmmsqld(12)=$P(ts,$C(1)),%mmmsqld(13)=$P(stat,$C(1)),%mmmsqld(15)=$P(stat,$C(1)),%mmmsqld(16)=$P(stat,$C(1)),%mmmsqld(17)=$P(flag,$C(1)),%mmmsqld(19)=$P(flag,$C(1))
+ i %mmmsqld(3)="",$L(row)>1 s %val=$E(row,2,999) d %0YAr1 s %mmmsqld(3)=%val
+ s:%mmmsqld(5)="" %mmmsqld(5)=$E(lab,2,999)
+ s:%mmmsqld(8)="" %mmmsqld(8)=$E(pat,2,999)
+ s:%mmmsqld(11)="" %mmmsqld(11)=$E(ts,2,999)
+ s:%mmmsqld(16)="" %mmmsqld(16)=$E(stat,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s $P(PLIST(1),$C(1))=$g(%mmmsqld(3))
+ i $P(PLIST(1),$C(1))'="",$d(^BB("RQ",$P(PLIST(1),$C(1))))
+ i '$t
+ e  i 1>$P(PLIST(1),$C(1)),$P(PLIST(1),$C(1))=+$P(PLIST(1),$C(1))
+ i  g %01Bdun
+ s %mmmsqln=$g(^BB("RQ",$P(PLIST(1),$C(1))))
+ s PLIST(10)=$p(%mmmsqln,"^",9)
+ g:'(((%mmmsqld(13))[(PLIST(10)))!(%mmmsqld(15)="")) %01Bdun
+ g:'((((%mmmsqld(16))=(PLIST(10)))&((%mmmsqld(17))=("Y")))!(%mmmsqld(19)="")) %01Bdun
+ s PLIST(5)=$p(%mmmsqln,"^",4) s PLIST(9)=$p(%mmmsqln,"^",8) s PLIST(12)=$p(%mmmsqln,"^",10) s PLIST(13)=$p(%mmmsqln,"^",11) s PLIST(14)=$p(%mmmsqln,"^",12) s PLIST(15)=$p(%mmmsqln,"^",13) s PLIST(16)=$p(%mmmsqln,"^",14) s PLIST(17)=$p(%mmmsqln,"^",15)
+ k PLIST(11) s PLIST(11)=$g(^BB("RQ",$P(PLIST(1),$C(1)),"REM",0)) s:'PLIST(11) PLIST(11)="" f %irep=1:1:PLIST(11) s PLIST(11,%irep)=$g(^(%irep))
+ 
+ s %val=$P(PLIST(1),$C(1)) d %0ABs1:%val'="" s $P(PLIST(1),$C(1),2)=%val
+ s %val=$P(PLIST(5),$C(1)) d %0ABs2:%val'="" s $P(PLIST(5),$C(1),2)=%val
+ s %val=$P(PLIST(12),$C(1)) d %0ABs2:%val'="" s $P(PLIST(12),$C(1),2)=%val
+ s %val=$P(PLIST(14),$C(1)) d %0ABs3:%val'="" s $P(PLIST(14),$C(1),2)=%val
+ s %val=$P(PLIST(15),$C(1)) d %0ABs4:%val'="" s $P(PLIST(15),$C(1),2)=%val
+ s %val=$P(PLIST(16),$C(1)) d %0ABs5:%val'="" s $P(PLIST(16),$C(1),2)=%val
+ s %val=$P(PLIST(17),$C(1)) d %0ABs6:%val'="" s $P(PLIST(17),$C(1),2)=%val
+ d %00Br1
+ d %00Br2
+ d %00Br3
+ s %val=$P(PLIST(4),$C(1)) d %0ABs1:%val'="" s $P(PLIST(4),$C(1),2)=%val
+ d %00Br4
+ s %val=$P(PLIST(6),$C(1)) d %0ABs3:%val'="" s $P(PLIST(6),$C(1),2)=%val
+ d %00Br5
+ d %00Br6
+ g:'(((PLIST(2))=(%mmmsqld(5)))!(%mmmsqld(6)="")) %01Bdun
+ g:'(((PLIST(3))=(%mmmsqld(8)))!(%mmmsqld(9)="")) %01Bdun
+ g:'(((PLIST(7))=(%mmmsqld(11)))!(%mmmsqld(12)="")) %01Bdun
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %01c
+%01Bdun 
+%01Adun 
+%01c q
+%01err ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %01Adun
+]]></Routine>
+</Export>

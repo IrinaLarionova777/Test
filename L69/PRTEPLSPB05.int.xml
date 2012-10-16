@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTEPLSPB05" type="INT" languagemode="0"><![CDATA[
+PRTEPLSPB05   ;SPARM; episode patient label - Ýòèêåòêà ïàöèåíòà ;ÊÄË Êèðîâ;@gol;
+ q
+ ; Parameters :  1. Episode number
+ ;               2. Label code
+ ;               3. Quantity
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ S ^TEMPBar($J)=PAR
+ d INIT,BODY
+ i '$l(PAR2) d
+ .k ^TMP("WS",$j) m ^TMP("WS",$j)=^TMP($zn,$j,"REPORT")
+ .s label="" f  s label=$o(^TMP("WS",$j,label)) q:label=""  d
+ ..d START^PRTREP00(USER,,PAR1_"\"_label,"EPL")
+ .k ^TMP("WS",$j)
+ i $l(PAR2) d PRINT
+CREND i '$$select^LVBPRPR(REPID) s PLIST(12)=PAR2_"-"_PAR1 i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialize parameters
+INIT f J=1:1:$l(PAR,$c(1)) s @("PAR"_J)=$p(PAR,$c(1),J)
+ q
+BODY ; create temporary printing file
+ ; label and quantity entered
+ i $l(PAR2),$l(PAR3) d  q
+ .s ^TMP($zn,$j,"REPORT",PAR2)=PAR3
+ .i $$open^LVBVISTS(PAR1)
+ .f  q:$$fetch^LVBVISTS(PAR1)  d
+ ..s ts=$p(PLIST(3),$c(1)),syn=$p(PLIST(3),$c(1),2),label=""
+ ..d %0Ao
+ ..i PAR2=$p(label,$c(1)) s ^TMP($zn,$j,"REPORT",label,ts)="",^TMP($zn,$j,2,ts,syn)=""
+ .i $$close^LVBVISTS()
+ ; print labels for a patient
+ i $$open^LVBVISTS(PAR1)
+ f  q:$$fetch^LVBVISTS(PAR1)  d
+ .s ts=$p(PLIST(3),$c(1)),^TMP($zn,$j,1,ts)=$g(^TMP($zn,$j,1,ts))+1,syn=$p(PLIST(3),$c(1),2),^TMP($zn,$j,2,ts,syn)=""
+ i $$close^LVBVISTS()
+ s ts="" f  s ts=$o(^TMP($zn,$j,1,ts)) q:ts=""  d
+ .s (label,max)=""
+ .d %0Bo
+ .i $l(label),max d
+ ..i $l(PAR2),label'=PAR2 q
+ ..s ^TMP($zn,$j,"REPORT",label,ts)=^TMP($zn,$j,1,ts)
+ ..s (cnt,ts1)="" f  s ts1=$o(^TMP($zn,$j,"REPORT",label,ts1)) q:ts1=""  s cnt=cnt+^(ts1)
+ ..s xx=cnt\max s:cnt#max xx=xx+1 s ^TMP($zn,$j,"REPORT",label)=xx
+ q
+PRINT i $$select^LVBEPVIS(PAR1,"Y") q
+ k VISIT m VISIT=PLIST s ReqLabel=""
+ s name=$e($g(VISIT(3))_" "_$g(VISIT(4)),1,20)   ;ôàìèëèÿ è.î.
+ s epis=$G(VISIT(2))                             ;ëàáîðàòîðíûé íîìåð
+ s rego=$G(VISIT(20))                            ;íîìåð ìê
+ s kol=+$G(PAR3)
+ ; ÷èñëî êîïèé øòðèõ-êîäîâ îïðåäåëÿåòñÿ ïî êîë-âó ðàçëè÷íûõ âèäîâ Ýòèêåòîê ïðèâÿçàííûõ ê íàáîðàì òåñòîâ
+ i '$l(kol) s label="" f  s label=$o(^TMP($zn,$j,"REPORT",label)) q:label=""  s kol=kol+1
+ d LABEL
+ q
+LABEL ; print label /Zebra TLP-2824/
+ s lf=$c(10),labnum=1
+ d ADD^SSPRINT(REPID,"PRT",lf)
+ d ADD^SSPRINT(REPID,"PRT","FK""*"""_lf)
+ d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_labnum_""""_lf)
+ d ADD^SSPRINT(REPID,"PRT","FS""LABEL"_labnum_""""_lf)
+ d ADD^SSPRINT(REPID,"PRT","D7"_lf)              ; darkness = 7 
+ d ADD^SSPRINT(REPID,"PRT","S3"_lf)              ; speed = 2 inch/sec 
+ d ADD^SSPRINT(REPID,"PRT","Q200,16"_lf)         ; length label 
+ d ADD^SSPRINT(REPID,"PRT","q376"_lf)            ; width label = 56*8 mm
+ ;d ADD^SSPRINT(REPID,"PRT","R0,0"_lf)
+ ;---
+ ; Òèï øòðèõ-êîäà: 3-Code39 ; 1-Code128 (áîëåå êîìïàêòíûé)
+ d ADD^SSPRINT(REPID,"PRT","B20,10,0,3,2,6,80,B,"""_$G(epis)_""""_lf)            ; barcode 80-âûñîòà áàð-êîäà
+ d ADD^SSPRINT(REPID,"PRT","A176,96,0,3,1,1,N,""VOLGAMC"""_lf)                   ; @@
+ d ADD^SSPRINT(REPID,"PRT","A20,126,0,a,1,1,N,""Ðåã.¹ "_$G(rego)_""""_lf)        ; Ðåã.N ÌÊ (font=a)
+ d ADD^SSPRINT(REPID,"PRT","A20,160,0,a,1,1,N,"""_$G(name)_""""_lf)              ; ÔÈÎ (font=a)
+ ;---
+ d ADD^SSPRINT(REPID,"PRT","FE"_lf)
+ d ADD^SSPRINT(REPID,"PRT","FR""LABEL"_labnum_""""_lf)
+ d ADD^SSPRINT(REPID,"PRT","P"_kol_lf)                   ; kol-êîë-âî êîïèé ýòèêåòêè ; print label number of printing pages = kol
+ d ADD^SSPRINT(REPID,"PRT",lf)
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(ts,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(ts,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0ABdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s label=$p(%mmmsqln,"\",23)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0BBs1 s %val=$s(%val'=+%val:"",1:$fn(%val,"")) q
+%0Bo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Berr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(ts,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(ts,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(9)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(9)'="",$d(^TTAB("TS",%mmmsqld(9)))
+ e  g %0BBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(9)))
+ s label=$p(%mmmsqln,"\",23)
+ s %mmmsqld(10)=$p($g(label),"||",1,1)
+ s %mmmsqld(8)=$g(label)
+ i %mmmsqld(10)'="",$d(^TTAB("LB",%mmmsqld(10)))
+ e  s (%mmmsqld(8),max)="" g %0BBp2
+ s %mmmsqln=$g(^TTAB("LB",%mmmsqld(10)))
+ s max=$p(%mmmsqln,"\",2) s:max'="" max=+max
+ 
+ s %val=$P(max,$C(1)) d %0BBs1:%val'="" s $P(max,$C(1),2)=%val
+%0BBp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Bc
+%0BBdun 
+%0BAdun 
+%0Bc q
+%0Berr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0BAdun
+]]></Routine>
+</Export>

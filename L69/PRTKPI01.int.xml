@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTKPI01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTKPI01	      ; ML 07/11/2002 ; KPI Report
+	q
+	; Parameters :  1. Date from
+	;               2. Date To
+	;               3. Test Set
+	;               4. Test Group
+	;               5. Test Item
+	;               6. Superset
+	;               7. Patient Locations
+	;               8. Priorities
+	;
+CREATE(REPID,PAR,USER,%msql)	   ; create report
+	n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+	k xHEADER d INIT
+	s search="TS" i $l(PAR5) s search="TI"
+	s line=1,xHEADER(line)="KPI Report"
+	s line=2,xHEADER(line)=""
+	i $l(PAR3) d
+	.s line=line+1,xHEADER(line)="Test Set : "_$$seldata^LVBCTTS(PAR3,3)
+	.s line=line+1,xHEADER(line)=""
+	i $l(PAR4) d
+	.s line=line+1,xHEADER(line)="Test Group : "_$$seldata^LVBCTTWG(PAR4,3)
+	.s line=line+1,xHEADER(line)=""
+	i $l(PAR5) d
+	.s line=line+1,xHEADER(line)="Test Item : "_$$seldata^LVBCTTC(PAR5,3)
+	.s line=line+1,xHEADER(line)=""
+	i $l(PAR6) d
+	.s line=line+1,xHEADER(line)="Superset : "_$$seldata^LVBCTSS(PAR6,3)
+	.s line=line+1,xHEADER(line)=""
+	i $l(PAR7) d
+	.s text="Patient Locations : "
+	.s hos="" f i=1:1:$l(PAR7,",") s hos=hos_$s($l(hos):", ",1:"")_$$seldata^LVBCTHOS($p(PAR7,",",i),3)
+	.i $l(text_hos)'>MAX d  q
+	..s line=line+1,xHEADER(line)=text_hos
+	..s line=line+1,xHEADER(line)=""
+	.f cnt=0:1 q:$l(text_hos)'>MAX  f j=2:1:$l(hos,", ") i $l(text_$p(hos,", ",1,j))>MAX d  s hos=$p(hos,", ",j,$l(hos,", ")),text="" q
+	..s line=line+1,xHEADER(line)=text_$p(hos,", ",1,j-1)
+	..s line=line+1,xHEADER(line)=""
+	i $l(PAR8) d
+	.s text="Urgent priorities : "
+	.s pri="" f i=1:1:$l(PAR8,",") s pri=pri_$s($l(pri):", ",1:"")_$$seldata^LVBCTPR($p(PAR8,",",i),3)
+	.i $l(text_pri)'>MAX d  q
+	..s line=line+1,xHEADER(line)=text_pri
+	..s line=line+1,xHEADER(line)=""
+	.f cnt=0:1 q:$l(text_pri)'>MAX  f j=2:1:$l(pri,", ") i $l(text_$p(pri,", ",1,j))>MAX d  s pri=$p(pri,", ",j,$l(pri,", ")),text="" q
+	..s line=line+1,xHEADER(line)=text_$p(pri,", ",1,j-1)
+	..s line=line+1,xHEADER(line)=""
+	s line=line+1,xHEADER(line)="From "_$$extdate^SSUTIL4(PAR1)_" to "_$$extdate^SSUTIL4(PAR2)
+	s line=line+1,xHEADER(line)=""
+	d HEADER^PRTREP00(.xHEADER),BODY,PRINT
+	k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+	q
+INIT	; initialise parameters
+	f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+	k xSORT d H^PRTREP00(PAR10,$zn)
+	s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+	q
+BODY	; create temporary printing file
+	s date=PAR1-1 f  s date=$o(^TDAY(6,date)) q:date=""  q:date>PAR2  d
+	.s tot95=0,good95=0,bad95=0,totah=0,goodah=0,badah=0
+	.s status="" f  s status=$o(^TDAY(6,date,status)) q:status=""  d
+	..s epis="" f  s epis=$o(^TDAY(6,date,status,epis)) q:epis=""  d
+	...q:$$select^LVBEPVIS(epis,"Y")  m VISIT=PLIST k PLIST
+	...i $l(PAR7),(","_PAR7_",")'[(","_VISIT(22)_",") q
+	...i $l(PAR8),(","_PAR8_",")'[(","_VISIT(17)_",") q
+	...s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+	....s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+	.....q:$$select^LVBVISTS(epis_"||"_ts_"||"_cnt,"Y")  m VISTS=PLIST k PLIST
+	.....i $l(PAR3),PAR3'=ts q
+	.....i $l(PAR4),'$d(^TTAB("GR",PAR4,"TS",ts)) q
+	.....s ok=0 i $l(PAR6) d  q:'ok
+	......s itm="" f  s itm=$o(^TTAB("SUPTS",PAR6,"ITM",itm)) q:itm=""  i $p(^TTAB("SUPTS",PAR6,"ITM",itm),"\",1)=ts s ok=1 q
+	.....s ok=0 i $l(PAR5) d  q:'ok
+	......i '$$items^LVBCTTS(ts) f i=1:1:PLIST i $p(PLIST(i),$c(2))=PAR5 s ok=1 q
+	.....i '$l(VISIT(62)) q
+	.....s time="bad" s rectime=(VISIT(61)*86400)+VISIT(62),auttime=(VISIT(7)*86400)+VISIT(8) i auttime-rectime'>3600 s time="good"
+	.....d
+	......i ($zd(VISIT(61),10)<1)!($zd(VISIT(61),10)>5) s totah=totah+1,goodah=goodah+$s(time="good":1,1:0),badah=badah+$s(time="bad":1,1:0) q
+	......i (VISIT(62)<32400)!(VISIT(62)>61200) s totah=totah+1,goodah=goodah+$s(time="good":1,1:0),badah=badah+$s(time="bad":1,1:0) q
+	......s tot95=tot95+1,good95=good95+$s(time="good":1,1:0),bad95=bad95+$s(time="bad":1,1:0)
+	.....s ^TMP($zn,$j,"REPORT","DATA",date)=tot95+totah_$c(1)_tot95_$c(1)_good95_$c(1)_$s(tot95=0:0,1:good95/tot95)_$c(1)_totah_$c(1)_goodah_$c(1)_$s(totah=0:0,1:goodah/totah)
+	; calculate totals
+	s Totals=0,Total95=0,Total95Good=0,Totalah=0,TotalahGood=0
+	s date="" f  s date=$o(^TMP($zn,$j,"REPORT","DATA",date)) q:date=""  d
+	.s Totals=Totals+$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),1)
+	.s Total95=Total95+$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),2)
+	.s Total95Good=Total95Good+$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),3)
+	.s Totalah=Totalah+$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),5)
+	.s TotalahGood=TotalahGood+$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),6)
+	s ^TMP($zn,$j,"REPORT","totals")=Totals_$c(1)_Total95_$c(1)_Total95Good_$c(1)_$s(Total95=0:0,1:Total95Good/Total95)_$c(1)_Totalah_$c(1)_TotalahGood_$c(1)_$s(Totalah=0:0,1:TotalahGood/Totalah)
+	q
+PRINT	; print report
+	k xxx,PLIST
+	s date="" f  s date=$o(^TMP($zn,$j,"REPORT","DATA",date)) q:date=""  d
+	.s xxx(1)=$$extdate^SSUTIL4(date)
+	.s xxx(2)=$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),1)
+	.s xxx(3)=$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),2)
+	.s xxx(4)=$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),3)
+	.s xxx(5)=$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),4)
+	.s xxx(6)=$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),5)
+	.s xxx(7)=$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),6)
+	.s xxx(8)=$p(^TMP($zn,$j,"REPORT","DATA",date),$c(1),7)
+	.d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+	D ADDLINE^PRTREP00(REPID,"PRT","!")
+	D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+	D ADDLINE^PRTREP00(REPID,"PRT","!")
+	s xxx(1)="Totals"
+	s xxx(2)=$p(^TMP($zn,$j,"REPORT","totals"),$c(1),1)
+	s xxx(3)=$p(^TMP($zn,$j,"REPORT","totals"),$c(1),2)
+	s xxx(4)=$p(^TMP($zn,$j,"REPORT","totals"),$c(1),3)
+	s xxx(5)=$p(^TMP($zn,$j,"REPORT","totals"),$c(1),4)
+	s xxx(6)=$p(^TMP($zn,$j,"REPORT","totals"),$c(1),5)
+	s xxx(7)=$p(^TMP($zn,$j,"REPORT","totals"),$c(1),6)
+	s xxx(8)=$p(^TMP($zn,$j,"REPORT","totals"),$c(1),7)
+	d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+	s report="KPI",EndLine=$$seldata^LVBCTCLR(report,9)	i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+	q
+]]></Routine>
+</Export>

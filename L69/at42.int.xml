@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="at42" type="INT" languagemode="0" generated="1"><![CDATA[
+at42 ; routine for EP_VisitNumber
+ ;
+ ; EPVIS_StatusPrinting
+CT029(epis,deb) n (epis,deb) s epis=$g(epis),deb=$g(deb),result="N"
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d  i result="I" q
+ .s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$printable^LVBCTTS(ts,epis_"||"_ts_"||"_cnt) d  i result="I" q
+ ..s rowid=epis_"||"_ts_"||"_cnt
+ ..s status1=$$seldata^LVBVISTS(rowid,31),status2=$$seldata^LVBVISTS(rowid,33)
+ ..i status2="A",status1="Y" s result="F"
+ ..i status1'="Y" s result="I"
+ q result
+CT068(epis,user) n (epis,user) s epis=$g(epis),user=$g(user),result="" k ^TMP($zn,$j)
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  s seq=$$seq^LVBCTTS(ts),^TMP($zn,$j,seq,ts)=""
+ i '$l(user) d
+ .s seq="" f  s seq=$o(^TMP($zn,$j,seq)) q:seq=""  d
+ ..s ts="" f  s ts=$o(^TMP($zn,$j,seq,ts)) q:ts=""  d
+ ...s name=ts f j=4,5,2 s PLIST(j)=$$seldata^LVBCTTS(ts,j) i $l(PLIST(j)) s name=PLIST(j) q
+ ...s cnt="" f x=0:1 s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""
+ ...i x s result=result_$s($l(result):" ",1:"")_name_$s(x>1:"x"_x,1:"")
+ i $l(user) d
+ .s seq="" f  s seq=$o(^TMP($zn,$j,seq)) q:seq=""  d
+ ..s ts="" f  s ts=$o(^TMP($zn,$j,seq,ts)) q:ts=""  d
+ ...s name=ts f j=4,5,2 s PLIST(j)=$$seldata^LVBCTTS(ts,j) i $l(PLIST(j)) s name=PLIST(j) q
+ ...s (x,cnt)="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ ....s rowid=epis_"||"_ts_"||"_cnt i $$ValUser^LVBVIS14(user,rowid)'=60 s x=x+1
+ ...i x s result=result_$s($l(result):" ",1:"")_name_$s(x>1:"x"_x,1:"")
+ q result
+ ; EPVIS_BloodGroup_DR
+CT069(deb,epis) n (deb,epis) s deb=$g(deb),epis=$g(epis)
+ s result=$$seldata^LVBEPVIS(epis,86)
+ i result=9 d  q result
+ .s rowid=$p(epis,"_",2)_"||"_$p(epis,"_",3),result=$$seldata^LVBBBP(rowid,9)
+ i '$l(deb) s deb=$$mrn^LVBEPVIS(epis)
+ s result=$$seldata^LVBDEB(deb,9)
+ q $p(result,$c(1))
+ ; EPVIS_SoundexSurname
+CT090(name) n (name) q $$valid^LVBCOM07($g(name))
+ ; EPVIS_SoundexName
+CT091(name) n (name) q $$valid^LVBCOM07($g(name))
+ ; pre insert trigger
+PREFINS i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("PREFINS^"_$zn_$p(^CF("SM",1),"^",28)))) d @("PREFINS^"_$zn_$p(^CF("SM",1),"^",28))
+ q
+ ; pre update trigger
+PREFUPD i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("PREFUPD^"_$zn_$p(^CF("SM",1),"^",28)))) d @("PREFUPD^"_$zn_$p(^CF("SM",1),"^",28))
+ n (%e,%old)
+ i $$select^LVBEPVIS(%e(1),"Y")
+ k %old m %old=PLIST
+ q
+ ; post insert trigger
+POFILINS n (%d)
+ ; insert debtor visit
+ s vis=%d(1),deb=$g(%d(20))
+ k PLIST s PLIST(2)=$g(%d(12)),PLIST(3)=vis i $$insert^LVBDEBVI(deb)
+ f j=3,4,6,20,22,12:1:15,61,62,32:1:36 i $l($p($g(%d(j)),$c(1))) d OUT^LVBEDI00(%d(1),42,%d(1),j,$g(%d(j)),"Add")
+ i '$d(^TMOVE("TEMP","42I",%d(1))) d SetAll^LVBCOM50(%d(1),"42I",.%d)
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("POFILINS^"_$zn_$p(^CF("SM",1),"^",28)))) d @("POFILINS^"_$zn_$p(^CF("SM",1),"^",28))
+ q
+ ; post update trigger
+POFILUPD n (%d,%old)
+ f j=3,4,6,20,22,12:1:15,61,62,32:1:36 i $p($g(%old(j)),$c(1))'=$p($g(%d(j)),$c(1)) d OUT^LVBEDI00(%d(1),42,%d(1),j,$g(%d(j)),"Edit")
+ i '$d(^TMOVE("TEMP","42U",%d(1))) d
+ .s change=0
+ .i 'change,$o(%d(""),-1)'=$o(%old(""),-1) s change=1
+ .i 'change f j1=1:1:$o(%d(""),-1) d  q:change
+ ..i $g(%d(j1))'=$g(%old(j1)) s change=1 q
+ ..f j2=1:1:$o(%d(j1,""),-1) i $g(%d(j1,j2))'=$g(%old(j1,j2)) s change=1 q
+ .i change d SetAll^LVBCOM50(%d(1),"42U",.%d)
+ ; insert/update debtor visit
+ s newdate=$p($g(%d(12)),$c(1)),olddate=$p($g(%old(12)),$c(1))
+ s newdeb=$p($g(%d(20)),$c(1)),olddeb=$p($g(%old(20)),$c(1))
+ s vis=$p($g(%d(1)),$c(1)),change=0
+ ; new debtor entered
+ i '$l(olddeb),$l(newdeb) d
+ .k PLIST s PLIST(2)=newdate,PLIST(3)=vis i $$insert^LVBDEBVI(newdeb)
+ ; date was changed
+ i $l(olddeb),$l(newdeb),$l(olddate),$l(newdate),olddate'=newdate s change=1
+ ; debtor was changed
+ i $l(olddeb),$l(newdeb),olddeb'=newdeb s change=2
+ i change d
+ . ; insert visit and visit/transactions
+ .m ^TDEB(newdeb,newdate,0,vis)=^TDEB(olddeb,olddate,0,vis) k ^TDEB(olddeb,olddate,0,vis)
+ . ; check transactions
+ .i change=2 d
+ ..s (exist,date)="" f  s date=$o(^TDEB(olddeb,date)) q:date=""  i date,$d(^TDEB(olddeb,date,0)) s exist=1 q
+ .. ; set invoice transaction
+ ..s inv=$p(^TDEB(newdeb,newdate,0,vis),"\",10) i $l(inv),'$$select^LVBINVB(inv),$$update^LVBINVB(inv)
+ .. ; set other transactions
+ ..s type="" f  s type=$o(^TDEB(newdeb,newdate,0,vis,type)) q:type=""  d
+ ...s tran="" f  s tran=$o(^TDEB(newdeb,newdate,0,vis,type,tran)) q:tran=""  d
+ ....s trdate=$p(^(tran),"\",2) i $l(trdate),$d(^TDEB(olddeb,trdate,1,type,tran)) d
+ .....s ^TDEB(newdeb,trdate,1,type,tran)="" k ^TDEB(olddeb,trdate,1,type,tran)
+ .. ; check BB Packs
+ ..s x2="" f  s x2=$o(^TBBPi("TR-Debtor",olddeb,x2)) q:x2=""  d
+ ...s x3="" f  s x3=$o(^TBBPi("TR-Debtor",olddeb,x2,x3)) q:x3=""  d
+ ....s x4="" f  s x4=$o(^TBBPi("TR-Debtor",olddeb,x2,x3,x4)) q:x4=""  d
+ .....s x5="" f  s x5=$o(^TBBPi("TR-Debtor",olddeb,x2,x3,x4,x5)) q:x5=""  d
+ ......s x6="" f  s x6=$o(^TBBPi("TR-Debtor",olddeb,x2,x3,x4,x5,x6)) q:x6=""  d
+ .......i ($p(^TBBP(x4,x5,"TRAN",x6),"\",10)'="Y"),($p($p(^TBBP(x4,x5,"TRAN",x6),"\",7),"||")=vis)!('exist) d
+ ........s $p(^TBBP(x4,x5,"TRAN",x6),"\",6)=newdeb
+ ........s ^TBBPi("TR-Debtor",newdeb,x2,x3,x4,x5,x6)="" k ^TBBPi("TR-Debtor",olddeb,x2,x3,x4,x5,x6)
+ ..s x2="" f  s x2=$o(^TBBPi("DEBTOR",olddeb,x2)) q:x2=""  d
+ ...s x3="" f  s x3=$o(^TBBPi("DEBTOR",olddeb,x2,x3)) q:x3=""  d
+ ....s x4="" f  s x4=$o(^TBBPi("DEBTOR",olddeb,x2,x3,x4)) q:x4=""  d
+ .....i ($p($p(^TBBP(x3,x4),"\",11),"||")=vis)!('exist) d
+ ......s $p(^TBBP(x3,x4),"\",10)=newdeb
+ ......s ^TBBPi("DEBTOR",newdeb,x2,x3,x4)="" k ^TBBPi("DEBTOR",olddeb,x2,x3,x4)
+ ..d post^LVBDEBVI(olddeb),post^LVBDEBVI(newdeb),check^LVBDEBVI(vis)
+ ..
+ .. ; check Blood Group for olddeb
+ ..i '$$select^LVBDEB(olddeb),$l(PLIST(9)) d
+ ...s x1="" f  s x1=$o(^TEPI(vis,1,x1)) q:x1=""  d
+ ....s x2="" f  s x2=$o(^TEPI(vis,1,x1,x2)) q:x2=""  d
+ .....s (stop,x3)="" f  s x3=$o(^TEPI(vis,1,x1,x2,"DATA",x3)) q:x3=""  d  q:stop
+ ......s xx=$$seldata^LVBCTTC(x3,5)
+ ......i $p(xx,$c(1))="B2" d updateBG^at46(vis,x1,x2,"D",olddeb) s stop=1
+ ..
+ .. ; check Blood Group for newdeb
+ ..i '$$select^LVBDEB(newdeb) d
+ ...s x1="" f  s x1=$o(^TEPI(vis,1,x1)) q:x1=""  d
+ ....s x2="" f  s x2=$o(^TEPI(vis,1,x1,x2)) q:x2=""  d
+ .....s (stop,x3)="" f  s x3=$o(^TEPI(vis,1,x1,x2,"DATA",x3)) q:x3=""  d  q:stop
+ ......s xx=$$seldata^LVBCTTC(x3,5)
+ ......i $p(xx,$c(1))="B2" d updateBG^at46(vis,x1,x2,"",newdeb) s stop=1
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("POFILUPD^"_$zn_$p(^CF("SM",1),"^",28)))) d @("POFILUPD^"_$zn_$p(^CF("SM",1),"^",28))
+ q
+]]></Routine>
+</Export>

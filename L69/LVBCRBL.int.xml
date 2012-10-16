@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCRBL" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCRBL ; IG 29/4/98 ; MVB Control code access for CR_BatchLine
+ ;
+ ; supported calls:
+ ;
+ ; $$select^LVBCRBL(ROWID)
+ ; $$open^LVBCRBL(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBCRBL(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBCRBL(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBCRBL(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBCRBL()
+ ; $$insert^LVBCRBL(par,Rebill)
+ ; $$update^LVBCRBL(ROWID)
+ ; $$delete^LVBCRBL(ROWID)
+ ; $$chbatch^LVBCRBL(batch,Rebill)
+ ; $$chinvoice^LVBCRBL(invoice,Rebill)
+ ; $$episode^LVBCRBL(RowID,mrn)
+ ;
+  ;---&SQL(DECLARE CRBL CURSOR FOR SELECT * FROM CR_BatchLine
+   ;---         WHERE CRBL_ParRef = :par)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, par
+ ;
+ ; Insert the data
+insert(par,Rebill) s PLIST(0)=$g(par),Rebill=$g(Rebill) k PLIST(1) d pre("N") 
+  ;---&SQL(insert INTO CR_BatchLine VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Eo
+ i 'SQLCODE d check^LVBCRBLB(%ROWID,$g(PLIST(3)))
+ I 'SQLCODE D
+ .s blROWID=%ROWID n SQLCODE,%ROWID
+ . ; check invoice batches
+ .i $l($g(PLIST(6))),'$$chbatch(PLIST(6),Rebill) d
+ ..k ^TMP($zn,$j) m ^TMP($zn,$j)=PLIST
+ ..s x="" f  s x=$o(^TMP($zn,$j,x)) q:x=""  d
+ ...k PLIST s PLIST(2)=$p(^(x),"\",1),(PLIST(3),PLIST(11))=$p(^(x),"\",2)
+ ...i $$insert^LVBCRBLB(blROWID)
+ ..k ^TMP($zn,$j)
+ . ; check invoices
+ .i $l($g(PLIST(10))),'$$chinvoice(PLIST(10),Rebill) d
+ ..k ^TMP($zn,$j) m ^TMP($zn,$j)=PLIST
+ ..s x="" f  s x=$o(^TMP($zn,$j,x)) q:x=""  d
+ ...k PLIST s PLIST(2)=$p(^(x),"\",1),(PLIST(3),PLIST(11))=$p(^(x),"\",2)
+ ...i $$insert^LVBCRBLB(blROWID)
+ ..k ^TMP($zn,$j)
+ I 'SQLCODE Q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+ ; Update the data
+update(ROWID) s ROWID=$g(ROWID) d pre("Y") 
+  ;---&SQL(UPDATE CR_BatchLine VALUES :PLIST() WHERE CRBL_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Go
+ i 'SQLCODE d check^LVBCRBLB(%ROWID,$g(PLIST(3))) q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+ ; Delete the data
+delete(ROWID) s ROWID=$g(ROWID)
+  ;---&SQL(DELETE FROM CR_BatchLine WHERE CRBL_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: ROWID, SQLCODE
+ Do %0Io
+ Q SQLCODE
+ ;
+ ; Open the cursor
+open(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par)
+  ;---&SQL(OPEN CRBL)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %CRBL0o
+ Q 0
+ ;
+ ; Fetch the data
+fetch(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) K PLIST s par=$g(par) 
+  ;---&SQL(FETCH CRBL INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Lo
+ S PLIST=$o(PLIST(""),-1) 
+ I 'SQLCODE D adjust 
+ q SQLCODE 
+ ; Fetch all data
+fetchbuffer(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(par) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) N (par,PLIST) s par=$g(par) K ^TMP($zn,$j)
+ i $$open(par)
+ f cnt=1:1 Q:$$fetch(par)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+ ; Close the cursor 
+close()  ;---&SQL(CLOSE CRBL) 
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %CRBL0c 
+ q 0
+ ; select data by code
+select(ROWID) K PLIST
+  ;---&SQL(SELECT * INTO :PLIST() FROM CR_BatchLine WHERE CRBL_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0No
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE D adjust
+ q SQLCODE
+ ; Pre-filing adjustments
+pre(xUpdate) d PreSQL^SSUTIL4()
+ s PLIST(12)=99999
+ q
+ ; Post-filing adjustments
+adjust d PostSQL^SSUTIL4("")
+ Q
+ ; check invoice batches
+chbatch(batch,Rebill) n (batch,Rebill,PLIST) s batch=$tr($g(batch)," ",","),Rebill=$g(Rebill) k ^TMP($zn,$j)
+ ; check invoice batches
+ f jINDEX=1:1:$l(batch,",") s xbatch=$p(batch,",",jINDEX) i $l(xbatch) d
+ .s x1=$p(xbatch,"-",1),x2=$p(xbatch,"-",2)
+ .i '$l(x1)!'$l(x2) s l=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,l)="Wrong Batch number "_xbatch q
+ .i '$d(^TTAB("BI",x1)) s l=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,l)="Wrong Batch type "_xbatch q
+ .i '$d(^TMCB(x1,x2)) s l=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,l)="Batch "_xbatch_" not on file"
+ i $d(^TMP($zn,$j)) d  q 100
+ .k PLIST m PLIST=^TMP($zn,$j) s PLIST=$o(PLIST(""),-1)
+ .k ^TMP($zn,$j)
+ ; creating list of episodes
+ f jINDEX=1:1:$l(batch,",") s xbatch=$p(batch,",",jINDEX) i $l(xbatch) d
+ .s x1=$p(xbatch,"-",1),x2=$p(xbatch,"-",2)
+ .s epis="" f  s epis=$o(^TMCB(x1,x2,epis)) q:epis=""  d
+ ..i $$select^LVBEPVIS(epis,"Y") q
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k VISIT m VISIT=PLIST
+ ..i '$l(VISIT(12))!'$l(VISIT(20)) q
+ ..i $$select^LVBDEBVI(VISIT(20)_"||"_VISIT(12)_"||"_epis) q
+ ..k DEB m DEB=PLIST
+ ..f j=3,4 i '$l(VISIT(j)) s VISIT(j)=" "
+ ..s ^TMP($zn,$j,1,xbatch,VISIT(3),VISIT(4),epis)=VISIT(8)
+ ..s ok=1 i Rebill'="Y",VISIT(57)'=(x1_"||"_x2) s ok=0
+ ..i ok s ^TMP($zn,$j,2,epis)=DEB(4)
+ k PLIST s epis="" f cnt=1:1 s epis=$o(^TMP($zn,$j,2,epis)) q:epis=""  s PLIST(cnt)=epis_"\"_^(epis)
+ s PLIST=$o(PLIST(""),-1) k ^TMP($zn,$j)
+ q 0
+ ; check invoices
+chinvoice(invoice,Rebill) n (invoice,Rebill,PLIST) s invoice=$tr($g(invoice)," ",","),Rebill=$g(Rebill) k ^TMP($zn,$j)
+ ; check invoices
+ f jINDEX=1:1:$l(invoice,",") s xinv=$p(invoice,",",jINDEX) i $l(xinv) d
+ .s x1=$p(xinv,"-",1),x2=$p(xinv,"-",2),x3=$p(xinv,"-",3)
+ .i '$l(x1)!'$l(x2)!'$l(x3) s l=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,l)="Wrong Batch number "_xinv q
+ .i '$d(^TTAB("BI",x1)) s l=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,l)="Wrong Batch type "_xinv q
+ .i '$d(^TMCB(x1,x2)) s l=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,l)="Batch "_xinv_" not on file" q
+ .i $$select1^LVBINVBP(x1_"||"_x2,x3,"Y") s l=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,l)="Invoice "_xinv_" not on file"
+ i $d(^TMP($zn,$j)) d  q 100
+ .k PLIST m PLIST=^TMP($zn,$j) s PLIST=$o(PLIST(""),-1)
+ .k ^TMP($zn,$j)
+ ; creating list of episodes
+ f jINDEX=1:1:$l(invoice,",") s xinv=$p(invoice,",",jINDEX) i $l(xinv) d
+ .s x1=$p(xinv,"-",1),x2=$p(xinv,"-",2),x3=$p(xinv,"-",3)
+ .s epis="" f  s epis=$o(^TMCB(x1,x2,epis)) q:epis=""  i $p(^(epis),"\",2)=x3 d
+ ..i $$select^LVBEPVIS(epis,"Y") q
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k VISIT m VISIT=PLIST
+ ..i '$l(VISIT(12))!'$l(VISIT(20)) q
+ ..i $$select^LVBDEBVI(VISIT(20)_"||"_VISIT(12)_"||"_epis) q
+ ..k DEB m DEB=PLIST
+ ..s ok=1 i Rebill'="Y",VISIT(57)'=(x1_"||"_x2) s ok=0
+ ..i ok s ^TMP($zn,$j,2,epis)=DEB(4)
+ k PLIST s epis="" f cnt=1:1 s epis=$o(^TMP($zn,$j,2,epis)) q:epis=""  s PLIST(cnt)=epis_"\"_^(epis)
+ s PLIST=$o(PLIST(""),-1) k ^TMP($zn,$j)
+ q 0
+ ; list of episodes for credit-batch-line
+episode(RowID,mrn) s RowID=$g(RowID),mrn=$g(mrn) k ^TMP($zn,$j)
+ i RowID["-" s RowID=$p($p(RowID,"||"),"-",1)_"||"_$p($p(RowID,"||"),"-",2)
+ i '$$select(RowID),$l(PLIST(3)) s cnt=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,cnt)=$p(PLIST(3),$c(1))
+ i $$open^LVBCRBLB(RowID,mrn)
+ f  q:$$fetch^LVBCRBLB(RowID,mrn)  s cnt=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,cnt)="   "_$p(PLIST(2),$c(1))_" = $"_$p(PLIST(3),$c(1))_"   "
+ i $$close^LVBCRBLB()
+ k PLIST m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1) k ^TMP($zn,$j)
+ q 0
+%0ABr1 s %CRBL0d(10)=""
+ i $l($g(%CRBL0d(4))) s %CRBL0d(10)=$g(%CRBL0d(8))
+ s x="" f  s x=$o(^TBAT($g(%CRBL0d(1)),$g(%CRBL0d(3)),1,x)) q:x=""  s %CRBL0d(10)=$g(%CRBL0d(10))+^(x)
+ s x="" q
+%0ABr2 s %CRBL0d(9)=""
+ s x="" f  s x=$o(^TBAT($g(%CRBL0d(1)),$g(%CRBL0d(3)),0,x)) q:x=""  s %CRBL0d(9)=$g(%CRBL0d(9))+$p(^(x),"\",2)
+ s x="" q
+%CRBL0o s $zt="%CRBL0E" s SQLCODE=$s($g(%CRBL0c):-101,1:0) q:SQLCODE'=0  s %CRBL0d(21)=0 s %CRBL0d(22)=0,%CRBL0d(23)=""
+ s %CRBL0d(18)=$g(par)
+ s %CRBL0c=1 q
+%CRBL0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %CRBL0c,%CRBL0d,%CRBL0E,%CRBL0l,%CRBL0n,%CRBL0R,%CRBL0Z q
+%0Afirst 
+ ; asl MOD# 2
+ s %CRBL0d(1)=%CRBL0d(18)
+ i %CRBL0d(1)="" g %0ABdun
+ s %CRBL0d(3)=""
+%0ABk1 s %CRBL0d(3)=$o(^TBAT(%CRBL0d(1),%CRBL0d(3)))
+ i %CRBL0d(3)="" g %0ABdun
+ s %CRBL0d(27)=$g(^TBAT(%CRBL0d(1),%CRBL0d(3)))
+ s %CRBL0d(4)=$p(%CRBL0d(27),"\",1) s %CRBL0d(5)=$p(%CRBL0d(27),"\",3) s %CRBL0d(6)=$p(%CRBL0d(27),"\",4) s %CRBL0d(7)=$p(%CRBL0d(27),"\",5) s %CRBL0d(8)=$p(%CRBL0d(27),"\",2) s %CRBL0d(11)=$p(%CRBL0d(27),"\",6)
+ s %CRBL0d(2)=(%CRBL0d(1))_"||"_(%CRBL0d(3))
+ s %CRBL0d(1)=$p(%CRBL0d(2),"||")
+ s %CRBL0d(17)=-$g(%CRBL0d(8)) d %0ABr1 d %0ABr2 s %CRBL0d(14)=$$CT013^at323($g(%CRBL0d(4))) s %CRBL0d(12)=$$CT011^at323($g(%CRBL0d(4)),$g(%CRBL0d(2))) s %CRBL0d(16)=$$CT015^at323($g(%CRBL0d(4))) s %CRBL0d(13)=$$CT012^at323($g(%CRBL0d(1))) s %CRBL0d(15)=$$CT014^at323($g(%CRBL0d(4)))
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TBAT($p(%CRBL0d(2),"||",1),$p(%CRBL0d(2),"||",2))#"S":$zu(115,4) i $t { s %CRBL0d(22)=1,%CRBL0d(23)=$name(^TBAT($p(%CRBL0d(2),"||",1),$p(%CRBL0d(2),"||",2)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CR_BatchLine for RowID value: "_%CRBL0d(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %CRBL0d(20)=$p(%CRBL0d(2),"||"),%CRBL0d(3)=$p(%CRBL0d(2),"||",2)
+ i %CRBL0d(20)'="",%CRBL0d(3)'="",$d(^TBAT(%CRBL0d(20),%CRBL0d(3)))
+ e  g %0ACdun
+ s %CRBL0d(31)=$g(^TBAT(%CRBL0d(20),%CRBL0d(3)))
+ s %CRBL0d(4)=$p(%CRBL0d(31),"\",1) s %CRBL0d(5)=$p(%CRBL0d(31),"\",3) s %CRBL0d(6)=$p(%CRBL0d(31),"\",4) s %CRBL0d(7)=$p(%CRBL0d(31),"\",5) s %CRBL0d(8)=$p(%CRBL0d(31),"\",2) s %CRBL0d(11)=$p(%CRBL0d(31),"\",6)
+ s %CRBL0d(1)=$p(%CRBL0d(2),"||")
+ s %CRBL0d(17)=-$g(%CRBL0d(8)) d %0ABr1 d %0ABr2 s %CRBL0d(14)=$$CT013^at323($g(%CRBL0d(4))) s %CRBL0d(12)=$$CT011^at323($g(%CRBL0d(4)),$g(%CRBL0d(2))) s %CRBL0d(16)=$$CT015^at323($g(%CRBL0d(4))) s %CRBL0d(13)=$$CT012^at323($g(%CRBL0d(1))) s %CRBL0d(15)=$$CT014^at323($g(%CRBL0d(4)))
+%0ABuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %CRBL0d(21)=%CRBL0d(21)+1,%ROWCOUNT=%CRBL0d(21),%ROWID=%CRBL0d(2),%CRBL0c=10 q
+%CRBL0f i '$g(%CRBL0c) { s SQLCODE=-102 q  } i %CRBL0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%CRBL0d(21))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%CRBL0d(21),%CRBL0c=100 q  } g %0Afirst:%CRBL0c=1
+%0ACdun i $zu(115,2)=1,$g(%CRBL0d(22))=1 { l -@%CRBL0d(23) s %CRBL0d(22)=0 }
+ g %0ABk1
+%0ABdun 
+%0AAdun 
+ s %ROWCOUNT=%CRBL0d(21),SQLCODE=100,%CRBL0c=100 q
+%CRBL0c i '$g(%CRBL0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%CRBL0d(21)),1:0)
+ i $zu(115,2)=1,$g(%CRBL0d(22))=1 { l -@%CRBL0d(23) } k %CRBL0c,%CRBL0d,%CRBL0E,%CRBL0l,%CRBL0n,%CRBL0R,%CRBL0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %CRBL0c=100 q
+%0Eo n %i,icol,ir
+ f icol=0:1:16 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.CRBatchLine.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Eo
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Gerr" s %mmmsqld(6)=0 s %mmmsqld(7)=""
+ s %mmmsqld(3)=$g(ROWID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",$d(^TBAT(%mmmsqld(4),%mmmsqld(5)))
+ e  g %0GBdun
+ s %mmmsqld(11)=$$%getlock^User.CRBatchLine.T1(%mmmsqld(2)) i '%mmmsqld(11) s SQLCODE=-110 g %0Gc
+ ; asl MOD# 3
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",$d(^TBAT(%mmmsqld(4),%mmmsqld(5)))
+ e  g %0GCdun
+ k %data
+ f icol=0:1:16 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.CRBatchLine.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(6))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(11)=1 %ReleaseLock^User.CRBatchLine.T1(%mmmsqld(2)) g %0Gc
+%0GCdun 
+ d:%mmmsqld(11)=1 %ReleaseLock^User.CRBatchLine.T1(%mmmsqld(2)) g:SQLCODE<0 %0Gc
+%0GBdun 
+%0GAdun 
+%0Gc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(6)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Gerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(11))=1 %ReleaseLock^User.CRBatchLine.T1(%mmmsqld(2)) g %0Gc
+%0Io n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Ierr" s %mmmsqld(5)=0 s %mmmsqld(6)=""
+ s %mmmsqld(2)=$g(ROWID)
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(1)=%mmmsqld(2)
+ s %mmmsqld(3)=$p(%mmmsqld(1),"||"),%mmmsqld(4)=$p(%mmmsqld(1),"||",2)
+ i %mmmsqld(3)'="",%mmmsqld(4)'="",$d(^TBAT(%mmmsqld(3),%mmmsqld(4)))
+ e  g %0IBdun
+ s %mmmsqld(10)=$$%getlock^User.CRBatchLine.T1(%mmmsqld(1)) i '%mmmsqld(10) s SQLCODE=-110 g %0Ic
+ ; asl MOD# 3
+ s %mmmsqld(3)=$p(%mmmsqld(1),"||"),%mmmsqld(4)=$p(%mmmsqld(1),"||",2)
+ i %mmmsqld(3)'="",%mmmsqld(4)'="",$d(^TBAT(%mmmsqld(3),%mmmsqld(4)))
+ e  g %0ICdun
+ d %delete^User.CRBatchLine.T1(%mmmsqld(1),$c(0,2,0,0),'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(5))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(10)=1 %ReleaseLock^User.CRBatchLine.T1(%mmmsqld(1)) g %0Ic
+%0ICdun 
+ d:%mmmsqld(10)=1 %ReleaseLock^User.CRBatchLine.T1(%mmmsqld(1)) g:SQLCODE<0 %0Ic
+%0IBdun 
+%0IAdun 
+%0Ic s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(5)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Ierr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(10))=1 %ReleaseLock^User.CRBatchLine.T1(%mmmsqld(1)) g %0Ic
+%0Lo d %CRBL0f q:SQLCODE'=0
+ s PLIST(0)=%CRBL0d(1),PLIST(1)=%CRBL0d(2),PLIST(2)=%CRBL0d(3),PLIST(3)=%CRBL0d(4),PLIST(4)=%CRBL0d(5),PLIST(5)=%CRBL0d(6),PLIST(6)=%CRBL0d(7),PLIST(7)=%CRBL0d(8),PLIST(8)=%CRBL0d(9),PLIST(9)=%CRBL0d(10),PLIST(10)=%CRBL0d(11),PLIST(11)=%CRBL0d(12),PLIST(12)=%CRBL0d(13),PLIST(13)=%CRBL0d(14),PLIST(14)=%CRBL0d(15),PLIST(15)=%CRBL0d(16),PLIST(16)=%CRBL0d(17)
+ q
+%0NBr1 s PLIST(9)=""
+ i $l($g(PLIST(3))) s PLIST(9)=$g(PLIST(7))
+ s x="" f  s x=$o(^TBAT($g(PLIST(0)),$g(PLIST(2)),1,x)) q:x=""  s PLIST(9)=$g(PLIST(9))+^(x)
+ s x="" q
+%0NBr2 s PLIST(8)=""
+ s x="" f  s x=$o(^TBAT($g(PLIST(0)),$g(PLIST(2)),0,x)) q:x=""  s PLIST(8)=$g(PLIST(8))+$p(^(x),"\",2)
+ s x="" q
+%0No n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Nerr" s %mmmsqld(22)=0,%mmmsqld(23)=""
+ s %mmmsqld(19)=$g(ROWID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(1)=%mmmsqld(19)
+ s %mmmsqld(21)=$p(PLIST(1),"||"),PLIST(2)=$p(PLIST(1),"||",2)
+ i %mmmsqld(21)'="",PLIST(2)'="",$d(^TBAT(%mmmsqld(21),PLIST(2)))
+ e  g %0NBdun
+ s %mmmsqld(27)=$g(^TBAT(%mmmsqld(21),PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(27),"\",1) s PLIST(4)=$p(%mmmsqld(27),"\",3) s PLIST(5)=$p(%mmmsqld(27),"\",4) s PLIST(6)=$p(%mmmsqld(27),"\",5) s PLIST(7)=$p(%mmmsqld(27),"\",2) s PLIST(10)=$p(%mmmsqld(27),"\",6)
+ s PLIST(0)=$p(PLIST(1),"||")
+ s PLIST(16)=-$g(PLIST(7)) d %0NBr1 d %0NBr2 s PLIST(13)=$$CT013^at323($g(PLIST(3))) s PLIST(11)=$$CT011^at323($g(PLIST(3)),$g(PLIST(1))) s PLIST(15)=$$CT015^at323($g(PLIST(3))) s PLIST(12)=$$CT012^at323($g(PLIST(0))) s PLIST(14)=$$CT014^at323($g(PLIST(3)))
+ g:$zu(115,2)=0 %0NBuncommitted i $zu(115,2)=1 l +^TBAT($p(PLIST(1),"||",1),$p(PLIST(1),"||",2))#"S":$zu(115,4) i $t { s %mmmsqld(22)=1,%mmmsqld(23)=$name(^TBAT($p(PLIST(1),"||",1),$p(PLIST(1),"||",2)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CR_BatchLine for RowID value: "_PLIST(1) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(21)=$p(PLIST(1),"||"),PLIST(2)=$p(PLIST(1),"||",2)
+ i %mmmsqld(21)'="",PLIST(2)'="",$d(^TBAT(%mmmsqld(21),PLIST(2)))
+ e  g %0NCdun
+ s %mmmsqld(31)=$g(^TBAT(%mmmsqld(21),PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(31),"\",1) s PLIST(4)=$p(%mmmsqld(31),"\",3) s PLIST(5)=$p(%mmmsqld(31),"\",4) s PLIST(6)=$p(%mmmsqld(31),"\",5) s PLIST(7)=$p(%mmmsqld(31),"\",2) s PLIST(10)=$p(%mmmsqld(31),"\",6)
+ s PLIST(0)=$p(PLIST(1),"||")
+ s PLIST(16)=-$g(PLIST(7)) d %0NBr1 d %0NBr2 s PLIST(13)=$$CT013^at323($g(PLIST(3))) s PLIST(11)=$$CT011^at323($g(PLIST(3)),$g(PLIST(1))) s PLIST(15)=$$CT015^at323($g(PLIST(3))) s PLIST(12)=$$CT012^at323($g(PLIST(0))) s PLIST(14)=$$CT014^at323($g(PLIST(3)))
+%0NBuncommitted ;
+ s SQLCODE=0 g %0Nc
+%0NCdun i $zu(115,2)=1,$g(%mmmsqld(22))=1 { l -@%mmmsqld(23) s %mmmsqld(22)=0 }
+%0NBdun 
+%0NAdun 
+%0Nc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(22))=1 { l -@%mmmsqld(23) } q
+%0Nerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Nc
+]]></Routine>
+</Export>

@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="XML.Abstract.G1" type="MAC" languagemode="0" generated="1"><![CDATA[
+ ;XML.Abstract.G1
+ ;(C)InterSystems, method generator for class XML.Abstract.  Do NOT edit.
+ Quit
+ ;
+ #; method code include files begin
+ #include %systemInclude
+ #include TRAK
+ #; method code include files end
+
+#classcontext XML.Abstract
+#classmethod XMLExport
+XMLExport(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class
+ s class=%class
+ ;
+ #; if class is abstract, quit here, don't instantiate 
+ ;;;;;;;;;;;;;;;;;;;;i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT") QUIT $$$OK
+ #;
+ n param,idby,j,expr
+ s param=$g($$$PARAMdefault($$$TRAKDEF,class,"xmltoclass"))
+ s idby=$g($$$PARAMdefault($$$TRAKDEF,class,"xmlidentifiedby"),"%Id()")
+ ;
+ ; If no parameter CLASSTOXML then we 'dont know how to export'
+ i param="" $$$GENERATE(" QUIT") QUIT $$$OK
+ ;
+ ; Persistent classes only...???
+ ;
+ ; If no parameter XMLTOCLASS then we 'wont know how to import' so don't bother to export
+ $$$GENERATE(" w ""<"_param_" xmltoclass="""""_class_"""""""")
+ ;$$$GENERATE(" w "" xmlid=""""""_..%Id()_""""""""")
+ s expr="" f j=1:1:$l(idby,",") s:$l(expr) expr=expr_"_"",""_" s expr=expr_".."_$p(idby,",",j)
+ s expr="""_"_expr_"_"""
+ $$$GENERATE(" w "" xmlid="""""_expr_"""""""")
+ ;
+ n prp,tmp,tparam
+ Set rs=##Class(%ResultSet).%New("%CompiledProperty:PropertyInfo")
+ d rs.Execute(class)
+ While rs.Next() {
+ s type=rs.Data("Type"),prp=rs.Data("Name")
+
+ i '$g($$$PROPprivate($$$sDEF,class,prp)) {
+ ; Ignore  properties with an xml type that required further processing
+ ; A bit convoluted as we can't do this per property unless we declare a new string type
+ s tparam=$g($$$PARAMdefault($$$sDEF,class,"xmltype"_prp))
+ i tparam="" {
+ ;if it is a reference then put the id instead of the value
+ if ($e(type)="%"!(type="websys.Expression")) {
+ $$$GENERATE(" w:.."_prp_"'="""" "" "_prp_"=""""""_$ZCVT(.."_prp_",""O"",""HTML"")_""""""""") 
+ } else {
+ $$$GENERATE(" w:.."_prp_" "" "_prp_"=""""""_$ZCVT(.."_prp_".%Id(),""O"",""HTML"")_""""""""") 
+ }
+ }
+ }
+ }
+ d rs.%Close()
+ ;
+ $$$GENERATE(" w "">""")
+ ;
+ ; loop thru all properties (AGAIN) for this class
+
+ Set rs=##Class(%ResultSet).%New("%CompiledProperty:PropertyInfo")
+ d rs.Execute(class)
+ f  q:'rs.Next()  d
+ . s prp=$g(rs.Data("Name"))
+ . i $g($$$PROPprivate($$$sDEF,class,prp)) q
+ . ; Ignore  properties with an xml type that required further processing
+ . ; A bit convoluted as we can't do this per property unless we declare a new string type
+ . s tparam=$g($$$PARAMdefault($$$sDEF,class,"xmltype"_prp))
+
+ . i tparam="IGNORE" d  q
+ . i tparam="CDATA" d  q
+ . . ; CDATA
+ . . $$$GENERATE(" i .."_prp_"'="""" d ") 
+ . . $$$GENERATE(" . w !,""<"_prp_"><![CDATA[""")
+ . . $$$GENERATE(" . w .."_prp)
+ . . $$$GENERATE(" . w ""]]]]><![CDATA[></"_prp_">""")
+ . . ;$$$GENERATE(" . w !,""]]]]><![CDATA[></"_prp_">""")
+ . ; Currently a child table (include the tags to explicitly indicate there are no children)
+ . i tparam'="" d
+ . . $$$GENERATE(" w !,""<"_tparam_">""")
+ . . $$$GENERATE(" n j")
+ . . $$$GENERATE(" f j=1:1:.."_prp_".Count() d")
+ . . $$$GENERATE(" . d .."_prp_".GetAt(j).XMLExport()")
+ . . $$$GENERATE(" w !,""</"_tparam_">""")
+ ;
+ $$$GENERATE(" w ""</"_param_">""")
+ ;
+ $$$GENERATE(" q")
+ Q $$$OK
+ q 1
+#classmethod XMLPrepare
+XMLPrepare(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class
+ s class=%class
+ ;
+ #; if class is abstract, quit here, don't instantiate 
+ ;;;;;;;;;;;;;;;;;;;;i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT") QUIT $$$OK
+ #;
+ n param
+ s param=$g($$$PARAMdefault($$$TRAKDEF,class,"xmltoclass"))
+ ;
+ ; If no parameter CLASSTOXML then we 'dont know how to import'
+ i param="" $$$GENERATE(" QUIT") QUIT $$$OK
+ ;
+ n prp,tmp
+ ; loop thru all properties for this class
+ Set rs=##Class(%ResultSet).%New("%CompiledProperty:PropertyInfo")
+ d rs.Execute(class)
+ f  q:'rs.Next()  d
+ . s prp=$g(rs.Data("Name"))
+ . ; Ignore private properties
+ . i $g($$$PROPprivate($$$sDEF,class,prp)) q
+ . ;Removed to clear down Component and Standard Type items
+ . ;i $g($$$PROPrelationship($$$sDEF,class,prp)) q
+ . ; A bit convoluted as we can't do this per property unless we declare a new string type
+ . ; for now we are just processing child tables - other type we'll cover when we hit them
+ . s param=$g($$$PARAMdefault($$$sDEF,class,"xmltype"_prp))
+
+ . i param="" $$$GENERATE(" s .."_prp_"=""""")  q
+ . i param="CDATA" $$$GENERATE(" s .."_prp_"=""""")  q
+ . i param="IGNORE" q
+ . $$$GENERATE(" d .."_prp_".Clear()") 
+ ;
+ $$$GENERATE(" q")
+ Q $$$OK
+ q 1
+#classmethod XMLSetProperties
+XMLSetProperties(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ ;
+ ; This should really validate the property name
+ ;for j=1:1:$ll(names) {
+ ;d SetProperty^%apiOBJ(%this,$lg(names,j),$lg(values,j))
+ ;}
+ ;q
+ ;;
+ s %code=0
+ ;
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT") QUIT $$$OK
+ n rs,prpobj
+ ;
+ $$$GENERATE(" n j")
+ $$$GENERATE(" for j=1:1:$ll(names) {")
+ ;
+ Set rs=##Class(%ResultSet).%New("%CompiledProperty:PropertyInfo")
+ d rs.Execute(%class)
+ While rs.Next() {
+ s prp=$g(rs.Data("Name"))
+ s type=$g(rs.Data("Type"))
+ s prpobj=##Class(%PropertyDefinition).%OpenId(%class_":"_prp)
+ s col=##Class(%Collation).Upper($s(prpobj.SqlFieldName'="":prpobj.SqlFieldName,1:prp))
+ s rel=prpobj.Relationship
+ ; ingore relationships + collections
+ if 'rel {
+ if prpobj.Collection'="list" {
+ if $e(type)="%"!(type="websys.Expression") {
+ $$$GENERATE(" i $lg(names,j)="""_prp_""" s .."_prp_"=$lg(values,j)")
+ } else {
+ $$$GENERATE(" i $lg(names,j)="""_prp_""" d .."_prp_"SetObjectId($lg(values,j))")
+ }
+ }
+ }
+ }
+
+ ;
+ $$$GENERATE(" }")
+ ;
+ q $$$OK
+ q 1
+]]></Routine>
+</Export>

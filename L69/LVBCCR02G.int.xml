@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCCR02G" type="INT" languagemode="0"><![CDATA[
+LVBCCR02G ; ML 24/12/99 ; CCR file creation - SJOG EAST  ; Compiled August 22, 2005 11:53:09 for Cache for Windows
+ ;
+ ; supported calls
+ ;
+ ; $$create^LVBCCR02G(type,TYPE,DATE)
+ ;
+create(type,TYPE,DATE) n (type,TYPE,DATE) s type=$g(type),TYPE=$g(TYPE),DATE=$g(DATE),file="" k ^TMP($zn,$j)
+ i '$l(DATE) s DATE=+$h
+ ; find list of test sets
+ i $$open^LVBCTTS()
+ f  q:$$fetch^LVBCTTS()  i PLIST(42)=type s ^TMP($zn,$j,1,PLIST(2))=""
+ i $$close^LVBCTTS()
+ ; find list of patients
+ i $d(^TMP($zn,$j,1)) d
+ .i $$select^MVBCFLAB(1) q
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .s dir=PLIST(48),rid=$s(type="P":PLIST(47),1:PLIST(49)),lab=PLIST(46)
+ .f j="\","/" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ .s Start=$o(^TCCR(type,"DATA",DATE),-1)-1
+ .s epis="" f  s epis=$o(^TCCR(type,"DATA",DATE,epis)) q:epis=""  d
+ ..s ts="" f  s ts=$o(^TCCR(type,"DATA",DATE,epis,ts)) q:ts=""  d
+ ...s cnt="" f  s cnt=$o(^TCCR(type,"DATA",DATE,epis,ts,cnt)) q:cnt=""  d
+ ....k ^TCCR(type,"DATA",DATE,epis,ts,cnt)
+ .i TYPE="R" s date=Start,End=DATE-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>End  d
+ ..s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ ...s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  d
+ ....i $d(^TMP($zn,$j,1,ts)) s cnt="" f  s cnt=$o(^TEPIi("AUTHORISED",date,epis,ts,cnt)) q:cnt=""  d
+ .....s vtsRID=epis_"||"_ts_"||"_cnt
+ .....s ExcludeFromCCR="" d %0Ao
+ .....i $p(ExcludeFromCCR,$c(1))="Y" q
+ .....i $d(^TEPI(epis,1,ts,cnt,"CCR")) s ^TCCR(type,"DATA",DATE,epis,ts,cnt)=""
+ .i TYPE'="R" s date=Start,End=DATE f  s date=$o(^TDAY(1,date)) q:date=""  q:date>End  d
+ ..s epis="" f  s epis=$o(^TDAY(1,date,0,epis)) q:epis=""  d
+ ...s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ....i $d(^TMP($zn,$j,1,ts)) s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ .....s vtsRID=epis_"||"_ts_"||"_cnt
+ .....s ExcludeFromCCR="" d %0Bo
+ .....i $p(ExcludeFromCCR,$c(1))="Y" q
+ .....s ^TCCR(type,"DATA",DATE,epis,ts,cnt)=""
+ . ; create file
+ .i $d(^TCCR(type,"DATA",DATE)) d
+ ..s date=$$extdate2^SSUTIL4(DATE)
+ ..s file=dir_"v"_$s(TYPE="R":"rr",1:"pr")_$e($p(date,"/",3),3,4)_$p(date,"/",2)_$p(date,"/",1)_".txt"
+ ..o file:"WNS":5 e  q
+ ..u file
+ ..s RECORD="HEADER,00,SJOG,"_$$extdate2^SSUTIL4(+$h)_","_$$exttime^SSUTIL4($p($h,",",2))
+ ..w RECORD,!
+ ..s cnt=0
+ ..s epis="" f  s epis=$o(^TCCR(type,"DATA",DATE,epis)) q:epis=""  d
+ ...i $$select^LVBEPVIS(epis,"Y") q
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...k VISIT m VISIT=PLIST
+ ...i $$select^LVBCTDR(VISIT(15),"Y") q
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...k DOC m DOC=PLIST
+ ...s ts="" f  s ts=$o(^TCCR(type,"DATA",DATE,epis,ts)) q:ts=""  d
+ ....s cnt="" f  s cnt=$o(^TCCR(type,"DATA",DATE,epis,ts,cnt)) q:cnt=""  d
+ .....s rid=rid+1,^TCCR(type,"DATA",DATE,epis,ts,cnt)=rid
+ .....s result="" f j="S","W","E","O","R" s result=result_$g(^TEPI(epis,1,ts,cnt,"CCR",j),0)
+ .....s RECORD="C,"_epis_","_VISIT(3)_","_VISIT(4)_",0,0,0,0,"_$$extdate2^SSUTIL4(VISIT(6))_","_result_","_$$extdate2^SSUTIL4(VISIT(61))
+ .....w RECORD,!
+ .....s RECORD="E,"_epis_",1,0,0,,,"
+ .....w RECORD,!
+ .....s cnt=cnt+1
+ ..s RECORD="EOF,"_cnt_",0,0,0,"
+ ..c file
+ ..i '$$select^MVBCFLAB(1) d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...i type="P" s PLIST(47)=rid
+ ...i $$update^MVBCFLAB(1)
+ q file
+ q
+%0ABs1 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(vtsRID,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$e(vtsRID,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p($g(%mmmsqld(3)),"||",1,1),%mmmsqld(7)=$p($g(%mmmsqld(3)),"||",2,2),%mmmsqld(8)=$p($g(%mmmsqld(3)),"||",3,3)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",$d(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8)))
+ e  g %0ABdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8)))
+ s ExcludeFromCCR=$p(%mmmsqln,"\",8)
+ 
+ s %val=$P(ExcludeFromCCR,$C(1)) d %0ABs1:%val'="" s $P(ExcludeFromCCR,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0Bo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Berr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(vtsRID,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$e(vtsRID,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p($g(%mmmsqld(3)),"||",1,1),%mmmsqld(7)=$p($g(%mmmsqld(3)),"||",2,2),%mmmsqld(8)=$p($g(%mmmsqld(3)),"||",3,3)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",$d(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8)))
+ e  g %0BBdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8)))
+ s ExcludeFromCCR=$p(%mmmsqln,"\",8)
+ 
+ s %val=$P(ExcludeFromCCR,$C(1)) d %0ABs1:%val'="" s $P(ExcludeFromCCR,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Bc
+%0BBdun 
+%0BAdun 
+%0Bc q
+%0Berr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0BAdun
+]]></Routine>
+</Export>

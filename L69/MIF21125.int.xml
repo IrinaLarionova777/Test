@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF21125" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF21125(mi) ; ML 01/11/00 ; DADE Sysmex CA-500 Using CA-1000 STX-ACK-ETX ; QC - Yes
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,etx) i '$l(record) q
+ d trace^MIF000(mi,record,"H<--M")
+ ; slow interface response to prevent loss of 'ack' on analyser side
+ h 1 d ACK
+ s (sample,epis,surname,result,date,time,QC)=""
+ ; Result from machine
+ ; file only mean
+ i $e(record)="D" d A1
+ ; Request from machine
+ i $e(record)="R" d A2
+ ; file result
+ i QC=1 s QC=cup_"\"_epis
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+A1 ; sample distinction codes
+ ;  U - Routine
+ ;  E - STAT
+ ;  S - Standard curve
+ ;  C - QC
+ i $e(record,9)="S" q
+ s QC="" i $e(record,9)="C" s QC=1
+ ; date and time
+ s date=$e(record,14,15)_$e(record,12,13)_$e(record,10,11),date=$$intdate^SSUTIL4(date)
+ s time=($e(record,16,17)*3600)+($e(record,18,19)*60)
+ s cup=$e(record,24,25)
+ s epis=$tr($e(record,26,38)," ")
+ s surname=$tr($e(record,40,50)," ")
+ s data=$e(record,51,$l(record))
+ f j=1:9 s rec=$e(data,j,j+8) q:$e(rec,1,3)=""  d
+ .s code=$tr($e(rec,1,3)," "),res=$tr($e(rec,4,8)," "),flag=$tr($e(rec,9)," ")
+ .s code=$s(code="502":"062",code="171":"041",code="174":"044",code="181":"051",1:code)
+ .s result=result_code_$c(par10)_res_$c(par10)_flag_$c(par11)
+ q
+A2 ; process request record
+ s epis=$tr($e(record,26,38)," ")
+ d scanone^MIF000(mi,epis)
+ s message="S"_$e(record,2)_"210101U"_$e(record,10,50),test="" k tc
+ s tc="" f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ .s tc($e(tc,1,2))=""
+ s tc="" f  s tc=$o(tc(tc)) q:tc=""  d
+ . ; modify test item channels to test channels
+ .s test=test_$s($e(tc,1,2)="04":"040",$e(tc,1,2)="05":"050",$e(tc,1,2)="06":"060",$e(tc,1,2)="08":"080",$e(tc,1,2)="09":"090",$e(tc,1,2)="30":300,$e(tc,1,2)="50":500,$e(tc,1,2)="51":510,$e(tc,1,2)="612":612,1:520)_$j("",6)
+ i test="" s test="000"_$j("",6)
+ s message=message_test
+ d Send(message)
+ q
+Send(str) ; send string to instrument
+ s ok=0 f i=1:1:4 w stx,str,etx,*-3 d  q:ok
+ .d trace^MIF000(mi,str,"H-->M")
+ . ; wait for ack/nak
+ .s x=$$read^MIF000(stx,etx) d trace^MIF000(mi,$s(x=ack:"ACK",1:"NAK"),"H<--M")
+ .i x=ack s ok=1
+ q
+ACK ; send 'ack' to instrument
+ w stx,ack,etx,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

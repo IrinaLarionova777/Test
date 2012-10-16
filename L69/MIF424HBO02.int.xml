@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF424HBO02" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF424HBO02(mi) ; ML 21/02/02 ; ASTM protocol  -  Phoenix 100
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),etb=$c(23),ack=$c(6),enq=$c(5),eot=$c(4),lf=$c(10),cr=$c(13),nak=$c(21)
+ s (result,epis)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:10 e  q
+ i $c(R)=enq d
+ .d trace^MIF000(mi,"ENQ","H<--M")
+ .d ACK
+ .s RECORD="" f  r *R:10 q:$c(R)=eot  q:R=-1  d
+ ..i $c(R)'=stx q
+ ..s record=$$read^MIF000("",lf) q:'$l(record)
+ ..s record=$e(record,1,$l(record)-1)
+ ..d trace^MIF000(mi,$tr(record,cr," "),"H<--M")
+ .. ; check record validity
+ ..s et=$s(record[etx:etx,1:etb)
+ ..s chsum=$p(record,et,2),chrecord=$p(record,et,1)_et
+ ..i $$CHSUM(chrecord)'=chsum d  q
+ ...w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+ ..d ACK
+ ..s RECORD=RECORD_$p($e(record,2,$l(record)),et,1)
+ .i $c(R)=eot d
+ ..d trace^MIF000(mi,"EOT","H<--M")
+ ..f j=1:1:$l(RECORD,cr) s x=$p(RECORD,cr,j) i $l(x) s cnt=$o(^TMP($zn,$j,"records",""),-1)+1,^TMP($zn,$j,"records",cnt)=x
+ ..s cnt="" f  s cnt=$o(^TMP($zn,$j,"records",cnt)) q:cnt=""  d
+ ...s record=^(cnt)
+ ... ; patient record
+ ...i $e(record)="P" d Last q
+ ... ; order record
+ ...i $e(record)="O",$l($p($p(record,"|",3),"^",3)) d  q
+ ....s epis=$p($p(record,"|",3),"^",1) i $l(epis)>9 f  q:$l(epis)=9  s epis=$e(epis,2,$l(epis))
+ ....s barcode=$p($p(record,"|",5),"^",5),orgCh=""
+ ....i $l(epis),$l(barcode) d
+ .....i '$d(^TMIF(mi,32,epis,barcode)) d
+ ......s (new,x)="" f  s x=$o(^TMIF(mi,32,epis,x)) q:x=""  i ^(x)>new s new=^(x)
+ ......s ^TMIF(mi,32,epis,barcode)=new+1
+ .....i $d(^TMIF(mi,32,epis,barcode)) s orgCh="ORG"_^TMIF(mi,32,epis,barcode)
+ ....s result=$p($p(record,"|",3),"^",3)_$c(par10)
+ ... ; result record
+ ...i $e(record)="R",$l(result),$tr($p($p(record,"|",3),"^",4)," ")="AST_MIC" d  q
+ ....s xANT=$tr($p($p(record,"|",3),"^",6)," ")
+ ....s xMIC=$tr($p($p(record,"|",4),"^",2)," ")
+ ....s xRES=$tr($p($p(record,"|",4),"^",3)," ")
+ ....s result=result_xANT_$c(par28)_xRES_$c(par28)_xMIC_$c(par27)
+ ... ; last record
+ ...i $e(record)="L" d Last q
+ q
+Last ; file result if exist
+ i $l(epis),$l(result) d
+ .d file^MIF000(mi,sample,epis,surname,"ABC"_$c(par10)_"Y"_$c(par11)_"BC"_$e(orgCh,4)_$c(par10)_barcode,date,time,QC)
+ .i $l(orgCh) s $p(result,$c(par10),3)=orgCh
+ .d fileant^MIF000(mi,sample,epis,result)
+ s (sample,epis,surname,result,date,time,QC)=""
+ q
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

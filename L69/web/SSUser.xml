@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="web.SSUser">
+<ClassType/>
+<ProcedureBlock>0</ProcedureBlock>
+<Super>%Library.RegisteredObject,websys.Abstract</Super>
+<TimeCreated>60218,47099.706547</TimeCreated>
+<Inheritance>right</Inheritance>
+
+<Parameter name="BUILD">
+<Internal/>
+<Default>84</Default>
+</Parameter>
+
+<Parameter name="SQLDATEFROM">
+<Internal/>
+</Parameter>
+
+<Parameter name="SQLDATETO">
+<Internal/>
+</Parameter>
+
+<Parameter name="SQLCODE">
+<Default>SSUSR_Initials</Default>
+</Parameter>
+
+<Parameter name="SQLDESCRIPTION">
+<Default>SSUSR_Name</Default>
+</Parameter>
+
+<Parameter name="SQLFILTER">
+<Description>
+This value of this parameter is appended to the end of the SQL WHERE clause used in both standard lookups and standard broker validation.
+This is typically used for filtering records to allow only active records to be used.</Description>
+<Default><![CDATA[(SSUSR_Active <> 'N')]]></Default>
+</Parameter>
+
+<Parameter name="SQLROWID">
+<Default>SSUSR_RowId</Default>
+</Parameter>
+
+<Method name="Encrypt">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>x:%Library.String</FormalSpec>
+<ReturnType>%Library.String</ReturnType>
+<Implementation><![CDATA[
+ n (x)
+ ;
+ s const=37,out=""
+ ;
+ ; SA 20.3.03 - log 33183: All trailing spaces must be removed from Pwd/PIN	
+ f  q:$e(x,$l(x))'=" "  s x=$e(x,1,$l(x)-1)
+ ;
+ f piece=1:1:$l(x) s char=$e(x,piece) d
+ . i char="D" s char=$c(2)
+ . i char="p" s char=$c(3)
+ . i char="d" s char=$c(4)
+ . i char="t" s char=$c(5)
+ . s num=$a(char)
+ . s num=(num-piece+const)#255
+ . i num>127 s num=(num+128)#255
+ . i num<32 s num=(num+40)#255
+ . i $c(num)="^" s num=num+1
+ . s $e(out,piece)=$c(num#255)
+ ;
+ ; Pad out the length
+ s len=$l(out)
+ f piece=(len+1):1:12 d
+ . s char=$e(out,(piece-len))
+ . s num=$a(char)
+ . s num=(num*2.345*const*(const-7))#255
+ . i num>127 s num=(num+128)#255
+ . i num<32 s num=(num+40)#255
+ . i $c(num)="^" s num=num+1
+ . s $e(out,piece)=$c(num#255)
+ ;         
+ q out
+]]></Implementation>
+</Method>
+
+<Method name="GetUserGroup">
+<FormalSpec>userid:%Library.String</FormalSpec>
+<ReturnType>%Library.String</ReturnType>
+<Implementation><![CDATA[ q $p($g(^SSU("SSUSR",+$g(userid))),"^",4)
+]]></Implementation>
+</Method>
+
+<Method name="IsValidUser">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>username:%String,password:%String,overrideauthentication:%Library.Boolean=0</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ n encr,rowid,isactive
+ if 'overrideauthentication {
+ 	s encr=..Encrypt(password)
+ 	&sql(SELECT SSUSR_ROWID,SSUSR_Active
+ 	INTO :rowid,:isactive
+ 	FROM SQLUser.SS_User
+ 	WHERE SSUSR_Initials=:username AND SSUSR_PASSWORD=:encr)
+ } else {
+ 	//in this case user/password is assumed to have been authenticated externally to MEDTRAK
+ 	&sql(SELECT SSUSR_ROWID,SSUSR_Active
+ 	INTO :rowid,:isactive
+ 	FROM SQLUser.SS_User
+ 	WHERE SSUSR_Initials=:username)
+ }
+ //enable cache license unit shareing
+ i 'SQLCODE,$d(%session) d %session.Login(username,password,1)
+ i SQLCODE q ""
+ i isactive="N" q "-"_$g(rowid)
+ q $g(rowid)
+]]></Implementation>
+</Method>
+
+<Method name="SetUserSessionData">
+<Description>
+Sets %session variables for the user and user groups</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>userid:%Library.String,groupid:%Library.String=""</FormalSpec>
+<Implementation><![CDATA[
+ N user,grp
+ k %session.Data("LOGON.USERID")
+ k %session.Data("LOGON.USERCODE")
+ k %session.Data("LOGON.USERNAME")
+ k %session.Data("LOGON.GROUPID")
+ k %session.Data("LOGON.GROUPDESC")
+ k %session.Data("LOGON.GROUPMENUS")
+ k %session.Data("LOGON.ALLOWLAYOUTMANAGER")
+ k %session.Data("LOGON.ALLOWCOLUMNMANAGER")
+ k %session.Data("LOGON.LANGID")
+ ;
+ n u1,u2,u3,u4,g1,g2,g3,g4,g5,g6,g7
+ &sql(SELECT SSUSR_Initials,SSUSR_Name,SSUSR_Group,
+ 	SSUSR_Language_DR->SSLAN_RowId,
+ 	SSUSR_Group->SSGRP_Desc
+      INTO :u1,:u2,:u3,:u4,:g1
+      FROM SQLUser.SS_User
+      WHERE SSUSR_ROWID=:userid
+ )
+ i groupid s u3=groupid
+ i 'SQLCODE d
+ . s %session.Data("LOGON.USERID")=userid
+ . s %session.Data("LOGON.USERCODE")=u1
+ . s %session.Data("LOGON.USERNAME")=u2
+ . s %session.Data("LOGON.GROUPID")=u3
+ . s %session.Data("LOGON.GROUPDESC")=g1
+ . i u4 s %session.Data("LOGON.LANGID")=u4
+ . i 'u4 s %session.Data("LOGON.LANGID")=##Class(websys.Configuration).GetDefaultLanguage()
+ 
+ &sql(SELECT AllowLayoutManager,AllowColumnManager,MenuSecurity,StyleSheet,AppTimeout,StartPageDR
+ 	INTO :g2,:g3,:g4,:g5,:g6,:g7
+ 	FROM epr.GroupSettings
+ 	WHERE GroupDR=:u3
+ )
+ i 'SQLCODE d
+ . s %session.Data("LOGON.ALLOWLAYOUTMANAGER")=$s(g2:"Y",1:"")
+ . s %session.Data("LOGON.ALLOWCOLUMNMANAGER")=$s(g3:"Y",1:"")
+ . s %session.Data("LOGON.GROUPMENUS")=g4
+ . s %session.Data("LOGON.STYLESHEET")=g5
+ . i g6 s (%session.Data("LOGON.TIMEOUT"),%session.AppTimeout)=g6*60
+ . i g7'="" s %response.ServerSideRedirect="epr.frames.csp"
+ ;
+ Q
+]]></Implementation>
+</Method>
+
+<Method name="ValidatePIN">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>UserCode:%Library.String,PIN:%Library.String,compid:%Library.String="",fieldname:%Library.String="",ChangeSessionData:%Library.Boolean=1</FormalSpec>
+<ReturnType>%Library.String</ReturnType>
+<Implementation><![CDATA[
+ n UserObj,t,Validated,UserID,securitymsg,resetUser,username
+ s Validated=1
+ ;if no PIN, it is not mandatory and therefore passes when empty
+ i PIN="" q Validated
+ s username=$p($g(fieldname),"^",2) if username="" s username="UserCode"
+ s fieldname=$p($g(fieldname),"^",1)
+ d ##Class(websys.Component).GetComponentMessages(.t,"SSUser.EditPassword")
+ 
+ i UserCode="" s UserCode=$g(%session.Data("LOGON.USERCODE"))
+ s UserID=##Class(web.SSUser).GetIdFromCodeOrDescription(UserCode)
+ i UserID="",UserCode'="" d:msg msg.AddItem("E","",$g(t("INVALID_CODE")),compid,username,$g(%request.Data("TDIRTY",1))) s Validated=0
+ ;if allow to change user, check if user has changed
+ ; JJH - Log 49989 when checking pin do not change session data for secondary signatures
+ ;       By default session data will change (as per original behaviour)
+ s resetUser=ChangeSessionData
+ if resetUser s resetUser=(##class(%Library.Collation).AlphaUp(UserCode)'=##class(%Library.Collation).AlphaUp($g(%session.Data("LOGON.USERCODE"))))
+ ;
+ i Validated {
+	 s UserObj=##Class(User.SSUser).%OpenId(UserID,0)
+ 	 i UserObj {
+ 		i UserObj.SSUSRPin=..Encrypt(PIN) { 
+ 			;s Validated=1
+ 		} else { 
+ 			d:msg msg.AddItem("E","",$g(t("INVALID_PIN")),compid,fieldname,$g(%request.Data("TDIRTY",1))) 
+ 			s Validated=0
+ 	}
+ 	; cjb 21/05/2004 44016 - validate the User ActiveFlag, and DateFrom/To against todays date
+ 	i Validated,UserObj.SSUSRActive'="Y" d:msg msg.AddItem("E","",$g(t("NotActive")),compid,fieldname,$g(%request.Data("TDIRTY",1))) s Validated=0
+ 	S UserID=UserObj.%Id()
+ 	d UserObj.%Close()
+ 	}
+ }
+ ;for old calls that do not pass compid
+ if compid="" s compid=$e($p($g(%request.Data("TEVENT",1)),"i",1),2,999)
+ 
+ i Validated,UserID,resetUser {
+ 	D ..SetUserSessionData(UserID)
+ }
+ q Validated
+]]></Implementation>
+</Method>
+
+<Query name="FindAll">
+<Type>%Library.SQLQuery</Type>
+<SqlQuery>SELECT SSUSR_RowID,SSUSR_Name
+FROM SQLUser.SS_User</SqlQuery>
+<Parameter name="CONTAINID" value="1"/>
+<Parameter name="ROWSPEC" value="ID,Name"/>
+</Query>
+
+<Query name="FindByGroup">
+<Type>%Library.SQLQuery</Type>
+<FormalSpec>groupid:%String</FormalSpec>
+<SqlQuery>SELECT SSUSR_RowID,SSUSR_Name
+FROM SQLUser.SS_User
+WHERE (SSUSR_Group=:groupid AND SSUSR_Active='Y')</SqlQuery>
+<Parameter name="CONTAINID" value="1"/>
+<Parameter name="ROWSPEC" value="ID,Name"/>
+</Query>
+</Class>
+</Export>

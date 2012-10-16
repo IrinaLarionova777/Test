@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTBBXMRINDO03" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTBBXMRINDO03 ; ML 29/08/2002 ; BloodBank XMatch report - Indonesia - Mayne Health RS Internasional Surabaya
+ q
+ ; Parameters :  1. vtsRID
+ ;               2. Event : U-Update
+ ;                           -Authorize
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j),^TMP("PRTDR00",$j),^TMP("REPORT",$j)
+ k xHEADER d INIT,BODY,PRINT
+ k ^TMP($zn,$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ q
+BODY ; create report
+ s vtsRID=PAR1,epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2)
+ k VISTE i '$$getall^LVBVISTE(vtsRID) d
+ .f j=1:1:PLIST d
+ ..i $p($p($p(PLIST(j),$c(2),4),$c(28),4),$c(1))="I" q
+ ..i PAR2="U",$p($p($p(PLIST(j),$c(2),4),$c(28),12),$c(1))'="Y" q
+ ..s x=$p($p(PLIST(j),$c(2),4),$c(28),13),VISTE(x)=$p(PLIST(j),$c(2),4)
+ i '$d(VISTE) q
+ k VISTD i '$$results^LVBVISTS(vtsRID,,,,"Y") m VISTD=PLIST
+ k VISTS i '$$select^LVBVISTS(vtsRID) m VISTS=PLIST
+ k VISIT i '$$select^LVBEPVIS(epis) m VISIT=PLIST
+ ; get doctor information
+ s doc=$p(VISIT(15),$c(1)) k DOC i '$$select^LVBCTDR(doc,"Y") m DOC=PLIST
+ s dep="",tsLM=0,tsWD=80
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ s tsWD=80 i '$$select^MVBCFLAB(1) d
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ ; tr : CL  - Direct Issue
+ ;      XM  - X-Match
+ ;      I   - Issue
+ ;      HI  - Hospital Issue
+ ;      GS  - Group Specific Issue
+ ;      W   - Issue to DPH
+ ; print xmatch grid report
+ s $p(LINE,"_",85)="",TEXT="",UL=LINE,cntline="" 
+ ; extract product details - one product per page
+ s (tr,ind)="" f  s ind=$o(VISTE(ind)) q:ind=""  d
+ .f j=1:1:$l(VISTE(ind),$c(28)) s @("x"_j)=$p(VISTE(ind),$c(28),j)
+ .k PACK i '$$select^LVBBBP($p(x2,$c(1))_"||"_$p(x3,$c(1))) m PACK=PLIST 
+ .s product=$e($p(PACK(8),$c(1),2),1,29)
+ .s PROD(product)=$p(PACK(8),$c(1)),PROD(product,ind)=""
+ .i $l($p(x5,$c(1))),'$l(tr)!(tr="CL") s tr=$p(x5,$c(1))
+ d LN^PRTDR00()
+ s (cntline,product)=""
+ ; print blood group
+ d BloodGrp
+ ; insert grid
+ d XMGrid
+ ; print pack details
+ s ind="" f  s ind=$o(VISTE(ind)) q:ind=""  d
+ .f j=1:1:$l(VISTE(ind),$c(28)) s @("x"_j)=$p(VISTE(ind),$c(28),j)
+ .k PACK i '$$select^LVBBBP($p(x2,$c(1))_"||"_$p(x3,$c(1))) m PACK=PLIST
+ .i '$l(product) s product=$p(PACK(8),$c(1))
+ .s cntline=cntline+1
+ .s vert=$s(cntline=1:3915,cntline=2:4150,cntline=3:4380,cntline=4:4615,cntline=5:4850,1:5075)
+ .d ADD^PRTDR00(,$c(27)_"&a400h"_vert_"V"_$e($p(PACK(8),$c(1),2),1,29))
+ .d ADD^PRTDR00(,$c(27)_"&a1330h"_vert_"V"_$p(PACK(2),$c(1)))
+ .d ADD^PRTDR00(,$c(27)_"&a1900h"_vert_"V"_$p(PACK(9),$c(1),2))
+ .d ADD^PRTDR00(,$c(27)_"&a2640h"_vert_"V"_$p(PACK(25),$c(1)))
+ .d ADD^PRTDR00(,$c(27)_"&a3120h"_vert_"V"_$s($p(PACK(4),$c(1))'="":$$extdate2^SSUTIL4($p(PACK(4),$c(1))),1:""))
+ .i cntline>5,$o(VISTE(ind))'="" d  q
+ ..d ProdComm
+ ..s cntline="" d ADD^PRTDR00(,"#")
+ ..d BloodGrp,XMGrid s cntline=""
+ .f i=1:1:2 d LN^PRTDR00()
+ ; product comments
+ d ProdComm
+ ; back to normal
+ d ADD^PRTDR00(,$c(27)_"(s0p12h0s0b4099T"),LN^PRTDR00()
+ ; create page for printing
+ k PLIST m PLIST=^TMP("PRTDR00",$j,"RESULT") s PLIST=$o(PLIST(""),-1)
+ d
+ .n PAR1,PAR2
+ .s PAR1="C",PAR2="XMR"
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1) i $l(%routine) x "d INIT^"_%routine
+ k ^TMP("PRTDR00",$j)
+ s page=1,^TMP("REPORT",$j,page,"TEST",vtsRID)=""
+ s PageLine="" f jLine=1:1:PLIST d
+ .i PLIST(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s PageLine="",page=page+1
+ .i PLIST(jLine)="#" s PageLine="",page=page+1,^TMP("REPORT",$j,page,"TEST",vtsRID)="" q
+ .s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ; save patient events
+ d events^LVBCOM01(epis,"XMR","Report type "_tr_"-"_$g(REPID))
+ q
+PRINT ; print report
+ ; xPAR1 - U-User
+ ;         C-Courier
+ ; xPAR2 - User RowID/Courier
+ s xPAR1="C",xPAR2="XMR"
+ s page="" f  s page=$o(^TMP("REPORT",$j,page)) q:page=""  d  k ^TMP("REPORT",$j,page)
+ . ; print page Header
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ . ; print report
+ .f j=1:1 q:'$d(^TMP("REPORT",$j,page,"TEXT",j))  s xx=^(j) d
+ ..i xx="#" d  q
+ ... ; print page Footer
+ ...s vtsRID=PAR1
+ ...s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ ...i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ ...d ADDLINE^PRTREP00(REPID,"PRT",xx)
+ ... ; print page Header
+ ...i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xx)
+ . ; print page Footer
+ .s vtsRID=PAR1
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ q
+ ; print blood group
+BloodGrp d ADD^PRTDR00(,$c(27)_"(s0p12h0s0b4099T")
+ d LN^PRTDR00()
+ i $l(VISIT(69)) d
+ .d ADD^PRTDR00(,"~BOLD")
+ .d ADD^PRTDR00(tsLM,"Group: ")
+ .d ADD^PRTDR00(,"~NORMAL")
+ .d ADD^PRTDR00(tsLM+8,$p(VISIT(69),$c(1),2)),LN^PRTDR00()
+ d
+ .s result="",item="L0140"
+ .f j=1:1:VISTD s ti=$p(VISTD(j),$c(1),2) i ti=item d  q
+ ..s result=$p(VISTD(j),$c(1),3) i $l(result),'$$select^LVBCTTCT(item_"||"_result) d
+ ...d LN^PRTDR00() s result=PLIST(3) f j1=1:1:$l(result,"|") d ADD^PRTDR00(tsLM,$p(result,"|",j1)),LN^PRTDR00()
+ q
+ ; print xm grid
+XMGrid s x="" f  s x=$o(^SS("QDR","MAYNE_RSIS-XMR",x)) q:x=""  d ADD^PRTDR00(,^(x))
+ d LN^PRTDR00()
+ q
+ ; product comments
+ProdComm i '$$select^LVBBBBP(product) m BBPROD=PLIST k PLIST d
+ .d ADD^PRTDR00(,$c(27)_"(s1p9v0s3b4101T") s vert=5600
+ .f i=1:1:8 i $p(BBPROD(18),"|",i)'="" s vert=vert+100 d ADD^PRTDR00(,$c(27)_"&a400h"_vert_"V"_$p(BBPROD(18),"|",i))
+ q
+]]></Routine>
+</Export>

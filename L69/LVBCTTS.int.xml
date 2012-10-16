@@ -1,0 +1,832 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCTTS" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCTTS ; IG 1/5/98 ;MVB Control code access for CT_TestSet
+ ;
+ ; supported calls:
+ ;
+ ; $$select^LVBCTTS(ROWID,skip,user,site)
+ ; $$selskip^LVBCTTS(ROWID)
+ ; $$seldata^LVBCTTS(ROWID,data)
+ ; $$open^LVBCTTS(dep,code,syn,name,active,machine,skip,user,fax,extra)
+ ; $$fetch^LVBCTTS(dep,code,syn,name,active,machine,skip,user,fax,extra)
+ ; $$fetchbuffer^LVBCTTS(dep,code,syn,name,active,machine,skip,user,fax,extra)
+ ; $$fetchall^LVBCTTS(dep,code,syn,name,active,machine,skip,user,fax,extra)
+ ; $$close^LVBCTTS()
+ ; $$seq^LVBCTTS(ts)
+ ; $$insert^LVBCTTS()
+ ; $$update^LVBCTTS(ROWID)
+ ; $$delete^LVBCTTS(ROWID,Comments)
+ ; $$chkcode^LVBCTTS(code)
+ ; $$copy^LVBCTTS(tsfrom,tsto,syn,site)
+ ; $$ValUser^LVBCTTS(user,test,reporting)
+ ; $$printable^LVBCTTS(test,vtsRID)
+ ; $$getallac^LVBCTTS(dep,user,continue,label1,syn,spec,label2,name)
+ ; $$getalllb^LVBCTTS(label1,user,continue,label2)
+ ; $$getallfax^LVBCTTS(user)
+ ; $$calls^LVBCTTS(test)
+ ; $$items^LVBCTTS(tests)
+ ; $$welcan^LVBCTTS(test)
+ ; $$BloodGroup^LVBCTTS(test)
+ ; FIX^LVBCTTS
+ ;
+  ;---&SQL(DECLARE CTTS CURSOR FOR SELECT * FROM CT_TestSet
+   ;---         WHERE ((CTTS_Department_DR = :dep) OR (:dep IS NULL))
+   ;---         AND (%ALPHAUP(CTTS_Code) %STARTSWITH %ALPHAUP(:code))
+   ;---         AND (%ALPHAUP(CTTS_Name) %STARTSWITH %ALPHAUP(:name))
+   ;---         AND ((%ALPHAUP(CTTS_Synonym) %STARTSWITH %ALPHAUP(:syn)) OR (%ALPHAUP(CTTS_Synonym2) %STARTSWITH %ALPHAUP(:syn)))
+   ;---         AND ((CTTS_ActiveFlag = :active) OR (:active IS NULL))
+   ;---         AND ((CTTS_DayBook_TS = :DB) OR (:DB IS NULL))
+   ;---         AND ((CTTS_UserSite_DR = :site) OR (:site IS NULL) OR (CTTS_UserSite_DR IS NULL))
+   ;---         ORDER BY CTTS_DepartmentSequence,CTTS_DisplaySequence)
+   ;--- ** SQL PUBLIC Variables: DB, SQLCODE, active, code, dep, name, site, syn
+  ;---&SQL(DECLARE CTTS1 CURSOR FOR SELECT * FROM CT_TestSet
+   ;---         WHERE (CTTS_Priority_DR->CTPR_Fax = 'Y')
+   ;---         ORDER BY CTTS_DepartmentSequence,CTTS_DisplaySequence)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+  ;---&SQL(DECLARE CTTS2 CURSOR FOR SELECT * FROM CT_TestSet
+   ;---         ORDER BY CTTS_Name)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+FIX k ^TTABi("TS"),^TTABi("DEP-TS") s a="" f  s a=$o(^TTAB("TS",a)) q:a=""  i '$$select(a,"Y") d
+ .i " Y N "'[(" "_$p(PLIST(39),$c(1))_" ") s PLIST(39)=""
+ .i " Y N "'[(" "_$p(PLIST(60),$c(1))_" ") s PLIST(60)="N"
+ .s:'PLIST(48) PLIST(48)=99999 s err=$$update(a) i err w !,a," ",err
+ d ##class(User.CTTestSet).%BuildIndices()
+ q
+calls(test) n (test,PLIST) s test=$g(test) k PLIST k ^TMP($zn,$j)
+ ; find calculated fields
+ s x="" f  s x=$o(^TTAB("TS",test,0,x)) q:x=""  s ti=$p(^(x),"\",8) i $l(ti) s xx1(ti)=""
+ s ti1="" f  s ti1=$o(xx1(ti1)) q:ti1=""  s formula=$g(^TTAB("TC",ti1,3,test)) i $l(formula) d
+ .s ti2="" f  s ti2=$o(xx1(ti2)) q:ti2=""  i formula[ti2 s xx2(ti2)=""
+ s ti="" f j=1:1 s ti=$o(xx2(ti)) q:ti=""  s $p(^TMP($zn,$j,1),"\",j)=ti
+ ; find autocomments fields
+ s x1="" f  s x1=$o(^TTAB("TS",test,5,x1)) q:x1=""  d
+ .s x2="" f  s x2=$o(^TTAB("TS",test,5,x1,x2)) q:x2=""  d
+ ..s ti="" f  s ti=$o(^TTAB("TS",test,5,x1,x2,ti)) q:ti=""  s xx3(ti)=""
+ s ti="" f j=1:1 s ti=$o(xx3(ti)) q:ti=""  s $p(^TMP($zn,$j,2),"\",j)=ti
+ k PLIST m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+printable(test,vtsRID) n (test,vtsRID) s test=$g(test),vtsRID=$g(vtsRID),ok=1
+ ; do not look at empty tests
+ i ok,'$d(^TTAB("TS",test,0)) s ok=0
+ ; do not look at non printable test items
+ i ok s (ok,x)="" f  s x=$o(^TTAB("TS",test,0,x)) q:x=""  s ti=$p(^(x),"\",8) i $l(ti),$p(^(x),"\",13)="Y" d  q:ok
+ .i $l(vtsRID) d  q
+ ..f j=1:1:3 s @("x"_j)=$p(vtsRID,"||",j)
+ ..i $p($g(^TEPI(x1,1,x2,x3,"DATA",ti)),"\",3)'="Y" s ok=1
+ .s ok=1
+ i 'ok s x="" f  s x=$o(^TTAB("TS",test,"XM",x)) q:x=""  i $p(^(x),"\",3)="Y" s ok=1 q
+ ; reason
+ s xx1=$$seldata^LVBVISTS(vtsRID,58),xx2=$$seldata^LVBCTR(xx1,4)
+ i ok,$l(xx1),$p(xx2,$c(1))'="Y" s ok=0
+ i 'ok,$l(xx1),$p(xx2,$c(1))="Y" s ok=1
+ q ok
+seq(ts) n (ts) s ts=$g(ts),xx=""
+ s xx1=$$seldata(ts,49),xx2=$$seldata(ts,48)
+ s xx=$e(100000+$p(xx1,$c(1)),2,6)_" "_$e(100000+$p(xx2,$c(1)),2,6)
+ q xx
+ ; Insert the data
+insert() K PLIST(1) d pre("N") 
+  ;---&SQL(insert INTO CT_TestSet VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Go
+ i 'SQLCODE d post Q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; Update the data
+update(ROWID) S ROWID=$G(ROWID) d pre("Y") 
+  ;---&SQL(UPDATE CT_TestSet VALUES :PLIST() WHERE CTTS_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Io
+ I 'SQLCODE d post Q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; Delete the data
+delete(ROWID,Comments) s ROWID=$g(ROWID),^TMP("Comments",$j)=$g(Comments)
+  ;---&SQL(DELETE FROM CT_TestSet WHERE CTTS_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: ROWID, SQLCODE
+ Do %0Ko
+ k ^TMP("Comments",$j)
+ Q SQLCODE
+ ; Open the cursor
+open(dep,code,syn,name,active,machine,skip,user,fax,extra) 
+ s dep=$g(dep),code=$g(code),syn=$g(syn),name=$g(name),active=$g(active),machine=$g(machine),skip=$g(skip),user=$g(user),fax=$g(fax),extra=$g(extra)
+ s DB=$p(extra,","),sort=$p(extra,",",2),site=$p(extra,",",3),reporting=$p(extra,",",4)
+  ;---i sort="Y" &SQL(OPEN CTTS2)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ i sort="Y" Do %CTTS20o
+ i sort'="Y" d
+ . ;---i '$l(fax) &SQL(OPEN CTTS)
+  . ;--- ** SQL PUBLIC Variables: SQLCODE
+ .i '$l(fax) Do %CTTS0o
+ . ;---i $l(fax) &SQL(OPEN CTTS1)
+  . ;--- ** SQL PUBLIC Variables: SQLCODE
+ .i $l(fax) Do %CTTS10o
+ Q 0
+ ; Fetch the data
+fetch(dep,code,syn,name,active,machine,skip,user,fax,extra) K PLIST
+ s dep=$g(dep),code=$g(code),syn=$g(syn),name=$g(name),active=$g(active),machine=$g(machine),skip=$g(skip),user=$g(user),fax=$g(fax),extra=$g(extra)
+ s DB=$p(extra,","),sort=$p(extra,",",2),site=$p(extra,",",3),reporting=$p(extra,",",4)
+  ;---i sort="Y" f  &SQL(FETCH CTTS2 INTO :PLIST()) q:SQLCODE  q:$$ValUser(user,$p(PLIST(1),$c(1)),reporting)'=60
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ i sort="Y" f  Do %0Po q:SQLCODE  q:$$ValUser(user,$p(PLIST(1),$c(1)),reporting)'=60
+ i sort'="Y" d
+ . ;---i '$l(fax) f  &SQL(FETCH CTTS INTO :PLIST()) q:SQLCODE  q:$$ValUser(user,$p(PLIST(1),$c(1)),reporting)'=60
+  . ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ .i '$l(fax) f  Do %0Qo q:SQLCODE  q:$$ValUser(user,$p(PLIST(1),$c(1)),reporting)'=60
+ . ;---i $l(fax) f  &SQL(FETCH CTTS1 INTO :PLIST()) q:SQLCODE  q:$$ValUser(user,$p(PLIST(1),$c(1)),reporting)'=60
+  . ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ .i $l(fax) f  Do %0Ro q:SQLCODE  q:$$ValUser(user,$p(PLIST(1),$c(1)),reporting)'=60
+ S PLIST=$o(PLIST(""),-1) 
+ I 'SQLCODE D adjust 
+ q SQLCODE 
+ ; Fetch all data
+fetchbuffer(dep,code,syn,name,active,machine,skip,user,fax,extra) k ^TMP($zn,$j)
+ s dep=$g(dep),code=$g(code),syn=$g(syn),name=$g(name),active=$g(active),machine=$g(machine),skip=$g(skip),user=$g(user),fax=$g(fax),extra=$g(extra)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ s sum=0
+ f xxx=1:1:max s SQLCODE=$$fetch(dep,code,syn,name,active,machine,skip,user,fax,extra) q:SQLCODE  d  q:sum>15000
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ .s sum=sum+$l(^TMP($zn,$j,cnt))+5
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(dep,code,syn,name,active,machine,skip,user,fax,DB) N (dep,code,syn,name,active,machine,skip,user,fax,extra,PLIST) K ^TMP($zn,$j)
+ s dep=$g(dep),code=$g(code),syn=$g(syn),name=$g(name),active=$g(active),machine=$g(machine),skip=$g(skip),user=$g(user),fax=$g(fax),extra=$g(extra)
+ i $$open(dep,code,syn,name,active,machine,skip,user,fax,extra)
+ f cnt=1:1 Q:$$fetch(dep,code,syn,name,active,machine,skip,user,fax,extra)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+ ; Close the cursor 
+close()  ;---&SQL(CLOSE CTTS)
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %CTTS0c
+  ;---&SQL(CLOSE CTTS1)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %CTTS10c
+  ;---&SQL(CLOSE CTTS2)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %CTTS20c
+ q 0
+ ; select data by code
+select(ROWID,skip,user,site) K PLIST s ROWID=$$ALPHAUP^SSUTIL4(ROWID),skip=$g(skip),user=$g(user),site=$g(site)
+ ; check synonym
+ i $l(ROWID),'$d(^TTAB("TS",ROWID)) s xx=$$select^LVBCTSY(ROWID,"TS",site) i $l(xx) s ROWID=xx
+  ;---&SQL(SELECT * INTO :PLIST() FROM CT_TestSet WHERE CTTS_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Vo
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE s SQLCODE=$$ValUser(user,$p(PLIST(1),$c(1))) i 'SQLCODE D adjust
+ q SQLCODE
+ ; select data by code and field No
+seldata(ROWID,data) n (ROWID,data) s ROWID=$g(ROWID),data=$g(data),result=""
+ i $l(ROWID) d  q result
+ .i data=2 s result=ROWID q
+ .i data=3 s result=$p($g(^TTAB("TS",ROWID)),"\",1) q
+ .i data=4 s result=$p($g(^TTAB("TS",ROWID)),"\",2) q
+ .i data=5 s result=$p($g(^TTAB("TS",ROWID)),"\",3) q
+ .i data=6 s result=$$CT006^at45(ROWID) q
+ .i data=7 s result=$p($g(^TTAB("TS",ROWID)),"\",5) q
+ .i data=10 s result=$p($g(^TTAB("TS",ROWID)),"\",8) q
+ .i data=11 s result=$p($g(^TTAB("TS",ROWID)),"\",9) q
+ .i data=13 s result=$p($g(^TTAB("TS",ROWID)),"\",11) q
+ .i data=14 s result=$p($g(^TTAB("TS",ROWID)),"\",12) q
+ .i data=15 s result=$p($g(^TTAB("TS",ROWID)),"\",13) q
+ .i data=16 s result=$p($g(^TTAB("TS",ROWID)),"\",14) q
+ .i data=17 s result=$p($g(^TTAB("TS",ROWID)),"\",17) q
+ .i data=18 s result=$p($g(^TTAB("TS",ROWID)),"\",18) q
+ .i data=21 s result=$p($g(^TTAB("TS",ROWID)),"\",21) q
+ .i data=22 s result=$p($g(^TTAB("TS",ROWID)),"\",22) q
+ .i data=23 s result=$p($g(^TTAB("TS",ROWID)),"\",23) q
+ .i data=24 s result=$p($g(^TTAB("TS",ROWID)),"\",24) q
+ .i data=25 s result=$p($g(^TTAB("TS",ROWID)),"\",25) q
+ .i data=26 s result=$e(ROWID) q
+ .i data=31 s result=$p($g(^TTAB("TS",ROWID)),"\",29) q
+ .i data=32 s result=$p($g(^TTAB("TS",ROWID)),"\",30) q
+ .i data=34 s result=$p($g(^TTAB("TS",ROWID)),"\",31) q
+ .i data=39 s result=$p($g(^TTAB("TS",ROWID)),"\",16) q
+ .i data=41 s result=$p($g(^TTAB("TS",ROWID)),"\",37) q
+ .i data=43 s result=$p($g(^TTAB("TS",ROWID)),"\",19) q
+ .i data=46 s result=$p($g(^TTAB("TS",ROWID)),"\",41) q
+ .i data=47 s result=$p($g(^TTAB("TS",ROWID)),"\",4) q
+ .i data=48 s result=$p($g(^TTAB("TS",ROWID)),"\",42) q
+ .i data=49 s result=$$CT049^at45($e(ROWID)) q
+ .i data=50 s result=$p($g(^TTAB("TS",ROWID)),"\",43) q
+ .i data=51 s result=$p($g(^TTAB("TS",ROWID)),"\",44) q
+ .i data=52 s result=$p($g(^TTAB("TS",ROWID)),"\",45) q
+ .i data=53 s result=$p($g(^TTAB("TS",ROWID)),"\",46) q
+ .i data=54 s result=$p($g(^TTAB("TS",ROWID)),"\",47) q
+ .i data=56 s result=$p($g(^TTAB("TS",ROWID)),"\",49) q
+ .i data=57 s result=$p($g(^TTAB("TS",ROWID)),"\",50) q
+ .i data=60 s result=$p($g(^TTAB("TS",ROWID)),"\",40) q
+ .i data=62 s result=$p($g(^TTAB("TS",ROWID)),"\",52) q
+ .i data=63 s result=$p($g(^TTAB("TS",ROWID)),"\",53) q
+ .i data=68 s result=$p($g(^TTAB("TS",ROWID)),"\",58) q
+ .i data=69 s result=$p($g(^TTAB("TS",ROWID)),"\",59) q
+ .i data=71 s result=$p($g(^TTAB("TS",ROWID)),"\",61) q
+ .i data=72 s result=$p($g(^TTAB("TS",ROWID)),"\",62) q
+ .i data=74 s result=$p($g(^TTAB("TS",ROWID)),"\",64) q
+ .i '$$select(ROWID,"Y") s result=$g(PLIST(data))
+ q result
+ ; select data (only code, description and synonyms) by code
+selskip(ROWID) n (ROWID,PLIST) K PLIST s skip="Y"
+ f j=2:1:5,14,24,54,60 s PLIST(j)=$$seldata(ROWID,j)
+ s PLIST=$o(PLIST(""),-1)
+ d adjust
+ q 0
+ ; Pre-filing adjustments
+pre(xUpdate) d PreSQL^SSUTIL4("27,59","")
+ S (PLIST(1),PLIST(2))=$$ALPHAUP^SSUTIL4(PLIST(2))
+ I $L($G(PLIST(9))) S PLIST(9)=+PLIST(9)
+ i $g(PLIST(31))'="Y" s PLIST(30)=""
+ i $g(PLIST(54))'="Y" s PLIST(55)=""
+ i '$g(PLIST(48)) s PLIST(48)=99999
+ q
+ ; Post-filing adjustments
+adjust d PostSQL^SSUTIL4("27,59")
+ N plist,j,I,J,SQLCODE,X,XX F J=1:1:PLIST I $D(PLIST(J)) S PLIST(J)=$P(PLIST(J),$C(1),1)
+ ;
+ i $g(skip)="Y" q
+ ;
+ I $G(PLIST(12))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTPR(plist(12),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(12)=X K plist
+ ;
+ f J=23,56 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTLB(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ I $G(PLIST(26))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTDEP(plist(26),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(26)=X K plist
+ ;
+ f J=21,43 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTRG(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ ;
+ I $G(PLIST(40))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTUSL(plist(40),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(40)=X K plist
+ I $G(PLIST(62))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTDS(plist(62),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(62)=X K plist
+ I $G(PLIST(65))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTDBL(plist(65),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(65)=X K plist
+ f J=66 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTA(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ ;
+ Q
+ ; check all group with tests
+post i $l($g(PLIST(10))) d
+ .k tLIST m tLIST=PLIST n (tLIST)
+ .f j=1:1:$l(tLIST(10),",") s test=$p(tLIST(10),",",j) i '$$select(test,"Y") d
+ ..i $p(PLIST(21),$c(1))'=$p(tLIST(21),$c(1)),$p(PLIST(43),$c(1))'=$p(tLIST(43),$c(1)) d
+ ...s PLIST(21)=tLIST(21),PLIST(43)=tLIST(43) i $$update(test)
+ q
+ ; check all group with tests
+items(tests) n (tests,PLIST) s tests=$g(tests) k ^TMP($zn,$j)
+ f j1=1:1:$l(tests,",") s test=$p(tests,",",j1) i $l(test) d
+ .i '$$getall^LVBCTTSF(test) f j2=1:1:PLIST s ti=$p($p(PLIST(j2),$c(2),4),$c(1)) i $l(ti) s ^TMP($zn,$j,ti)=$p($p(PLIST(j2),$c(2),2),$c(1))
+ k PLIST s ti="" f  s ti=$o(^TMP($zn,$j,ti)) q:ti=""  s cnt=$o(PLIST(""),-1)+1,PLIST(cnt)=ti_$c(2)_^(ti)
+ k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ; get all by department and active only
+getallfax(user) n (PLIST,user) k ^TMP($zn,$j) s user=$g(user)
+ i $$open(,,,,,,"Y",user,"Y")
+ f cnt=1:1 q:$$fetch(,,,,,,"Y",user,"Y")  s ^TMP($zn,$j,cnt)=$p(PLIST(1),$c(1))_$c(2)_$P(PLIST(3),$c(1))_$c(2)_$P(PLIST(2),$c(1))
+ i $$close()
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ; get all by department and active only
+getallac(dep,user,continue,label1,syn,spec,label2,name,OnceOnly) n (PLIST,dep,user,continue,label1,syn,spec,label2,name,OnceOnly)
+ s dep=$g(dep),user=$g(user),continue=$g(continue),label1=$g(label1),syn=$g(syn),spec=$g(spec),label2=$g(label2),name=$g(name),OnceOnly=$g(OnceOnly)
+ i continue'="Y" d
+ .k ^TMP($zn,$j)
+ .i $l(label1)!$l(label2)!$l(spec)!$l(syn)!$l(name) d
+ ..i $$open(,,syn,name,"Y",,"Y",user)
+ ..s cnt=0 f  q:$$fetch(,,syn,name,"Y",,"Y",user)  d
+ ...i $l(label1),PLIST(23)'=label1 q
+ ...i $l(label2),PLIST(56)'=label2 q
+ ...i $l(spec),'$d(^TTAB("TS",$p(PLIST(1),$c(1)),1,spec)) q
+ ...s ts=$p(PLIST(1),$c(1))
+ ...s x1="" f  s x1=$o(^TTAB("TS",ts,1,x1)) q:x1=""  i $p($g(^(x1)),"\",1)="Y" q
+ ...s str=PLIST(4)_$c(28)_x1
+ ...s cnt=cnt+1
+ ...s ^TMP($zn,$j,cnt)=$p(PLIST(1),$c(1))_$c(2)_$P(PLIST(3),$c(1))_$c(2)_$P(PLIST(2),$c(1))_$c(2)_str
+ ..i $$close()
+ .i $l(dep) d
+ ..s x1="",cnt=0 f  s x1=$o(^TTABi("DEP-TS",dep,x1)) q:x1=""  d  i OnceOnly="Y",cnt q
+ ...s x2="" f  s x2=$o(^TTABi("DEP-TS",dep,x1,x2)) q:x2=""  d  i OnceOnly="Y",cnt q
+ ....s xx=$g(^TTAB("TS",x2)) i $p(xx,"\",12)="Y" s ts=x2 i $$ValUser(user,ts)'=60 d
+ .....s x3="" f  s x3=$o(^TTAB("TS",ts,1,x3)) q:x3=""  i $p($g(^(x3)),"\",1)="Y" q
+ .....s cnt=$g(cnt)+1,^TMP($zn,$j,cnt)=ts_$c(2)_$p(xx,"\")_$c(2)_ts_$c(2)_$p(xx,"\",2)_$c(28)_x3
+ k PLIST s (sum,x)="" f j=1:1 s x=$o(^TMP($zn,$j,x)) q:x=""  q:(sum+$l(^(x)))>15000  s PLIST(j)=^(x),sum=sum+$l(^(x)) k ^TMP($zn,$j,x)
+ s PLIST=$o(PLIST(""),-1)
+ q $s($d(^TMP($zn,$j)):0,1:100)
+ ; get all for label active only
+getalllb(label1,user,continue,label2) n (PLIST,label1,user,continue,label2) k ^TMP($zn,$j)
+ s label1=$g(label1),user=$g(user),continue=$g(continue),label2=$g(label2)
+ i continue'="Y" d
+ .i $$open(,,,,"Y",,"Y",user)
+ .f  q:$$fetch(,,,,"Y",,"Y",user)  d
+ ..i $l(label1),PLIST(23)'=label1 q
+ ..i $l(label2),PLIST(56)'=label2 q
+ ..s cnt=$o(^TMP($zn,$j,""),-1)+1
+ ..s ^TMP($zn,$j,cnt)=$p(PLIST(1),$c(1))_$c(2)_$P(PLIST(3),$c(1))_$c(2)_$P(PLIST(2),$c(1))
+ .i $$close()
+ k PLIST s (sum,x)="" f j=1:1 s x=$o(^TMP($zn,$j,x)) q:x=""  q:(sum+$l(^(x)))>15000  s PLIST(j)=^(x),sum=sum+$l(^(x)) k ^TMP($zn,$j,x)
+ s PLIST=$o(PLIST(""),-1)
+ q $s($d(^TMP($zn,$j)):0,1:100)
+ ; blood group
+BloodGroup(ts) n (ts) s ts=$g(ts),ok="N"
+ i $$getall^LVBCTTSF(ts)
+ f j=1:1:PLIST s tc=$p(PLIST(j),$c(2),4) i $l(tc) d  i ok="Y" q
+ . ;---s x="" &SQL(SELECT CTTC_ResultFormat INTO :x FROM CT_TestCode WHERE CTTC_RowID=:tc)
+  . ;--- ** SQL PUBLIC Variables: SQLCODE, tc, x
+ .s x="" Do %0Xo
+ .s x=$p(x,$c(1)) i x="B2" s ok="Y"
+ q ok
+ ; calculate welcan units
+welcan(ts) n (ts) s ts=$g(ts),result=""
+ i $$getall^LVBCTTSF(ts)
+ f j=1:1:PLIST s tc=$p(PLIST(j),$c(2),4) i $l(tc) d
+ . ;---s x="" &SQL(SELECT CTTC_Welcan INTO :x FROM CT_TestCode WHERE CTTC_RowID=:tc)
+  . ;--- ** SQL PUBLIC Variables: SQLCODE, tc, x
+ .s x="" Do %0Zo
+ .i $p(x,$c(1)) s result=result+$p(x,$c(1))
+ q result
+ ; validate test set code
+chkcode(code) n (code) s ok=61
+ i $l($g(code)),$d(^TTAB("DEP",$e(code))) s ok=0
+ q ok
+ ; copy info form one testset to another
+copy(tsfrom,tsto,syn,site) n (tsfrom,tsto,syn,site) s tsfrom=$g(tsfrom),tsto=$g(tsto),syn=$g(syn),site=$g(site),ok=0
+ i $l(tsfrom),$l(tsto) d
+ .s ok=$$select(tsfrom,"Y") i 'ok d
+ ..s PLIST(2)=tsto,PLIST(4)=syn,PLIST(5)="",PLIST(40)=site
+ ..s ok=$$insert() i 'ok d
+ ...s lo="" f  s lo=$o(^TTAB("TS",tsfrom,lo)) q:lo=""  d
+ ....i (lo=0)!($e(lo,1,2)="L-") d
+ ..... ; copy test fields
+ .....s fl="" f  s fl=$o(^TTAB("TS",tsfrom,lo,fl)) q:fl=""  d  i ok q
+ ......s ok=$$select^LVBCTTSF(tsfrom_"||"_lo_"||"_fl,"Y") i 'ok s ok=$$insert^LVBCTTSF(tsto)
+ ...... ; copy calculations
+ ......s tc=$p(PLIST(10),$c(1)) i $l(tc) m ^TTAB("TC",tc,3,tsto)=^TTAB("TC",tc,3,tsfrom)
+ ... ; copy specimen
+ ...m ^TTAB("TS",tsto,1)=^TTAB("TS",tsfrom,1)
+ ...m ^TTAB("TS",tsto,"SC")=^TTAB("TS",tsfrom,"SC")
+ ... ; copy conditions
+ ...m ^TTAB("TS",tsto,5)=^TTAB("TS",tsfrom,5)
+ ... ; copy labels
+ ...m ^TTAB("TS",tsto,"LABEL")=^TTAB("TS",tsfrom,"LABEL")
+ ... ; copy XM
+ ...m ^TTAB("TS",tsto,"XM")=^TTAB("TS",tsfrom,"XM")
+ ... ; copy Action
+ ...m ^TTAB("TS",tsto,"ACTION")=^TTAB("TS",tsfrom,"ACTION")
+ ... ; copy translation
+ ...m ^TTAB("TS",tsto,"LAN")=^TTAB("TS",tsfrom,"LAN")
+ q ok
+ ; check user - department
+ValUser(user,test,reporting) n (user,test,reporting) s user=$g(user),test=$g(test),reporting=$g(reporting),ok=0
+ i $l(user) d
+ . ;---s (dep,loc)="" &SQL(SELECT CTTS_Department_DR,CTTS_UserSite_DR INTO :dep,:loc FROM CT_TestSet WHERE CTTS_RowID=:test)
+  . ;--- ** SQL PUBLIC Variables: SQLCODE, dep, loc, test
+ .s (dep,loc)="" Do %01o
+ .s dep=$p(dep,$c(1)),loc=$p(loc,$c(1))
+ .s ok1=0 i $l(dep) s ok1=$$ValUser^LVBCTDEP(user,dep,reporting)
+ .s ok2=0 i $l(loc) s ok2=$$ValUser^LVBCTUSL(user,loc,reporting)
+ .s ok=$s(ok1>ok2:ok1,1:ok2)
+ q ok
+%CTTS0o s $zt="%CTTS0E" s SQLCODE=$s($g(%CTTS0c):-101,1:0) q:SQLCODE'=0  s %CTTS0d(99)=0 s %CTTS0d(100)=0,%CTTS0d(101)=""
+ s %CTTS0d(74)=$g(dep),%CTTS0d(75)=$g(dep),%CTTS0d(77)=$g(code),%CTTS0d(80)=$g(name),%CTTS0d(83)=$g(syn),%CTTS0d(86)=$g(syn),%CTTS0d(88)=$g(active),%CTTS0d(89)=$g(active),%CTTS0d(90)=$g(DB),%CTTS0d(91)=$g(DB),%CTTS0d(92)=$g(site),%CTTS0d(93)=$g(site)
+ s %CTTS0t(1)=$i(^||%sql.temp)
+ s %CTTS0d(98)=$zu(28,%CTTS0d(90),7)
+ s %CTTS0d(96)=$zu(28,%CTTS0d(88),7)
+ s %CTTS0d(87)=$zu(28,%CTTS0d(86),6)
+ s %CTTS0d(84)=$zu(28,%CTTS0d(83),6)
+ s %CTTS0d(81)=$zu(28,%CTTS0d(80),6)
+ s %CTTS0d(78)=$zu(28,%CTTS0d(77),6)
+ s %CTTS0c=1 q
+%CTTS0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %CTTS0c,%CTTS0d,%CTTS0E,%CTTS0l,%CTTS0n,%CTTS0R,%CTTS0s,%CTTS0t,%CTTS0Z q
+%0Afirst 
+ k ^||%sql.temp(%CTTS0t(1),0) s ^||%sql.temp(%CTTS0t(1),0)=$H_"^"_$J_"^"_$zu(67,11,$j)_"^"_$zu(67,12,$j)_"^"_$zu(67,15,$j)_"^"_$ZN_"^"_$zu(67,6,$j)
+ i $sortbegin(^||%sql.temp(%CTTS0t(1),0))
+ ; asl MOD# 3
+ d %0ABMod
+ i $sortend(^||%sql.temp(%CTTS0t(1),0))
+ s %CTTS0s(48)=""
+%0ACk1 s %CTTS0s(48)=$o(^||%sql.temp(%CTTS0t(1),0,%CTTS0s(48)))
+ i %CTTS0s(48)="" g %0ACdun
+ s %CTTS0d(48)=$s(%CTTS0s(48)=-1E14:"",1:%CTTS0s(48))
+ s %CTTS0s(47)=""
+%0ACk2 s %CTTS0s(47)=$o(^||%sql.temp(%CTTS0t(1),0,%CTTS0s(48),%CTTS0s(47)))
+ i %CTTS0s(47)="" g %0ACk1
+ s %CTTS0d(47)=$s(%CTTS0s(47)=-1E14:"",1:%CTTS0s(47))
+ s %CTTS0s(1)=""
+%0ACk3 s %CTTS0s(1)=$o(^||%sql.temp(%CTTS0t(1),0,%CTTS0s(48),%CTTS0s(47),%CTTS0s(1)))
+ i %CTTS0s(1)="" g %0ACk2
+ s %CTTS0d(1)=$s(%CTTS0s(1)=-1E14:"",1:%CTTS0s(1))
+ s %CTTS0d(109)=$g(^||%sql.temp(%CTTS0t(1),0,%CTTS0s(48),%CTTS0s(47),%CTTS0s(1)))
+ s %CTTS0d(2)=$lg(%CTTS0d(109),29) s %CTTS0d(3)=$lg(%CTTS0d(109),53) s %CTTS0d(4)=$lg(%CTTS0d(109),54) s %CTTS0d(5)=$lg(%CTTS0d(109),70) s %CTTS0d(6)=$lg(%CTTS0d(109),16) s %CTTS0d(7)=$lg(%CTTS0d(109),58) s %CTTS0d(8)=$lg(%CTTS0d(109),9) s %CTTS0d(9)=$lg(%CTTS0d(109),40) s %CTTS0d(10)=$lg(%CTTS0d(109),11) s %CTTS0d(11)=$lg(%CTTS0d(109),37) s %CTTS0d(12)=$lg(%CTTS0d(109),28) s %CTTS0d(13)=$lg(%CTTS0d(109),2) s %CTTS0d(14)=$lg(%CTTS0d(109),5) s %CTTS0d(15)=$lg(%CTTS0d(109),22) s %CTTS0d(16)=$lg(%CTTS0d(109),42) s %CTTS0d(17)=$lg(%CTTS0d(109),36) s %CTTS0d(18)=$lg(%CTTS0d(109),26) s %CTTS0d(19)=$lg(%CTTS0d(109),4) s %CTTS0d(20)=$lg(%CTTS0d(109),43) s %CTTS0d(21)=$lg(%CTTS0d(109),12) s %CTTS0d(22)=$lg(%CTTS0d(109),25) s %CTTS0d(23)=$lg(%CTTS0d(109),33) s %CTTS0d(24)=$lg(%CTTS0d(109),52) s %CTTS0d(25)=$lg(%CTTS0d(109),19) s %CTTS0d(26)=$lg(%CTTS0d(109),27) s %CTTS0d(27)=$lg(%CTTS0d(109),1) s %CTTS0d(28)=$lg(%CTTS0d(109),59) s %CTTS0d(29)=$lg(%CTTS0d(109),68) s %CTTS0d(30)=$lg(%CTTS0d(109),67) s %CTTS0d(31)=$lg(%CTTS0d(109),23) s %CTTS0d(32)=$lg(%CTTS0d(109),6) s %CTTS0d(33)=$lg(%CTTS0d(109),32) s %CTTS0d(34)=$lg(%CTTS0d(109),31) s %CTTS0d(35)=$lg(%CTTS0d(109),30) s %CTTS0d(36)=$lg(%CTTS0d(109),7) s %CTTS0d(37)=$lg(%CTTS0d(109),50) s %CTTS0d(38)=$lg(%CTTS0d(109),39) s %CTTS0d(39)=$lg(%CTTS0d(109),60) s %CTTS0d(40)=$lg(%CTTS0d(109),57) s %CTTS0d(41)=$lg(%CTTS0d(109),8) s %CTTS0d(42)=$lg(%CTTS0d(109),44) s %CTTS0d(43)=$lg(%CTTS0d(109),35) s %CTTS0d(44)=$lg(%CTTS0d(109),51) s %CTTS0d(45)=$lg(%CTTS0d(109),15) s %CTTS0d(46)=$lg(%CTTS0d(109),38) s %CTTS0d(49)=$lg(%CTTS0d(109),55) s %CTTS0d(50)=$lg(%CTTS0d(109),56) s %CTTS0d(51)=$lg(%CTTS0d(109),13) s %CTTS0d(52)=$lg(%CTTS0d(109),61) s %CTTS0d(53)=$lg(%CTTS0d(109),65) s %CTTS0d(54)=$lg(%CTTS0d(109),66) s %CTTS0d(55)=$lg(%CTTS0d(109),24) s %CTTS0d(56)=$lg(%CTTS0d(109),20) s %CTTS0d(57)=$lg(%CTTS0d(109),47) s %CTTS0d(58)=$lg(%CTTS0d(109),48) s %CTTS0d(59)=$lg(%CTTS0d(109),18) s %CTTS0d(60)=$lg(%CTTS0d(109),64) s %CTTS0d(61)=$lg(%CTTS0d(109),49) s %CTTS0d(62)=$lg(%CTTS0d(109),21) s %CTTS0d(63)=$lg(%CTTS0d(109),46) s %CTTS0d(64)=$lg(%CTTS0d(109),17) s %CTTS0d(65)=$lg(%CTTS0d(109),3) s %CTTS0d(66)=$lg(%CTTS0d(109),10) s %CTTS0d(67)=$lg(%CTTS0d(109),41) s %CTTS0d(68)=$lg(%CTTS0d(109),69) s %CTTS0d(69)=$lg(%CTTS0d(109),45) s %CTTS0d(70)=$lg(%CTTS0d(109),62) s %CTTS0d(71)=$lg(%CTTS0d(109),63) s %CTTS0d(72)=$lg(%CTTS0d(109),34) s %CTTS0d(73)=$lg(%CTTS0d(109),14)
+ g:$zu(115,2)=0 %0ACuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%CTTS0d(1),"||",1))#"S":$zu(115,4) i $t { s %CTTS0d(100)=1,%CTTS0d(101)=$name(^TTAB("TS",$p(%CTTS0d(1),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_%CTTS0d(1) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %CTTS0d(1)'="",$d(^TTAB("TS",%CTTS0d(1)))
+ e  g %0ADdun
+ s %CTTS0d(114)=$g(^TTAB("TS",%CTTS0d(1)))
+ s %CTTS0d(39)=$p(%CTTS0d(114),"\",36)
+ g:'((((%CTTS0d(39)'="")&&(%CTTS0d(39)=%CTTS0d(92)))||(%CTTS0d(93)=""))||(%CTTS0d(39)="")) %0ADdun
+ s %CTTS0d(2)=$p(%CTTS0d(114),"\",1) s %CTTS0d(3)=$p(%CTTS0d(114),"\",2) s %CTTS0d(4)=$p(%CTTS0d(114),"\",3) s %CTTS0d(6)=$p(%CTTS0d(114),"\",5) s %CTTS0d(7)=$p(%CTTS0d(114),"\",6) s %CTTS0d(8)=$p(%CTTS0d(114),"\",7) s %CTTS0d(9)=$p(%CTTS0d(114),"\",8) s %CTTS0d(10)=$p(%CTTS0d(114),"\",9) s %CTTS0d(11)=$p(%CTTS0d(114),"\",10) s %CTTS0d(12)=$p(%CTTS0d(114),"\",11) s %CTTS0d(13)=$p(%CTTS0d(114),"\",12) s %CTTS0d(14)=$p(%CTTS0d(114),"\",13) s %CTTS0d(15)=$p(%CTTS0d(114),"\",14) s %CTTS0d(16)=$p(%CTTS0d(114),"\",17) s %CTTS0d(17)=$p(%CTTS0d(114),"\",18) s %CTTS0d(19)=$p(%CTTS0d(114),"\",20) s %CTTS0d(20)=$p(%CTTS0d(114),"\",21) s %CTTS0d(21)=$p(%CTTS0d(114),"\",22) s %CTTS0d(22)=$p(%CTTS0d(114),"\",23) s %CTTS0d(23)=$p(%CTTS0d(114),"\",24) s %CTTS0d(24)=$p(%CTTS0d(114),"\",25) s %CTTS0d(27)=$p(%CTTS0d(114),"\",26) s %CTTS0d(28)=$p(%CTTS0d(114),"\",27) s %CTTS0d(29)=$p(%CTTS0d(114),"\",28) s %CTTS0d(30)=$p(%CTTS0d(114),"\",29) s %CTTS0d(31)=$p(%CTTS0d(114),"\",30) s %CTTS0d(32)=$p(%CTTS0d(114),"\",15) s %CTTS0d(33)=$p(%CTTS0d(114),"\",31) s %CTTS0d(34)=$p(%CTTS0d(114),"\",32) s %CTTS0d(35)=$p(%CTTS0d(114),"\",33) s %CTTS0d(36)=$p(%CTTS0d(114),"\",34) s %CTTS0d(37)=$p(%CTTS0d(114),"\",35) s %CTTS0d(38)=$p(%CTTS0d(114),"\",16) s %CTTS0d(40)=$p(%CTTS0d(114),"\",37) s %CTTS0d(41)=$p(%CTTS0d(114),"\",38) s %CTTS0d(42)=$p(%CTTS0d(114),"\",19) s %CTTS0d(43)=$p(%CTTS0d(114),"\",39) s %CTTS0d(45)=$p(%CTTS0d(114),"\",41) s %CTTS0d(46)=$p(%CTTS0d(114),"\",4) s %CTTS0d(47)=$p(%CTTS0d(114),"\",42) s %CTTS0d(49)=$p(%CTTS0d(114),"\",43) s %CTTS0d(50)=$p(%CTTS0d(114),"\",44) s %CTTS0d(51)=$p(%CTTS0d(114),"\",45) s %CTTS0d(52)=$p(%CTTS0d(114),"\",46) s %CTTS0d(53)=$p(%CTTS0d(114),"\",47) s %CTTS0d(54)=$p(%CTTS0d(114),"\",48) s %CTTS0d(55)=$p(%CTTS0d(114),"\",49) s %CTTS0d(56)=$p(%CTTS0d(114),"\",50) s %CTTS0d(59)=$p(%CTTS0d(114),"\",40) s %CTTS0d(60)=$p(%CTTS0d(114),"\",51) s %CTTS0d(61)=$p(%CTTS0d(114),"\",52) s %CTTS0d(62)=$p(%CTTS0d(114),"\",53) s %CTTS0d(63)=$p(%CTTS0d(114),"\",54) s %CTTS0d(64)=$p(%CTTS0d(114),"\",55) s %CTTS0d(65)=$p(%CTTS0d(114),"\",56) s %CTTS0d(66)=$p(%CTTS0d(114),"\",57) s %CTTS0d(67)=$p(%CTTS0d(114),"\",58) s %CTTS0d(68)=$p(%CTTS0d(114),"\",59) s %CTTS0d(69)=$p(%CTTS0d(114),"\",60) s %CTTS0d(70)=$p(%CTTS0d(114),"\",61) s %CTTS0d(71)=$p(%CTTS0d(114),"\",62) s %CTTS0d(72)=$p(%CTTS0d(114),"\",63) s %CTTS0d(73)=$p(%CTTS0d(114),"\",64)
+ s %CTTS0d(18)=$g(^TTAB("TS",%CTTS0d(1),"MANUAL-1"))
+ s %CTTS0d(26)="" f %irep=1:1:$g(^TTAB("TS",%CTTS0d(1),"MANUAL-2",0)) s $li(%CTTS0d(26),%irep)=$g(^(%irep))
+ s %CTTS0d(57)=$g(^TTAB("TS",%CTTS0d(1),"SOP-1"))
+ s %CTTS0d(58)="" f %irep=1:1:$g(^TTAB("TS",%CTTS0d(1),"SOP-2",0)) s $li(%CTTS0d(58),%irep)=$g(^(%irep))
+ s %CTTS0d(25)=$e($g(%CTTS0d(1)),1) s %CTTS0d(48)=$$CT049^at45($g(%CTTS0d(25))) s %CTTS0d(44)=$$CT045^at45($g(%CTTS0d(1))) s %CTTS0d(5)=$$CT006^at45($g(%CTTS0d(1))) s %CTTS0d(97)=$zu(28,%CTTS0d(59),7) s %CTTS0d(95)=$zu(28,%CTTS0d(13),7) s %CTTS0d(79)=$zu(28,%CTTS0d(2),6) s %CTTS0d(76)=$zu(28,%CTTS0d(1),6) s %CTTS0d(82)=$zu(28,%CTTS0d(3),6) s %CTTS0d(85)=$zu(28,%CTTS0d(4),6)
+ g:'(((%CTTS0d(25)'="")&&(%CTTS0d(25)=%CTTS0d(74)))||(%CTTS0d(75)="")) %0ADdun
+ g:'(($c(0)[%CTTS0d(78))||(%CTTS0d(78)=$c(32,0)&&($e(%CTTS0d(76))=$c(32)))||(%CTTS0d(78)=$e(%CTTS0d(76),1,$l(%CTTS0d(78))))) %0ADdun
+ g:'(($c(0)[%CTTS0d(81))||(%CTTS0d(81)=$c(32,0)&&($e(%CTTS0d(79))=$c(32)))||(%CTTS0d(81)=$e(%CTTS0d(79),1,$l(%CTTS0d(81))))) %0ADdun
+ g:'(((%CTTS0d(82)'="")&&(($c(0)[%CTTS0d(84))||(%CTTS0d(84)=$c(32,0)&&($e(%CTTS0d(82))=$c(32)))||(%CTTS0d(84)=$e(%CTTS0d(82),1,$l(%CTTS0d(84))))))||((%CTTS0d(85)'="")&&(($c(0)[%CTTS0d(87))||(%CTTS0d(87)=$c(32,0)&&($e(%CTTS0d(85))=$c(32)))||(%CTTS0d(87)=$e(%CTTS0d(85),1,$l(%CTTS0d(87))))))) %0ADdun
+ g:'(((%CTTS0d(95)'=" ")&&(%CTTS0d(95)=%CTTS0d(96)))||(%CTTS0d(89)="")) %0ADdun
+ g:'(((%CTTS0d(97)'=" ")&&(%CTTS0d(97)=%CTTS0d(98)))||(%CTTS0d(91)="")) %0ADdun
+ g:'(%CTTS0d(79)'="") %0ADdun
+%0ACuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %CTTS0d(99)=%CTTS0d(99)+1,%ROWCOUNT=%CTTS0d(99),%ROWID=%CTTS0d(1),%CTTS0c=10 q
+%CTTS0f i '$g(%CTTS0c) { s SQLCODE=-102 q  } i %CTTS0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%CTTS0d(99))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%CTTS0d(99),%CTTS0c=100 q  } g %0Afirst:%CTTS0c=1
+%0ADdun i $zu(115,2)=1,$g(%CTTS0d(100))=1 { l -@%CTTS0d(101) s %CTTS0d(100)=0 }
+ g %0ACk3
+%0ACdun 
+%0AAdun 
+ s %ROWCOUNT=%CTTS0d(99),SQLCODE=100,%CTTS0c=100 q
+%CTTS0c i '$g(%CTTS0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%CTTS0d(99)),1:0) f %CTTS0d(102)=1 { i $sortend(^||%sql.temp(%CTTS0t(%CTTS0d(102)),0),0) } k ^||%sql.temp(%CTTS0t(1))
+ i $zu(115,2)=1,$g(%CTTS0d(100))=1 { l -@%CTTS0d(101) } k %CTTS0c,%CTTS0d,%CTTS0E,%CTTS0l,%CTTS0n,%CTTS0R,%CTTS0s,%CTTS0t,%CTTS0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %CTTS0c=100
+ f %CTTS0d(102)=1 i $sortend(^||%sql.temp(%CTTS0t(%CTTS0d(102)),0),0)
+ q
+%0ABMod ; asl MOD# 2
+ s %CTTS0d(1)=""
+%0ABk1 s %CTTS0d(1)=$o(^TTAB("TS",%CTTS0d(1)))
+ i %CTTS0d(1)="" g %0ABdun
+ s %CTTS0d(107)=$g(^TTAB("TS",%CTTS0d(1)))
+ s %CTTS0d(39)=$p(%CTTS0d(107),"\",36)
+ g:'((((%CTTS0d(39)'="")&&(%CTTS0d(39)=%CTTS0d(92)))||(%CTTS0d(93)=""))||(%CTTS0d(39)="")) %0ABk1
+ s %CTTS0d(2)=$p(%CTTS0d(107),"\",1) s %CTTS0d(3)=$p(%CTTS0d(107),"\",2) s %CTTS0d(4)=$p(%CTTS0d(107),"\",3) s %CTTS0d(6)=$p(%CTTS0d(107),"\",5) s %CTTS0d(7)=$p(%CTTS0d(107),"\",6) s %CTTS0d(8)=$p(%CTTS0d(107),"\",7) s %CTTS0d(9)=$p(%CTTS0d(107),"\",8) s %CTTS0d(10)=$p(%CTTS0d(107),"\",9) s %CTTS0d(11)=$p(%CTTS0d(107),"\",10) s %CTTS0d(12)=$p(%CTTS0d(107),"\",11) s %CTTS0d(13)=$p(%CTTS0d(107),"\",12) s %CTTS0d(14)=$p(%CTTS0d(107),"\",13) s %CTTS0d(15)=$p(%CTTS0d(107),"\",14) s %CTTS0d(16)=$p(%CTTS0d(107),"\",17) s %CTTS0d(17)=$p(%CTTS0d(107),"\",18) s %CTTS0d(19)=$p(%CTTS0d(107),"\",20) s %CTTS0d(20)=$p(%CTTS0d(107),"\",21) s %CTTS0d(21)=$p(%CTTS0d(107),"\",22) s %CTTS0d(22)=$p(%CTTS0d(107),"\",23) s %CTTS0d(23)=$p(%CTTS0d(107),"\",24) s %CTTS0d(24)=$p(%CTTS0d(107),"\",25) s %CTTS0d(27)=$p(%CTTS0d(107),"\",26) s %CTTS0d(28)=$p(%CTTS0d(107),"\",27) s %CTTS0d(29)=$p(%CTTS0d(107),"\",28) s %CTTS0d(30)=$p(%CTTS0d(107),"\",29) s %CTTS0d(31)=$p(%CTTS0d(107),"\",30) s %CTTS0d(32)=$p(%CTTS0d(107),"\",15) s %CTTS0d(33)=$p(%CTTS0d(107),"\",31) s %CTTS0d(34)=$p(%CTTS0d(107),"\",32) s %CTTS0d(35)=$p(%CTTS0d(107),"\",33) s %CTTS0d(36)=$p(%CTTS0d(107),"\",34) s %CTTS0d(37)=$p(%CTTS0d(107),"\",35) s %CTTS0d(38)=$p(%CTTS0d(107),"\",16) s %CTTS0d(40)=$p(%CTTS0d(107),"\",37) s %CTTS0d(41)=$p(%CTTS0d(107),"\",38) s %CTTS0d(42)=$p(%CTTS0d(107),"\",19) s %CTTS0d(43)=$p(%CTTS0d(107),"\",39) s %CTTS0d(45)=$p(%CTTS0d(107),"\",41) s %CTTS0d(46)=$p(%CTTS0d(107),"\",4) s %CTTS0d(47)=$p(%CTTS0d(107),"\",42) s %CTTS0d(49)=$p(%CTTS0d(107),"\",43) s %CTTS0d(50)=$p(%CTTS0d(107),"\",44) s %CTTS0d(51)=$p(%CTTS0d(107),"\",45) s %CTTS0d(52)=$p(%CTTS0d(107),"\",46) s %CTTS0d(53)=$p(%CTTS0d(107),"\",47) s %CTTS0d(54)=$p(%CTTS0d(107),"\",48) s %CTTS0d(55)=$p(%CTTS0d(107),"\",49) s %CTTS0d(56)=$p(%CTTS0d(107),"\",50) s %CTTS0d(59)=$p(%CTTS0d(107),"\",40) s %CTTS0d(60)=$p(%CTTS0d(107),"\",51) s %CTTS0d(61)=$p(%CTTS0d(107),"\",52) s %CTTS0d(62)=$p(%CTTS0d(107),"\",53) s %CTTS0d(63)=$p(%CTTS0d(107),"\",54) s %CTTS0d(64)=$p(%CTTS0d(107),"\",55) s %CTTS0d(65)=$p(%CTTS0d(107),"\",56) s %CTTS0d(66)=$p(%CTTS0d(107),"\",57) s %CTTS0d(67)=$p(%CTTS0d(107),"\",58) s %CTTS0d(68)=$p(%CTTS0d(107),"\",59) s %CTTS0d(69)=$p(%CTTS0d(107),"\",60) s %CTTS0d(70)=$p(%CTTS0d(107),"\",61) s %CTTS0d(71)=$p(%CTTS0d(107),"\",62) s %CTTS0d(72)=$p(%CTTS0d(107),"\",63) s %CTTS0d(73)=$p(%CTTS0d(107),"\",64)
+ s %CTTS0d(18)=$g(^TTAB("TS",%CTTS0d(1),"MANUAL-1"))
+ s %CTTS0d(26)="" f %irep=1:1:$g(^TTAB("TS",%CTTS0d(1),"MANUAL-2",0)) s $li(%CTTS0d(26),%irep)=$g(^(%irep))
+ s %CTTS0d(57)=$g(^TTAB("TS",%CTTS0d(1),"SOP-1"))
+ s %CTTS0d(58)="" f %irep=1:1:$g(^TTAB("TS",%CTTS0d(1),"SOP-2",0)) s $li(%CTTS0d(58),%irep)=$g(^(%irep))
+ s %CTTS0d(25)=$e($g(%CTTS0d(1)),1) s %CTTS0d(48)=$$CT049^at45($g(%CTTS0d(25))) s %CTTS0d(44)=$$CT045^at45($g(%CTTS0d(1))) s %CTTS0d(5)=$$CT006^at45($g(%CTTS0d(1))) s %CTTS0d(97)=$zu(28,%CTTS0d(59),7) s %CTTS0d(95)=$zu(28,%CTTS0d(13),7) s %CTTS0d(79)=$zu(28,%CTTS0d(2),6) s %CTTS0d(76)=$zu(28,%CTTS0d(1),6) s %CTTS0d(82)=$zu(28,%CTTS0d(3),6) s %CTTS0d(85)=$zu(28,%CTTS0d(4),6)
+ g:'(((%CTTS0d(25)'="")&&(%CTTS0d(25)=%CTTS0d(74)))||(%CTTS0d(75)="")) %0ABk1
+ g:'(($c(0)[%CTTS0d(78))||(%CTTS0d(78)=$c(32,0)&&($e(%CTTS0d(76))=$c(32)))||(%CTTS0d(78)=$e(%CTTS0d(76),1,$l(%CTTS0d(78))))) %0ABk1
+ g:'(($c(0)[%CTTS0d(81))||(%CTTS0d(81)=$c(32,0)&&($e(%CTTS0d(79))=$c(32)))||(%CTTS0d(81)=$e(%CTTS0d(79),1,$l(%CTTS0d(81))))) %0ABk1
+ g:'(((%CTTS0d(82)'="")&&(($c(0)[%CTTS0d(84))||(%CTTS0d(84)=$c(32,0)&&($e(%CTTS0d(82))=$c(32)))||(%CTTS0d(84)=$e(%CTTS0d(82),1,$l(%CTTS0d(84))))))||((%CTTS0d(85)'="")&&(($c(0)[%CTTS0d(87))||(%CTTS0d(87)=$c(32,0)&&($e(%CTTS0d(85))=$c(32)))||(%CTTS0d(87)=$e(%CTTS0d(85),1,$l(%CTTS0d(87))))))) %0ABk1
+ g:'(((%CTTS0d(95)'=" ")&&(%CTTS0d(95)=%CTTS0d(96)))||(%CTTS0d(89)="")) %0ABk1
+ g:'(((%CTTS0d(97)'=" ")&&(%CTTS0d(97)=%CTTS0d(98)))||(%CTTS0d(91)="")) %0ABk1
+ g:'(%CTTS0d(79)'="") %0ABk1
+ s %CTTS0s(48)=$s(%CTTS0d(48)'="":%CTTS0d(48),1:-1E14),%CTTS0s(47)=$s(%CTTS0d(47)'="":%CTTS0d(47),1:-1E14),%CTTS0s(1)=$s(%CTTS0d(1)'="":%CTTS0d(1),1:-1E14),%CTTS0d(108)="",$li(%CTTS0d(108),29)=%CTTS0d(2),$li(%CTTS0d(108),53)=%CTTS0d(3),$li(%CTTS0d(108),54)=%CTTS0d(4),$li(%CTTS0d(108),70)=%CTTS0d(5),$li(%CTTS0d(108),16)=%CTTS0d(6),$li(%CTTS0d(108),58)=%CTTS0d(7),$li(%CTTS0d(108),9)=%CTTS0d(8),$li(%CTTS0d(108),40)=%CTTS0d(9),$li(%CTTS0d(108),11)=%CTTS0d(10),$li(%CTTS0d(108),37)=%CTTS0d(11),$li(%CTTS0d(108),28)=%CTTS0d(12),$li(%CTTS0d(108),2)=%CTTS0d(13),$li(%CTTS0d(108),5)=%CTTS0d(14),$li(%CTTS0d(108),22)=%CTTS0d(15),$li(%CTTS0d(108),42)=%CTTS0d(16),$li(%CTTS0d(108),36)=%CTTS0d(17),$li(%CTTS0d(108),26)=%CTTS0d(18),$li(%CTTS0d(108),4)=%CTTS0d(19),$li(%CTTS0d(108),43)=%CTTS0d(20),$li(%CTTS0d(108),12)=%CTTS0d(21),$li(%CTTS0d(108),25)=%CTTS0d(22),$li(%CTTS0d(108),33)=%CTTS0d(23),$li(%CTTS0d(108),52)=%CTTS0d(24),$li(%CTTS0d(108),19)=%CTTS0d(25),$li(%CTTS0d(108),27)=%CTTS0d(26),$li(%CTTS0d(108),1)=%CTTS0d(27),$li(%CTTS0d(108),59)=%CTTS0d(28),$li(%CTTS0d(108),68)=%CTTS0d(29),$li(%CTTS0d(108),67)=%CTTS0d(30),$li(%CTTS0d(108),23)=%CTTS0d(31),$li(%CTTS0d(108),6)=%CTTS0d(32),$li(%CTTS0d(108),32)=%CTTS0d(33),$li(%CTTS0d(108),31)=%CTTS0d(34),$li(%CTTS0d(108),30)=%CTTS0d(35),$li(%CTTS0d(108),7)=%CTTS0d(36),$li(%CTTS0d(108),50)=%CTTS0d(37),$li(%CTTS0d(108),39)=%CTTS0d(38),$li(%CTTS0d(108),60)=%CTTS0d(39),$li(%CTTS0d(108),57)=%CTTS0d(40),$li(%CTTS0d(108),8)=%CTTS0d(41),$li(%CTTS0d(108),44)=%CTTS0d(42),$li(%CTTS0d(108),35)=%CTTS0d(43),$li(%CTTS0d(108),51)=%CTTS0d(44),$li(%CTTS0d(108),15)=%CTTS0d(45),$li(%CTTS0d(108),38)=%CTTS0d(46),$li(%CTTS0d(108),55)=%CTTS0d(49),$li(%CTTS0d(108),56)=%CTTS0d(50),$li(%CTTS0d(108),13)=%CTTS0d(51),$li(%CTTS0d(108),61)=%CTTS0d(52),$li(%CTTS0d(108),65)=%CTTS0d(53),$li(%CTTS0d(108),66)=%CTTS0d(54),$li(%CTTS0d(108),24)=%CTTS0d(55),$li(%CTTS0d(108),20)=%CTTS0d(56),$li(%CTTS0d(108),47)=%CTTS0d(57),$li(%CTTS0d(108),48)=%CTTS0d(58),$li(%CTTS0d(108),18)=%CTTS0d(59),$li(%CTTS0d(108),64)=%CTTS0d(60),$li(%CTTS0d(108),49)=%CTTS0d(61),$li(%CTTS0d(108),21)=%CTTS0d(62),$li(%CTTS0d(108),46)=%CTTS0d(63),$li(%CTTS0d(108),17)=%CTTS0d(64),$li(%CTTS0d(108),3)=%CTTS0d(65),$li(%CTTS0d(108),10)=%CTTS0d(66),$li(%CTTS0d(108),41)=%CTTS0d(67),$li(%CTTS0d(108),69)=%CTTS0d(68),$li(%CTTS0d(108),45)=%CTTS0d(69),$li(%CTTS0d(108),62)=%CTTS0d(70),$li(%CTTS0d(108),63)=%CTTS0d(71),$li(%CTTS0d(108),34)=%CTTS0d(72),$li(%CTTS0d(108),14)=%CTTS0d(73),^||%sql.temp(%CTTS0t(1),0,%CTTS0s(48),%CTTS0s(47),%CTTS0s(1))=%CTTS0d(108)
+ g %0ABk1
+%0ABdun 
+ q
+%CTTS10o s $zt="%CTTS10E" s SQLCODE=$s($g(%CTTS10c):-101,1:0) q:SQLCODE'=0  s %CTTS10d(82)=0 s %CTTS10d(83)=0,%CTTS10d(84)="",%CTTS10d(85)=0,%CTTS10d(86)=""
+ s %CTTS10d(76)="Y"
+ s %CTTS10t(1)=$i(^||%sql.temp)
+ s %CTTS10d(79)=$zu(28,%CTTS10d(76),7)
+ s %CTTS10c=1 q
+%CTTS10E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %CTTS10c,%CTTS10d,%CTTS10E,%CTTS10l,%CTTS10n,%CTTS10R,%CTTS10s,%CTTS10t,%CTTS10Z q
+%0Cfirst 
+ k ^||%sql.temp(%CTTS10t(1),0) s ^||%sql.temp(%CTTS10t(1),0)=$H_"^"_$J_"^"_$zu(67,11,$j)_"^"_$zu(67,12,$j)_"^"_$zu(67,15,$j)_"^"_$ZN_"^"_$zu(67,6,$j)
+ i $sortbegin(^||%sql.temp(%CTTS10t(1),0))
+ ; asl MOD# 3
+ d %0CBMod
+ i $sortend(^||%sql.temp(%CTTS10t(1),0))
+ s %CTTS10s(48)=""
+%0CCk1 s %CTTS10s(48)=$o(^||%sql.temp(%CTTS10t(1),0,%CTTS10s(48)))
+ i %CTTS10s(48)="" g %0CCdun
+ s %CTTS10d(48)=$s(%CTTS10s(48)=-1E14:"",1:%CTTS10s(48))
+ s %CTTS10s(47)=""
+%0CCk2 s %CTTS10s(47)=$o(^||%sql.temp(%CTTS10t(1),0,%CTTS10s(48),%CTTS10s(47)))
+ i %CTTS10s(47)="" g %0CCk1
+ s %CTTS10d(47)=$s(%CTTS10s(47)=-1E14:"",1:%CTTS10s(47))
+ s %CTTS10s(1)=""
+%0CCk3 s %CTTS10s(1)=$o(^||%sql.temp(%CTTS10t(1),0,%CTTS10s(48),%CTTS10s(47),%CTTS10s(1)))
+ i %CTTS10s(1)="" g %0CCk2
+ s %CTTS10d(1)=$s(%CTTS10s(1)=-1E14:"",1:%CTTS10s(1))
+ i %CTTS10d(1)'="",$d(^TTAB("TS",%CTTS10d(1)))
+ e  g %0CCk3
+ s %CTTS10d(97)=$g(^TTAB("TS",%CTTS10d(1)))
+ s %CTTS10d(2)=$p(%CTTS10d(97),"\",1) s %CTTS10d(3)=$p(%CTTS10d(97),"\",2) s %CTTS10d(4)=$p(%CTTS10d(97),"\",3) s %CTTS10d(6)=$p(%CTTS10d(97),"\",5) s %CTTS10d(7)=$p(%CTTS10d(97),"\",6) s %CTTS10d(8)=$p(%CTTS10d(97),"\",7) s %CTTS10d(9)=$p(%CTTS10d(97),"\",8) s %CTTS10d(10)=$p(%CTTS10d(97),"\",9) s %CTTS10d(11)=$p(%CTTS10d(97),"\",10) s %CTTS10d(12)=$p(%CTTS10d(97),"\",11) s %CTTS10d(13)=$p(%CTTS10d(97),"\",12) s %CTTS10d(14)=$p(%CTTS10d(97),"\",13) s %CTTS10d(15)=$p(%CTTS10d(97),"\",14) s %CTTS10d(16)=$p(%CTTS10d(97),"\",17) s %CTTS10d(17)=$p(%CTTS10d(97),"\",18) s %CTTS10d(19)=$p(%CTTS10d(97),"\",20) s %CTTS10d(20)=$p(%CTTS10d(97),"\",21) s %CTTS10d(21)=$p(%CTTS10d(97),"\",22) s %CTTS10d(22)=$p(%CTTS10d(97),"\",23) s %CTTS10d(23)=$p(%CTTS10d(97),"\",24) s %CTTS10d(24)=$p(%CTTS10d(97),"\",25) s %CTTS10d(27)=$p(%CTTS10d(97),"\",26) s %CTTS10d(28)=$p(%CTTS10d(97),"\",27) s %CTTS10d(29)=$p(%CTTS10d(97),"\",28) s %CTTS10d(30)=$p(%CTTS10d(97),"\",29) s %CTTS10d(31)=$p(%CTTS10d(97),"\",30) s %CTTS10d(32)=$p(%CTTS10d(97),"\",15) s %CTTS10d(33)=$p(%CTTS10d(97),"\",31) s %CTTS10d(34)=$p(%CTTS10d(97),"\",32) s %CTTS10d(35)=$p(%CTTS10d(97),"\",33) s %CTTS10d(36)=$p(%CTTS10d(97),"\",34) s %CTTS10d(37)=$p(%CTTS10d(97),"\",35) s %CTTS10d(38)=$p(%CTTS10d(97),"\",16) s %CTTS10d(39)=$p(%CTTS10d(97),"\",36) s %CTTS10d(40)=$p(%CTTS10d(97),"\",37) s %CTTS10d(41)=$p(%CTTS10d(97),"\",38) s %CTTS10d(42)=$p(%CTTS10d(97),"\",19) s %CTTS10d(43)=$p(%CTTS10d(97),"\",39) s %CTTS10d(45)=$p(%CTTS10d(97),"\",41) s %CTTS10d(46)=$p(%CTTS10d(97),"\",4) s %CTTS10d(49)=$p(%CTTS10d(97),"\",43) s %CTTS10d(50)=$p(%CTTS10d(97),"\",44) s %CTTS10d(51)=$p(%CTTS10d(97),"\",45) s %CTTS10d(52)=$p(%CTTS10d(97),"\",46) s %CTTS10d(53)=$p(%CTTS10d(97),"\",47) s %CTTS10d(54)=$p(%CTTS10d(97),"\",48) s %CTTS10d(55)=$p(%CTTS10d(97),"\",49) s %CTTS10d(56)=$p(%CTTS10d(97),"\",50) s %CTTS10d(59)=$p(%CTTS10d(97),"\",40) s %CTTS10d(60)=$p(%CTTS10d(97),"\",51) s %CTTS10d(61)=$p(%CTTS10d(97),"\",52) s %CTTS10d(62)=$p(%CTTS10d(97),"\",53) s %CTTS10d(63)=$p(%CTTS10d(97),"\",54) s %CTTS10d(64)=$p(%CTTS10d(97),"\",55) s %CTTS10d(65)=$p(%CTTS10d(97),"\",56) s %CTTS10d(66)=$p(%CTTS10d(97),"\",57) s %CTTS10d(67)=$p(%CTTS10d(97),"\",58) s %CTTS10d(68)=$p(%CTTS10d(97),"\",59) s %CTTS10d(69)=$p(%CTTS10d(97),"\",60) s %CTTS10d(70)=$p(%CTTS10d(97),"\",61) s %CTTS10d(71)=$p(%CTTS10d(97),"\",62) s %CTTS10d(72)=$p(%CTTS10d(97),"\",63) s %CTTS10d(73)=$p(%CTTS10d(97),"\",64)
+ s %CTTS10d(18)=$g(^TTAB("TS",%CTTS10d(1),"MANUAL-1"))
+ s %CTTS10d(26)="" f %irep=1:1:$g(^TTAB("TS",%CTTS10d(1),"MANUAL-2",0)) s $li(%CTTS10d(26),%irep)=$g(^(%irep))
+ s %CTTS10d(57)=$g(^TTAB("TS",%CTTS10d(1),"SOP-1"))
+ s %CTTS10d(58)="" f %irep=1:1:$g(^TTAB("TS",%CTTS10d(1),"SOP-2",0)) s $li(%CTTS10d(58),%irep)=$g(^(%irep))
+ s %CTTS10d(25)=$e($g(%CTTS10d(1)),1) s %CTTS10d(44)=$$CT045^at45($g(%CTTS10d(1))) s %CTTS10d(5)=$$CT006^at45($g(%CTTS10d(1)))
+ g:$zu(115,2)=0 %0CCuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%CTTS10d(1),"||",1))#"S":$zu(115,4) i $t { s %CTTS10d(83)=1,%CTTS10d(84)=$name(^TTAB("TS",$p(%CTTS10d(1),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_%CTTS10d(1) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %CTTS10d(1)'="",$d(^TTAB("TS",%CTTS10d(1)))
+ e  g %0CDdun
+ s %CTTS10d(102)=$g(^TTAB("TS",%CTTS10d(1)))
+ s %CTTS10d(2)=$p(%CTTS10d(102),"\",1) s %CTTS10d(3)=$p(%CTTS10d(102),"\",2) s %CTTS10d(4)=$p(%CTTS10d(102),"\",3) s %CTTS10d(6)=$p(%CTTS10d(102),"\",5) s %CTTS10d(7)=$p(%CTTS10d(102),"\",6) s %CTTS10d(8)=$p(%CTTS10d(102),"\",7) s %CTTS10d(9)=$p(%CTTS10d(102),"\",8) s %CTTS10d(10)=$p(%CTTS10d(102),"\",9) s %CTTS10d(11)=$p(%CTTS10d(102),"\",10) s %CTTS10d(12)=$p(%CTTS10d(102),"\",11) s %CTTS10d(13)=$p(%CTTS10d(102),"\",12) s %CTTS10d(14)=$p(%CTTS10d(102),"\",13) s %CTTS10d(15)=$p(%CTTS10d(102),"\",14) s %CTTS10d(16)=$p(%CTTS10d(102),"\",17) s %CTTS10d(17)=$p(%CTTS10d(102),"\",18) s %CTTS10d(19)=$p(%CTTS10d(102),"\",20) s %CTTS10d(20)=$p(%CTTS10d(102),"\",21) s %CTTS10d(21)=$p(%CTTS10d(102),"\",22) s %CTTS10d(22)=$p(%CTTS10d(102),"\",23) s %CTTS10d(23)=$p(%CTTS10d(102),"\",24) s %CTTS10d(24)=$p(%CTTS10d(102),"\",25) s %CTTS10d(27)=$p(%CTTS10d(102),"\",26) s %CTTS10d(28)=$p(%CTTS10d(102),"\",27) s %CTTS10d(29)=$p(%CTTS10d(102),"\",28) s %CTTS10d(30)=$p(%CTTS10d(102),"\",29) s %CTTS10d(31)=$p(%CTTS10d(102),"\",30) s %CTTS10d(32)=$p(%CTTS10d(102),"\",15) s %CTTS10d(33)=$p(%CTTS10d(102),"\",31) s %CTTS10d(34)=$p(%CTTS10d(102),"\",32) s %CTTS10d(35)=$p(%CTTS10d(102),"\",33) s %CTTS10d(36)=$p(%CTTS10d(102),"\",34) s %CTTS10d(37)=$p(%CTTS10d(102),"\",35) s %CTTS10d(38)=$p(%CTTS10d(102),"\",16) s %CTTS10d(39)=$p(%CTTS10d(102),"\",36) s %CTTS10d(40)=$p(%CTTS10d(102),"\",37) s %CTTS10d(41)=$p(%CTTS10d(102),"\",38) s %CTTS10d(42)=$p(%CTTS10d(102),"\",19) s %CTTS10d(43)=$p(%CTTS10d(102),"\",39) s %CTTS10d(45)=$p(%CTTS10d(102),"\",41) s %CTTS10d(46)=$p(%CTTS10d(102),"\",4) s %CTTS10d(47)=$p(%CTTS10d(102),"\",42) s %CTTS10d(49)=$p(%CTTS10d(102),"\",43) s %CTTS10d(50)=$p(%CTTS10d(102),"\",44) s %CTTS10d(51)=$p(%CTTS10d(102),"\",45) s %CTTS10d(52)=$p(%CTTS10d(102),"\",46) s %CTTS10d(53)=$p(%CTTS10d(102),"\",47) s %CTTS10d(54)=$p(%CTTS10d(102),"\",48) s %CTTS10d(55)=$p(%CTTS10d(102),"\",49) s %CTTS10d(56)=$p(%CTTS10d(102),"\",50) s %CTTS10d(59)=$p(%CTTS10d(102),"\",40) s %CTTS10d(60)=$p(%CTTS10d(102),"\",51) s %CTTS10d(61)=$p(%CTTS10d(102),"\",52) s %CTTS10d(62)=$p(%CTTS10d(102),"\",53) s %CTTS10d(63)=$p(%CTTS10d(102),"\",54) s %CTTS10d(64)=$p(%CTTS10d(102),"\",55) s %CTTS10d(65)=$p(%CTTS10d(102),"\",56) s %CTTS10d(66)=$p(%CTTS10d(102),"\",57) s %CTTS10d(67)=$p(%CTTS10d(102),"\",58) s %CTTS10d(68)=$p(%CTTS10d(102),"\",59) s %CTTS10d(69)=$p(%CTTS10d(102),"\",60) s %CTTS10d(70)=$p(%CTTS10d(102),"\",61) s %CTTS10d(71)=$p(%CTTS10d(102),"\",62) s %CTTS10d(72)=$p(%CTTS10d(102),"\",63) s %CTTS10d(73)=$p(%CTTS10d(102),"\",64)
+ s %CTTS10d(18)=$g(^TTAB("TS",%CTTS10d(1),"MANUAL-1"))
+ s %CTTS10d(26)="" f %irep=1:1:$g(^TTAB("TS",%CTTS10d(1),"MANUAL-2",0)) s $li(%CTTS10d(26),%irep)=$g(^(%irep))
+ s %CTTS10d(57)=$g(^TTAB("TS",%CTTS10d(1),"SOP-1"))
+ s %CTTS10d(58)="" f %irep=1:1:$g(^TTAB("TS",%CTTS10d(1),"SOP-2",0)) s $li(%CTTS10d(58),%irep)=$g(^(%irep))
+ s %CTTS10d(25)=$e($g(%CTTS10d(1)),1) s %CTTS10d(48)=$$CT049^at45($g(%CTTS10d(25))) s %CTTS10d(44)=$$CT045^at45($g(%CTTS10d(1))) s %CTTS10d(5)=$$CT006^at45($g(%CTTS10d(1)))
+%0CCuncommitted ;
+ s %CTTS10d(74)=%CTTS10d(11)
+ i %CTTS10d(74)'="",$d(^TTAB("PC",%CTTS10d(74)))
+ e  g %0CDdun
+ s %CTTS10d(107)=$g(^TTAB("PC",%CTTS10d(74)))
+ s %CTTS10d(75)=$p(%CTTS10d(107),"\",4)
+ s %CTTS10d(78)=$zu(28,%CTTS10d(75),7)
+ g:'(%CTTS10d(78)=%CTTS10d(79)) %0CDdun
+ g:'(%CTTS10d(78)'=" ") %0CDdun
+ g:$zu(115,2)=0 %0CDuncommitted i $zu(115,2)=1 l +^TTAB("PC",$p(%CTTS10d(74),"||",1))#"S":$zu(115,4) i $t { s %CTTS10d(85)=1,%CTTS10d(86)=$name(^TTAB("PC",$p(%CTTS10d(74),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Priority for RowID value: "_%CTTS10d(74) ztrap "LOCK"  }
+ ; asl MOD# 5
+ s %CTTS10d(80)=$lb(""_%CTTS10d(78))
+ i %CTTS10d(74)'="",$d(^TTAB("PC",%CTTS10d(74)))
+ e  g %0CEdun
+ s %CTTS10d(112)=$g(^TTAB("PC",%CTTS10d(74)))
+ s %CTTS10d(75)=$p(%CTTS10d(112),"\",4)
+ s %CTTS10d(78)=$zu(28,%CTTS10d(75),7)
+ s %CTTS10d(81)=$lb(""_%CTTS10d(78))
+ g:%CTTS10d(80)'=%CTTS10d(81) %0CEdun
+%0CDuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %CTTS10d(82)=%CTTS10d(82)+1,%ROWCOUNT=%CTTS10d(82),%ROWID=%CTTS10d(1),%CTTS10c=10 q
+%CTTS10f i '$g(%CTTS10c) { s SQLCODE=-102 q  } i %CTTS10c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Cerr" i $d(%0CacheRowLimit)#2,$g(%CTTS10d(82))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%CTTS10d(82),%CTTS10c=100 q  } g %0Cfirst:%CTTS10c=1
+%0CEdun i $zu(115,2)=1,$g(%CTTS10d(85))=1 { l -@%CTTS10d(86) s %CTTS10d(85)=0 }
+%0CDdun i $zu(115,2)=1,$g(%CTTS10d(83))=1 { l -@%CTTS10d(84) s %CTTS10d(83)=0 }
+ g %0CCk3
+%0CCdun 
+%0CAdun 
+ s %ROWCOUNT=%CTTS10d(82),SQLCODE=100,%CTTS10c=100 q
+%CTTS10c i '$g(%CTTS10c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%CTTS10d(82)),1:0) f %CTTS10d(87)=1 { i $sortend(^||%sql.temp(%CTTS10t(%CTTS10d(87)),0),0) } k ^||%sql.temp(%CTTS10t(1))
+ i $zu(115,2)=1,$g(%CTTS10d(83))=1 { l -@%CTTS10d(84) } i $zu(115,2)=1,$g(%CTTS10d(85))=1 { l -@%CTTS10d(86) } k %CTTS10c,%CTTS10d,%CTTS10E,%CTTS10l,%CTTS10n,%CTTS10R,%CTTS10s,%CTTS10t,%CTTS10Z s SQLCODE=0 q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %CTTS10c=100
+ f %CTTS10d(87)=1 i $sortend(^||%sql.temp(%CTTS10t(%CTTS10d(87)),0),0)
+ q
+%0CBMod ; asl MOD# 2
+ s %CTTS10d(1)=""
+%0CBk1 s %CTTS10d(1)=$o(^TTAB("TS",%CTTS10d(1)))
+ i %CTTS10d(1)="" g %0CBdun
+ s %CTTS10d(92)=$g(^TTAB("TS",%CTTS10d(1)))
+ s %CTTS10d(2)=$p(%CTTS10d(92),"\",1) s %CTTS10d(3)=$p(%CTTS10d(92),"\",2) s %CTTS10d(4)=$p(%CTTS10d(92),"\",3) s %CTTS10d(6)=$p(%CTTS10d(92),"\",5) s %CTTS10d(7)=$p(%CTTS10d(92),"\",6) s %CTTS10d(8)=$p(%CTTS10d(92),"\",7) s %CTTS10d(9)=$p(%CTTS10d(92),"\",8) s %CTTS10d(10)=$p(%CTTS10d(92),"\",9) s %CTTS10d(11)=$p(%CTTS10d(92),"\",10) s %CTTS10d(12)=$p(%CTTS10d(92),"\",11) s %CTTS10d(13)=$p(%CTTS10d(92),"\",12) s %CTTS10d(14)=$p(%CTTS10d(92),"\",13) s %CTTS10d(15)=$p(%CTTS10d(92),"\",14) s %CTTS10d(16)=$p(%CTTS10d(92),"\",17) s %CTTS10d(17)=$p(%CTTS10d(92),"\",18) s %CTTS10d(19)=$p(%CTTS10d(92),"\",20) s %CTTS10d(20)=$p(%CTTS10d(92),"\",21) s %CTTS10d(21)=$p(%CTTS10d(92),"\",22) s %CTTS10d(22)=$p(%CTTS10d(92),"\",23) s %CTTS10d(23)=$p(%CTTS10d(92),"\",24) s %CTTS10d(24)=$p(%CTTS10d(92),"\",25) s %CTTS10d(27)=$p(%CTTS10d(92),"\",26) s %CTTS10d(28)=$p(%CTTS10d(92),"\",27) s %CTTS10d(29)=$p(%CTTS10d(92),"\",28) s %CTTS10d(30)=$p(%CTTS10d(92),"\",29) s %CTTS10d(31)=$p(%CTTS10d(92),"\",30) s %CTTS10d(32)=$p(%CTTS10d(92),"\",15) s %CTTS10d(33)=$p(%CTTS10d(92),"\",31) s %CTTS10d(34)=$p(%CTTS10d(92),"\",32) s %CTTS10d(35)=$p(%CTTS10d(92),"\",33) s %CTTS10d(36)=$p(%CTTS10d(92),"\",34) s %CTTS10d(37)=$p(%CTTS10d(92),"\",35) s %CTTS10d(38)=$p(%CTTS10d(92),"\",16) s %CTTS10d(39)=$p(%CTTS10d(92),"\",36) s %CTTS10d(40)=$p(%CTTS10d(92),"\",37) s %CTTS10d(41)=$p(%CTTS10d(92),"\",38) s %CTTS10d(42)=$p(%CTTS10d(92),"\",19) s %CTTS10d(43)=$p(%CTTS10d(92),"\",39) s %CTTS10d(45)=$p(%CTTS10d(92),"\",41) s %CTTS10d(46)=$p(%CTTS10d(92),"\",4) s %CTTS10d(47)=$p(%CTTS10d(92),"\",42) s %CTTS10d(49)=$p(%CTTS10d(92),"\",43) s %CTTS10d(50)=$p(%CTTS10d(92),"\",44) s %CTTS10d(51)=$p(%CTTS10d(92),"\",45) s %CTTS10d(52)=$p(%CTTS10d(92),"\",46) s %CTTS10d(53)=$p(%CTTS10d(92),"\",47) s %CTTS10d(54)=$p(%CTTS10d(92),"\",48) s %CTTS10d(55)=$p(%CTTS10d(92),"\",49) s %CTTS10d(56)=$p(%CTTS10d(92),"\",50) s %CTTS10d(59)=$p(%CTTS10d(92),"\",40) s %CTTS10d(60)=$p(%CTTS10d(92),"\",51) s %CTTS10d(61)=$p(%CTTS10d(92),"\",52) s %CTTS10d(62)=$p(%CTTS10d(92),"\",53) s %CTTS10d(63)=$p(%CTTS10d(92),"\",54) s %CTTS10d(64)=$p(%CTTS10d(92),"\",55) s %CTTS10d(65)=$p(%CTTS10d(92),"\",56) s %CTTS10d(66)=$p(%CTTS10d(92),"\",57) s %CTTS10d(67)=$p(%CTTS10d(92),"\",58) s %CTTS10d(68)=$p(%CTTS10d(92),"\",59) s %CTTS10d(69)=$p(%CTTS10d(92),"\",60) s %CTTS10d(70)=$p(%CTTS10d(92),"\",61) s %CTTS10d(71)=$p(%CTTS10d(92),"\",62) s %CTTS10d(72)=$p(%CTTS10d(92),"\",63) s %CTTS10d(73)=$p(%CTTS10d(92),"\",64)
+ s %CTTS10d(18)=$g(^TTAB("TS",%CTTS10d(1),"MANUAL-1"))
+ s %CTTS10d(26)="" f %irep=1:1:$g(^TTAB("TS",%CTTS10d(1),"MANUAL-2",0)) s $li(%CTTS10d(26),%irep)=$g(^(%irep))
+ s %CTTS10d(57)=$g(^TTAB("TS",%CTTS10d(1),"SOP-1"))
+ s %CTTS10d(58)="" f %irep=1:1:$g(^TTAB("TS",%CTTS10d(1),"SOP-2",0)) s $li(%CTTS10d(58),%irep)=$g(^(%irep))
+ s %CTTS10d(25)=$e($g(%CTTS10d(1)),1) s %CTTS10d(48)=$$CT049^at45($g(%CTTS10d(25))) s %CTTS10d(44)=$$CT045^at45($g(%CTTS10d(1))) s %CTTS10d(5)=$$CT006^at45($g(%CTTS10d(1)))
+ s %CTTS10s(48)=$s(%CTTS10d(48)'="":%CTTS10d(48),1:-1E14),%CTTS10s(47)=$s(%CTTS10d(47)'="":%CTTS10d(47),1:-1E14),%CTTS10s(1)=$s(%CTTS10d(1)'="":%CTTS10d(1),1:-1E14),^||%sql.temp(%CTTS10t(1),0,%CTTS10s(48),%CTTS10s(47),%CTTS10s(1))=""
+ g %0CBk1
+%0CBdun 
+ q
+%CTTS20o s $zt="%CTTS20E" s SQLCODE=$s($g(%CTTS20c):-101,1:0) q:SQLCODE'=0  s %CTTS20d(76)=0 s %CTTS20d(77)=0,%CTTS20d(78)=""
+ s %CTTS20t(1)=$i(^||%sql.temp)
+ s %CTTS20c=1 q
+%CTTS20E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %CTTS20c,%CTTS20d,%CTTS20E,%CTTS20l,%CTTS20n,%CTTS20R,%CTTS20s,%CTTS20t,%CTTS20Z q
+%0Efirst 
+ k ^||%sql.temp(%CTTS20t(1),0) s ^||%sql.temp(%CTTS20t(1),0)=$H_"^"_$J_"^"_$zu(67,11,$j)_"^"_$zu(67,12,$j)_"^"_$zu(67,15,$j)_"^"_$ZN_"^"_$zu(67,6,$j)
+ i $sortbegin(^||%sql.temp(%CTTS20t(1),0))
+ ; asl MOD# 3
+ d %0EBMod
+ i $sortend(^||%sql.temp(%CTTS20t(1),0))
+ s %CTTS20s(75)=""
+%0ECk1 s %CTTS20s(75)=$o(^||%sql.temp(%CTTS20t(1),0,%CTTS20s(75)))
+ i %CTTS20s(75)="" g %0ECdun
+ s %CTTS20d(75)=$s(%CTTS20s(75)=-1E14:"",1:%CTTS20s(75))
+ s %CTTS20s(1)=""
+%0ECk2 s %CTTS20s(1)=$o(^||%sql.temp(%CTTS20t(1),0,%CTTS20s(75),%CTTS20s(1)))
+ i %CTTS20s(1)="" g %0ECk1
+ s %CTTS20d(1)=$s(%CTTS20s(1)=-1E14:"",1:%CTTS20s(1))
+ i %CTTS20d(1)'="",$d(^TTAB("TS",%CTTS20d(1)))
+ e  g %0ECk2
+ s %CTTS20d(89)=$g(^TTAB("TS",%CTTS20d(1)))
+ s %CTTS20d(2)=$p(%CTTS20d(89),"\",1) s %CTTS20d(3)=$p(%CTTS20d(89),"\",2) s %CTTS20d(4)=$p(%CTTS20d(89),"\",3) s %CTTS20d(6)=$p(%CTTS20d(89),"\",5) s %CTTS20d(7)=$p(%CTTS20d(89),"\",6) s %CTTS20d(8)=$p(%CTTS20d(89),"\",7) s %CTTS20d(9)=$p(%CTTS20d(89),"\",8) s %CTTS20d(10)=$p(%CTTS20d(89),"\",9) s %CTTS20d(11)=$p(%CTTS20d(89),"\",10) s %CTTS20d(12)=$p(%CTTS20d(89),"\",11) s %CTTS20d(13)=$p(%CTTS20d(89),"\",12) s %CTTS20d(14)=$p(%CTTS20d(89),"\",13) s %CTTS20d(15)=$p(%CTTS20d(89),"\",14) s %CTTS20d(16)=$p(%CTTS20d(89),"\",17) s %CTTS20d(17)=$p(%CTTS20d(89),"\",18) s %CTTS20d(19)=$p(%CTTS20d(89),"\",20) s %CTTS20d(20)=$p(%CTTS20d(89),"\",21) s %CTTS20d(21)=$p(%CTTS20d(89),"\",22) s %CTTS20d(22)=$p(%CTTS20d(89),"\",23) s %CTTS20d(23)=$p(%CTTS20d(89),"\",24) s %CTTS20d(24)=$p(%CTTS20d(89),"\",25) s %CTTS20d(27)=$p(%CTTS20d(89),"\",26) s %CTTS20d(28)=$p(%CTTS20d(89),"\",27) s %CTTS20d(29)=$p(%CTTS20d(89),"\",28) s %CTTS20d(30)=$p(%CTTS20d(89),"\",29) s %CTTS20d(31)=$p(%CTTS20d(89),"\",30) s %CTTS20d(32)=$p(%CTTS20d(89),"\",15) s %CTTS20d(33)=$p(%CTTS20d(89),"\",31) s %CTTS20d(34)=$p(%CTTS20d(89),"\",32) s %CTTS20d(35)=$p(%CTTS20d(89),"\",33) s %CTTS20d(36)=$p(%CTTS20d(89),"\",34) s %CTTS20d(37)=$p(%CTTS20d(89),"\",35) s %CTTS20d(38)=$p(%CTTS20d(89),"\",16) s %CTTS20d(39)=$p(%CTTS20d(89),"\",36) s %CTTS20d(40)=$p(%CTTS20d(89),"\",37) s %CTTS20d(41)=$p(%CTTS20d(89),"\",38) s %CTTS20d(42)=$p(%CTTS20d(89),"\",19) s %CTTS20d(43)=$p(%CTTS20d(89),"\",39) s %CTTS20d(45)=$p(%CTTS20d(89),"\",41) s %CTTS20d(46)=$p(%CTTS20d(89),"\",4) s %CTTS20d(47)=$p(%CTTS20d(89),"\",42) s %CTTS20d(49)=$p(%CTTS20d(89),"\",43) s %CTTS20d(50)=$p(%CTTS20d(89),"\",44) s %CTTS20d(51)=$p(%CTTS20d(89),"\",45) s %CTTS20d(52)=$p(%CTTS20d(89),"\",46) s %CTTS20d(53)=$p(%CTTS20d(89),"\",47) s %CTTS20d(54)=$p(%CTTS20d(89),"\",48) s %CTTS20d(55)=$p(%CTTS20d(89),"\",49) s %CTTS20d(56)=$p(%CTTS20d(89),"\",50) s %CTTS20d(59)=$p(%CTTS20d(89),"\",40) s %CTTS20d(60)=$p(%CTTS20d(89),"\",51) s %CTTS20d(61)=$p(%CTTS20d(89),"\",52) s %CTTS20d(62)=$p(%CTTS20d(89),"\",53) s %CTTS20d(63)=$p(%CTTS20d(89),"\",54) s %CTTS20d(64)=$p(%CTTS20d(89),"\",55) s %CTTS20d(65)=$p(%CTTS20d(89),"\",56) s %CTTS20d(66)=$p(%CTTS20d(89),"\",57) s %CTTS20d(67)=$p(%CTTS20d(89),"\",58) s %CTTS20d(68)=$p(%CTTS20d(89),"\",59) s %CTTS20d(69)=$p(%CTTS20d(89),"\",60) s %CTTS20d(70)=$p(%CTTS20d(89),"\",61) s %CTTS20d(71)=$p(%CTTS20d(89),"\",62) s %CTTS20d(72)=$p(%CTTS20d(89),"\",63) s %CTTS20d(73)=$p(%CTTS20d(89),"\",64)
+ s %CTTS20d(18)=$g(^TTAB("TS",%CTTS20d(1),"MANUAL-1"))
+ s %CTTS20d(26)="" f %irep=1:1:$g(^TTAB("TS",%CTTS20d(1),"MANUAL-2",0)) s $li(%CTTS20d(26),%irep)=$g(^(%irep))
+ s %CTTS20d(57)=$g(^TTAB("TS",%CTTS20d(1),"SOP-1"))
+ s %CTTS20d(58)="" f %irep=1:1:$g(^TTAB("TS",%CTTS20d(1),"SOP-2",0)) s $li(%CTTS20d(58),%irep)=$g(^(%irep))
+ s %CTTS20d(25)=$e($g(%CTTS20d(1)),1) s %CTTS20d(48)=$$CT049^at45($g(%CTTS20d(25))) s %CTTS20d(44)=$$CT045^at45($g(%CTTS20d(1))) s %CTTS20d(5)=$$CT006^at45($g(%CTTS20d(1)))
+ g:$zu(115,2)=0 %0ECuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%CTTS20d(1),"||",1))#"S":$zu(115,4) i $t { s %CTTS20d(77)=1,%CTTS20d(78)=$name(^TTAB("TS",$p(%CTTS20d(1),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_%CTTS20d(1) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %CTTS20d(1)'="",$d(^TTAB("TS",%CTTS20d(1)))
+ e  g %0EDdun
+ s %CTTS20d(94)=$g(^TTAB("TS",%CTTS20d(1)))
+ s %CTTS20d(2)=$p(%CTTS20d(94),"\",1) s %CTTS20d(3)=$p(%CTTS20d(94),"\",2) s %CTTS20d(4)=$p(%CTTS20d(94),"\",3) s %CTTS20d(6)=$p(%CTTS20d(94),"\",5) s %CTTS20d(7)=$p(%CTTS20d(94),"\",6) s %CTTS20d(8)=$p(%CTTS20d(94),"\",7) s %CTTS20d(9)=$p(%CTTS20d(94),"\",8) s %CTTS20d(10)=$p(%CTTS20d(94),"\",9) s %CTTS20d(11)=$p(%CTTS20d(94),"\",10) s %CTTS20d(12)=$p(%CTTS20d(94),"\",11) s %CTTS20d(13)=$p(%CTTS20d(94),"\",12) s %CTTS20d(14)=$p(%CTTS20d(94),"\",13) s %CTTS20d(15)=$p(%CTTS20d(94),"\",14) s %CTTS20d(16)=$p(%CTTS20d(94),"\",17) s %CTTS20d(17)=$p(%CTTS20d(94),"\",18) s %CTTS20d(19)=$p(%CTTS20d(94),"\",20) s %CTTS20d(20)=$p(%CTTS20d(94),"\",21) s %CTTS20d(21)=$p(%CTTS20d(94),"\",22) s %CTTS20d(22)=$p(%CTTS20d(94),"\",23) s %CTTS20d(23)=$p(%CTTS20d(94),"\",24) s %CTTS20d(24)=$p(%CTTS20d(94),"\",25) s %CTTS20d(27)=$p(%CTTS20d(94),"\",26) s %CTTS20d(28)=$p(%CTTS20d(94),"\",27) s %CTTS20d(29)=$p(%CTTS20d(94),"\",28) s %CTTS20d(30)=$p(%CTTS20d(94),"\",29) s %CTTS20d(31)=$p(%CTTS20d(94),"\",30) s %CTTS20d(32)=$p(%CTTS20d(94),"\",15) s %CTTS20d(33)=$p(%CTTS20d(94),"\",31) s %CTTS20d(34)=$p(%CTTS20d(94),"\",32) s %CTTS20d(35)=$p(%CTTS20d(94),"\",33) s %CTTS20d(36)=$p(%CTTS20d(94),"\",34) s %CTTS20d(37)=$p(%CTTS20d(94),"\",35) s %CTTS20d(38)=$p(%CTTS20d(94),"\",16) s %CTTS20d(39)=$p(%CTTS20d(94),"\",36) s %CTTS20d(40)=$p(%CTTS20d(94),"\",37) s %CTTS20d(41)=$p(%CTTS20d(94),"\",38) s %CTTS20d(42)=$p(%CTTS20d(94),"\",19) s %CTTS20d(43)=$p(%CTTS20d(94),"\",39) s %CTTS20d(45)=$p(%CTTS20d(94),"\",41) s %CTTS20d(46)=$p(%CTTS20d(94),"\",4) s %CTTS20d(47)=$p(%CTTS20d(94),"\",42) s %CTTS20d(49)=$p(%CTTS20d(94),"\",43) s %CTTS20d(50)=$p(%CTTS20d(94),"\",44) s %CTTS20d(51)=$p(%CTTS20d(94),"\",45) s %CTTS20d(52)=$p(%CTTS20d(94),"\",46) s %CTTS20d(53)=$p(%CTTS20d(94),"\",47) s %CTTS20d(54)=$p(%CTTS20d(94),"\",48) s %CTTS20d(55)=$p(%CTTS20d(94),"\",49) s %CTTS20d(56)=$p(%CTTS20d(94),"\",50) s %CTTS20d(59)=$p(%CTTS20d(94),"\",40) s %CTTS20d(60)=$p(%CTTS20d(94),"\",51) s %CTTS20d(61)=$p(%CTTS20d(94),"\",52) s %CTTS20d(62)=$p(%CTTS20d(94),"\",53) s %CTTS20d(63)=$p(%CTTS20d(94),"\",54) s %CTTS20d(64)=$p(%CTTS20d(94),"\",55) s %CTTS20d(65)=$p(%CTTS20d(94),"\",56) s %CTTS20d(66)=$p(%CTTS20d(94),"\",57) s %CTTS20d(67)=$p(%CTTS20d(94),"\",58) s %CTTS20d(68)=$p(%CTTS20d(94),"\",59) s %CTTS20d(69)=$p(%CTTS20d(94),"\",60) s %CTTS20d(70)=$p(%CTTS20d(94),"\",61) s %CTTS20d(71)=$p(%CTTS20d(94),"\",62) s %CTTS20d(72)=$p(%CTTS20d(94),"\",63) s %CTTS20d(73)=$p(%CTTS20d(94),"\",64)
+ s %CTTS20d(18)=$g(^TTAB("TS",%CTTS20d(1),"MANUAL-1"))
+ s %CTTS20d(26)="" f %irep=1:1:$g(^TTAB("TS",%CTTS20d(1),"MANUAL-2",0)) s $li(%CTTS20d(26),%irep)=$g(^(%irep))
+ s %CTTS20d(57)=$g(^TTAB("TS",%CTTS20d(1),"SOP-1"))
+ s %CTTS20d(58)="" f %irep=1:1:$g(^TTAB("TS",%CTTS20d(1),"SOP-2",0)) s $li(%CTTS20d(58),%irep)=$g(^(%irep))
+ s %CTTS20d(25)=$e($g(%CTTS20d(1)),1) s %CTTS20d(48)=$$CT049^at45($g(%CTTS20d(25))) s %CTTS20d(44)=$$CT045^at45($g(%CTTS20d(1))) s %CTTS20d(5)=$$CT006^at45($g(%CTTS20d(1))) s %CTTS20d(75)=$zu(28,%CTTS20d(2),6)
+%0ECuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %CTTS20d(76)=%CTTS20d(76)+1,%ROWCOUNT=%CTTS20d(76),%ROWID=%CTTS20d(1),%CTTS20c=10 q
+%CTTS20f i '$g(%CTTS20c) { s SQLCODE=-102 q  } i %CTTS20c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Eerr" i $d(%0CacheRowLimit)#2,$g(%CTTS20d(76))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%CTTS20d(76),%CTTS20c=100 q  } g %0Efirst:%CTTS20c=1
+%0EDdun i $zu(115,2)=1,$g(%CTTS20d(77))=1 { l -@%CTTS20d(78) s %CTTS20d(77)=0 }
+ g %0ECk2
+%0ECdun 
+%0EAdun 
+ s %ROWCOUNT=%CTTS20d(76),SQLCODE=100,%CTTS20c=100 q
+%CTTS20c i '$g(%CTTS20c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%CTTS20d(76)),1:0) f %CTTS20d(79)=1 { i $sortend(^||%sql.temp(%CTTS20t(%CTTS20d(79)),0),0) } k ^||%sql.temp(%CTTS20t(1))
+ i $zu(115,2)=1,$g(%CTTS20d(77))=1 { l -@%CTTS20d(78) } k %CTTS20c,%CTTS20d,%CTTS20E,%CTTS20l,%CTTS20n,%CTTS20R,%CTTS20s,%CTTS20t,%CTTS20Z s SQLCODE=0 q
+%0Eerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %CTTS20c=100
+ f %CTTS20d(79)=1 i $sortend(^||%sql.temp(%CTTS20t(%CTTS20d(79)),0),0)
+ q
+%0EBMod ; asl MOD# 2
+ s %CTTS20d(1)=""
+%0EBk1 s %CTTS20d(1)=$o(^TTAB("TS",%CTTS20d(1)))
+ i %CTTS20d(1)="" g %0EBdun
+ s %CTTS20d(84)=$g(^TTAB("TS",%CTTS20d(1)))
+ s %CTTS20d(2)=$p(%CTTS20d(84),"\",1) s %CTTS20d(3)=$p(%CTTS20d(84),"\",2) s %CTTS20d(4)=$p(%CTTS20d(84),"\",3) s %CTTS20d(6)=$p(%CTTS20d(84),"\",5) s %CTTS20d(7)=$p(%CTTS20d(84),"\",6) s %CTTS20d(8)=$p(%CTTS20d(84),"\",7) s %CTTS20d(9)=$p(%CTTS20d(84),"\",8) s %CTTS20d(10)=$p(%CTTS20d(84),"\",9) s %CTTS20d(11)=$p(%CTTS20d(84),"\",10) s %CTTS20d(12)=$p(%CTTS20d(84),"\",11) s %CTTS20d(13)=$p(%CTTS20d(84),"\",12) s %CTTS20d(14)=$p(%CTTS20d(84),"\",13) s %CTTS20d(15)=$p(%CTTS20d(84),"\",14) s %CTTS20d(16)=$p(%CTTS20d(84),"\",17) s %CTTS20d(17)=$p(%CTTS20d(84),"\",18) s %CTTS20d(19)=$p(%CTTS20d(84),"\",20) s %CTTS20d(20)=$p(%CTTS20d(84),"\",21) s %CTTS20d(21)=$p(%CTTS20d(84),"\",22) s %CTTS20d(22)=$p(%CTTS20d(84),"\",23) s %CTTS20d(23)=$p(%CTTS20d(84),"\",24) s %CTTS20d(24)=$p(%CTTS20d(84),"\",25) s %CTTS20d(27)=$p(%CTTS20d(84),"\",26) s %CTTS20d(28)=$p(%CTTS20d(84),"\",27) s %CTTS20d(29)=$p(%CTTS20d(84),"\",28) s %CTTS20d(30)=$p(%CTTS20d(84),"\",29) s %CTTS20d(31)=$p(%CTTS20d(84),"\",30) s %CTTS20d(32)=$p(%CTTS20d(84),"\",15) s %CTTS20d(33)=$p(%CTTS20d(84),"\",31) s %CTTS20d(34)=$p(%CTTS20d(84),"\",32) s %CTTS20d(35)=$p(%CTTS20d(84),"\",33) s %CTTS20d(36)=$p(%CTTS20d(84),"\",34) s %CTTS20d(37)=$p(%CTTS20d(84),"\",35) s %CTTS20d(38)=$p(%CTTS20d(84),"\",16) s %CTTS20d(39)=$p(%CTTS20d(84),"\",36) s %CTTS20d(40)=$p(%CTTS20d(84),"\",37) s %CTTS20d(41)=$p(%CTTS20d(84),"\",38) s %CTTS20d(42)=$p(%CTTS20d(84),"\",19) s %CTTS20d(43)=$p(%CTTS20d(84),"\",39) s %CTTS20d(45)=$p(%CTTS20d(84),"\",41) s %CTTS20d(46)=$p(%CTTS20d(84),"\",4) s %CTTS20d(47)=$p(%CTTS20d(84),"\",42) s %CTTS20d(49)=$p(%CTTS20d(84),"\",43) s %CTTS20d(50)=$p(%CTTS20d(84),"\",44) s %CTTS20d(51)=$p(%CTTS20d(84),"\",45) s %CTTS20d(52)=$p(%CTTS20d(84),"\",46) s %CTTS20d(53)=$p(%CTTS20d(84),"\",47) s %CTTS20d(54)=$p(%CTTS20d(84),"\",48) s %CTTS20d(55)=$p(%CTTS20d(84),"\",49) s %CTTS20d(56)=$p(%CTTS20d(84),"\",50) s %CTTS20d(59)=$p(%CTTS20d(84),"\",40) s %CTTS20d(60)=$p(%CTTS20d(84),"\",51) s %CTTS20d(61)=$p(%CTTS20d(84),"\",52) s %CTTS20d(62)=$p(%CTTS20d(84),"\",53) s %CTTS20d(63)=$p(%CTTS20d(84),"\",54) s %CTTS20d(64)=$p(%CTTS20d(84),"\",55) s %CTTS20d(65)=$p(%CTTS20d(84),"\",56) s %CTTS20d(66)=$p(%CTTS20d(84),"\",57) s %CTTS20d(67)=$p(%CTTS20d(84),"\",58) s %CTTS20d(68)=$p(%CTTS20d(84),"\",59) s %CTTS20d(69)=$p(%CTTS20d(84),"\",60) s %CTTS20d(70)=$p(%CTTS20d(84),"\",61) s %CTTS20d(71)=$p(%CTTS20d(84),"\",62) s %CTTS20d(72)=$p(%CTTS20d(84),"\",63) s %CTTS20d(73)=$p(%CTTS20d(84),"\",64)
+ s %CTTS20d(18)=$g(^TTAB("TS",%CTTS20d(1),"MANUAL-1"))
+ s %CTTS20d(26)="" f %irep=1:1:$g(^TTAB("TS",%CTTS20d(1),"MANUAL-2",0)) s $li(%CTTS20d(26),%irep)=$g(^(%irep))
+ s %CTTS20d(57)=$g(^TTAB("TS",%CTTS20d(1),"SOP-1"))
+ s %CTTS20d(58)="" f %irep=1:1:$g(^TTAB("TS",%CTTS20d(1),"SOP-2",0)) s $li(%CTTS20d(58),%irep)=$g(^(%irep))
+ s %CTTS20d(25)=$e($g(%CTTS20d(1)),1) s %CTTS20d(48)=$$CT049^at45($g(%CTTS20d(25))) s %CTTS20d(44)=$$CT045^at45($g(%CTTS20d(1))) s %CTTS20d(5)=$$CT006^at45($g(%CTTS20d(1))) s %CTTS20d(75)=$zu(28,%CTTS20d(2),6)
+ s %CTTS20s(75)=$s(%CTTS20d(75)'="":%CTTS20d(75),1:-1E14),%CTTS20s(1)=$s(%CTTS20d(1)'="":%CTTS20d(1),1:-1E14),^||%sql.temp(%CTTS20t(1),0,%CTTS20s(75),%CTTS20s(1))=""
+ g %0EBk1
+%0EBdun 
+ q
+%0Go n %i,icol,ir
+ f icol=0:1:74 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.CTTestSet.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Go
+%0Io n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Ierr" s %mmmsqld(4)=0 s %mmmsqld(5)=""
+ s %mmmsqld(3)=$g(ROWID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ i %mmmsqld(2)'="",$d(^TTAB("TS",%mmmsqld(2)))
+ e  g %0IBdun
+ s %mmmsqld(10)=$$%getlock^User.CTTestSet.T1(%mmmsqld(2)) i '%mmmsqld(10) s SQLCODE=-110 g %0Ic
+ ; asl MOD# 3
+ i %mmmsqld(2)'="",$d(^TTAB("TS",%mmmsqld(2)))
+ e  g %0ICdun
+ k %data
+ f icol=0:1:74 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.CTTestSet.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(4))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(10)=1 %ReleaseLock^User.CTTestSet.T1(%mmmsqld(2)) g %0Ic
+%0ICdun 
+ d:%mmmsqld(10)=1 %ReleaseLock^User.CTTestSet.T1(%mmmsqld(2)) g:SQLCODE<0 %0Ic
+%0IBdun 
+%0IAdun 
+%0Ic s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(4)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Ierr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(10))=1 %ReleaseLock^User.CTTestSet.T1(%mmmsqld(2)) g %0Ic
+%0Ko n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Kerr" s %mmmsqld(3)=0 s %mmmsqld(4)=""
+ s %mmmsqld(2)=$g(ROWID)
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(1)=%mmmsqld(2)
+ i %mmmsqld(1)'="",$d(^TTAB("TS",%mmmsqld(1)))
+ e  g %0KBdun
+ s %mmmsqld(9)=$$%getlock^User.CTTestSet.T1(%mmmsqld(1)) i '%mmmsqld(9) s SQLCODE=-110 g %0Kc
+ ; asl MOD# 3
+ i %mmmsqld(1)'="",$d(^TTAB("TS",%mmmsqld(1)))
+ e  g %0KCdun
+ d %delete^User.CTTestSet.T1(%mmmsqld(1),$c(0,2,0,0),'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(3))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(9)=1 %ReleaseLock^User.CTTestSet.T1(%mmmsqld(1)) g %0Kc
+%0KCdun 
+ d:%mmmsqld(9)=1 %ReleaseLock^User.CTTestSet.T1(%mmmsqld(1)) g:SQLCODE<0 %0Kc
+%0KBdun 
+%0KAdun 
+%0Kc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(3)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Kerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(9))=1 %ReleaseLock^User.CTTestSet.T1(%mmmsqld(1)) g %0Kc
+%0Po d %CTTS20f q:SQLCODE'=0
+ s PLIST(1)=%CTTS20d(1),PLIST(2)=%CTTS20d(1),PLIST(3)=%CTTS20d(2),PLIST(4)=%CTTS20d(3),PLIST(5)=%CTTS20d(4),PLIST(6)=%CTTS20d(5),PLIST(7)=%CTTS20d(6),PLIST(8)=%CTTS20d(7),PLIST(9)=%CTTS20d(8),PLIST(10)=%CTTS20d(9),PLIST(11)=%CTTS20d(10),PLIST(12)=%CTTS20d(11),PLIST(13)=%CTTS20d(12),PLIST(14)=%CTTS20d(13),PLIST(15)=%CTTS20d(14),PLIST(16)=%CTTS20d(15),PLIST(17)=%CTTS20d(16),PLIST(18)=%CTTS20d(17),PLIST(19)=%CTTS20d(18),PLIST(20)=%CTTS20d(19),PLIST(21)=%CTTS20d(20),PLIST(22)=%CTTS20d(21),PLIST(23)=%CTTS20d(22),PLIST(24)=%CTTS20d(23),PLIST(25)=%CTTS20d(24),PLIST(26)=%CTTS20d(25),PLIST(27)=%CTTS20d(26),PLIST(28)=%CTTS20d(27),PLIST(29)=%CTTS20d(28),PLIST(30)=%CTTS20d(29),PLIST(31)=%CTTS20d(30),PLIST(32)=%CTTS20d(31),PLIST(33)=%CTTS20d(32),PLIST(34)=%CTTS20d(33),PLIST(35)=%CTTS20d(34),PLIST(36)=%CTTS20d(35),PLIST(37)=%CTTS20d(36),PLIST(38)=%CTTS20d(37),PLIST(39)=%CTTS20d(38),PLIST(40)=%CTTS20d(39),PLIST(41)=%CTTS20d(40),PLIST(42)=%CTTS20d(41),PLIST(43)=%CTTS20d(42),PLIST(44)=%CTTS20d(43),PLIST(45)=%CTTS20d(44),PLIST(46)=%CTTS20d(45),PLIST(47)=%CTTS20d(46),PLIST(48)=%CTTS20d(47),PLIST(49)=%CTTS20d(48),PLIST(50)=%CTTS20d(49),PLIST(51)=%CTTS20d(50),PLIST(52)=%CTTS20d(51),PLIST(53)=%CTTS20d(52),PLIST(54)=%CTTS20d(53),PLIST(55)=%CTTS20d(54),PLIST(56)=%CTTS20d(55),PLIST(57)=%CTTS20d(56),PLIST(58)=%CTTS20d(57),PLIST(59)=%CTTS20d(58),PLIST(60)=%CTTS20d(59),PLIST(61)=%CTTS20d(60),PLIST(62)=%CTTS20d(61),PLIST(63)=%CTTS20d(62),PLIST(64)=%CTTS20d(63),PLIST(65)=%CTTS20d(64),PLIST(66)=%CTTS20d(65),PLIST(67)=%CTTS20d(66),PLIST(68)=%CTTS20d(67),PLIST(69)=%CTTS20d(68),PLIST(70)=%CTTS20d(69),PLIST(71)=%CTTS20d(70),PLIST(72)=%CTTS20d(71),PLIST(73)=%CTTS20d(72),PLIST(74)=%CTTS20d(73)
+ q
+%0Qo d %CTTS0f q:SQLCODE'=0
+ s PLIST(1)=%CTTS0d(1),PLIST(2)=%CTTS0d(1),PLIST(3)=%CTTS0d(2),PLIST(4)=%CTTS0d(3),PLIST(5)=%CTTS0d(4),PLIST(6)=%CTTS0d(5),PLIST(7)=%CTTS0d(6),PLIST(8)=%CTTS0d(7),PLIST(9)=%CTTS0d(8),PLIST(10)=%CTTS0d(9),PLIST(11)=%CTTS0d(10),PLIST(12)=%CTTS0d(11),PLIST(13)=%CTTS0d(12),PLIST(14)=%CTTS0d(13),PLIST(15)=%CTTS0d(14),PLIST(16)=%CTTS0d(15),PLIST(17)=%CTTS0d(16),PLIST(18)=%CTTS0d(17),PLIST(19)=%CTTS0d(18),PLIST(20)=%CTTS0d(19),PLIST(21)=%CTTS0d(20),PLIST(22)=%CTTS0d(21),PLIST(23)=%CTTS0d(22),PLIST(24)=%CTTS0d(23),PLIST(25)=%CTTS0d(24),PLIST(26)=%CTTS0d(25),PLIST(27)=%CTTS0d(26),PLIST(28)=%CTTS0d(27),PLIST(29)=%CTTS0d(28),PLIST(30)=%CTTS0d(29),PLIST(31)=%CTTS0d(30),PLIST(32)=%CTTS0d(31),PLIST(33)=%CTTS0d(32),PLIST(34)=%CTTS0d(33),PLIST(35)=%CTTS0d(34),PLIST(36)=%CTTS0d(35),PLIST(37)=%CTTS0d(36),PLIST(38)=%CTTS0d(37),PLIST(39)=%CTTS0d(38),PLIST(40)=%CTTS0d(39),PLIST(41)=%CTTS0d(40),PLIST(42)=%CTTS0d(41),PLIST(43)=%CTTS0d(42),PLIST(44)=%CTTS0d(43),PLIST(45)=%CTTS0d(44),PLIST(46)=%CTTS0d(45),PLIST(47)=%CTTS0d(46),PLIST(48)=%CTTS0d(47),PLIST(49)=%CTTS0d(48),PLIST(50)=%CTTS0d(49),PLIST(51)=%CTTS0d(50),PLIST(52)=%CTTS0d(51),PLIST(53)=%CTTS0d(52),PLIST(54)=%CTTS0d(53),PLIST(55)=%CTTS0d(54),PLIST(56)=%CTTS0d(55),PLIST(57)=%CTTS0d(56),PLIST(58)=%CTTS0d(57),PLIST(59)=%CTTS0d(58),PLIST(60)=%CTTS0d(59),PLIST(61)=%CTTS0d(60),PLIST(62)=%CTTS0d(61),PLIST(63)=%CTTS0d(62),PLIST(64)=%CTTS0d(63),PLIST(65)=%CTTS0d(64),PLIST(66)=%CTTS0d(65),PLIST(67)=%CTTS0d(66),PLIST(68)=%CTTS0d(67),PLIST(69)=%CTTS0d(68),PLIST(70)=%CTTS0d(69),PLIST(71)=%CTTS0d(70),PLIST(72)=%CTTS0d(71),PLIST(73)=%CTTS0d(72),PLIST(74)=%CTTS0d(73)
+ q
+%0Ro d %CTTS10f q:SQLCODE'=0
+ s PLIST(1)=%CTTS10d(1),PLIST(2)=%CTTS10d(1),PLIST(3)=%CTTS10d(2),PLIST(4)=%CTTS10d(3),PLIST(5)=%CTTS10d(4),PLIST(6)=%CTTS10d(5),PLIST(7)=%CTTS10d(6),PLIST(8)=%CTTS10d(7),PLIST(9)=%CTTS10d(8),PLIST(10)=%CTTS10d(9),PLIST(11)=%CTTS10d(10),PLIST(12)=%CTTS10d(11),PLIST(13)=%CTTS10d(12),PLIST(14)=%CTTS10d(13),PLIST(15)=%CTTS10d(14),PLIST(16)=%CTTS10d(15),PLIST(17)=%CTTS10d(16),PLIST(18)=%CTTS10d(17),PLIST(19)=%CTTS10d(18),PLIST(20)=%CTTS10d(19),PLIST(21)=%CTTS10d(20),PLIST(22)=%CTTS10d(21),PLIST(23)=%CTTS10d(22),PLIST(24)=%CTTS10d(23),PLIST(25)=%CTTS10d(24),PLIST(26)=%CTTS10d(25),PLIST(27)=%CTTS10d(26),PLIST(28)=%CTTS10d(27),PLIST(29)=%CTTS10d(28),PLIST(30)=%CTTS10d(29),PLIST(31)=%CTTS10d(30),PLIST(32)=%CTTS10d(31),PLIST(33)=%CTTS10d(32),PLIST(34)=%CTTS10d(33),PLIST(35)=%CTTS10d(34),PLIST(36)=%CTTS10d(35),PLIST(37)=%CTTS10d(36),PLIST(38)=%CTTS10d(37),PLIST(39)=%CTTS10d(38),PLIST(40)=%CTTS10d(39),PLIST(41)=%CTTS10d(40),PLIST(42)=%CTTS10d(41),PLIST(43)=%CTTS10d(42),PLIST(44)=%CTTS10d(43),PLIST(45)=%CTTS10d(44),PLIST(46)=%CTTS10d(45),PLIST(47)=%CTTS10d(46),PLIST(48)=%CTTS10d(47),PLIST(49)=%CTTS10d(48),PLIST(50)=%CTTS10d(49),PLIST(51)=%CTTS10d(50),PLIST(52)=%CTTS10d(51),PLIST(53)=%CTTS10d(52),PLIST(54)=%CTTS10d(53),PLIST(55)=%CTTS10d(54),PLIST(56)=%CTTS10d(55),PLIST(57)=%CTTS10d(56),PLIST(58)=%CTTS10d(57),PLIST(59)=%CTTS10d(58),PLIST(60)=%CTTS10d(59),PLIST(61)=%CTTS10d(60),PLIST(62)=%CTTS10d(61),PLIST(63)=%CTTS10d(62),PLIST(64)=%CTTS10d(63),PLIST(65)=%CTTS10d(64),PLIST(66)=%CTTS10d(65),PLIST(67)=%CTTS10d(66),PLIST(68)=%CTTS10d(67),PLIST(69)=%CTTS10d(68),PLIST(70)=%CTTS10d(69),PLIST(71)=%CTTS10d(70),PLIST(72)=%CTTS10d(71),PLIST(73)=%CTTS10d(72),PLIST(74)=%CTTS10d(73)
+ q
+%0Vo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Verr" s %mmmsqld(77)=0,%mmmsqld(78)=""
+ s %mmmsqld(75)=$g(ROWID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(2)=%mmmsqld(75)
+ i PLIST(2)'="",$d(^TTAB("TS",PLIST(2)))
+ e  g %0VBdun
+ s %mmmsqld(83)=$g(^TTAB("TS",PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(83),"\",1) s PLIST(4)=$p(%mmmsqld(83),"\",2) s PLIST(5)=$p(%mmmsqld(83),"\",3) s PLIST(7)=$p(%mmmsqld(83),"\",5) s PLIST(8)=$p(%mmmsqld(83),"\",6) s PLIST(9)=$p(%mmmsqld(83),"\",7) s PLIST(10)=$p(%mmmsqld(83),"\",8) s PLIST(11)=$p(%mmmsqld(83),"\",9) s PLIST(12)=$p(%mmmsqld(83),"\",10) s PLIST(13)=$p(%mmmsqld(83),"\",11) s PLIST(14)=$p(%mmmsqld(83),"\",12) s PLIST(15)=$p(%mmmsqld(83),"\",13) s PLIST(16)=$p(%mmmsqld(83),"\",14) s PLIST(17)=$p(%mmmsqld(83),"\",17) s PLIST(18)=$p(%mmmsqld(83),"\",18) s PLIST(20)=$p(%mmmsqld(83),"\",20) s PLIST(21)=$p(%mmmsqld(83),"\",21) s PLIST(22)=$p(%mmmsqld(83),"\",22) s PLIST(23)=$p(%mmmsqld(83),"\",23) s PLIST(24)=$p(%mmmsqld(83),"\",24) s PLIST(25)=$p(%mmmsqld(83),"\",25) s PLIST(28)=$p(%mmmsqld(83),"\",26) s PLIST(29)=$p(%mmmsqld(83),"\",27) s PLIST(30)=$p(%mmmsqld(83),"\",28) s PLIST(31)=$p(%mmmsqld(83),"\",29) s PLIST(32)=$p(%mmmsqld(83),"\",30) s PLIST(33)=$p(%mmmsqld(83),"\",15) s PLIST(34)=$p(%mmmsqld(83),"\",31) s PLIST(35)=$p(%mmmsqld(83),"\",32) s PLIST(36)=$p(%mmmsqld(83),"\",33) s PLIST(37)=$p(%mmmsqld(83),"\",34) s PLIST(38)=$p(%mmmsqld(83),"\",35) s PLIST(39)=$p(%mmmsqld(83),"\",16) s PLIST(40)=$p(%mmmsqld(83),"\",36) s PLIST(41)=$p(%mmmsqld(83),"\",37) s PLIST(42)=$p(%mmmsqld(83),"\",38) s PLIST(43)=$p(%mmmsqld(83),"\",19) s PLIST(44)=$p(%mmmsqld(83),"\",39) s PLIST(46)=$p(%mmmsqld(83),"\",41) s PLIST(47)=$p(%mmmsqld(83),"\",4) s PLIST(48)=$p(%mmmsqld(83),"\",42) s PLIST(50)=$p(%mmmsqld(83),"\",43) s PLIST(51)=$p(%mmmsqld(83),"\",44) s PLIST(52)=$p(%mmmsqld(83),"\",45) s PLIST(53)=$p(%mmmsqld(83),"\",46) s PLIST(54)=$p(%mmmsqld(83),"\",47) s PLIST(55)=$p(%mmmsqld(83),"\",48) s PLIST(56)=$p(%mmmsqld(83),"\",49) s PLIST(57)=$p(%mmmsqld(83),"\",50) s PLIST(60)=$p(%mmmsqld(83),"\",40) s PLIST(61)=$p(%mmmsqld(83),"\",51) s PLIST(62)=$p(%mmmsqld(83),"\",52) s PLIST(63)=$p(%mmmsqld(83),"\",53) s PLIST(64)=$p(%mmmsqld(83),"\",54) s PLIST(65)=$p(%mmmsqld(83),"\",55) s PLIST(66)=$p(%mmmsqld(83),"\",56) s PLIST(67)=$p(%mmmsqld(83),"\",57) s PLIST(68)=$p(%mmmsqld(83),"\",58) s PLIST(69)=$p(%mmmsqld(83),"\",59) s PLIST(70)=$p(%mmmsqld(83),"\",60) s PLIST(71)=$p(%mmmsqld(83),"\",61) s PLIST(72)=$p(%mmmsqld(83),"\",62) s PLIST(73)=$p(%mmmsqld(83),"\",63) s PLIST(74)=$p(%mmmsqld(83),"\",64)
+ s PLIST(19)=$g(^TTAB("TS",PLIST(2),"MANUAL-1"))
+ s PLIST(27)="" f %irep=1:1:$g(^TTAB("TS",PLIST(2),"MANUAL-2",0)) s $li(PLIST(27),%irep)=$g(^(%irep))
+ s PLIST(58)=$g(^TTAB("TS",PLIST(2),"SOP-1"))
+ s PLIST(59)="" f %irep=1:1:$g(^TTAB("TS",PLIST(2),"SOP-2",0)) s $li(PLIST(59),%irep)=$g(^(%irep))
+ s PLIST(26)=$e($g(PLIST(2)),1) s PLIST(49)=$$CT049^at45($g(PLIST(26))) s PLIST(45)=$$CT045^at45($g(PLIST(2))) s PLIST(6)=$$CT006^at45($g(PLIST(2)))
+ g:$zu(115,2)=0 %0VBuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(PLIST(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(77)=1,%mmmsqld(78)=$name(^TTAB("TS",$p(PLIST(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_PLIST(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i PLIST(2)'="",$d(^TTAB("TS",PLIST(2)))
+ e  g %0VCdun
+ s %mmmsqld(88)=$g(^TTAB("TS",PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(88),"\",1) s PLIST(4)=$p(%mmmsqld(88),"\",2) s PLIST(5)=$p(%mmmsqld(88),"\",3) s PLIST(7)=$p(%mmmsqld(88),"\",5) s PLIST(8)=$p(%mmmsqld(88),"\",6) s PLIST(9)=$p(%mmmsqld(88),"\",7) s PLIST(10)=$p(%mmmsqld(88),"\",8) s PLIST(11)=$p(%mmmsqld(88),"\",9) s PLIST(12)=$p(%mmmsqld(88),"\",10) s PLIST(13)=$p(%mmmsqld(88),"\",11) s PLIST(14)=$p(%mmmsqld(88),"\",12) s PLIST(15)=$p(%mmmsqld(88),"\",13) s PLIST(16)=$p(%mmmsqld(88),"\",14) s PLIST(17)=$p(%mmmsqld(88),"\",17) s PLIST(18)=$p(%mmmsqld(88),"\",18) s PLIST(20)=$p(%mmmsqld(88),"\",20) s PLIST(21)=$p(%mmmsqld(88),"\",21) s PLIST(22)=$p(%mmmsqld(88),"\",22) s PLIST(23)=$p(%mmmsqld(88),"\",23) s PLIST(24)=$p(%mmmsqld(88),"\",24) s PLIST(25)=$p(%mmmsqld(88),"\",25) s PLIST(28)=$p(%mmmsqld(88),"\",26) s PLIST(29)=$p(%mmmsqld(88),"\",27) s PLIST(30)=$p(%mmmsqld(88),"\",28) s PLIST(31)=$p(%mmmsqld(88),"\",29) s PLIST(32)=$p(%mmmsqld(88),"\",30) s PLIST(33)=$p(%mmmsqld(88),"\",15) s PLIST(34)=$p(%mmmsqld(88),"\",31) s PLIST(35)=$p(%mmmsqld(88),"\",32) s PLIST(36)=$p(%mmmsqld(88),"\",33) s PLIST(37)=$p(%mmmsqld(88),"\",34) s PLIST(38)=$p(%mmmsqld(88),"\",35) s PLIST(39)=$p(%mmmsqld(88),"\",16) s PLIST(40)=$p(%mmmsqld(88),"\",36) s PLIST(41)=$p(%mmmsqld(88),"\",37) s PLIST(42)=$p(%mmmsqld(88),"\",38) s PLIST(43)=$p(%mmmsqld(88),"\",19) s PLIST(44)=$p(%mmmsqld(88),"\",39) s PLIST(46)=$p(%mmmsqld(88),"\",41) s PLIST(47)=$p(%mmmsqld(88),"\",4) s PLIST(48)=$p(%mmmsqld(88),"\",42) s PLIST(50)=$p(%mmmsqld(88),"\",43) s PLIST(51)=$p(%mmmsqld(88),"\",44) s PLIST(52)=$p(%mmmsqld(88),"\",45) s PLIST(53)=$p(%mmmsqld(88),"\",46) s PLIST(54)=$p(%mmmsqld(88),"\",47) s PLIST(55)=$p(%mmmsqld(88),"\",48) s PLIST(56)=$p(%mmmsqld(88),"\",49) s PLIST(57)=$p(%mmmsqld(88),"\",50) s PLIST(60)=$p(%mmmsqld(88),"\",40) s PLIST(61)=$p(%mmmsqld(88),"\",51) s PLIST(62)=$p(%mmmsqld(88),"\",52) s PLIST(63)=$p(%mmmsqld(88),"\",53) s PLIST(64)=$p(%mmmsqld(88),"\",54) s PLIST(65)=$p(%mmmsqld(88),"\",55) s PLIST(66)=$p(%mmmsqld(88),"\",56) s PLIST(67)=$p(%mmmsqld(88),"\",57) s PLIST(68)=$p(%mmmsqld(88),"\",58) s PLIST(69)=$p(%mmmsqld(88),"\",59) s PLIST(70)=$p(%mmmsqld(88),"\",60) s PLIST(71)=$p(%mmmsqld(88),"\",61) s PLIST(72)=$p(%mmmsqld(88),"\",62) s PLIST(73)=$p(%mmmsqld(88),"\",63) s PLIST(74)=$p(%mmmsqld(88),"\",64)
+ s PLIST(19)=$g(^TTAB("TS",PLIST(2),"MANUAL-1"))
+ s PLIST(27)="" f %irep=1:1:$g(^TTAB("TS",PLIST(2),"MANUAL-2",0)) s $li(PLIST(27),%irep)=$g(^(%irep))
+ s PLIST(58)=$g(^TTAB("TS",PLIST(2),"SOP-1"))
+ s PLIST(59)="" f %irep=1:1:$g(^TTAB("TS",PLIST(2),"SOP-2",0)) s $li(PLIST(59),%irep)=$g(^(%irep))
+ s PLIST(26)=$e($g(PLIST(2)),1) s PLIST(49)=$$CT049^at45($g(PLIST(26))) s PLIST(45)=$$CT045^at45($g(PLIST(2))) s PLIST(6)=$$CT006^at45($g(PLIST(2)))
+%0VBuncommitted ;
+ s PLIST(1)=PLIST(2)
+ s SQLCODE=0 g %0Vc
+%0VCdun i $zu(115,2)=1,$g(%mmmsqld(77))=1 { l -@%mmmsqld(78) s %mmmsqld(77)=0 }
+%0VBdun 
+%0VAdun 
+%0Vc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(77))=1 { l -@%mmmsqld(78) } q
+%0Verr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Vc
+%0Xo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Xerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(tc)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("TC",%mmmsqld(3)))
+ e  g %0XBdun
+ s %mmmsqld(12)=$g(^TTAB("TC",%mmmsqld(3)))
+ s x=$p(%mmmsqld(12),"\",3)
+ g:$zu(115,2)=0 %0XBuncommitted i $zu(115,2)=1 l +^TTAB("TC",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("TC",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestCode for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("TC",%mmmsqld(3)))
+ e  g %0XCdun
+ s %mmmsqld(17)=$g(^TTAB("TC",%mmmsqld(3)))
+ s x=$p(%mmmsqld(17),"\",3)
+%0XBuncommitted ;
+ s SQLCODE=0 g %0Xc
+%0XCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0XBdun 
+%0XAdun 
+%0Xc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Xerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Xc
+%0Zo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Zerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(tc)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("TC",%mmmsqld(3)))
+ e  g %0ZBdun
+ s %mmmsqld(12)=$g(^TTAB("TC",%mmmsqld(3)))
+ s x=$p(%mmmsqld(12),"\",24)
+ g:$zu(115,2)=0 %0ZBuncommitted i $zu(115,2)=1 l +^TTAB("TC",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("TC",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestCode for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("TC",%mmmsqld(3)))
+ e  g %0ZCdun
+ s %mmmsqld(17)=$g(^TTAB("TC",%mmmsqld(3)))
+ s x=$p(%mmmsqld(17),"\",24)
+%0ZBuncommitted ;
+ s SQLCODE=0 g %0Zc
+%0ZCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ZBdun 
+%0ZAdun 
+%0Zc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Zerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Zc
+%01o n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%01err" s %mmmsqld(8)=0,%mmmsqld(9)=""
+ s %mmmsqld(6)=$g(test)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ i %mmmsqld(5)'="",$d(^TTAB("TS",%mmmsqld(5)))
+ e  g %01Bdun
+ s %mmmsqld(14)=$g(^TTAB("TS",%mmmsqld(5)))
+ s loc=$p(%mmmsqld(14),"\",36)
+ s dep=$e($g(%mmmsqld(5)),1)
+ g:$zu(115,2)=0 %01Buncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%mmmsqld(5),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(8)=1,%mmmsqld(9)=$name(^TTAB("TS",$p(%mmmsqld(5),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(5)'="",$d(^TTAB("TS",%mmmsqld(5)))
+ e  g %01Cdun
+ s %mmmsqld(19)=$g(^TTAB("TS",%mmmsqld(5)))
+ s loc=$p(%mmmsqld(19),"\",36)
+ s dep=$e($g(%mmmsqld(5)),1)
+%01Buncommitted ;
+ s SQLCODE=0 g %01c
+%01Cdun i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) s %mmmsqld(8)=0 }
+%01Bdun 
+%01Adun 
+%01c s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) } q
+%01err s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %01c
+]]></Routine>
+</Export>

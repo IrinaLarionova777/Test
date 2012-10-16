@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTADN02" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTADN02 ; IG 07/10/98 ; Adjustment notes - SJOG
+ Q
+ ; Parameters :  1.<J>ournal/<R>ebill
+ ;               2.RowID
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+ D INIT,BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=PAR1_"-"_PAR2 I $$update^LVBPRPR(REPID)
+ K ^TMP($zn,$j),^TMP("PRTREP00",$J)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ s xSITE="W" i '$$select^MVBCFSM(1),$$UPPER^SSUTIL4(PLIST(10))["EAST" s xSITE="E"
+ Q
+ ; create temporary printing file
+BODY ; print single patient
+ i $l(PAR2) d
+ .i PAR1="J" s x1=$p(PAR2,"||",3),x2=$p(PAR2,"||",2)
+ .i PAR1="R" s x1=$p(PAR2,"||",2),x2=$p(PAR2,"||",1)
+ .s ^TMP($zn,$j,"REPORT",PAR1,PAR2)=x1_"\"_x2
+ ; print all outstanding
+ i '$l(PAR2) d
+ .s x1="" f  s x1=$o(^TADN(x1)) q:x1=""  d
+ ..s x2="" f  s x2=$o(^TADN(x1,x2)) q:x2=""  d
+ ...s x3="" f  s x3=$o(^TADN(x1,x2,PAR1,x3)) q:x3=""  s ^TMP($zn,$j,"REPORT",PAR1,x3)=x1_"\"_x2
+ ; check Journals/Rebills
+ f jj="J","R" d
+ .s rowid="" f  s rowid=$o(^TMP($zn,$j,"REPORT",jj,rowid)) q:rowid=""  d
+ ..s x1=$p(^(rowid),"\",1),x2=$p(^(rowid),"\",2)
+ .. ; incorrect record
+ ..i jj="J",$$select^LVBJOU(rowid) k ^TADN(x1,x2,jj,rowid),^TMP($zn,$j,"REPORT",jj,rowid) q
+ ..i jj="R",$$select^LVBBIRB(rowid) k ^TADN(x1,x2,jj,rowid),^TMP($zn,$j,"REPORT",jj,rowid) q
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .. ; has not been invoiced yet
+ ..i jj="J",'$l(PLIST(20)) k ^TADN(x1,x2,jj,rowid),^TMP($zn,$j,"REPORT",jj,rowid) q
+ ..i jj="J" s xx1=$p(PLIST(20),"-",1),xx2=$p(PLIST(20),"-",2),xx3=$p(PLIST(20),"-",3)
+ ..i jj="J",'$l(xx1)!'$l(xx2) k ^TADN(x1,x2,jj,rowid),^TMP($zn,$j,"REPORT",jj,rowid) q
+ ..i jj="R",'$l(PLIST(8)) k ^TADN(x1,x2,jj,rowid),^TMP($zn,$j,"REPORT",jj,rowid) q
+ ..i jj="R" s xx1=PLIST(4),xx2=PLIST(8) i '$d(^TMCB(xx1,xx2,x1)) k ^TADN(x1,x2,jj,rowid),^TMP($zn,$j,"REPORT",jj,rowid) q
+ ..i jj="R" s xx1=PLIST(4),xx2=PLIST(8),xx3=$p(^TMCB(xx1,xx2,x1),"\",2)
+ ..f j=1,3,4,5 s sum(j)=""
+ ..s x="" f  s x=$o(^TMCB(xx1,xx2,x)) q:x=""  d
+ ...i $l(xx3),xx3'=$p(^(x),"\",2) q
+ ...i '$l(xx3),jj="R",x'=$p(rowid,"||",2) q
+ ...f j=1,3,4,5 s sum(j)=sum(j)+$p(^(x),"\",j)
+ .. ; no GST
+ ..i jj="J",'PLIST(18) k ^TADN(x1,x2,jj,rowid),^TMP($zn,$j,"REPORT",jj,rowid) q
+ ..i jj="R",'sum(5) k ^TADN(x1,x2,jj,rowid),^TMP($zn,$j,"REPORT",jj,rowid) q
+ .. ; GST taxable is less 50
+ ..i sum(4)<50 k ^TADN(x1,x2,jj,rowid),^TMP($zn,$j,"REPORT",jj,rowid) q
+ ..s $p(^TMP($zn,$j,"REPORT",jj,rowid),"\",3)=xx1_"-"_xx2_"-"_xx3
+ ..s ^TMP($zn,$j,"REPORT",jj,rowid,1)=$p(^TMCB(xx1,xx2),"\",1)_"\"_sum(3)_"\"_sum(4)_"\"_sum(5)_"\"_sum(1)
+ ..i jj="J" s ^TMP($zn,$j,"REPORT",jj,rowid,2)=x2_"\"_PLIST(15)_"\"_PLIST(17)_"\"_PLIST(18)_"\"_PLIST(9)
+ ..i jj="R" s ^TMP($zn,$j,"REPORT",jj,rowid,2)=x2_"\"_$p(^TMP($zn,$j,"REPORT",jj,rowid,1),"\",2,5)
+ .. ; get provider name and provider number
+ ..k INVOICE i '$$select^LVBINVB(xx1_"||"_xx2) m INVOICE=PLIST
+ ..s COMP(10)=$$seldata^LVBCTCO(INVOICE(6),10)
+ ..s ^TMP($zn,$j,"REPORT",jj,rowid,3)=$p(INVOICE(10),$c(1),2)_" - "_INVOICE(5)_$c(1)_$p(COMP(10),$c(1))
+ ..k ^TADN(x1,x2,jj,rowid)
+ .. ; set Printed status
+ ..i jj="J" s $p(^TJOU($p(rowid,"||",1),$p(rowid,"||",2),$p(rowid,"||",3),$p(rowid,"||",4)),"\",9)="Y"
+ ..i jj="R" s $p(^TRBL($p(rowid,"||",1),$p(rowid,"||",2)),"\",6)="Y"
+ Q
+PRINT f jj="J","R" d
+ .s rowid="" f  s rowid=$O(^TMP($zn,$j,"REPORT",jj,rowid)) q:rowid=""  d
+ ..s epis=$p(^(rowid),"\",1) d events^LVBCOM01(epis,"AN","Adjustment notes-"_$g(REPID))
+ ..s INVOICE=$p(^TMP($zn,$j,"REPORT",jj,rowid),"\",3)
+ ..i jj="J" k CTJO i '$$select^LVBCTJO($p(rowid,"||",1),"Y") m CTJO=PLIST
+ .. ; get pay code invoice type
+ ..s pc=$p(INVOICE,"-",1),date="" i '$$select^LVBINVB($p(INVOICE,"-",1)_"||"_$p(INVOICE,"-",2)) s date=PLIST(4)
+ ..s pcit="" i '$$select^LVBCTPC(pc,"Y") m CTPC=PLIST s pcit=PLIST(25)
+ .. ; get billing site
+ ..s bs=$$BS($p(INVOICE,"-",1),$p(INVOICE,"-",2))
+ .. ; print adjustment note
+ ..s epis=$p(^TMP($zn,$j,"REPORT",jj,rowid),"\",1)
+ ..i '$$select^LVBEPVIS(epis) k VISIT m VISIT=PLIST
+ ..s inpat="" i '$$select^LVBCTIC($p(VISIT(18),$c(1)),"Y"),PLIST(4)="Y" s inpat=1
+ ..d ADDRESS
+ ..d
+ ...i xSITE="W" d ADD^PRTREP00(REPID,"PRT"," !R! RES; SPSZ 8; SBM 11.5; PSRC "_$s(bs="S":4,bs="H":5,1:6)_"; EXIT;")
+ ...i xSITE="E" d ADD^PRTREP00(REPID,"PRT"," !R! RES; SPSZ 8; SBM 11.5; PSRC 1; EXIT;")
+ ...d ADD^PRTREP00(REPID,"PRT","#")
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s0p10h0s0b4102T")
+ ...d ADD^SSPRINT(REPID,"PRT","~BOLD")
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a4200h250V"_INVOICE)
+ ...d ADD^SSPRINT(REPID,"PRT","~NORMAL")
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a250h1700V")
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s0p10h0s0b4102T")
+ ...d ADD^SSPRINT(REPID,"PRT","~BOLD")
+ ...d ADD^SSPRINT(REPID,"PRT","ADJUSTMENT NOTE")
+ ...d ADD^SSPRINT(REPID,"PRT","~NORMAL")
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s0p12h0s0b4102T")
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h1000V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?10 "_ADDRESS(1)),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?10 "_ADDRESS(2)),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?10 "_ADDRESS(3)),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?10 "_ADDRESS(4)),LN
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"(s0p14h0s0b4102T")
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h800V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?60 Date of Invoice:")
+ ...d ADD^SSPRINT(REPID,"PRT","?85 "_$$extdate2^SSUTIL4(date)),LN
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h890V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?60 Inpatient / Outpatient:")
+ ...d ADD^SSPRINT(REPID,"PRT","?85 "_$s(inpat:"INPATIENT",1:"OUTPATIENT")),LN
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h980V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?60 Pathologist Name:")
+ ...d ADD^SSPRINT(REPID,"PRT","?85 "_$p($p(^TMP($zn,$j,"REPORT",jj,rowid,3),$c(1))," - ",1)),LN
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h1070V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?60 Provider Number:")
+ ...d ADD^SSPRINT(REPID,"PRT","?85 "_$p($p(^TMP($zn,$j,"REPORT",jj,rowid,3),$c(1))," - ",2)),LN,LN
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h1250V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?60 Patient Name:")
+ ...d ADD^SSPRINT(REPID,"PRT","?85 "_$$NameFormat^LVBCOM03("PT",$p(VISIT(7),$c(1),2),VISIT(4),VISIT(3),VISIT(99),VISIT(100),VISIT(101))),LN
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h1340V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?60 Medicare Number:")
+ ...d ADD^SSPRINT(REPID,"PRT","?85 "_VISIT(8)),LN
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h1430V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?60 Fund / Table:"),LN
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h1520V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?60 Membership Number:") f j=1:1:7 d LN
+ ...d ADD^PRTREP00(REPID,"PRT","?5  Adjustment Type          : "_$s(jj="J":"Journal",1:"Rebill")),LN
+ ...i jj="R" d
+ ....d ADD^PRTREP00(REPID,"PRT","?5  Reason for Adjustment    : Reversal of Invoice in Full"),LN,LN
+ ...i jj="J" d
+ ....d ADD^PRTREP00(REPID,"PRT","?5                           : "_CTJO(3)),LN,LN
+ ....d ADD^PRTREP00(REPID,"PRT","?5  Adjustment Reference No  : "_$p(rowid,"||",4)),LN,LN
+ ....d ADD^PRTREP00(REPID,"PRT","?5  Reason for Adjustment    : "_CTJO(5)),LN,LN
+ ..d
+ ...d ADD^PRTREP00(REPID,"PRT","~BOLD"),LN
+ ...d ADD^PRTREP00(REPID,"PRT","?25 Date")
+ ...d ADD^PRTREP00(REPID,"PRT","?40 GST Free")
+ ...d ADD^PRTREP00(REPID,"PRT","?55 Taxable")
+ ...d ADD^PRTREP00(REPID,"PRT","?78 GST")
+ ...d ADD^PRTREP00(REPID,"PRT","?89 Total"),LN
+ ...d ADD^PRTREP00(REPID,"PRT","~NORMAL"),LN,LN
+ ..d
+ ...s x=^TMP($zn,$j,"REPORT",jj,rowid,1)
+ ...d ADD^PRTREP00(REPID,"PRT","?5  Original Invoice")
+ ...d ADD^PRTREP00(REPID,"PRT","?25 "_$$extdate2^SSUTIL4($p(x,"\",1)))
+ ...i $p(x,"\",2) d ADD^PRTREP00(REPID,"PRT","?40 "_$j($p(x,"\",2),9,2))
+ ...i $p(x,"\",3) d ADD^PRTREP00(REPID,"PRT","?53 "_$j($p(x,"\",3),9,2))
+ ...i $p(x,"\",4) d ADD^PRTREP00(REPID,"PRT","?72 "_$j($p(x,"\",4),9,2))
+ ...i $p(x,"\",5) d ADD^PRTREP00(REPID,"PRT","?85 "_$j($p(x,"\",5),9,2)),LN,LN
+ ..d
+ ...s x=^TMP($zn,$j,"REPORT",jj,rowid,2)
+ ...d ADD^PRTREP00(REPID,"PRT","?5  Adjustment")
+ ...d ADD^PRTREP00(REPID,"PRT","?25 "_$$extdate2^SSUTIL4($p(x,"\",1)))
+ ...i $p(x,"\",2) d ADD^PRTREP00(REPID,"PRT","?40 "_$j($p(x,"\",2),9,2))
+ ...i $p(x,"\",3) d ADD^PRTREP00(REPID,"PRT","?53 "_$j($p(x,"\",3),9,2))
+ ...i $p(x,"\",4) d ADD^PRTREP00(REPID,"PRT","?72 "_$j($p(x,"\",4),9,2))
+ ...i $p(x,"\",5) d ADD^PRTREP00(REPID,"PRT","?85 "_$j($p(x,"\",5),9,2)),LN
+ ..d
+ ...d ADD^SSPRINT(REPID,"PRT",$c(27)_"&a0h6770V"),LN
+ ...d ADD^SSPRINT(REPID,"PRT","?5  "_$$extdate2^SSUTIL4(+$h))
+ ...d ADD^SSPRINT(REPID,"PRT","?17 "_$$NameFormat^LVBCOM03("PT",$p(VISIT(7),$c(1),2),VISIT(4),VISIT(3),VISIT(99),VISIT(100),VISIT(101)))
+ ...d ADD^SSPRINT(REPID,"PRT","?44 "_INVOICE)
+ q
+BS(P1,P2) N (P1,P2) S P1=$G(P1),P2=$G(P2),RESULT=""
+ I $L(P1),$L(P2) S RESULT=$P($G(^TMCB(P1,P2)),"\",6)
+ Q RESULT
+ADDRESS ; if billing address different to actual address use billing address
+ k ADDRESS s ADDRESS(1)=VISIT(42)
+ f  q:$e(ADDRESS(1))'=" "  s ADDRESS(1)=$e(ADDRESS(1),2,99)
+ i '$L(ADDRESS(1)) s ADDRESS(1)=$$NameFormat^LVBCOM03("PT",$p(VISIT(7),$c(1),2),$e(VISIT(4)),VISIT(3),VISIT(99),VISIT(100),VISIT(101))
+ f  q:$e(ADDRESS(1))'=" "  s ADDRESS(1)=$e(ADDRESS(1),2,99)
+ f j=2:1:6 s ADDRESS(j)=VISIT(j+35)
+ i '$l(ADDRESS(2)) f j=2:1:6 s ADDRESS(j)=VISIT(j+30)
+ d
+ .i $l(ADDRESS(4)),ADDRESS(4)'[ADDRESS(6) s ADDRESS(4)=ADDRESS(4)_" "_ADDRESS(6),ADDRESS(6)="" q
+ .i $l(ADDRESS(3)),ADDRESS(3)'[ADDRESS(6) s ADDRESS(3)=ADDRESS(3)_" "_ADDRESS(6),ADDRESS(6)="" q
+ .i $l(ADDRESS(2)),ADDRESS(2)'[ADDRESS(6) s ADDRESS(2)=ADDRESS(2)_" "_ADDRESS(6),ADDRESS(6)="" q
+ i $p(INVOICE,"-",3)="" d
+ .s ADDRESS(1)=CTPC(3) f j=2:1:4 s ADDRESS(j)=CTPC(9+j)
+ q
+LN d ADD^PRTREP00(REPID,"PRT","!")
+ q
+]]></Routine>
+</Export>

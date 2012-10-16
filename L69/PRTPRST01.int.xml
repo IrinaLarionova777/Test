@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTPRST01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTPRST01 ; ML 26/10/98 ; Patients Result List
+ q
+ ; Parameters :  1. Date From
+ ;               2. Date To
+ ;               3. Test Set
+ ;               4. Test Code
+ ;               5. Operator  eg. <,>,+,-
+ ;               6. Result
+ ;               7. Previous Result Test Set
+ ;               8. Previous Result Test Code
+ ;               9. Doctor - Code/All
+ ;              11. Sort Key - DC = Date Collected
+ ;                             EP = Episode
+ ;                             MRN = MRN
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s hfor=$$seldata^LVBCTTC(PAR4,5),hres=$s(hfor="D":$$extdate2^SSUTIL4(PAR6),hfor="T":$$exttime^SSUTIL4(PAR6),1:PAR6)
+ s line=1,xHEADER(line)="Patient Test Result Statistics"
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="Test Set : "_TestSet(3)_"     Test Code : "_TestCode(3)_" "_PAR5_" "_hres
+ s line=4,xHEADER(line)=""
+ i $l(PAR7),$l(PAR8) d
+ .s line=line+1,xHEADER(line)="Previous Results From Test Set : "_PrevTestSet(3)_"     Test Code : "_PrevTestCode(3)
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR9) s line=line+1,xHEADER(line)="Doctor : "_$s($l(DOC(26)):DOC(26)_" ",1:"")_DOC(4)_" "_DOC(3)
+ d HEADER^PRTREP00(.xHEADER,PAR1,PAR2),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ i '$$select^LVBCTTS(PAR3,"Y") k TestSet m TestSet=PLIST
+ i '$$select^LVBCTTC(PAR4,"Y") k TestCode m TestCode=PLIST
+ i $l(PAR7),'$$select^LVBCTTS(PAR7,"Y") k PrevTestSet m PrevTestSet=PLIST
+ i $l(PAR8),'$$select^LVBCTTC(PAR8,"Y") k PrevTestCode m PrevTestCode=PLIST
+ i $l(PAR9),'$$select^LVBCTDR(PAR9,"Y") k DOC m DOC=PLIST
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+BODY ; create temporary printing file
+ s date=PAR1-1 f  s date=$o(^TDAY(1,date)) q:date=""  q:date>PAR2  d
+ .s epis="" f  s epis=$o(^TDAY(1,date,0,epis)) q:epis=""  i $d(^TEPI(epis,1,PAR3)) d
+ ..f j=12,13,15,20 s VISIT(j)=$$seldata^LVBEPVIS(epis,j)
+ ..i $l(PAR9),PAR9'=VISIT(15) q
+ ..s (found,tscnt)="" f  s tscnt=$o(^TEPI(epis,1,PAR3,tscnt)) q:tscnt=""  d  i found q
+ ...s res=$p($g(^TEPI(epis,1,PAR3,tscnt,"DATA",PAR4)),"\")
+ ...i $l(res) s found=$$CHKRES(res,PAR5,PAR6)
+ ..i found d
+ ...s SORT=$s(PAR11="DC":VISIT(12),PAR11="EP":epis,1:VISIT(20))
+ ...s ^TMP($zn,$j,"REPORT",SORT,epis)=res
+ ...i $l(PAR7),$l(PAR8) s found=0 d
+ ....s xdate=VISIT(12),time=VISIT(13),ur=VISIT(20)
+ ....f  d:$l(xdate)  s xdate=$o(^TDEBi(ur,"DATE",xdate),-1) q:xdate=""
+ .....f  d:$l(time)  s time=$o(^TDEBi(ur,"DATE",xdate,time),-1) q:time=""
+ ......s ep="" f  s ep=$o(^TDEBi(ur,"DATE",xdate,time,ep)) q:ep=""  i ep'=epis d
+ .......s tscnt="" f  s tscnt=$o(^TEPI(ep,1,PAR7,tscnt)) q:tscnt=""  d
+ ........s res=$p($g(^TEPI(ep,1,PAR7,tscnt,"DATA",PAR8)),"\") i $l(res) d
+ .........s xx=$o(^TMP($zn,$j,"REPORT",SORT,epis,""),-1)+1
+ .........s ^TMP($zn,$j,"REPORT",SORT,epis,xx)=ep_"\"_res
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s (Total,SORT)="" f  s SORT=$o(^TMP($zn,$j,"REPORT",SORT)) q:SORT=""  d
+ ..s (cnt,epis)="" f cnt=0:1 s epis=$o(^TMP($zn,$j,"REPORT",SORT,epis)) q:epis=""  d
+ ...s Total=Total+1,xxx(1)=$p(^(epis),"\",1)
+ ...i '$$select^LVBEPVIS(epis) i cnt,PAR11="MRN" f j=3,4,7,20 k PLIST(j)
+ ...s format=$$seldata^LVBCTTC(PAR4,5),result=xxx(1)
+ ...i $e(format,1,2)="B2" d IB2^PRTDR00
+ ...i $e(format,1,2)="B3" d IB3^PRTDR00
+ ...i $e(format)="V" d IV^PRTDR00
+ ...i $e(format)="D" d ID^PRTDR00
+ ...i $e(format)="T" d IT^PRTDR00
+ ...i $e(format)="Y" d IY^PRTDR00
+ ...s xxx(1)=result
+ ...d PRINT^PRTREP00(.PLIST,.N) k PLIST,xxx
+ ...i $l(PAR7),$l(PAR8) d
+ .... ; print previous results
+ ....i $d(^TMP($zn,$j,"REPORT",SORT,epis))\10=0 d  q
+ .....s xxx(1)="No previous result" d PRINT^PRTREP00(,.N)
+ ....s xx="" f  s xx=$o(^TMP($zn,$j,"REPORT",SORT,epis,xx)) q:xx=""  d
+ .....s ep=$p(^(xx),"\",1),xxx(1)=$p(^(xx),"\",2),format=$$seldata^LVBCTTC(PAR4,5) d
+ ......s result=xxx(1)
+ ......i $e(format,1,2)="B2" d IB2^PRTDR00
+ ......i $e(format,1,2)="B3" d IB3^PRTDR00
+ ......i $e(format)="V" d IV^PRTDR00
+ ......i $e(format)="D" d ID^PRTDR00
+ ......i $e(format)="T" d IT^PRTDR00
+ ......i $e(format)="Y" d IY^PRTDR00
+ ......s xxx(1)=result
+ .....i '$$select^LVBEPVIS(ep) f j=3,4,7,20 k PLIST(j)
+ .....d PRINT^PRTREP00(.PLIST,.N) k PLIST,xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","?1  Total Patients for Period : "_Total)
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="PRST"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+ ; check if result is in range
+CHKRES(res,oper,value) s ok=1
+ i oper="-",(res<$p(value,",",1))!(res>$p(value,",",2)) q 0
+ i @(""""_res_""""_oper_""""_value_"""") q ok
+ e  s ok=0
+ q ok
+]]></Routine>
+</Export>

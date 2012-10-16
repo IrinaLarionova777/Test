@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF408ESP03" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF408ESP03(mi) ; BacT/Alert - Sant Pau
+ ; ------------------------------------------
+ ; ASTM protocol (Bi-Directional)
+ ; ML 24/9/98
+ ; Mc_Fly October 17, 2003 Trak BCN
+ ; ------------------------------------------
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ d trace^MIF000(mi,"*** Start ***","INFOR")
+ i $$select^LVBMIMP(mi) d trace^MIF000(mi,"Machine not found","ERROR") q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),eot=$c(4),enq=$c(5),ack=$c(6),lf=$c(10),cr=$c(13),nak=$c(21)
+ i $$start^MIF000() d trace^MIF000(mi,"Device not found","ERROR") q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main 
+ r *R:10
+ i R=-1 d find2send q
+ i $c(R)=enq d enq q
+ q
+enq 
+ d trace^MIF000(mi,"ENQ","H<--M")
+ d ACK
+ f  r *R:10 q:R=-1  q:$c(R)=eot  d
+ . i $c(R)'=stx q
+ . s record=$$read^MIF000("",lf) q:'$l(record)
+ . s record=$e(record,1,$l(record)-1)
+ . d trace^MIF000(mi,$tr(record,$c(13,3)," "),"H<--M")
+ . ; check record validity
+ . s chsum=$p(record,etx,2),chrecord=$p(record,etx,1)_etx
+ . i $$CHSUM(chrecord)'=chsum d NAK q
+ . d ACK
+ . 
+ . ; Order
+ . i $e(record,2)="O" s dbext=$p(record,"|",3),db=$$AccNoTranslate^LVBCOM03(dbext) q  ; Ext->Int
+ . 
+ . ; result record
+ . i $e(record,2)="R" d result
+ d trace^MIF000(mi,$s($c(R)=eot:"EOT",1:R),"H<--M")
+ q
+PATDET(epis) ; set patient details record
+ n j,PLIST,dob,sex,line
+ i '$$select^LVBEPVIS(epis,"Y") d  q
+ . f j=1:1:PLIST i $d(PLIST) s PLIST(j)=$p(PLIST(j),$c(1))
+ . s dob="" i PLIST(6)'="" s dob=$$extdate2^SSUTIL4(PLIST(6)),dob=$p(dob,"/",3)_$p(dob,"/",2)_$p(dob,"/",1)
+ . s sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+ . s mrn=PLIST(20)
+ . s line=$o(^TMIF(mi,10,""),-1)+1
+ . s ^TMIF(mi,10,line)="P|1|"_mrn_"|||"_$g(PLIST(3))_"^"_$g(PLIST(4))_"||"_dob_"|"_sex_"|||||"
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1||||^||||||||"
+ q
+SET(epis) ; set record to be sent to instrument
+ n tc,tcx,i,num,line,ty,source
+ s (tc,tcx)=""
+ ; extract bottle numbers and set loaded date and time
+ f i=52,53 s num=$p($g(^TEPI(epis)),"\",i) i num'=""  s tcx=tcx_$s($l(tcx):"\",1:"")_"^^^BC^^"_num_"^"
+ s source=""
+ i '$$select^LVBHIVAC(epis_"||"_db) s source=$p(PLIST(3),$c(1),1)_"^"_$p(PLIST(3),$c(1),2)
+ i $l(tcx) d
+ . s line=$o(^TMIF(mi,10,""),-1)+1
+ . s ^TMIF(mi,10,line)="O|1||"_$$AccNoFormat^LVBCOM03(db)_"|"_tcx_"|||||||N||||"_source_"||||||||||Q" ; Int -> Ext
+ q
+Send ; send list of orders if exists
+ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M")
+ f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=enq:"ENQ",$c(R)=nak:"NAK",1:R),"H<--M")
+ i $c(R)=enq q
+ i $c(R)'=ack w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+ s date=$$extdate2^SSUTIL4(+$h),date=$p(date,"/",3)_$p(date,"/",2)_$p(date,"/",1)_$tr($$exttime^SSUTIL4($p($h,",",2)),":","")_"00"
+ q:$$SEND("1H|\^&|||LABTRAK|||||BACT/ALERT||P|1|"_date)
+ s x=""
+ f FRAME=2:1 s x=$O(^TMIF(mi,10,x)) q:x=""  q:$$SEND(FRAME#8_^TMIF(mi,10,x))
+ q:$$SEND(FRAME#8_"L|1|F")
+ i x="" k ^TMIF(mi,10)
+ w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ q
+SEND(str) ; send string to instrument
+ s str=str_cr_etx
+ s chsum=$$CHSUM(str)
+ w stx,str,chsum,cr,lf,*-3
+ d trace^MIF000(mi,str_chsum,"H-->M")
+ f j=1:1:6 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 1
+ d trace^MIF000(mi,R,"H<--M")
+ q 2
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+NAK ; send 'nak' to instrument
+ w nak,*-3
+ d trace^MIF000(mi,"NAK","H-->M")
+ q
+NEXTTRAY(tray) 
+ q tray
+find2send 
+ k ts
+ s (tg,ts)=""
+ f  s tg=$o(^TMIF(mi,"TG",tg)) q:tg=""  d
+ . f  s ts=$o(^TMIF(mi,"TG",tg,"TS",ts)) q:ts=""  s ts(ts)=""
+ s epis=""
+ s ok=0
+ f  s ts=$o(ts(ts)) q:ts=""  d
+ . f  s epis=$o(^TTRQ(ts,epis)) q:epis=""  d
+ .. s st=$p(^TEPI(epis,1,ts,1),"\",32)
+ .. i st="A"!(st="P") q
+ .. s db="" f  s db=$o(^THIR(epis,db)) q:db=""  q:$d(^THIR(epis,db,"TEST",epis_"||"_ts_"||"_1))
+ .. q:db=""
+ .. f bot=52,53 s botnum=$p($g(^TEPI(epis)),"\",bot) d
+ ... i $l(botnum)=0 q
+ ... 
+ ... s r=$g(^TMIF(mi,20,epis))
+ ... s x1=$p(r,"\",1),x2=$p(r,"\",2)
+ ... ; check entry with send
+ ... s new=0 i $p(x1,",",1)>$p(x2,",",1) s new=1
+ ... e  i $p(x1,",",1)=$p(x2,",",1),$p(x1,",",2)>$p(x2,",",2) s new=1
+ ... q:'new
+ ... s $p(^TMIF(mi,20,epis),"\",2)=$h
+ ... 
+ ... d PATDET(epis)
+ ... d SET(epis) 
+ i $d(^TMIF(mi,10))>1 d Send
+ q
+result 
+ i $p($p(record,"|",3),"^",4)'="BC" q  ; get only Blood Culture
+ s botnum=$p($p(record,"|",3),"^",6)
+ i botnum="" q
+ s ty=$p($p(record,"|",3),"^",5)
+ s date=$p(record,"|",13)
+ s date=$e(date,7,8)_"/"_$e(date,5,6)_"/"_$e(date,1,4)_" "_$e(date,9,10)_":"_$e(date,11,12)_":"_$e(date,13,14)
+ ; result of testing so far + = pos, - = neg, * = neg, still under testing
+ s res=$p(record,"|",4)
+ s res=$s(res="+":"P",res="-":"N",1:"")
+ i res="" q
+ i db="" q
+ s epis=$o(^THIRi("Accession",db,""))    
+ i epis="" q
+ s botfield=0
+ s r=$g(^TEPI(epis))
+ i $p(r,"\",52)=botnum s botfield=1
+ i $p(r,"\",53)=botnum s botfield=2
+ i botfield=0 q
+ s result=""
+ s result=result_botfield_"B"_$c(par10)_ty_$c(par11)
+ s result=result_botfield_"N"_$c(par10)_botnum_$c(par11)
+ s result=result_botfield_"R"_$c(par10)_res_$c(par11)
+ s result=result_botfield_"D"_$c(par10)_date_$c(par11)
+ s result=result_"DB"_$c(par10)_dbext_$c(par11)
+ d trace^MIF000(mi,"Save "_epis,"INFOR")
+ s (sample,surname,QC)=""
+ s date=+$h,time=$p($h,",",2)
+ d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ i res="P" d trace^MIF000(mi,"Save "_epis_" to ^TEPI") d fileTEPI1^MIF000(mi,epis)
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="zmattquinn" type="INT" languagemode="0"><![CDATA[
+zmattquinn ; 1/3/2001 ; Dr Group/Test Set Extraction - Quinn Pathology  ; Compiled March 2, 2001 16:18:54 for Cache for Windows
+ ;
+ ; **** Do Not Delete ****
+ ;
+ s $p(space," ",80)=""
+ w $c(27)_"[2J"_$c(27)_"[H"
+ w "Dr Group/Test Set Extraction",!,!
+ ; check drg group entered
+ s ok="" f  w "Enter Dr Group Code  : " r x d  q:ok
+ .i '$$select^LVBCTDG(x) w " - ",PLIST(3),! s ok=1,dg=x k PLIST
+ .e  d Invalid("dr group")
+ ; check test set entered
+ s ok="" f  w "Enter Test Set Code  : " r x d  q:ok
+ .i '$$select^LVBCTTS(x) w " - ",PLIST(3),! s ok=1,ts=x k PLIST
+ .e  d Invalid("test set")
+ ; check date from
+ s ok="" f  w "Date From (dd/mm/yyyy) : " r x d  q:ok
+ .s x=$$intdate^SSUTIL4($p(x,"/",2)_"/"_$p(x,"/",1)_"/"_$p(x,"/",3))
+ .i x>+$h!(x=-1) d Invalid("date") q
+ .i x'>+$h w ! s ok=1,DateFrom=x q
+ ; check date to
+ s ok="" f  w "Date To (dd/mm/yyyy)   : " r x d  q:ok
+ .s x=$$intdate^SSUTIL4($p(x,"/",2)_"/"_$p(x,"/",1)_"/"_$p(x,"/",3))
+ .i x>+$h!(x=-1) d Invalid("date") q
+ .i x<DateFrom d Invalid("date") q
+ .i x'>+$h w ! s ok=1,DateTo=x q
+ ; extract viewable/printable test items from test set - ignore COMMENT items
+ s FORMAT="" k TestItem i '$$getit^LVBCTTSF(ts) m FORMAT=PLIST
+ f i=1:1:FORMAT s tc=$p(FORMAT(i),$c(2),10) i tc'=""  d
+ .s printable=$p(FORMAT(i),$c(2),15) i printable'="Y" q
+ .s viewable=$p(FORMAT(i),$c(2),16) i viewable'="Y" q
+ .s itemname=$p(FORMAT(i),$c(2),24) i $$ALPHAUP^SSUTIL4(itemname)["COMM" q
+ .s TestItem("Item",tc)=itemname
+ ; open file
+ s file=dg_"_"_$tr($$extdate2^SSUTIL4(+$h),"/","")_".txt" d File("Open",file)
+ i $$fetchall^LVBCTDGD(dg)
+ i $d(PLIST)=11 d  e  w "No dr's assigned to group "_dg,! d File("Close",file) q
+ .s drcode="," f i=1:1:PLIST s drcode=drcode_$p($p(PLIST(i),$c(28),2),$c(1))_","
+ ; extract results
+ s date=DateFrom-1 f  s date=$o(^TDAY(1,date)) q:date=""  q:date>DateTo  d
+ .s epis="" f  s epis=$o(^TDAY(1,date,0,epis)) q:epis=""  d
+ ..i '$d(^TEPI(epis,1,ts)) q
+ ..q:$$select^LVBEPVIS(epis)  m VISIT=PLIST
+ ..s dr=","_$p(VISIT(15),$c(1))_"," i drcode'[dr q
+ ..i '$$fetchall^LVBVISTS(epis,ts) m VISTS=PLIST k PLIST
+ ..k AuthTest
+ ..f i=1:1:VISTS i $p(VISTS(i),$c(28),33)="A" s AuthTest($p(VISTS(i),$c(28),2))=""
+ ..q:'$d(AuthTest)
+ ..s nn="" f  s nn=$o(AuthTest(nn)) q:nn=""  d
+ ...w VISIT(8),?13,VISIT(3)_","_VISIT(4),?43,epis,!
+ ...w $s(VISIT(6)'="":$$extdate2^SSUTIL4(VISIT(6)),1:""),?13,$p(VISIT(5),$c(1)),?17,"REQ: ",$s(VISIT(14)'="":$$extdate2^SSUTIL4(VISIT(14)),1:""),?36,"COLL: ",$s(VISIT(12)'="":$$extdate2^SSUTIL4(VISIT(12)),1:""),!
+ ...k RESULTS s RESULTS="" i '$$results^LVBVISTS(epis_"||"_ts_"||"_nn) m RESULTS=PLIST
+ ...f i=1:1:RESULTS s tc=$p(RESULTS(i),$c(1),2),res=$p(RESULTS(i),$c(1),3) d
+ ....i '$d(TestItem("Item",tc)) q
+ ....w $e(TestItem("Item",tc),1,5),?8,res,!
+ ...w "-------------------",!
+ d File("Close",file)
+ q
+ ; open/close file
+File(status,file) s status=$g(status),file=$g(file)
+ i status="Open" d  q
+ .o file:"WNS"
+ .u file
+ i status="Close" d  q
+ .c file
+ q
+ ; display invalid message/clear line
+Invalid(text) s text=$g(text)
+ w " - Invalid "_text h 2 w $c(13),space,$c(13)
+ q
+]]></Routine>
+</Export>

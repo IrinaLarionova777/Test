@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBTSRES" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBTSRES ;Check for Test Results
+checkres(epis,testset,tsrow) 
+ n res
+ q:$g(epis)="" 100
+ q:$g(testset)="" 100
+ s tsrow=$g(tsrow)
+ s testset=$$ALPHAUP^SSUTIL4(testset)
+ s cnt=$o(^TEPI(epis,1,testset,""))
+ i tsrow'="" d
+ . i $p(tsrow,"||",1)'="" s epis=$p(tsrow,"||",1) 
+ . i $p(tsrow,"||",2)'="" s testset=$p(tsrow,"||",2)
+ . s cnt=+$p(tsrow,"||",3)
+ s res=$g(^TEPI(epis,1,testset,+cnt))
+ k PLIST s PLIST=4,PLIST(1)=$s('res:"No Results",$p(res,"\",4):"Verified",1:"Entered"),PLIST(2)=$p(res,"\",4),PLIST(3)=$s($p(res,"\",5):$p(res,"\",5)*60,1:""),PLIST(4)=epis_"||"_testset_"||"_cnt
+ q 0
+ ;        
+chkprint(param) ;check if result can be printed
+ s epis=$p(param,"||"),testset=$p(param,"||",2),tscnt=$p(param,"||",3)
+ n res,config
+ s config=$p($g(^TTAB(1)),"\",9)
+ q:$g(epis)="" 100
+ q:$g(testset)="" 100
+ s testset=$$ALPHAUP^SSUTIL4(testset)
+ s res=$g(^TEPI(epis,1,testset,+tscnt))
+ k PLIST s PLIST=1
+ ;if no results can't print
+ i 'res s PLIST(1)="N" q 0
+ ;if result autorized can print
+ i $p(res,"\",4) s PLIST(1)="Y" q 0
+ ;if result entered,not authorized,config="Y" can print
+ i res,'$p(res,"\",4),config["Y" s PLIST(1)="Y" q 0
+ s PLIST(1)="N"
+ q 0
+ ;        
+type(testcode) ;
+ q:$g(testcode)="" 100
+ s type=$p($g(^TTAB("TC",testcode)),"\",3)
+ k PLIST i $e(type)="N" q 100
+ s cnt=0,res="",str="" f  s res=$o(^TTAB("TC",testcode,2,res)) q:res=""  s str=str_res_$c(1)
+ s PLIST=1,PLIST(1)=str
+ q 0
+ ;
+valid(testcode,result) ;Check if result is valid 0 - valid,100 - invalid
+ q:$g(testcode)="" 0
+ q:$g(result)="" 0
+ n (testcode,result)
+ s al1=$p($t(al1),";",2)
+ s al2=$p($t(al2),";",2)
+ s result=$tr(result,al1,al2)
+ s type=$p($g(^TTAB("TC",testcode)),"\",3) q:type="" 0
+ q:type="X" 0 ;free text
+ i type="S" s fl=$d(^TTAB("TC",testcode,2,result)) q $s(fl:0,1:100) ;Result in code table of data items
+ i $e(type)="N" d  q $s(fl:0,1:100) ;numeric format
+ .s num=+$e(type,2,99) i 'num s fl=result?.N q
+ .s str=result_"?.N1""."""_num_"N" s fl=@str
+ q 0
+ ;
+result(epis,testset,testcode,flag,cnt) ;store result in episode
+ s result=$g(PLIST(2)),user=$g(PLIST(1))
+ s testcode=$p(testcode,$c(1))
+ s al1=$p($t(al1),";",2)
+ s al2=$p($t(al2),";",2)
+ s result=$tr(result,al1,al2)
+ i '$g(cnt) s cnt=$o(^TEPI(epis,1,testset,"")) q:cnt="" 0
+ i testcode'="" s ^TEPI(epis,1,testset,cnt,testcode)=result
+ s time=$p($h,",",2)\60
+ s err=$$select^LVBVISTS(epis_"||"_testset_"||"_cnt) q:err err
+ i '$g(PLIST(4)) s PLIST(4)=+$h
+ i '$g(PLIST(5)) s PLIST(5)=time
+ i $g(PLIST(6))="" s PLIST(6)=user
+ i $g(flag)="A" s PLIST(7)=+$h,PLIST(8)=time,PLIST(9)=user
+ s err=$$update^LVBVISTS(epis_"||"_testset_"||"_cnt) q:err err
+ q 0
+ ;;
+bloodgrp(epis,testset,testcode,flag,cnt) ;store blood group in episode
+ s result=$g(PLIST(2)),user=$g(PLIST(1)),flag=$g(flag)
+ s testcode=$p(testcode,$c(1))
+ s al1=$p($t(al1),";",2)
+ s al2=$p($t(al2),";",2)
+ s result=$tr(result,al1,al2)
+ s urn=$p($g(^TEPI(epis)),"\",18)
+ q:urn="" 100
+ ;i $d(^TBBC(urn,"GP")),^("GP")'=result q 100
+ i flag s ^TBBC(urn,"GP")=result
+ i '$d(^TBBC(urn,"GP")) s ^TBBC(urn,"GP")=result
+ s err=$$result(epis,testset,testcode,"E",$g(cnt))
+ q 0
+ ;
+xmatch(epis,testset,testcode,flag,cnt) ;store blood group in episode
+ s result=$g(PLIST(2)),user=$g(PLIST(1)),flag=$g(flag)
+ s testcode=$p(testcode,$c(1))
+ s al1=$p($t(al1),";",2)
+ s al2=$p($t(al2),";",2)
+ s result=$tr(result,al1,al2)
+ s urn=$p($g(^TEPI(epis)),"\",18)
+ q:urn="" 100
+ ;i $d(^TBBC(urn,"XM")),^("XM")'=result q 100
+ i flag s ^TBBC(urn,"XM")=result
+ i '$d(^TBBC(urn,"XM")) s ^TBBC(urn,"XM")=result
+ s err=$$result(epis,testset,testcode,"E",$g(cnt))
+ q 0
+ ;
+path(param) 
+ s epis=$p(param,"||"),testset=$p(param,"||",2),tscnt=$p(param,"||",3)
+ q:$g(epis)="" 100
+ q:$g(testset)="" 100
+ q:'$d(^TEPI(epis,1,testset,+tscnt)) 100
+ s $p(^TEPI(epis,1,testset,+tscnt),"\",7,8)=$g(PLIST(1))_"\"_$g(PLIST(2))
+ q 0
+ ;        
+bgrtest(epis,cbg) ;check if bloodgrooup test sets are aouthorised
+ n (epis,cbg,PLIST)
+ s cbg=$g(cbg)
+ ;get list of test sets for comparison table with type "CBG"
+ s comp=0 f  s comp=$o(^CT("COMP",comp)) q:comp=""  s s=^(comp) d
+ .q:$p(s,"^",2)'="CBG"
+ .i cbg="Y",$p(s,"^",5)'="Y" q
+ .i cbg="N",$p(s,"^",5)="Y" q
+ .s ts=0 f  s ts=$o(^CT("COMP",comp,"TS",ts)) q:ts=""  s s1=^(ts) d
+ ..s ts1=$p(s1,"^") q:ts1=""  s BBTS(ts1)=""
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  s s=^(cnt) d
+ .;i cbg="Y",$d(BBTS(ts)) s N(ts)=""
+ .i '$p(s,"\",4),$d(BBTS(ts)) s N(ts)=""
+ s cnt=0,ts="" f  s ts=$o(N(ts)) q:ts=""  s cnt=cnt+1,PLIST(cnt)=ts
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+getauth(user) ;get authorisation
+ q:$g(user)="" ""
+ k key
+ s jj="" f  s jj=$o(^%XEB(0,jj)) q:jj=""  i $p($g(^%XEB(0,jj)),"\",2)=user s key=$p($g(^%XEB(0,jj)),"\")
+ q $g(key)
+ ;        
+al1 ;qwertyuiopasdfghjklzxcvbnm 
+al2 ;QWERTYUIOPASDFGHJKLZXCVBNM 
+]]></Routine>
+</Export>

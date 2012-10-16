@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBBILL1" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBBILL1 ; IG 07/10/98 ; Invoicing ;
+ ;
+ ; supported calls:
+ ;
+ ; start^LVBBILL1(MSG,DFrom,DTo,IO)
+ q
+start(MSG,DFrom,DTo,IO) n (MSG,DFrom,DTo,IO) s MSG=$g(MSG),DFrom=$g(DFrom),DTo=$g(DTo),IO=$g(IO) k ^TMP($zn,$j,"SORT")
+ i $$LOCK^SSLOCK("Invoicing","Invoice")'=-1 q
+ i $$select^MVBCFLAB(1) q
+ f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ k LAB m LAB=PLIST
+ f j=1:1:4 s @("MSG"_j)=$p(MSG,"\",j)
+ s PayCode=MSG1
+ i $$select^LVBCTPC(PayCode,"Y") q
+ f j=1:1:PLIST s PLIST(j)=$p($g(PLIST(j)),$c(1))
+ k PAYCODE m PAYCODE=PLIST
+ ; sort by Company->Billing Location->Provider Number
+ ; sort by Company->Billing Location->Doctor/PatientLocation
+ s Company="" f  s Company=$o(^TBIL(2,Company)) q:Company=""  d
+ .i $d(^TBIL(2,Company,PayCode)) d
+ ..s epis="" f  s epis=$o(^TBIL(2,Company,PayCode,epis)) q:epis=""  d
+ ...s prompt=$$seldata^LVBEPVIS(epis,50),date=$$seldata^LVBEPVIS(epis,12),inpat=$$seldata^LVBCTIC($$seldata^LVBEPVIS(epis,18),4)
+ ...i MSG4="Y",PAYCODE(28)="M",'$l($tr($$seldata^LVBEPVIS(epis,8),"."))!'$l($tr($$seldata^LVBEPVIS(epis,108),".")) q
+ ...i MSG4="Y",PAYCODE(28)="V",'$l($$seldata^LVBEPVIS(epis,89)) q
+ ...i $l(IO),IO="IP",inpat'="Y" q
+ ...i $l(IO),IO="OP",inpat="Y" q
+ ... ; date of collection
+ ...i $l(DFrom),date<DFrom q
+ ...i $l(DTo),date>DTo q
+ ... ; prompt billing
+ ...i MSG3="P",prompt'="Y" q
+ ... ; normal billing
+ ...i MSG3="N",prompt="Y" q
+ ...i $$select^LVBEPVIS(epis,"Y") q
+ ...f j=1:1:PLIST s PLIST(j)=$p($g(PLIST(j)),$c(1))
+ ...k VISIT m VISIT=PLIST
+ ... ; check Billing location
+ ...i $l(MSG2),MSG2'=VISIT(74) q
+ ...i $l(PAYCODE(39)) s Provider=$s(PAYCODE(39)="D":VISIT(15),PAYCODE(39)="H":VISIT(22),1:"")
+ ...i '$l(PAYCODE(39)) d
+ ....i '$l(VISIT(74)) s Provider=$$CT004^at59(Company,VISIT(12))_"\"
+ ....i $l(VISIT(74)) s Provider=$$CT004^at358(VISIT(74),VISIT(12))_"\"_VISIT(74)
+ ...s Provider=$s($l(Provider):Provider,1:" "),^TMP($zn,$j,"SORT",Company,PayCode,Provider,epis)=""
+ s Company="" f  s Company=$o(^TMP($zn,$j,"SORT",Company)) q:Company=""  d
+ .i $$LOCK^SSLOCK("Invoicing",Company_"||"_PayCode)'=-1 q
+ .s LIMIT=PAYCODE(18) i 'LIMIT,PAYCODE(7)="Y" s LIMIT=LAB(25)
+ .s Provider="" f  s Provider=$o(^TMP($zn,$j,"SORT",Company,PayCode,Provider)) q:Provider=""  d
+ ..s Batch=$o(^TMCB(PayCode,""),-1)+1,sequence=0
+ ..s epis="" f  s epis=$o(^TMP($zn,$j,"SORT",Company,PayCode,Provider,epis)) q:epis=""  d proceed
+ .i $$LOCKCLR^SSLOCK("Invoicing",Company_"||"_PayCode)
+ i $$LOCKCLR^SSLOCK("Invoicing","Invoice")
+ k ^TMP($zn,$j,"SORT")
+ q
+proceed i $$LOCK^SSLOCK("Patient",epis,,,,1)
+ i $$select^LVBEPVIS(epis,"Y"),'$$LockClear() q
+ f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ k VISIT m VISIT=PLIST
+ ; to prevent LOCK error futher down
+ s PLIST=$o(PLIST(""),-1),err=$$update^LVBEPVIS(epis)
+ i err s err=$$LOCKCLR^SSLOCK("Patient",epis) q
+ i $$open^LVBVISBI(epis)
+ s (amount,amGST,amGSTfree,amGSTtax)="" f  q:$$fetch^LVBVISBI(epis)  d
+ .s amount=amount+PLIST(3)
+ .i PLIST(5)="Y" s amGSTtax=amGSTtax+PLIST(3)
+ .e  i PLIST(5)="GST" s amGST=amGST+PLIST(3)
+ .e  s amGSTfree=amGSTfree+PLIST(3)
+ i $$close^LVBVISBI()
+ ; set indexes for printing invoices and audit
+ s err="" i amount d
+ .i '$d(^TMCB(PayCode,Batch)) d  i err q
+ ..k PLIST s PLIST(2)=PayCode,PLIST(3)=Batch,PLIST(4)=+$h,PLIST(6)=Company
+ ..i Provider["\" s PLIST(9)=$p(Provider,"\",2),PLIST(10)=$p(Provider,"\",1)
+ ..s PLIST=$o(PLIST(""),-1),err=$$insert^LVBINVB()
+ ..i err s ^TMPerror(+$h,"1-INVB",PayCode_"||"_Batch)=err
+ .k PLIST s PLIST(2)=epis,PLIST(3)=amount,PLIST(10)=amGSTfree,PLIST(11)=amGSTtax,PLIST(12)=amGST
+ .s PLIST=$o(PLIST(""),-1),err=$$insert^LVBINVBP(PayCode_"||"_Batch)
+ .i err s ^TMPerror(+$h,"2-INVBP",PayCode_"||"_Batch_"||"_epis)=err q
+ .s ^TMP("BILLING",$j,Company,PayCode,Batch,VISIT(3)_"\"_epis)=amount
+ .k PLIST m PLIST=VISIT s PLIST(56)=+$h,PLIST(57)=PayCode_"||"_Batch
+ .s PLIST=$o(PLIST(""),-1),err=$$update^LVBEPVIS(epis)
+ .i err s ^TMPerror(+$h,"3-EPVIS",epis)=err q
+ .s sequence=sequence+1
+ .d events^LVBCOM01(epis,"IN",amount_" "_PayCode_" "_Batch)
+ . ; check number of patients in a batch
+ .i LIMIT,sequence=LIMIT s Batch=$o(^TMCB(PayCode,""),-1)+1,sequence=0
+ i $$LOCKCLR^SSLOCK("Patient",epis)
+ i 'err d
+ .k ^TBIL(2,Company,PayCode,epis)
+ .i '$$select^LVBDEBVI(VISIT(20)_"||"_VISIT(12)_"||"_epis),$$update^LVBDEBVI(VISIT(20)_"||"_VISIT(12)_"||"_epis)
+ Q
+LockClear() 
+ i $$LOCKCLR^SSLOCK("Patient",epis)
+ q 0
+]]></Routine>
+</Export>

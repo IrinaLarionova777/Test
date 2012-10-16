@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF150ESP01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF150ESP01(mi) ; ML 18/11/2000 ; Optical Reader (Mark & Barcode)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),lf=$c(10),cr=$c(13),nak=$c(21)
+ s (result,epis)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main d Next
+ s record=$$read^MIF000("0",cr) q:'$l(record)
+ i $e(record,1)'=0 q
+ d trace^MIF000(mi,record,"H<--M")
+ i $e(record,1,2)="00" d NACK q
+ i $l($tr($e(record,3,11)," abcdefghijklmnñopqrstuvwxyz"))'=9 d NACK q
+ s Res=$$PROCESS(record)
+ d trace^MIF000(mi,Res,"H<--M")  
+ s ok=$$Crear(Res)
+ d ACK:'ok,NACK:ok
+ q
+Next w "L",*-3
+ d trace^MIF000(mi,"ENQ","H-->M")
+ q
+ACK w "G",*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+NACK w "S",*-3
+ d trace^MIF000(mi,"NACK","H-->M")
+ q
+PROCESS(STR) s nvol=$e(STR,1,2)
+ s Pet=$tr($e(STR,3,11)," abcdefghijklmnñopqrstuvwxyz")
+ s str=$e(STR,12,$l(STR))
+ s Test="",sexo="",diag="",embara="N"
+ i $e(str,1)=1 s sexo="M"
+ i $e(str,2)=1 s sexo="F"
+ i nvol="01" d EXTRAHOSP
+ f i=$p(^ORTEST(nvol),","):1:$p(^ORTEST(nvol),",",2) d
+ .i $e(str,i)=1 d
+ ..i ^ORTEST(nvol,i)="" q
+ ..f j=1:1:$l(^ORTEST(nvol,i),",") d
+ ...i $d(^TTAB("TS",$p(^ORTEST(nvol,i),",",j)))'=0 d
+ ....i Test'[$p(^ORTEST(nvol,i),",",j) d
+ .....s Test=Test_$p(^ORTEST(nvol,i),",",j)_","
+ s Test=$e(Test,1,$l(Test)-1)
+ q "|"_Pet_"|"_sexo_"|"_embara_"|"_diag_"|"_Test_"|"
+EXTRAHOSP s diag=""
+ i $e(str,3)=1 s embara="Y"
+ f i=4:1:13 d
+ .i $e(str,i)=1 s diag=diag_^ORTEST("01",i)_" "
+ q
+ ; Rutina de carga de los Lectores de marcas
+Crear(PLISTA) s ^TMP("USER",$j)="trak"
+ s npet=$p(PLISTA,"|",2)
+ q:$l(npet)=0 4
+ s Aux=$p(PLISTA,"|",6)
+ s diag=$p(PLISTA,"|",5)
+ q:Aux="" 3
+ q:$d(^TEPI(npet)) 0
+ q:$$vtsLock^SSLOCK("PEI",npet,"","al","OPTICALREADER")'=-1 2
+ f i=1:1:98 s PLIST(i)=""
+ s PLIST(2)=npet
+ s PLIST(10)=$p($H,",",1)
+ s PLIST(11)=$p($H,",",2)
+ s PLIST(29)="PR"
+ s PLIST(53)=diag
+ s PLIST(61)=PLIST(10)
+ s PLIST(62)=PLIST(11)
+ s PLIST(63)=embara
+ s PLIST(65)=","
+ s PLIST(66)="HULP"
+ s PLIST(86)=1
+ s ok=$$insert^LVBEPVIS() i +ok d  q 5
+ .s ok=$$vtsLockClr^SSLOCK("PEI",npet,"")
+ f o=1:1:$l(Aux,",") d  
+ .f i=1:1:57 s PLIST(i)=""
+ .s PLIST(1)=npet
+ .s PLIST(2)=npet_"||"_$p(Aux,",",o)
+ .s PLIST(3)=$p(Aux,",",o)
+ .s PLIST(35)="~~~"
+ .s PLIST(52)=o
+ .s ok=$$insert^LVBVISTS(npet,"Patient PreEntry : Patient Pre-Entry","")
+ s ok=$$vtsLockClr^SSLOCK("PEI",npet,"")
+ q 0
+]]></Routine>
+</Export>

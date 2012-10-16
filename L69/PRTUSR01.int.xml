@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTUSR01" type="INT" languagemode="0"><![CDATA[
+PRTUSR01 ; IG 22/09/99 ; UNITS STATUS REPORT  ; Compiled September 12, 2001 12:37:57 for Cache for Windows
+ q
+ ; Parameters :  1. Site
+ ;               2. Status
+ ;               3. Date From
+ ;               4. Sorting order : M-MRN
+ ;                                  D-Date of Transaction
+ ;                                  E-Date Expired
+ ;                                  B-Blood Group
+ ;               5. Show Expired Units : Y/N
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Units status Report ("_STS(3)_")"
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="Site : "_$s('$l(PAR1):"All Sites",1:LOC(3))
+ s line=4,xHEADER(line)=""
+ i PAR5="Y" d
+ .s line=5,xHEADER(line)="Showing Expired Units"
+ .s line=6,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,PAR3,+$h,,,PAR4),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ s xSORT("M")="MRN"
+ s xSORT("D")="Date of Transaction"
+ s xSORT("E")="Date Expired"
+ s xSORT("B")="Blood Group"
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ i $l(PAR1),'$$select^LVBCTUSL(PAR1,"Y") m LOC=PLIST
+ i '$$select^BVBCTSTS(PAR2) m STS=PLIST
+ q
+BODY ; create temporary printing file
+ s date="" f  s date=$o(^BB("PK",0,"Stat",PAR2,date)) q:date=""  d
+ .s pack="" f  s pack=$o(^BB("PK",0,"Stat",PAR2,date,pack)) q:pack=""  d
+ ..s site="" d %0Ao 
+ .. ; check current location
+ ..i $l(PAR1),PAR1'=site q
+ .. ; check date of the last transaction
+ ..i $l(PAR3),PAR5="N" s TrDate="" d  i PAR3>TrDate q
+ ...s tran=$o(^BB("PK",pack,"TRANS",""),-1),rowid=pack_"||"_tran
+ ... d %0Bo
+ ..s (sort,exdate)="" i $l(PAR4) d
+ ...i PAR4="D" d
+ ....s tran=$o(^BB("PK",pack,"TRANS",""),-1),rowid=pack_"||"_tran
+ .... d %0Do
+ ...i PAR4="B" d %0Eo 
+ ...i PAR4="M" d %0Fo 
+ ...i PAR4="E" d %0Go s exdate=sort
+ ...s sort=$p(sort,$c(1))
+ .. ; ignore discarded packs for expiry check
+ ..s ok="" i $l(PAR4),PAR4="E" d  q:ok
+ ...i '$$select^BVBCTSTS(status)
+ ...i $g(PLIST(2))="D" s ok=1
+ ..i PAR5="Y",((exdate<PAR3)!(exdate>+$h)) q
+ ..s:site="" site=" " s:sort="" sort=" " s ^TMP($zn,$j,"REPORT",site,sort,pack)=""
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s site="" f  s site=$o(^TMP($zn,$j,"REPORT",site)) q:site=""  d
+ ..s xxx(1)=site i '$$select^LVBCTUSL(site,"Y") s xxx(1)=site_$c(1)_PLIST(3)
+ ..s sort="" f  s sort=$o(^TMP($zn,$j,"REPORT",site,sort)) q:sort=""  d
+ ...s pack="" f  s pack=$o(^TMP($zn,$j,"REPORT",site,sort,pack)) q:pack=""  d
+ ....s epis="" i '$$select^BVBPACK1(pack) s epis=PLIST(13) d
+ .....s xxx(2)=PLIST(12),xxx(3)=PLIST(8),xxx(4)=$p(PLIST(10),$c(1))_$c(1)_$p(PLIST(10),$c(1),3),xxx(5)=PLIST(2)
+ .....s xxx(6)=$$extdate2^SSUTIL4(PLIST(3)),xxx(7)=$$extdate2^SSUTIL4(PLIST(18))
+ ....k PLIST i $$select^LVBEPVIS(epis)
+ ....d PRINT^PRTREP00(.PLIST,.N) k PLIST,xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="USR",EndLine=""
+ d %0Ho
+ i $p(EndLine,$c(1))="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(pack,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(pack,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(3)'="",$d(^BB("PK",%mmmsqld(3)))
+ i '$t
+ e  i 1>%mmmsqld(3),%mmmsqld(3)=+%mmmsqld(3)
+ i  g %0ABdun
+ s %mmmsqln=$g(^BB("PK",%mmmsqld(3)))
+ s %mmmsqld(6)=$p(%mmmsqln,"^",10)
+ s %mmmsqld(7)=$g(%mmmsqld(6))
+ i %mmmsqld(7)'="",$d(^CT("LO",%mmmsqld(7)))
+ i '$t
+ e  i 1>%mmmsqld(7),%mmmsqld(7)=+%mmmsqld(7)
+ i  s (%mmmsqld(7),site)="" g %0ABp2
+ s %mmmsqln=$g(^CT("LO",%mmmsqld(7)))
+ s site=$p(%mmmsqln,"^",3)
+%0ABp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0BBs1 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,4,-1,2) q
+%0Bo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Berr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(rowid,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(rowid,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1),$P(%mmmsqld(7),$C(1))=$p($g(%mmmsqld(4)),"||",2,2)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$P(%mmmsqld(7),$C(1))'="",$d(^BB("PK",%mmmsqld(6),"TRANS",$P(%mmmsqld(7),$C(1))))
+ i '$t
+ e  i 1>$P(%mmmsqld(7),$C(1)),$P(%mmmsqld(7),$C(1))=+$P(%mmmsqld(7),$C(1))
+ i  g %0BBdun
+ s %mmmsqln=$g(^BB("PK",%mmmsqld(6),"TRANS",$P(%mmmsqld(7),$C(1))))
+ s TrDate=$p(%mmmsqln,"^",1)
+ s %val=$P(TrDate,$C(1)) d %0BBs1:%val'="" s $P(TrDate,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Bc
+%0BBdun 
+%0BAdun 
+%0Bc q
+%0Berr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0BAdun
+%0Do n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Derr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(rowid,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(rowid,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1),$P(%mmmsqld(7),$C(1))=$p($g(%mmmsqld(4)),"||",2,2)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$P(%mmmsqld(7),$C(1))'="",$d(^BB("PK",%mmmsqld(6),"TRANS",$P(%mmmsqld(7),$C(1))))
+ i '$t
+ e  i 1>$P(%mmmsqld(7),$C(1)),$P(%mmmsqld(7),$C(1))=+$P(%mmmsqld(7),$C(1))
+ i  g %0DBdun
+ s %mmmsqln=$g(^BB("PK",%mmmsqld(6),"TRANS",$P(%mmmsqld(7),$C(1))))
+ s sort=$p(%mmmsqln,"^",1)
+ s %val=$P(sort,$C(1)) d %0BBs1:%val'="" s $P(sort,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Dc
+%0DBdun 
+%0DAdun 
+%0Dc q
+%0Derr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0DAdun
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Eerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(pack,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(pack,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(5)'="",$d(^BB("PK",%mmmsqld(5)))
+ i '$t
+ e  i 1>%mmmsqld(5),%mmmsqld(5)=+%mmmsqld(5)
+ i  g %0EBdun
+ s %mmmsqln=$g(^BB("PK",%mmmsqld(5)))
+ s sort=$p(%mmmsqln,"^",8) s exdate=$p(%mmmsqln,"^",16)
+ s %val=$P(exdate,$C(1)) d %0BBs1:%val'="" s $P(exdate,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ec
+%0EBdun 
+%0EAdun 
+%0Ec q
+%0Eerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0EAdun
+%0Fo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Ferr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(pack,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(pack,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(5)'="",$d(^BB("PK",%mmmsqld(5)))
+ i '$t
+ e  i 1>%mmmsqld(5),%mmmsqld(5)=+%mmmsqld(5)
+ i  g %0FBdun
+ s %mmmsqln=$g(^BB("PK",%mmmsqld(5)))
+ s sort=$p(%mmmsqln,"^",5) s exdate=$p(%mmmsqln,"^",16)
+ s %val=$P(exdate,$C(1)) d %0BBs1:%val'="" s $P(exdate,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Fc
+%0FBdun 
+%0FAdun 
+%0Fc q
+%0Ferr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0FAdun
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Gerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(pack,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(pack,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(5)'="",$d(^BB("PK",%mmmsqld(5)))
+ i '$t
+ e  i 1>%mmmsqld(5),%mmmsqld(5)=+%mmmsqld(5)
+ i  g %0GBdun
+ s %mmmsqln=$g(^BB("PK",%mmmsqld(5)))
+ s sort=$p(%mmmsqln,"^",16) s status=$p(%mmmsqln,"^",4)
+ s %val=$P(sort,$C(1)) d %0BBs1:%val'="" s $P(sort,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Gc
+%0GBdun 
+%0GAdun 
+%0Gc q
+%0Gerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0GAdun
+%0HBs1 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%0Ho n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Herr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(report,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(report,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("REPORT-GENERIC",%mmmsqld(6)))
+ e  g %0HBdun
+ s %mmmsqln=$g(^TTAB("REPORT-GENERIC",%mmmsqld(6)))
+ s EndLine=$p(%mmmsqln,"\",6)
+ s %val=$P(EndLine,$C(1)) d %0HBs1:%val'="" s $P(EndLine,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Hc
+%0HBdun 
+%0HAdun 
+%0Hc q
+%0Herr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0HAdun
+]]></Routine>
+</Export>

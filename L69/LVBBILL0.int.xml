@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBBILL0" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBBILL0 ; IG 07/10/98 ; Invoicing / Pricing
+ ;
+ ; supported calls:
+ ;
+ ; $$ext^LVBBILL0(user,parameters)
+ ; $$print^LVBBILL0(user,parameters)
+ ; $$price^LVBBILL0(user,dFrom,dTo)
+ ; $$SinglePrice^LVBBILL0(epis)
+ ; SetBill^LVBBILL0(epis,data)
+ ; discount^LVBBILL0(mrn,pc)
+ ; discountSet^LVBBILL0(epis)
+ ; $$discountVB^LVBBILL0(mrn,pc)
+ ;
+discount(mrn,pc) n (mrn,pc,discount) s mrn=$g(mrn),pc=$g(pc) k discount
+ s date="" f  s date=$o(^TDEB(mrn,date)) q:date=""  d
+ .s epis="" f  s epis=$o(^TDEB(mrn,date,0,epis)) q:epis=""  i pc=$$seldata^LVBEPVIS(epis,9) d
+ ..s ic=$$seldata^LVBEPVIS(epis,18)
+ ..s inpat="OUT" i '$$select^LVBCTIC(ic,"Y"),PLIST(4)="Y" s inpat="IN"
+ ..s hosp=$$seldata^LVBEPVIS(epis,65) i '$l($p(hosp,",",1))!'$l($p(hosp,",",2))!(inpat="OUT") s hosp=" "
+ ..s (sum1,sum2,item)="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  s sum1=sum1+^(item),sum2=sum2+$p(^(item),"\",6)
+ ..i $l(sum1) s discount(inpat,hosp,date,epis)=sum1_"\"_sum2
+ f inpat="IN","OUT" s hosp="" f  s hosp=$o(discount(inpat,hosp)) q:hosp=""  d
+ .s sum=0
+ .s date="" f  s date=$o(discount(inpat,hosp,date)) q:date=""  d
+ ..s epis="" f  s epis=$o(discount(inpat,hosp,date,epis)) q:epis=""  d
+ ...s $p(discount(inpat,hosp,date,epis),"\",3)=$p(discount(inpat,hosp,date,epis),"\",1)-$p(discount(inpat,hosp,date,epis),"\",2)
+ ...s sum=sum+$p(discount(inpat,hosp,date,epis),"\",3)
+ ...s $p(discount(inpat,hosp,date,epis),"\",4)=sum
+ q
+ ; PLIST - 1.IN/OUT
+ ;         2.Hospital episode/MRN number
+ ;         3.date
+ ;         4.epis
+ ;         5.amount invoiced - paycode
+ ;         6.amount invoiced - base
+ ;         7.gap amount - episode
+ ;         8.gap amount - total
+discountVB(mrn,pc) n (mrn,pc,PLIST) s mrn=$g(mrn),pc=$g(pc)
+ d discount(mrn,pc)
+ k PLIST s inpat="IN"
+ f inpat="IN","OUT" s hosp="" f  s hosp=$o(discount(inpat,hosp)) q:hosp=""  d
+ .s date="" f  s date=$o(discount(inpat,hosp,date)) q:date=""  d
+ ..s epis="" f  s epis=$o(discount(inpat,hosp,date,epis)) q:epis=""  d
+ ...s x=$o(PLIST(""),-1)+1
+ ...s xx=discount(inpat,hosp,date,epis)
+ ...s PLIST(x)=inpat_$c(1)_hosp_$c(1)_date_$c(1)_epis_$c(1)_$p(xx,"\",1)_$c(1)_$p(xx,"\",2)_$c(1)_$p(xx,"\",3)_$c(1)_$p(xx,"\",4)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+discountSet(epis) n (epis,discount) s epis=$g(epis)
+ s comp="" f  s comp=$o(^TBIL(2,comp)) q:comp=""  d
+ .s pc="" f  s pc=$o(^TBIL(2,comp,pc)) q:pc=""  d
+ ..s gapBI=$$seldata^LVBCTPC(pc,83)
+ ..i $l(gapBI) d
+ ...i $l(epis) k ^TEPI(epis,7,gapBI) q
+ ...s ep="" f  s ep=$o(^TBIL(2,comp,pc,ep)) q:epis=""  k ^TEPI(ep,7,gapBI)
+ k ^TMP($zn,$j)
+ s comp="" f  s comp=$o(^TBIL(2,comp)) q:comp=""  d
+ .s pc="" f  s pc=$o(^TBIL(2,comp,pc)) q:pc=""  d
+ ..s gapBI=$$seldata^LVBCTPC(pc,83)
+ ..i $l(gapBI) d
+ ...s ep="" f  s ep=$o(^TBIL(2,comp,pc,ep)) q:ep=""  d
+ ....i $l(epis),ep'=epis q
+ ....s deb=$$seldata^LVBEPVIS(ep,20) i $l(deb),'$d(^TMP($zn,$j,pc,deb)) d discount(deb,pc) m ^TMP($zn,$j,pc,deb)=discount
+ s comp="" f  s comp=$o(^TBIL(2,comp)) q:comp=""  d
+ .s pc="" f  s pc=$o(^TBIL(2,comp,pc)) q:pc=""  d
+ ..s gapBI=$$seldata^LVBCTPC(pc,83),gapIn=$$seldata^LVBCTPC(pc,81),gapOut=$$seldata^LVBCTPC(pc,82)
+ ..i $l(gapBI) d
+ ...s gapBIdescr="" i '$$select^LVBCTBI(gapBI) s gapBIdescr=PLIST(6)
+ ...s ep="" f  s ep=$o(^TBIL(2,comp,pc,ep)) q:ep=""  d
+ ....i $l(epis),ep'=epis q
+ ....s deb=$$seldata^LVBEPVIS(ep,20) i $l(deb),$d(^TMP($zn,$j,pc,deb)) d
+ .....s ic=$$seldata^LVBEPVIS(ep,18)
+ .....s inpat="OUT" i '$$select^LVBCTIC(ic,"Y"),PLIST(4)="Y" s inpat="IN"
+ .....s gap=$s(inpat="IN":gapIn,1:gapOut)
+ .....k discount m discount=^TMP($zn,$j,pc,deb) s discount=0
+ .....i $l(gap) s hosp="" f  s hosp=$o(discount(inpat,hosp)) q:hosp=""  d
+ ......s date="" f  s date=$o(discount(inpat,hosp,date)) q:date=""  d
+ .......i $d(discount(inpat,hosp,date,ep)) s xx=discount(inpat,hosp,date,ep) d
+ ........i $p(xx,"\",4)>gap d
+ .........i ($p(xx,"\",4)-gap)<$p(xx,"\",3) s discount=$p(xx,"\",4)-gap
+ .........e  s discount=$p(xx,"\",3)
+ .....i discount d
+ ......k data m data=^TEPI(ep,7) zk data
+ ......s data(gapBI)=-discount_"\"_gapBIdescr
+ ......d SetBill^LVBBILL0(ep,.data)
+ k ^TMP($zn,$j)
+ q
+SetBill(epis,data) i $d(data)\10=0,$d(^TEPI(epis,7))\10=0 q
+ s item="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  k ^TEPI(epis,7,item)
+ s item="" f  s item=$o(data(item)) q:item=""  i data(item) s ^TEPI(epis,7,item)=data(item)
+ k %d m %d=^TEPI(epis,7) zk %d
+ d SetAll^LVBCOM50(epis,"53S",.%d)
+ q
+price(user,d1,d2) s user=$g(user),d1=$g(d1),d2=$g(d2),result=""
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","PRICING")),"\",1)
+ i $l(%routine) x "s result=$$ext^"_%routine_"("""_user_""","""_d1_""","""_d2_""")"
+ d discountSet()
+ q result
+SinglePrice(epis) s epis=$g(epis),result=""
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","PRICING")),"\",1)
+ i $l(%routine) x "s xx=$$ext^"_%routine_"(,,,"""_epis_""")"
+ d discountSet(epis)
+ s x="" f  s x=$o(^TEPI(epis,7,x)) q:x=""  s result=result+^(x)
+ q result
+ ; params - 1.paycode
+ ;          2.batch
+ ;          3.sequence
+ ;          4.duplicate
+print(user,params) s user=$g(user),params=$g(params) f j=1:1:4 s @("PARAM"_j)=$p(params,"\",j)
+ f j=1:1:4 s @("PARAM"_j)=$p(params,"\",j)
+ k CTPCT i '$$select^LVBCTPCT("HIC") m CTPCT=PLIST
+ ; find paycode
+ i '$$select^LVBCTPC(PARAM1,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k PAYCODE m PAYCODE=PLIST
+ . ; Medicare invoice
+ .i PAYCODE(28)="M" d  q
+ ..i '$l($g(CTPCT(5))) d
+ ...s PARAM=PARAM1_"\"_PARAM2_"\\"_PARAM3_"\"_PARAM4
+ ...s ROWID=$$START^PRTREP00(user,"",PARAM,"MCINV")
+ ..i $l($g(CTPCT(5))) d
+ ...s PARAM=PARAM1_"\"_PARAM2_"\"_PARAM4
+ ...s ROWID=$$START^PRTREP00(user,"",PARAM,"MCHIC")
+ . ; Private invoice
+ .i PAYCODE(28)="I" d  q
+ ..s PARAM=PARAM1_"\"_PARAM2_"\\"_PARAM3_"\"_PARAM4
+ ..s ROWID=$$START^PRTREP00(user,"",PARAM,"INV")
+ . ; VA invoice
+ .i PAYCODE(28)="V" d  q
+ ..i '$l($g(CTPCT(5))) d
+ ...s PARAM=PARAM1_"\"_PARAM2_"\\"_PARAM3_"\"_PARAM4
+ ...s ROWID=$$START^PRTREP00(user,"",PARAM,"VAINV")
+ ..i $l($g(CTPCT(5))) d
+ ...s PARAM=PARAM1_"\"_PARAM2_"\"_PARAM4
+ ...s ROWID=$$START^PRTREP00(user,"",PARAM,"VAHIC")
+ . ; Standard Debtor invoice
+ .i PAYCODE(28)="G" d  q
+ ..s PARAM=PARAM1_"\"_PARAM2_"\"_PARAM4
+ ..s ROWID=$$START^PRTREP00(user,"",PARAM,"GRB")
+ q 0
+ ; params : 1.Medicare
+ ;          2.VA
+ ;          3.Invoice
+ ;          4.Group Billing
+ ;          5.Billing site
+ ;          6.P - Prompt billing
+ ;            N - Normal billing (Non prompt)
+ ;              - All
+ ;          7.Date from (for Malaysia)
+ ;          8.Date to   (for Malaysia)
+ ;          9.IP - Inpatient
+ ;            OP - Outpatient
+ ;               - All
+ ;         10.Y - check for Medicare/DVA numbers
+ext(user,params) s user=$g(user),params=$g(params) f j=1:1:10 s @("PARAM"_j)=$p(params,"\",j)
+ k ^TMP("BILLING",$j)
+ ; Medicare Paycodes
+ ; VA Paycodes
+ ; Invoice Paycodes
+ ; Group Billing Paycodes
+ f PARAM=PARAM1,PARAM2,PARAM3,PARAM4 f jj=1:1:$l(PARAM,",") s PC=$p(PARAM,",",jj) i $l(PC) d
+ .i $l(PARAM5) s MSG=PC_"\"_PARAM5_"\"_PARAM6_"\"_$s((PARAM=PARAM1)!(PARAM=PARAM2):PARAM10,1:"") d start^LVBBILL1(MSG,PARAM7,PARAM8,PARAM9) q
+ .i '$d(^TTAB("BILL-LOC")) s MSG=PC_"\\"_PARAM6_"\"_$s((PARAM=PARAM1)!(PARAM=PARAM2):PARAM10,1:"") d start^LVBBILL1(MSG,PARAM7,PARAM8,PARAM9) q
+ .s PARAM5="" f  s PARAM5=$o(^TTAB("BILL-LOC",PARAM5)) q:PARAM5=""  s MSG=PC_"\"_PARAM5_"\"_PARAM6_"\"_$s((PARAM=PARAM1)!(PARAM=PARAM2):PARAM10,1:"") d start^LVBBILL1(MSG,PARAM7,PARAM8,PARAM9)
+ k CTPCT i '$$select^LVBCTPCT("HIC") m CTPCT=PLIST
+ i '$$select^MVBCFLAB(1) d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k LAB m LAB=PLIST
+ ; Sequence assign
+ s Company="" f  s Company=$o(^TMP("BILLING",$j,Company)) q:Company=""  d
+ .s PayCode="" f  s PayCode=$o(^TMP("BILLING",$j,Company,PayCode)) q:PayCode=""  d
+ ..i $$select^LVBCTPC(PayCode,"Y") q
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k PAYCODE m PAYCODE=PLIST
+ ..i (PAYCODE(28)="I")!(((PAYCODE(28)="M")!(PAYCODE(28)="V"))&'$l($g(CTPCT(5)))) d
+ ...s IVA2="" f  s IVA2=$o(^TMP("BILLING",$j,Company,PayCode,IVA2)) q:IVA2=""  d
+ ....k ^TMP($zn,$j) s seq=0
+ ....s epis="" f  s epis=$o(^TMCB(PayCode,IVA2,epis)) q:epis=""  d
+ .....i $$select^LVBEPVIS(epis,"Y") q
+ .....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .....s ^TMP($zn,$j,PLIST(20),epis)=""
+ ....s deb="" f  s deb=$o(^TMP($zn,$j,deb)) q:deb=""  d
+ ..... ; cumulative invoice
+ .....i LAB(29)="Y" s seq=seq+1
+ .....s epis="" f  s epis=$o(^TMP($zn,$j,deb,epis)) q:epis=""  d
+ ...... ; single invoice
+ ......i LAB(29)'="Y" s seq=seq+1
+ ......s $p(^TMCB(PayCode,IVA2,epis),"\",2)=seq
+ ....k ^TMP($zn,$j)
+ ; Print Invoices
+ s Company="" f  s Company=$o(^TMP("BILLING",$j,Company)) q:Company=""  d
+ .s PayCode="" f  s PayCode=$o(^TMP("BILLING",$j,Company,PayCode)) q:PayCode=""  d
+ ..i $$select^LVBCTPC(PayCode,"Y") q
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k PAYCODE m PAYCODE=PLIST
+ ..s IVA2="" f  s IVA2=$o(^TMP("BILLING",$j,Company,PayCode,IVA2)) q:IVA2=""  d
+ ...s PARAM=PayCode_"\"_IVA2
+ ... ; Medicare invoice
+ ...i PAYCODE(28)="M" d  q
+ ....i '$l($g(CTPCT(5))) s ROWID=$$START^PRTREP00(user,"",PARAM,"MCINV")
+ ... ; VA invoice
+ ...i PAYCODE(28)="V" d  q
+ ....i '$l($g(CTPCT(5))) s ROWID=$$START^PRTREP00(user,"",PARAM,"VAINV")
+ ... ; Private invoice
+ ...i PAYCODE(28)="I" s ROWID=$$START^PRTREP00(user,"",PARAM,"INV") q
+ ... ; Standard Debtor invoice
+ ...s ROWID=$$START^PRTREP00(user,"",PARAM,"GRB") q
+ ; Print Invoice Audit
+ s Company="" f  s Company=$o(^TMP("BILLING",$j,Company)) q:Company=""  d
+ .s PayCode="" f  s PayCode=$o(^TMP("BILLING",$j,Company,PayCode)) q:PayCode=""  d
+ ..i $$select^LVBCTPC(PayCode,"Y") q
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k PAYCODE m PAYCODE=PLIST
+ ..s IVA2="" f  s IVA2=$o(^TMP("BILLING",$j,Company,PayCode,IVA2)) q:IVA2=""  d
+ ...s PARAM=PayCode_"\"_IVA2
+ ... ; Medicare
+ ...i PAYCODE(28)="M",$l($g(CTPCT(5))) s ROWID=$$START^PRTREP00(user,"",PARAM,"MCHIC") q
+ ... ; VA
+ ...i PAYCODE(28)="V",$l($g(CTPCT(5))) s ROWID=$$START^PRTREP00(user,"",PARAM,"VAHIC") q
+ ...s ROWID=$$START^PRTREP00(user,"",PARAM,"BTAU")
+ ; Print Invoicing Summary
+ s PARAM=""
+ s Company="" f  s Company=$o(^TMP("BILLING",$j,Company)) q:Company=""  d
+ .s PayCode="" f  s PayCode=$o(^TMP("BILLING",$j,Company,PayCode)) q:PayCode=""  d
+ ..s IVA2="" f  s IVA2=$o(^TMP("BILLING",$j,Company,PayCode,IVA2)) q:IVA2=""  d
+ ...s PARAM=PARAM_PayCode_","_IVA2_"~"
+ s ROWID=$$START^PRTREP00(user,"",PARAM,"CBS")
+ k ^TMP("BILLING",$j)
+ q 0
+]]></Routine>
+</Export>

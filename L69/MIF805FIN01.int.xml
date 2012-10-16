@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF805FIN01" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF805FIN01(mi) ; ML 21/9/99 ; HITACHI 704 (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s soh=$c(1),stx=$c(2),etx=$c(3),eot=$c(4),ack=$c(6),lf=$c(10),cr=$c(13),nak=$c(21),etb=$c(23)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main f  r *R:10 q:'$t  d  q:$c(R)=eot
+ .i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q
+ .i $c(R)'=stx q
+ .s record=$$read^MIF000("",etx) q:'$l(record)
+ .d trace^MIF000(mi,record,"H<--M")
+ .s func=$e(record)
+ .i func="N"!(func="E")!(func="M") d RES
+ .i func="K" d ORDER
+ q
+ORDER ; order record
+ s seq1=$tr($e(record,2,4)," "),seq2=$tr($e(record,11,13)," "),tray=$e(record,6)
+ d loadlist^MIF000(mi,tray),SEND
+ q
+SEND ; send load list
+ s seq=seq1
+ s tray="" f  s tray=$o(^TMIF(mi,10,tray)) q:tray=""  d  q:seq>seq2
+ .s cup="" f  s cup=$o(^TMIF(mi,10,tray,cup)) q:cup=""  d  q:seq>seq2
+ ..s str="K"_$j(seq,3)_" "_$e(tray)_$j(cup,2)_" "_^(cup)_etx
+ ..d trace^MIF000(mi,str,"H-->M")
+ ..w stx_str_$$CHSUM(str),*-3
+ ..s stop="" f j=1:1:4 r *R:5 d  q:stop
+ ...i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") s stop=1 q
+ ...i $c(R)=nak d trace^MIF000(mi,"NAK","H<--M") s stop=1 q
+ ...d trace^MIF000(mi,"<"_R_">","H<--M")
+ ..k ^TMIF(mi,10,tray,cup)
+ ..s seq=seq+1
+ q
+RES ; process result record
+ w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ s (sample,epis,surname,result,date,time,QC)=""
+ s epis=$tr($e(record,10,20)," ")
+ s data=$e(record,22,999) f  d  q:$tr(data," ")=""
+ .s res=$e(data,1,10),data=$e(data,11,999)
+ .s code=$tr($e(res,1,2)," "),flag=$tr($e(res,3)," "),resx=$tr($e(res,4,9)," ")
+ .s result=result_code_$c(par10)_resx_$c(par10)_flag_$c(par11)
+ i $l(result),$l(epis) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+CHSUM(x) ; calculate check sum
+ s result="" k s
+ s xx=1 f j1=1:1:7 s s=0 d  s xx=xx*2
+ .f j2=1:1:$l(x) s s=s+($a(x,j2)\xx#2)
+ .s s(j1)=s#2
+ f j=1:1:7 s result=result+(s(j)*(2**(j-1)))
+ q $c(result)
+SAVE(mi) ; save loadlist records
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s suffix=^TMP("MIF000",$j,"LL","SUFFIX"),suffix=$p(suffix,$c(1),1)
+ s tray=^TMP("MIF000",$j,"LL","TRAY"),tray=$p(tray,$c(1),1)
+ s cup=^TMP("MIF000",$j,"LL","ORDER"),cup=$p(cup,$c(1),1)
+ k test m test=^TMP("MIF000",$j,"LL","TEST")
+ s test="" f i=1:1:20 s test=test_$d(test(i))
+ ; no orders for sodium, potassium and chloride
+ i '$d(test(41)),'$d(test(42)),'$d(test(43)) s test=test_"00"
+ ; order sodium and potassium
+ i $d(test(41)),$d(test(42)),'$d(test(43)) s test=test_"01"
+ ; order sodium, potassium and chloride
+ i $d(test(41)),$d(test(42)),$d(test(43)) s test=test_"10"
+ s ^TMIF(mi,10,tray,cup)=$e(epis_suffix_$j("",12),1,12)_test_" "_$tr($j("",22)," ","0")_" "
+ q 0
+]]></Routine>
+</Export>

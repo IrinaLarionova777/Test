@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF43323" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF43323(mi) ; ML 04/06/2004 ; ASTM protocol  -  BIOMERIEUX Vitek
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),rs=$c(30),gs=$c(29)
+ s lf=$c(10),cr=$c(13),nak=$c(21),etb=$c(23),(result,epis)=""
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+read(start,stop,control,time) n (start,stop,control,time)
+ s start=$g(start),stop=$g(stop),control=$g(control),time=$g(time),ok=0
+ s:'time time=10 s:'$l(start) ok=1
+ s result=""
+ f  r *x:time q:(","_stop_",")[(","_$c(x)_",")  q:x=-1  i x d       
+ .i 'ok,(","_start_",")[(","_$c(x)_",") s ok=1
+ .i control="Y",x<32 q
+ .i ok s result=result_$c(x)
+ q result
+Main r *R:10 e  d  q
+ .d:" L "[(" "_par9_" ") loadlist^MIF000(mi)
+ i $c(R)=enq d
+ .d trace^MIF000(mi,"ENQ","H<--M")
+ .d ACK k ^TMP($zn,$j,"RESULT")
+ .r *R:10 i $c(R)=stx d
+ ..s xx="" f  s record=$$read(rs_","_gs,lf) q:'$l(record)  d  q:xx[gs
+ ...d trace^MIF000(mi,$tr(record,$c(13,30,29)," RG"),"H<--M")
+ ...s xx=xx_record_lf
+ .. ; check record validity
+ ..s chsum=$e($p(xx,gs,2),1,2)
+ ..i $$CHSUM($p(xx,gs)_gs)'=$$ALPHAUP^SSUTIL4(chsum) d  q
+ ...w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+ ..d ACK
+ .i $l(xx) s xx=$tr($$UPPER^SSUTIL4(xx),lf_cr_rs) d
+ ..s (sample,epis,surname,result,org,antib,date,time,QC)=""
+ ..k Organism f i=1:1:$l(xx,"|") d
+ ...i $e($p(xx,"|",i),1,2)="CI" s epis=$e($zd($h,3),3,4)_$e($p($p(xx,"|",i),"CI",2)+1000000,2,7)
+ ... ; extract organism
+ ...i $e($p(xx,"|",i),1,2)="O1" s org=$p($p(xx,"|",i),"O1",2) i $l(org) s Organism(org)=""
+ ... ; extract antibiotic code
+ ...i $e($p(xx,"|",i),1,2)="A1" s antib=$p($p(xx,"|",i),"A1",2) i $l(org),$l(antib) s Organism(org,antib)=""
+ ... ; extract mic
+ ...i $e($p(xx,"|",i),1,2)="A3" s mic=$p($p(xx,"|",i),"A3",2) i $l(org),$l(antib),$l(mic) s Organism(org,antib)=mic
+ ... ; extract susceptibility
+ ...i $e($p(xx,"|",i),1,2)="A4" s res=$p($p(xx,"|",i),"A4",2) i $l(org),$l(antib),$l(res) s $p(Organism(org,antib),"\",2)=res
+ ..s (orgcnt,antires)=""
+ ..s org="" f  s org=$o(Organism(org)) q:org=""  d
+ ...s orgcnt=orgcnt+1
+ ...s antib="" f  s antib=$o(Organism(org,antib)) q:antib=""  d
+ ....s mic=$p(Organism(org,antib),"\"),res=$p(Organism(org,antib),"\",2)
+ ....s antires=$g(antires)_antib_$c(par28)_res_$c(par28)_mic_$c(par27)
+ ...s result="DUMMY"_$c(par10)_epis
+ ...d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ ...s antires=org_$c(par10)_antires
+ ...d fileant^MIF000(mi,sample,epis,antires)
+ ...s (result,antires)=""
+ s (sample,epis,surname,result,date,time,QC)=""
+ q
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+SAVE(mi) ; create loadlist records
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+ d PATDET(epis)
+ q 0
+PATDET(epis) ; set patient details record
+ s record="" i '$$select^LVBEPVIS(epis,"Y") d  q
+ .f j=1:1:PLIST i $d(PLIST) s PLIST(j)=$p(PLIST(j),$c(1))
+ .s id=""
+ .s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d  q:$l(id)
+ ..s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d  q:$l(id)
+ ...s id=$p($g(^TEPI(epis,1,ts,tscnt,"DATA","M0500")),"\")
+ ...i $l(id),$d(^TMIF(mi,33,id)) s id=""
+ .i $l(id) s record="mtmpr|id"_id_"|pi"_PLIST(20)_"|pn"_PLIST(4)_","_PLIST(3)_"|pl"_PLIST(22)_"|pp"_PLIST(15)_"|si|s1"_$zd(PLIST(12))_"|s2"_$$exttime^SSUTIL4(PLIST(13))_"|s3"_$zd(PLIST(61))_"|s4"_$$exttime^SSUTIL4(PLIST(62))_"|ci"_id_"|zz|"
+ q
+Send ; send list of orders if exists
+ w enq,*-3 f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+ i $c(R)=enq q
+ i $c(R)'=ack w eot,*-3 q
+ d SEND(record)
+ w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+ q
+SEND(str) ; send string to instrument
+ s str=rs_str_cr_lf_gs,chsum=$$CHSUM(str)
+ w stx,str,chsum,cr,lf,*-3 d trace^MIF000(mi,str_chsum,"H-->M")
+ f j=1:1:6 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 1
+ d trace^MIF000(mi,R,"H<--M")
+ q 2
+]]></Routine>
+</Export>

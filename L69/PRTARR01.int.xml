@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTARR01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTARR01 ; IG 07/10/98 ; BloodBank Regiter Report
+ Q
+ ; Parameters :  1.Regitry type: AR  - Antibody Registry
+ ;								 TRR - Transfusion Reaction Registry
+ ;								 ATR - Antigen Registry
+ ;               2.Date from
+ ;               3.Date to
+ ;				 4.list of Results
+ ;				 5.User Site
+ ;				 6.MRN
+ ;				 7.list of Patient Locations
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+ K xHEADER D INIT
+ i PAR1="AR" s line=1,xHEADER(line)="Antibody Registry"
+ i PAR1="ATR" s line=1,xHEADER(line)="Antigen Registry"
+ i PAR1="TRR" s line=1,xHEADER(line)="Transfusion Reaction Registry"
+ s line=2,xHEADER(line)=""
+ i $l(PAR4) d
+ .i PAR1="AR" s x1="for Antibody :",x=x1_" "_list
+ .i PAR1="ATR" s x1="for Antigen :",x=x1_" "_list
+ .i PAR1="TRR" s x1="for Reaction :",x=x1_" "_PAR4
+ .i $l(x) d
+ ..f  q:$l(x)<MAX  f j=1:1:$l(x,",") i $l($p(x,",",1,j))>MAX s line=line+1,xHEADER(line)=$e($p(x,",",1,j-1)_$j("",MAX),1,MAX),x=$j("",$l(x1))_$p(x,",",j,$l(x,",")) q
+ ..s line=line+1,xHEADER(line)=$e(x_$j("",MAX),1,MAX)
+ ..s line=line+1,xHEADER(line)=""
+ i $l(PAR5) d
+ .s line=line+1,xHEADER(line)="User Site : "_CTUSL(3)_"   ("_PAR5_")"
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR7) d
+ .s x1="list of Patient Locations :",x=x1_" "_PAR7
+ .i $l(x) d
+ ..f  q:$l(x)<MAX  f j=1:1:$l(x,",") i $l($p(x,",",1,j))>MAX s line=line+1,xHEADER(line)=$e($p(x,",",1,j-1)_$j("",MAX),1,MAX),x=$j("",$l(x1))_$p(x,",",j,$l(x,",")) q
+ ..s line=line+1,xHEADER(line)=$e(x_$j("",MAX),1,MAX)
+ ..s line=line+1,xHEADER(line)=""
+ i $l(PAR6) d
+ .i " AR TRR "[(" "_PAR1_" ") d
+ ..s line=line+1,xHEADER(line)="for patient : "_$$NameFormat^LVBCOM03("PT",VISIT(7),VISIT(4),VISIT(3),VISIT(99),VISIT(100),VISIT(101))_"   (MRN : "_PAR6_")"
+ ..s line=line+1,xHEADER(line)=""
+ .i PAR1="ATR" d
+ ..s line=line+1,xHEADER(line)="for donor : "_$$NameFormat^LVBCOM03("PT",VISIT(7),VISIT(4),VISIT(3),VISIT(99),VISIT(100),VISIT(101))_"   (MRN : "_PAR6_")"
+ ..s line=line+1,xHEADER(line)=""
+ D HEADER^PRTREP00(.xHEADER,PAR2,PAR3),BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=PAR1_"-"_PAR5 I $$update^LVBPRPR(REPID)
+ K ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$zn)
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+ i $l(PAR5),'$$select^LVBCTUSL(PAR5,"Y") k CTUSL m CTUSL=PLIST
+ i " AR ATR "[(" "_PAR1_" "),$l(PAR4) s list="" d
+ .f j=1:1:$l(PAR4,",") s x=$p(PAR4,",",j) i $l(x),'$$select^LVBBBG(x,"Y") d
+ ..i PAR1="AR" s list=list_$s($l(list):", ",1:"")_PLIST(4)
+ ..i PAR1="ATR" s list=list_$s($l(list):", ",1:"")_PLIST(3)
+ i $l(PAR6),'$$select^LVBEPVIS($$seldata^LVBDEB(PAR6,4),"Y") k VISIT m VISIT=PLIST
+ Q
+ ; create temporary printing file
+BODY s seq="" f  s seq=$o(^BBR(PAR1,seq)) q:seq=""  i '$$select^LVBANTRG(PAR1_"||"_seq) d
+ .i $l(PAR2),PLIST(7)<PAR2 q
+ .i $l(PAR3),PLIST(7)>PAR3 q
+ .i $l(PAR4)," AR ATR "[(" "_PAR1_" "),(","_PAR4_",")'[(","_$p(PLIST(12),$c(1))_",") q
+ .i $l(PAR4),PAR1="TRR",(","_PAR4_",")'[(","_PLIST(6)_",") q
+ .i $l(PAR5),$$seldata^LVBEPVIS(PLIST(3),66)'=PAR5 q
+ .i $l(PAR6),$$seldata^LVBEPVIS(PLIST(3),20)'=PAR6 q
+ .i $l(PAR7),(","_PAR7_",")'[(","_$$seldata^LVBEPVIS(PLIST(3),22)_",") q
+ .m ^TMP($zn,$j,"REPORT",seq)=PLIST
+ Q
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s seq="" f  s seq=$O(^TMP($zn,$j,"REPORT",seq)) q:seq=""  d
+ ..k xPLIST m xPLIST=^(seq)
+ ..s epis=xPLIST(3) i '$$select^LVBEPVIS(epis) m VISIT=PLIST
+ ..s xxx(1)=$p(xPLIST(12),$c(1))
+ ..i $l(xxx(1))," AR ATR "[(" "_PAR1_" ") s xxx(1)=xxx(1)_$c(1)_$$seldata^LVBBBG($p(xPLIST(12),$c(1)),$s(PAR1="AR":4,1:3))
+ ..i $l(xxx(1))," TRR "[(" "_PAR1_" ") s xxx(1)=xxx(1)_$c(1)_xPLIST(6)
+ ..i '$l(xxx(1)) s xxx(1)=xPLIST(6)
+ ..i $l(xxx(1)),PAR1="ATR" d
+ ...s pti=$p($g(^TTAB("BB-Register",PAR1,$p(xPLIST(10),"||",2),$p(xPLIST(5),$c(1)))),"\",2)
+ ...s pres=$p($g(^TTAB("BB-Register",PAR1,$p(xPLIST(10),"||",2),$p(xPLIST(5),$c(1)))),"\",3)
+ ...s x="N" i $l(pti),$l(pres),$p($g(^TEPI(epis,1,$p(xPLIST(10),"||",2),$p(xPLIST(10),"||",3),"DATA",pti)),"\",1)=pres s x="Y"
+ ...s xxx(1)=xxx(1)_$s(x="Y":"(+)",1:"(-)")
+ ..s xxx(2)=$$extdate2^SSUTIL4(xPLIST(7))
+ ..i '$$select^LVBVISTD(xPLIST(10)_"||"_$p(xPLIST(2),$c(1))) d
+ ...m VISTD=PLIST
+ ...s xxx(3)=""
+ ...i $l(VISTD(3)) s xxx(3)=VISTD(3) i '$$select^LVBCTTCT($p(xPLIST(2),$c(1))_"||"_VISTD(3),"Y") s xxx(3)=PLIST(3)
+ ...i $l(VISTD(4)) s xxx(3)=xxx(3)_$s($l(xxx(3)):" ",1:"")_VISTD(4)
+ ..d PRINT^PRTREP00(.VISIT,.N) k xxx,VISIT
+ s report="ARR",EndLine=$$seldata^LVBCTCLR(report,9) i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

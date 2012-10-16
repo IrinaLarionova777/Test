@@ -1,0 +1,516 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="websys.Abstract.G1" type="MAC" languagemode="0" generated="1"><![CDATA[
+ ;websys.Abstract.G1
+ ;(C)InterSystems, method generator for class websys.Abstract.  Do NOT edit.
+ Quit
+ ;
+ #; method code include files begin
+ #include %systemInclude
+ #include TRAK
+ #; method code include files end
+
+#classcontext websys.Abstract
+#classmethod GetAuditDisplayInfo
+GetAuditDisplayInfo(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class,prp,col,type,utype,rel
+ s class=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(class,".",1)="web" s $p(class,".",1)="User"
+ ;
+ #; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT") QUIT $$$OK
+ ;
+ s prp="" 
+ f  {
+	s prp=$o($$$PROP($$$sDEF,class,prp)) 
+	i prp="" q
+	;
+	s type=$g($$$PROPtype($$$sDEF,class,prp))
+	s col=##Class(%Collation).Upper($g($$$PROPsqlfieldname($$$sDEF,class,prp),prp))
+	s rel=$g($$$PROPrelationship($$$sDEF,class,prp))
+
+ ; ingore relationships
+ if 'rel {
+ if type="%Date"!(type="%Library.Date") {
+ $$$GENERATE(" s aryColInfo("""_col_""")=""##Class(websys.Conversions).DateLogicalToHtml(val)""")
+ } elseif type="%Time"!(type="%Library.Time") {
+ $$$GENERATE(" s aryColInfo("""_col_""")=""##Class(websys.Conversions).TimeLogicalToHtml(val)""")
+ } elseif $e(type)'="%" {
+ if type'="websys.Expression" {
+ ; If it's lab class the method will be in the web class
+ s wtype=type 
+ i wtype'["." s wtype="User."_wtype
+ i $p(wtype,".")="User" s $p(wtype,".")="web"
+ $$$GENERATE(" s aryColInfo("""_col_""")=""##Class("_wtype_").GetCodeDescriptionFromId(id)""")
+ }
+ }
+ }
+ }
+ $$$GENERATE(" q")
+ ;
+ q $$$OK
+ q 1
+#classmethod GetCodeDescriptionFromId
+GetCodeDescriptionFromId(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class,labclass,webclass,SQLTABLE,SQLROWID,SQLDESCRIPTION,SQLCODE,SQLFILTER
+ s (class,labclass,webclass)=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(labclass,".",1)="web" s $p(labclass,".",1)="User"
+ i $p(webclass,".",1)="User" s $p(webclass,".",1)="web"
+ ;
+ ; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ; If there is no corresponding lab class
+ i '$d($$$CLASS($$$TRAKDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ i '$d($$$CLASS($$$sDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ ; Do we have a specific value set ?
+ s SQLROWID=$g($$$PARAMdefault($$$sDEF,webclass,"SQLROWID"))
+ s SQLDESCRIPTION=$g($$$PARAMdefault($$$sDEF,webclass,"SQLDESCRIPTION"))
+ s SQLCODE=$g($$$PARAMdefault($$$sDEF,webclass,"SQLCODE"))
+ ;; Get any stored value for table name, default to labclass classname
+ s SQLTABLE=$g($$$CLASSsqltablename($$$sDEF,labclass),labclass)
+
+ ;
+ i SQLTABLE'="",SQLROWID'="" d
+ . i SQLTABLE'["." s SQLTABLE="SQLUser."_SQLTABLE
+ ;
+ $$$GENERATE(" n code,desc")
+ ;
+ i SQLTABLE'="",SQLROWID'="" d
+ . i SQLTABLE'["." s SQLTABLE="SQLUser."_SQLTABLE
+ . ;
+ . ; e.g. SELECT APCVC_Description,APCVC_Rowid,APCVC_Code INTO :desc,:id,:code FROM APC_VendCat WHERE APCVC_ROWID=:id
+ . i SQLDESCRIPTION'="" d
+ . . $$$GENERATE(" &sql( SELECT "_SQLDESCRIPTION_","_SQLROWID_","_SQLCODE_" INTO :desc,:id,:code FROM "_SQLTABLE_" WHERE "_SQLROWID_" = :id)")
+ . . $$$GENERATE(" i 'SQLCODE Q $lb(desc,id,code)")
+
+ $$$GENERATE(" Q $lb("""","""","""")")
+ ; 
+ QUIT $$$OK
+ q 1
+#classmethod GetCompiledVersion
+GetCompiledVersion(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ ;
+ n major,minor,build,timestamp,sysv
+ ;
+ ; Increment the build at COMPILE time
+ ;
+ s major=$g($$$PARAMdefault($$$TRAKDEF,%class,"MAJORVERSION"))
+ s minor=$g($$$PARAMdefault($$$TRAKDEF,%class,"MINORVERSION"))
+ s build=$g($$$PARAMdefault($$$TRAKDEF,%class,"BUILD"))
+ ;
+ ; Use raw $Z functions we can't assume standard websys.conversions are compiled.
+ s timestamp=$zd($h,3)_" "_$zt($p($h,",",2),3)
+ ;
+ s build=build+1
+ n p s p=##Class(%Library.ParameterDefinition).%New(%class_":BUILD"),p.Default=build d p.%Save(),p.%Close()
+ ;
+ ; write the parameter back
+ ;
+ ; Generate a simple run time string.
+ s sysv=$g($$$PARAMdefault($$$TRAKDEF,%class,"SYSTEMVERSION"))
+ if (sysv'="") s build=build_"."_sysv
+ $$$GENERATE(" q """_major_"."_minor_"."_build_" at "_timestamp_"""")
+ ;
+ QUIT $$$OK
+ q 1
+#classmethod GetIdFromCodeOrDescription
+GetIdFromCodeOrDescription(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class,labclass,webclass,SQLTABLE,SQLROWID,SQLCODE,SQLDESCRIPTION
+ s (class,labclass,webclass)=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(labclass,".",1)="web" s $p(labclass,".",1)="User"
+ i $p(webclass,".",1)="User" s $p(webclass,".",1)="web"
+ ;
+ ; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ; If there is no corresponding lab class
+ i '$d($$$CLASS($$$TRAKDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ ; Do we have a specific value set ?
+ s SQLROWID=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLROWID"))
+ ; Try and get the rowid name from the storage definition (default to "ID")
+ I SQLROWID="" d
+ . s SQLROWID=$g($$$SDEFsqlrowidname($$$TRAKDEF,labclass,"SQLStorage"),"ID")
+ . ; Set the param so that we don't have to deduce it next time (these are also used in LookUp Execute, Fetch, Close
+ . n p s p=##Class(%Library.ParameterDefinition).%New(webclass_":SQLROWID"),p.Default=SQLROWID d p.%Save(),p.%Close()
+ ; Get any stored value for CODE
+ s SQLCODE=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLCODE"))
+ ; Get any stored value for Description
+ s SQLDESCRIPTION=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDESCRIPTION"))
+ ; Get any stored value for table name, default to labclass classname
+ s SQLTABLE=$g($$$CLASSsqltablename($$$TRAKDEF,labclass),labclass)
+ ;
+ ; If we don't have a code or description then deduce it from the property names
+ i SQLCODE=""!(SQLDESCRIPTION="") d
+ . n prp
+ . s prp="" f  s prp=$o($$$PROP($$$TRAKDEF,labclass,prp)) q:prp=""  d
+ . . ; Get the sql field name, else default to the property name
+ . . i SQLCODE="",##Class(%Collation).Upper(prp)["CODE",##Class(%Collation).Upper(prp)'["CHILD" s SQLCODE=$g($$$PROPsqlfieldname($$$TRAKDEF,labclass,prp),prp)
+ . . ; Get the sql field name, else default to the property name
+ . . i SQLDESCRIPTION="",##Class(%Collation).Upper(prp)["DESC",##Class(%Collation).Upper(prp)'["CHILD" s SQLDESCRIPTION=$g($$$PROPsqlfieldname($$$TRAKDEF,labclass,prp),prp)
+ . ; Set the values so we don't have to deduce again
+ . i SQLCODE="" S SQLCODE=SQLROWID 
+ . ; Set the param so that we don't have to deduce it next time (these are also used in LookUp Execute, Fetch, Close
+ . i SQLCODE'="" d
+ . . n p s p=##Class(%Library.ParameterDefinition).%New(webclass_":SQLCODE"),p.Default=SQLCODE d p.%Save(),p.%Close()
+ . i SQLDESCRIPTION="" S SQLDESCRIPTION=SQLROWID
+ . i SQLDESCRIPTION'="" d
+ . . n p s p=##Class(%Library.ParameterDefinition).%New(webclass_":SQLDESCRIPTION"),p.Default=SQLDESCRIPTION d p.%Save(),p.%Close()
+ ;
+ i SQLTABLE'="",SQLROWID'="" d
+ . i SQLTABLE'["." s SQLTABLE="SQLUser."_SQLTABLE
+ . ;
+ . $$$GENERATE(" n id")
+ . $$$GENERATE(" s id=""""")
+ . ;
+ . ; Test description before code because we display the description, and therefore it is present for most updates.
+ . ; e.g. SELECT APCVC_Rowid INTO :id FROM APC_VendCat WHERE APCVC_Code=:val
+ . i SQLDESCRIPTION'="" d
+ . . $$$GENERATE(" &sql(SELECT "_SQLROWID_" INTO :id FROM "_SQLTABLE_" WHERE "_SQLDESCRIPTION_"=:val)")
+ . . $$$GENERATE(" i $l(id) q id")
+ . ;
+ . i SQLCODE'="" d
+ . . $$$GENERATE(" &sql(SELECT "_SQLROWID_" INTO :id FROM "_SQLTABLE_" WHERE "_SQLCODE_"=:val)")
+ . . $$$GENERATE(" i $l(id) q id")
+ . ;
+ $$$GENERATE(" q """"")
+ ; 
+ QUIT $$$OK
+ q 1
+#classmethod GetIdFromDateCodeOrDesc
+GetIdFromDateCodeOrDesc(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class,labclass,webclass,SQLTABLE,SQLROWID,SQLCODE,SQLDESCRIPTION,SQLDATEFROM,SQLDATETO
+ s (class,labclass,webclass)=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(labclass,".",1)="web" s $p(labclass,".",1)="User"
+ i $p(webclass,".",1)="User" s $p(webclass,".",1)="web"
+ ;
+ ; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ; If there is no corresponding lab class
+ i '$d($$$CLASS($$$TRAKDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ ; Do we have a specific value set ?
+ s SQLROWID=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLROWID"))
+ s SQLCODE=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLCODE"))
+ s SQLDESCRIPTION=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDESCRIPTION"))
+ s SQLTABLE=$g($$$CLASSsqltablename($$$TRAKDEF,labclass),labclass)
+ ; Get any stored value for DATEFROM,DATETO
+ s SQLDATEFROM=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDATEFROM"))
+ s SQLDATETO=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDATETO"))
+ ;
+ ; If we don't have a SQLDATEFROM or SQLDATETO then deduce it from the property names
+ i SQLDATEFROM=""!(SQLDATETO="") d
+ . n prp
+ . s prp="" f  s prp=$o($$$PROP($$$TRAKDEF,labclass,prp)) q:prp=""  d
+ . . ; Get the sql field name, else default to the property name
+ . . i SQLDATEFROM="",##Class(%Collation).Upper(prp)["DATEFROM",##Class(%Collation).Upper(prp)'["CHILD" s SQLDATEFROM=$g($$$PROPsqlfieldname($$$TRAKDEF,labclass,prp),prp)
+ . . ; Get the sql field name, else default to the property name
+ . . i SQLDATETO="",##Class(%Collation).Upper(prp)["DATETO",##Class(%Collation).Upper(prp)'["CHILD" s SQLDATETO=$g($$$PROPsqlfieldname($$$TRAKDEF,labclass,prp),prp)
+ . ; Set the values so we don't have to deduce again
+ . n p s p=##Class(%Library.ParameterDefinition).%New(webclass_":SQLDATEFROM"),p.Default=SQLDATEFROM d p.%Save(),p.%Close()
+ . n p s p=##Class(%Library.ParameterDefinition).%New(webclass_":SQLDATETO"),p.Default=SQLDATETO d p.%Save(),p.%Close()
+ ;
+ i SQLTABLE'="",SQLROWID'="" d
+ . i SQLTABLE'["." s SQLTABLE="SQLUser."_SQLTABLE
+ . ;
+ . $$$GENERATE(" n id")
+ . $$$GENERATE(" s id=""""")
+ . $$$GENERATE(" s:date="""" date=+$h")
+ . ;
+ . i SQLDESCRIPTION'="" d
+ . . $$$GENERATE(" &sql(SELECT "_SQLROWID_" INTO :id FROM "_SQLTABLE_" WHERE "_SQLDESCRIPTION_"=:val "_$s(SQLDATEFROM'="":" AND (("_SQLDATEFROM_"<=:date)OR("_SQLDATEFROM_" iS NULL))",1:"")_$s(SQLDATETO'="":" AND (("_SQLDATETO_">=:date)OR("_SQLDATETO_" iS NULL))",1:"")_" )")
+ . . $$$GENERATE(" i 'SQLCODE q id")
+ . ;
+ . i SQLCODE'="" d
+ . . $$$GENERATE(" &sql(SELECT "_SQLROWID_" INTO :id FROM "_SQLTABLE_" WHERE "_SQLCODE_"=:val "_$s(SQLDATEFROM'="":" AND (("_SQLDATEFROM_"<=:date)OR("_SQLDATEFROM_" iS NULL))",1:"")_$s(SQLDATETO'="":" AND (("_SQLDATETO_">=:date)OR("_SQLDATETO_" iS NULL))",1:"")_" )")
+ . . $$$GENERATE(" i 'SQLCODE q id")
+ . ;
+ $$$GENERATE(" q """"")
+ ; 
+ QUIT $$$OK
+ q 1
+#classmethod LookUpBroker
+LookUpBroker(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class,labclass,webclass,SQLTABLE,SQLROWID,SQLCODE,SQLDESCRIPTION,SQLFILTER
+ s (class,labclass,webclass)=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(labclass,".",1)="web" s $p(labclass,".",1)="User"
+ i $p(webclass,".",1)="User" s $p(webclass,".",1)="web"
+ ;
+ ; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ; If there is no corresponding lab class
+ i '$d($$$CLASS($$$TRAKDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ ; Do we have a specific value set ?
+ s SQLROWID=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLROWID"))
+ ; Try and get the rowid name from the storage definition (default to "ID")
+ I SQLROWID="" d
+ . s SQLROWID=$g($$$SDEFsqlrowidname($$$TRAKDEF,labclass,"SQLStorage"),"ID")
+ . ; Set the param so that we don't have to deduce it next time (these are also used in LookUp Execute, Fetch, Close
+ . n p s p=##Class(%Library.ParameterDefinition).%New(webclass_":SQLROWID"),p.Default=SQLROWID d p.%Save(),p.%Close()
+ ; Get any stored value for CODE
+ s SQLCODE=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLCODE"))
+ ; Get any stored value for Description
+ s SQLDESCRIPTION=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDESCRIPTION"))
+ ; Get any stored value for Filter
+ s SQLFILTER=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLFILTER"))
+ ; Get any stored value for table name, default to labclass classname
+ s SQLTABLE=$g($$$CLASSsqltablename($$$TRAKDEF,labclass),labclass)
+ ;
+ ; If we don't have a code or description then deduce it from the property names
+ i SQLCODE=""!(SQLDESCRIPTION="") d
+ . n prp
+ . s prp="" f  s prp=$o($$$PROP($$$TRAKDEF,labclass,prp)) q:prp=""  d
+ . . ; Get the sql field name, else default to the property name
+ . . i SQLCODE="",##Class(%Collation).Upper(prp)["CODE",##Class(%Collation).Upper(prp)'["CHILD" s SQLCODE=$g($$$PROPsqlfieldname($$$TRAKDEF,labclass,prp),prp)
+ . . ; Get the sql field name, else default to the property name
+ . . i SQLDESCRIPTION="",##Class(%Collation).Upper(prp)["DESC",##Class(%Collation).Upper(prp)'["CHILD" s SQLDESCRIPTION=$g($$$PROPsqlfieldname($$$TRAKDEF,labclass,prp),prp)
+ . ; Set the values so we don't have to deduce again
+ . i SQLCODE="" S SQLCODE=SQLROWID 
+ . ; Set the param so that we don't have to deduce it next time (these are also used in LookUp Execute, Fetch, Close
+ . i SQLCODE'="" d
+ . . n p s p=##Class(%Library.ParameterDefinition).%New(webclass_":SQLCODE"),p.Default=SQLCODE d p.%Save(),p.%Close()
+ . i SQLDESCRIPTION="" S SQLDESCRIPTION=SQLROWID
+ . i SQLDESCRIPTION'="" d
+ . . n p s p=##Class(%Library.ParameterDefinition).%New(webclass_":SQLDESCRIPTION"),p.Default=SQLDESCRIPTION d p.%Save(),p.%Close()
+ ;
+ $$$GENERATE(" n id,desc,code,retval")
+ $$$GENERATE(" s (id,desc,code,retval)=""""")
+ ;
+ i SQLTABLE'="",SQLROWID'="" d
+ . i SQLTABLE'["." s SQLTABLE="SQLUser."_SQLTABLE
+ . ;
+ . ; Test description before code because we display the description, and therefore it is present for most updates.
+ . ; e.g. SELECT APCVC_Rowid INTO :id FROM APC_VendCat WHERE APCVC_Code=:val
+ . i SQLDESCRIPTION'="" d
+ . . $$$GENERATE(" &sql(SELECT "_SQLROWID_","_SQLDESCRIPTION_","_SQLCODE_" INTO :id,:desc,:code FROM "_SQLTABLE_" WHERE "_SQLDESCRIPTION_"=:val"_$s(SQLFILTER'="":" AND "_SQLFILTER,1:"")_")")
+ . . ;$$$GENERATE(" i $l(id) d  q 1") ;;if you need to change this back -see Simon first !
+ . . $$$GENERATE(" i 'SQLCODE d  q 1")
+ . . $$$GENERATE(" . s retval=itmjs_""('""_$ZCVT(desc,""O"",""JS"")_""');""")
+ . . $$$GENERATE(" . i itmjsex'="""" s retval=retval_itmjsex_""('""_$ZCVT(desc,""O"",""JS"")_""^""_id_""^""_$ZCVT(code,""O"",""JS"")_""');""")
+ . . $$$GENERATE(" . &javascript<#(retval)#>")
+ . ;
+ . i SQLCODE'="" d
+ . . $$$GENERATE(" &sql(SELECT "_SQLROWID_","_SQLDESCRIPTION_","_SQLCODE_" INTO :id,:desc,:code FROM "_SQLTABLE_" WHERE "_SQLCODE_"=:val"_$s(SQLFILTER'="":" AND "_SQLFILTER,1:"")_")")
+ . . ;$$$GENERATE(" i $l(id) d  q 1")
+ . . $$$GENERATE(" i 'SQLCODE d  q 1")
+ . . $$$GENERATE(" . s retval=itmjs_""('""_$ZCVT(desc,""O"",""JS"")_""');""")
+ . . $$$GENERATE(" . i itmjsex'="""" s retval=retval_itmjsex_""('""_$ZCVT(desc,""O"",""JS"")_""^""_id_""^""_$ZCVT(code,""O"",""JS"")_""');""")
+ . . $$$GENERATE(" . &javascript<#(retval)#>")
+ . ;
+ ; just return some 'empty' stuff
+ ;$$$GENERATE(" s retval=itmjs_""('');""_itmjsex_""('^');""")
+ ;$$$GENERATE(" &javascript<#(retval)#>")
+ $$$GENERATE(" q 0")
+ ; 
+ QUIT $$$OK
+ q 1
+#classmethod LookUpClose
+LookUpClose(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class,labclass,webclass,SQLTABLE,SQLROWID,SQLDESCRIPTION
+ s (class,labclass,webclass)=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(labclass,".",1)="web" s $p(labclass,".",1)="User"
+ i $p(webclass,".",1)="User" s $p(webclass,".",1)="web"
+ ;
+ ; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ; If there is no corresponding lab class
+ i '$d($$$CLASS($$$TRAKDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ i $g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDESCRIPTION"))'="" d
+ . $$$GENERATE(" ; Retrieve the current status")
+ . $$$GENERATE(" n user,work")
+ . $$$GENERATE(" ;")
+ . $$$GENERATE(" &SQL(CLOSE LOOKUP)")
+ . $$$GENERATE(" ;")
+ . $$$GENERATE(" s QHandle=""""")
+ $$$GENERATE(" QUIT """"")
+ Quit $$$OK
+ q 1
+#classmethod LookUpDateBroker
+LookUpDateBroker(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class,labclass,webclass,SQLTABLE,SQLROWID,SQLCODE,SQLDESCRIPTION,SQLFILTER
+ s (class,labclass,webclass)=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(labclass,".",1)="web" s $p(labclass,".",1)="User"
+ i $p(webclass,".",1)="User" s $p(webclass,".",1)="web"
+ ;
+ ; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ; If there is no corresponding lab class
+ i '$d($$$CLASS($$$TRAKDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ ; Do we have a specific value set ?
+ s SQLROWID=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLROWID"))
+ s SQLCODE=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLCODE"))
+ s SQLDESCRIPTION=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDESCRIPTION"))
+ s SQLFILTER=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLFILTER"))
+ s SQLTABLE=$g($$$CLASSsqltablename($$$TRAKDEF,labclass),labclass)
+ ; Get any stored value for DATEFROM,DATETO
+ s SQLDATEFROM=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDATEFROM"))
+ s SQLDATETO=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDATETO"))
+ ;
+ $$$GENERATE(" n id,desc,code,retval")
+ $$$GENERATE(" s (id,desc,code,retval)=""""")
+ $$$GENERATE(" s:date="""" date=+$h")
+ ;
+ i SQLTABLE'="",SQLROWID'="" d
+ . i SQLTABLE'["." s SQLTABLE="SQLUser."_SQLTABLE
+ . ;
+ . i SQLDESCRIPTION'="" d
+ . . $$$GENERATE(" &sql(SELECT "_SQLROWID_","_SQLDESCRIPTION_","_SQLCODE_" INTO :id,:desc,:code FROM "_SQLTABLE_" WHERE "_SQLDESCRIPTION_"=:val "_$s(SQLDATEFROM'="":" AND (("_SQLDATEFROM_"<=:date)OR("_SQLDATEFROM_" iS NULL))",1:"")_$s(SQLDATETO'="":" AND (("_SQLDATETO_">=:date) OR ("_SQLDATETO_" iS NULL))",1:"")_" )")
+ . . $$$GENERATE(" i 'SQLCODE d  q 1")
+ . . $$$GENERATE(" . s retval=itmjs_""('""_$ZCVT(desc,""O"",""JS"")_""');""")
+ . . $$$GENERATE(" . i itmjsex'="""" s retval=retval_itmjsex_""('""_$ZCVT(desc,""O"",""JS"")_""^""_id_""^""_$ZCVT(code,""O"",""JS"")_""');""")
+ . . $$$GENERATE(" . &javascript<#(retval)#>")
+ . ;
+ . i SQLCODE'="" d
+ . . $$$GENERATE(" &sql(SELECT "_SQLROWID_","_SQLDESCRIPTION_","_SQLCODE_" INTO :id,:desc,:code FROM "_SQLTABLE_" WHERE "_SQLCODE_"=:val "_$s(SQLDATEFROM'="":" AND (("_SQLDATEFROM_"<=:date)OR("_SQLDATEFROM_" iS NULL))",1:"")_$s(SQLDATETO'="":" AND (("_SQLDATETO_">=:date) OR ("_SQLDATETO_" iS NULL))",1:"")_" )")
+ . . $$$GENERATE(" i 'SQLCODE d  q 1")
+ . . $$$GENERATE(" . s retval=itmjs_""('""_$ZCVT(desc,""O"",""JS"")_""');""")
+ . . $$$GENERATE(" . i itmjsex'="""" s retval=retval_itmjsex_""('""_$ZCVT(desc,""O"",""JS"")_""^""_id_""^""_$ZCVT(code,""O"",""JS"")_""');""")
+ . . $$$GENERATE(" . &javascript<#(retval)#>")
+ . ;
+ $$$GENERATE(" q 0")
+ ; 
+ QUIT $$$OK
+ q 1
+#classmethod LookUpDateClose
+LookUpDateClose(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class,labclass,webclass,SQLTABLE,SQLROWID,SQLDESCRIPTION
+ s (class,labclass,webclass)=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(labclass,".",1)="web" s $p(labclass,".",1)="User"
+ i $p(webclass,".",1)="User" s $p(webclass,".",1)="web"
+ ;
+ ; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ; If there is no corresponding lab class
+ i '$d($$$CLASS($$$TRAKDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ i $g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDESCRIPTION"))'="" d
+ . $$$GENERATE(" ; Retrieve the current status")
+ . $$$GENERATE(" n user,work")
+ . $$$GENERATE(" ;")
+ . $$$GENERATE(" &SQL(CLOSE LOOKUPDATE)")
+ . $$$GENERATE(" ;")
+ . $$$GENERATE(" s QHandle=""""")
+ $$$GENERATE(" QUIT """"")
+ Quit $$$OK
+ q 1
+#classmethod LookUpDateExecute
+LookUpDateExecute(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ n class,labclass,webclass,SQLTABLE,SQLROWID,SQLDESCRIPTION,SQLCODE,SQLFILTER
+ s (class,labclass,webclass)=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(labclass,".",1)="web" s $p(labclass,".",1)="User"
+ i $p(webclass,".",1)="User" s $p(webclass,".",1)="web"
+ ;
+ ; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ; If there is no corresponding lab class
+ i '$d($$$CLASS($$$TRAKDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ ; Do we have a specific value set ?
+ s SQLROWID=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLROWID"))
+ s SQLDESCRIPTION=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDESCRIPTION"))
+ s SQLCODE=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLCODE"))
+ s SQLFILTER=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLFILTER"))
+ s SQLTABLE=$g($$$CLASSsqltablename($$$TRAKDEF,labclass),labclass)
+ ; Get any stored value for DATEFROM,DATETO
+ s SQLDATEFROM=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDATEFROM"))
+ s SQLDATETO=$g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDATETO"))
+ ;
+ $$$GENERATE(" n user,work")
+ $$$GENERATE(" s:date="""" date=+$h")
+ $$$GENERATE(" s user=$lb(desc,date)")
+ $$$GENERATE(" s work=""""")
+ ;
+ i SQLTABLE'="",SQLROWID'="" d
+ . i SQLTABLE'["." s SQLTABLE="SQLUser."_SQLTABLE
+ . ;
+ . i SQLDESCRIPTION'="" d
+ . . ;[C52];$$$GENERATE(" &sql( DECLARE LOOKUPDATE CURSOR FOR SELECT "_SQLDESCRIPTION_","_SQLROWID_","_SQLCODE_" FROM "_SQLTABLE_" WHERE "_SQLDESCRIPTION_" %STARTSWITH :desc "_$s(SQLDATEFROM'="":" AND (("_SQLDATEFROM_"<=:date)OR("_SQLDATEFROM_" iS NULL))",1:"")_$s(SQLDATETO'="":" AND (("_SQLDATETO_">=:date) OR ("_SQLDATETO_" iS NULL))",1:"")_" ORDER BY "_SQLDESCRIPTION_")")
+ . . $$$GENERATE(" &sql( DECLARE LOOKUPDATE CURSOR FOR SELECT "_SQLDESCRIPTION_" as zDESC,"_SQLROWID_" as zID,"_SQLCODE_" as zCODE FROM "_SQLTABLE_" WHERE "_SQLDESCRIPTION_" %STARTSWITH :desc "_$s(SQLDATEFROM'="":" AND (("_SQLDATEFROM_"<=:date)OR("_SQLDATEFROM_" iS NULL))",1:"")_$s(SQLDATETO'="":" AND (("_SQLDATETO_">=:date) OR ("_SQLDATETO_" iS NULL))",1:"")_" ORDER BY zDESC)")
+ . . $$$GENERATE(" &sql( OPEN LOOKUPDATE)")
+ . . ;
+ . . $$$GENERATE(" s QHandle=$lb(0,user,work)")
+ ;
+ $$$GENERATE(" q $$$OK")
+ ; 
+ QUIT $$$OK
+ q 1
+#classmethod LookUpDateFetch
+LookUpDateFetch(%mode,%class,%property,%method,%parameter,%codemode,%code,%classmodify,%context,%language) ;
+ s %code=0
+ ;
+ n class,labclass,webclass,SQLTABLE,SQLROWID,SQLDESCRIPTION
+ s (class,labclass,webclass)=%class
+ ;
+ ; for class starting with web prefix (but not websys), it is likely
+ ; that we want to update the core class, not the web class
+ i $p(labclass,".",1)="web" s $p(labclass,".",1)="User"
+ i $p(webclass,".",1)="User" s $p(webclass,".",1)="web"
+ ;
+ ; if class is abstract, quit here, don't instantiate 
+ i $$$CLASSabstract($$$MGINFO,%class) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ; If there is no corresponding lab class
+ i '$d($$$CLASS($$$TRAKDEF,labclass)) $$$GENERATE(" QUIT """"") QUIT $$$OK
+ ;
+ $$$GENERATE(" ; Retrieve the current status")
+ $$$GENERATE(" n user,work,code,description,id")
+ $$$GENERATE(" ;")
+ $$$GENERATE(" s AtEnd=$li(QHandle,1)")
+ $$$GENERATE(" s user=$li(QHandle,2)")
+ $$$GENERATE(" s work=$li(QHandle,3)")
+ $$$GENERATE(" ;")
+ $$$GENERATE(" s desc=$li(user,1)")
+ i $g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDESCRIPTION"))'="" d
+ . $$$GENERATE(" &SQL(FETCH LOOKUPDATE INTO :description,:id,:code)")
+ . $$$GENERATE(" i SQLCODE s AtEnd=1")
+ i $g($$$PARAMdefault($$$TRAKDEF,webclass,"SQLDESCRIPTION"))="" d
+ . $$$GENERATE(" s AtEnd=1")
+ $$$GENERATE(" ;")
+ $$$GENERATE(" s Row=""""")
+ $$$GENERATE(" i 'AtEnd s Row=$lb(description,id,code)")
+ $$$GENERATE(" s QHandle=$lb(AtEnd,user,work)")
+ $$$GENERATE(" QUIT $$$OK")
+ Quit $$$OK
+ q 1
+]]></Routine>
+</Export>

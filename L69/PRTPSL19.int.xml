@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTPSL19" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTPSL19 ; ML 20/10/98 ; Packing slip -Medlab
+ q
+ ; Parameters :  1. Packing slip Number
+ ;               2. From User Site
+ ;               3. To User Site
+ ;               4. To Refferal Lab
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Packing Slip "_PAR1
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="From User Site : "_FROM(3)
+ s line=4,xHEADER(line)=""
+ i $l(PAR3) d
+ .s line=5,xHEADER(line)="To User Site : "_TO(3)
+ .s line=6,xHEADER(line)=""
+ i $l(PAR4) d
+ .s line=5,xHEADER(line)="To Referral Laboratory : "_TO(3)
+ .s line=6,xHEADER(line)=""
+ d BODY
+ i CNT1 d
+ .s line=line+1,xHEADER(line)="Total number of specimens : "_CNT1
+ .s line=line+1,xHEADER(line)=""
+ i CNT2 d
+ .s line=line+1,xHEADER(line)="Total number of tests : "_CNT2
+ .s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER),PRINT,FILE,LABEL
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ k FROM i '$$select^LVBCTUSL(PAR2) m FROM=PLIST
+ k TO i $l(PAR3),'$$select^LVBCTUSL(PAR3) m TO=PLIST
+ i $l(PAR4),'$$select^LVBCTRL(PAR4) m TO=PLIST
+ q
+BODY ; create temporary printing file
+ s (CNT1,CNT2)=""
+ i $l(PAR3) d
+ .s epis="" f  s epis=$o(^TPSL(PAR1,PAR2,"US",PAR3,epis)) q:epis=""  d
+ ..s move="" f  s move=$o(^TPSL(PAR1,PAR2,"US",PAR3,epis,move)) q:move=""  d
+ ...s x="" f  s x=$o(^TEPI(epis,9,move,"VTS",x)) q:x=""  s CNT2=CNT2+1
+ ...s x="" f  s x=$o(^TEPI(epis,9,move,"SP",x)) q:x=""  s CNT1=CNT1+1
+ ...s ^TMP($zn,$j,"REPORT",epis_"||"_move)=""
+ i $l(PAR4) d
+ .s epis="" f  s epis=$o(^TPSL(PAR1,PAR2,"RL",PAR4,epis)) q:epis=""  d
+ ..s move="" f  s move=$o(^TPSL(PAR1,PAR2,"RL",PAR4,epis,move)) q:move=""  d
+ ...s x="" f  s x=$o(^TEPI(epis,9,move,"VTS",x)) q:x=""  s CNT2=CNT2+1
+ ...s x="" f  s x=$o(^TEPI(epis,9,move,"SP",x)) q:x=""  s CNT1=CNT1+1
+ ...s ^TMP($zn,$j,"REPORT",epis_"||"_move)=""
+ ...S ^TMP($zn,$j,"LABEL",epis)=""
+ ...i $l(TO(6)) s x="" f  s x=$o(^TEPI(epis,9,move,"VTS",x)) q:x=""  s ^TMP($zn,$j,"FILE",epis,x)=""
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s move="" f  s move=$o(^TMP($zn,$j,"REPORT",move)) q:move=""  d
+ ..k VISIT s epis=$p(move,"||",1),mv=$p(move,"||",2) i '$$select^LVBEPVIS(epis) d
+ ...m VISIT=PLIST
+ ...i $d(^TMP($zn,$j,"FILE",epis)) s xxx(4)="MRN : RL_"_$p(VISIT(20),$c(1))
+ ...s x="" f cnt=0:1 s x=$o(^TEPI(epis,9,mv,"VTS",x)) q:x=""  d
+ ....s xx=$p(x,"||",2) i '$$select^LVBCTTS(xx,"Y") s xxx(1)=$g(xxx(1))_$s($g(xxx(1))'="":", ",1:"")_PLIST(4)
+ ....s xxx(4)=$g(xxx(4))_$s($l($g(xxx(4))):" ; ",1:"")_$s('cnt:"Reference No: ",1:" , ")_$p(x,"||",1)_"-"_$p(x,"||",2)_"-"_$p(x,"||",3)
+ ...s x="" f  s x=$o(^TEPI(epis,9,mv,"SP",x)) q:x=""  d
+ ....s xx=$p(x,"||",2) i '$$select^LVBCTSPE(xx,"Y") s xxx(2)=$g(xxx(2))_$s($g(xxx(2))'="":", ",1:"")_PLIST(3)
+ ..d PRINT^PRTREP00(.VISIT,.N) k VISIT,xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="PSL"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+LABEL ;
+ s epis="" f  s epis=$o(^TMP($zn,$j,"LABEL",epis)) q:epis=""  d
+ .D START^PRTREP00("","",epis_"\"_PAR4,"EPL")
+ Q
+FILE ; create file
+ i $d(^TMP($zn,$j,"FILE")) d
+ .s file=TO(6) f j="\","/" i file[j s:$e(file,$l(file))'=j file=file_j
+ .s file=file_PAR4_"_"_PAR1_".txt"
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","Start creating file <"_file_">")
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .o file:"WNS":2 e  d  q
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","Cannot create file <"_file_">")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .s epis="" f  s epis=$o(^TMP($zn,$j,"FILE",epis)) q:epis=""  d
+ ..i '$$select^LVBEPVIS(epis,"Y") d
+ ...s (xx,vts)="" f j=1:1 s vts=$o(^TMP($zn,$j,"FILE",epis,vts)) q:vts=""  s $p(xx,",",j)=vts
+ ...s str="" f j=1:1:PLIST s $p(str,$c(28),j)=$p($g(PLIST(j)),$c(1))
+ ...s $p(str,$c(28),200)=xx
+ ...u file w str,!
+ .c file
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","Finish creating file <"_file_">")
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ q
+]]></Routine>
+</Export>

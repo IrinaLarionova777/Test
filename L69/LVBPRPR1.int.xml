@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBPRPR1" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBPRPR1 ; IG 10/07/98 ; LVB Control data access for ^PR(ReportID,"LIST")
+ ;
+ ; supported calls:
+ ;
+ ; $$select^LVBPRPR1(rowid)
+ ; $$open^LVBPRPR1(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBPRPR1(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBPRPR1(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBPRPR1(par,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBCTPRPR1()
+ ;
+ ; PLIST : 1 - report/Courier run
+ ;         2 - episode
+ ;         3 - type (D/H)
+ ;         4 - type value
+ ;         5 - list of tests
+ ;         6 - list of synonyms
+select(rowid) K PLIST s rowid=$g(rowid)
+ s x1=$p(rowid,"||",1),PLIST(1)=x1
+ s x2=$p(rowid,"||",2,$l(rowid,"||")),PLIST(2)=$p(x2,"||",1)
+ s PLIST(3)=$p(rowid,"||",3)
+ s PLIST(4)=$p(rowid,"||",4)
+ s (list1,list2,x)="" f  s x=$o(^PR(x1,"LIST",x2,x)) q:x=""  d
+ .s list1=list1_$s($l(list1):"\",1:"")_x,ts=$p(x,"||",2)
+ . ;---s syn="" &SQL(SELECT CTTS_Synonym INTO :syn FROM CT_TestSet WHERE CTTS_RowID=:ts)
+  . ;--- ** SQL PUBLIC Variables: SQLCODE, syn, ts
+ .s syn="" Do %0Ao
+ .s list2=list2_$s($l(list2):",",1:"")_$s($l(syn):syn,1:ts)
+ s PLIST(5)=list1
+ s PLIST(6)=list2
+ s PLIST=$o(PLIST(""),-1)
+ d adjust
+ Q SQLCODE
+open(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par),line=""
+ q 0
+fetch(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par),SQLCODE=0 K PLIST
+ s line=$o(^PR(par,"LIST",line)) q:line="" 100
+ q $$select(par_"||"_line)
+ ; Fetch all data
+fetchbuffer(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(par) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(par,p1,p2,p3,p4,p5,p6,p7,p8,p9) N (par,PLIST) s par=$g(par) K ^TMP($zn,$j)
+ i $$open(par)
+ f cnt=1:1 Q:$$fetch(par)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+close() q 0
+ ; Adjust certain fields
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("")
+ ;
+ s PLIST(1)=PLIST(1)_$c(1)_$s($p(^PR(PLIST(1),"LIST"),"\",1)="C":$p(^PR(PLIST(1),"LIST"),"\",2),1:"")
+ I $G(PLIST(2))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBEPVIS(plist(2))
+ .S X="" I 'SQLCODE D
+ ..S X=PLIST(2)_$c(1)_$$NameFormat^LVBCOM03("PT",$p(PLIST(7),$c(1),2),PLIST(4),PLIST(3),PLIST(99),PLIST(100),PLIST(101))_$c(1)_$p(PLIST(20),$c(1))_$c(1)_$p(PLIST(15),$c(1))_$c(1)_$p(PLIST(15),$c(1),2)_$c(1)_$p(PLIST(22),$C(1))_$c(1)_$p(PLIST(22),$c(1),2)
+ .K PLIST M PLIST=plist S PLIST(2)=X K plist
+ s PLIST(4)=$tr(PLIST(4),"^\|",$c(16,17,18))
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(ts)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(12)=$g(^TTAB("TS",%mmmsqld(3)))
+ s syn=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTAB("TS",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("TS",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestSet for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("TS",%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(17)=$g(^TTAB("TS",%mmmsqld(3)))
+ s syn=$p(%mmmsqld(17),"\",2)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+]]></Routine>
+</Export>

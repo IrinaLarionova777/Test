@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCOM11" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCOM11 ; IG 27/10/2000 ; Common routines
+ ;
+ ; supported calls:
+ ;
+ ; $$open^LVBCOM11(sort,user,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBCOM11(sort,user,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBCOM11(sort,user,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBCOM11()
+ ; $$file^LVBCOM11(sort,user)
+ ;
+file(sort,user) n (sort,user,PLIST) s sort=$g(sort),user=$g(user),ok=100,file=""
+ d
+ .n (file)
+ .i '$$select^MVBCFSM(1),$l(PLIST(35)) s file=PLIST(35)
+ i $l(file) d
+ .f j="\","/" i file[j,$e(file,$l(file))'=j s file=file_j
+ .s file=file_"DQR_"_user_"_"_$tr($zd($h,3)_$zt($p($h,",",2)),"-:")_".txt"
+ .o file:"WNS":0 e  q
+ .u file
+ .i $$open(sort,user)
+ .f  q:$$fetch(sort,user)  d
+ ..k xx s xx=PLIST(1)
+ ..f j=1:1:$l(xx,$c(28)) s xx(j)=$p(xx,$c(28),j)
+ ..f j=1:1 q:'$d(xx(j))  i xx(j)[$c(1) s xx(j)=$p(xx(j),$c(1),2)
+ ..f j=1:1 q:'$d(xx(j))  w xx(j),$c(9)
+ ..w !
+ .i $$close()
+ .s ok=0
+ q ok_$c(1)_file
+ ; Generic call
+ ; PLIST : 1 - Question
+ ;         2 - Answer
+ ; sort  :   - Unsorted
+ ;         C - Collection Date/Time
+ ;         R - Reverse Collection Date/Time
+ ;         U - Urgents
+ ;         D - Doctor
+ ;         P - Patient location
+open(SORT,user,p2,p3,p4,p5,p6,p7,p8,p9) n (SORT,user,PLIST) s SORT=$g(SORT),user=$g(user)
+ k ^TMP("Query",$j) m ^TMP("Query",$j,"IN")=PLIST
+ ; sort questions
+ s x="" f  s x=$o(^TMP("Query",$j,"IN",x)) q:x=""  d
+ .f j=1,2 s @("x"_j)=$p(^(x),$c(2),j)
+ .i $l(x1),'$$select^MVBSSQ(x1) s sort=+PLIST(5) i $l(PLIST(4)) s ^TMP("Query",$j,"Sort",sort,x1)=x2_$c(1)_PLIST(4)
+ s sort="" f  s sort=$o(^TMP("Query",$j,"Sort",sort)) q:sort=""  d
+ .s x1="" f  s x1=$o(^TMP("Query",$j,"Sort",sort,x1)) q:x1=""  d
+ ..s text=$p(^(x1),$c(1),1),function=$tr($p(^(x1),$c(1),2),$c(16),"^")
+ ..i $l($t(@function)) x "d "_function_"("""_text_""")" s ^TMP("Query",$j,"OUT")=""
+ s vts="" f count=0:1 s vts=$o(^TMP("Query",$j,"OUT",vts)) q:vts=""  d
+ .s ep=$p(vts,"||"),xx1=$g(^TEPI(ep)),order=""
+ .i SORT="C" s order=$p(xx1,"\",10)_" "_$e($p(xx1,"\",11)*60+100000,2,6)
+ .i SORT="R" s order=(100000-$p(xx1,"\",10))_" "_$e(100000-($p(xx1,"\",11)*60)+100000,2,6)
+ .i SORT="U" s xx2=$$priority^LVBVISTS(vts) i $l(xx2) d
+ .. ;---s xx3="" &SQL(SELECT CTPR_Urgent INTO :xx3 FROM CT_Priority WHERE CTPR_RowID=:xx2)
+  .. ;--- ** SQL PUBLIC Variables: SQLCODE, xx2, xx3
+ ..s xx3="" Do %0Ao
+ ..s order=$s($p(xx3,$c(1))="Y":1,1:2)
+ .i SORT="D" s order=$p(xx1,"\",13)
+ .i SORT="P" s order=$p(xx1,"\",20)
+ .s:'$l(order) order=" " s ^TMP("Query",$j,"SORT","DATA",order,vts)=^TMP("Query",$j,"OUT",vts)
+ ; prepare group parameters
+ i '$$selrow^MVBSSUSR(user,"Y") s group=PLIST(4) i $l(group) d
+ .s ^TMP("Query",$j,"SORT","OUT")=group
+ .k SSGRA i $l(group),'$$getall^MVBSSGRA(group) m SSGRA=PLIST d
+ .s xj="" f  s xj=$o(SSGRA(xj)) q:xj=""  d
+ ..s ^TMP("Query",$j,"SORT","OUT",xj)=$p(SSGRA(xj),$c(2),4)
+ ..s field=$p($p(SSGRA(xj),$c(2),4),$c(28),3)
+ ..i field'="xxx",'$$select^MVBSSRH(field,"Y") m ^TMP("Query",$j,"SORT","OUT",xj,"PLIST")=PLIST
+ ..i field="xxx" d
+ ...s ^TMP("Query",$j,"SORT","OUT",xj,"PLIST",2)="xxx"
+ ...s ^TMP("Query",$j,"SORT","OUT",xj,"PLIST",3)=$p($p(SSGRA(xj),$c(2),4),$c(28),4)
+ q count
+fetch(sort,user,p2,p3,p4,p5,p6,p7,p8,p9) s sort=$g(sort),user=$g(user) k PLIST,DATA1,DATA2
+ s ^TMP("Query",$j,"Order")=$g(^TMP("Query",$j,"Order"))+1
+ s sort=$o(^TMP("Query",$j,"SORT","DATA","")) i $l(sort) d
+ .s vts=$o(^TMP("Query",$j,"SORT","DATA",sort,"")) i $l(vts) d
+ ..s TI=$p(^TMP("Query",$j,"SORT","DATA",sort,vts),$c(1),1)
+ ..s DB=$p(^TMP("Query",$j,"SORT","DATA",sort,vts),$c(1),2)
+ ..i '$$select(vts,TI,DB) m DATA1=PLIST i '$$select(vts,TI,DB,"Y") d
+ ...m DATA2=PLIST k ^TMP("Query",$j,"SORT","DATA",sort,vts)
+ ...k PLIST
+ ...s (DATA1,x)="" f  s x=$o(DATA1(x)) q:x=""  s $p(DATA1,$c(28),x)=DATA1(x)
+ ...s (DATA2,x)="" f  s x=$o(DATA2(x)) q:x=""  s $p(DATA2,$c(28),x)=DATA2(x)
+ ...s PLIST(1)=DATA1
+ ...s PLIST(2)=DATA2
+ s PLIST=$o(PLIST(""),-1)
+ q $s(PLIST:0,1:100)
+ ; Fetch all data
+fetchbuffer(sort,user,p2,p3,p4,p5,p6,p7,p8,p9) s sort=$g(sort),user=$g(user) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ s sum=0 f xxx=1:1:max s SQLCODE=$$fetch(sort,user) q:SQLCODE  d  s sum=sum+$l(^TMP($zn,$j,cnt)) q:sum>15000
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+close() k ^TMP("Query",$j)
+ q 0
+ ; 1-Verification queue
+ ; 2-Result (Item with the synonym Result)
+ ; 3-MicroOrganism
+ ; 4-Number of pathogens
+ ; 5-Sensitivities exist (Y/N)
+ ; 6-Test Items with Antibiotic Panel
+ ; 7-DayBook Accession numbers
+ ; 8-VisTestRowID
+ ; 9-Test Sets
+select(vts,TI,DB,xxx) s vts=$g(vts),TI=$g(TI),DB=$g(DB),xxx=$g(xxx)
+ i '$l(DB) d
+ .i $$open^LVBHIVAC($p(vts,"||"))
+ .f  q:$$fetch^LVBHIVAC($p(vts,"||"))  d
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..i (","_PLIST(6)_",")[(","_vts_",") s DB=DB_$s($l(DB):",",1:"")_PLIST(2)
+ .i $$close^LVBHIVAC()
+ k plist i $l(vts) d
+ .i '$$results^LVBVISTS(vts,,,,"Y") m RESULT=PLIST
+ .i '$$select^LVBEPVIS($p(vts,"||",1),"Y") m EPVIS=PLIST
+ .k SORT i xxx'="Y" m SORT=^TMP("Query",$j,"SORT","OUT")
+ .e  f j=1:1:8 s SORT(j,"PLIST",2)="xxx",SORT(j,"PLIST",3)=j
+ .s xj="" f  s xj=$o(SORT(xj)) q:xj=""  d
+ ..s DATA=""
+ ..s code=$g(SORT(xj,"PLIST",2))
+ ..s nn=$g(SORT(xj,"PLIST",3))
+ ..s field=$g(SORT(xj,"PLIST",7))
+ ..i $l(field) d
+ ...i $p(field,"-",1)="F" d
+ ....s x1=$p(field,"-",2) f j=1:1:$l(x1,";") s x2=$p(x1,";",j) i $l(x2),$l($g(EPVIS(x2))) d
+ .....s DATA=DATA_$s($l(DATA):" ",1:"")_$g(EPVIS(x2))
+ ...i $p(field,"-",1)="F1" s DATA=$p($g(EPVIS($p(field,"-",2))),",",1)
+ ...i $p(field,"-",1)="F2" s DATA=$p($g(EPVIS($p(field,"-",2))),",",2)
+ ...i $p(field,"-",1)="B" d
+ ....k PLIST
+ ....x "s SQLCODE=$$select^"_$p(field,"-",2)_"("""_$p(DATA,$c(1))_""")"
+ ....i 'SQLCODE s DATA=$g(PLIST($p(field,"-",3)))
+ ....e  s DATA=""
+ ...i $p(field,"-",1)="DT" d
+ ....s xDT=$p($p(field,"-",2),";",1)
+ ....s xTM=$p($p(field,"-",2),";",2)
+ ....i $l($p($g(EPVIS(xDT)),$c(1))) s DATA=$$extdate2^SSUTIL4($p($g(EPVIS(xDT)),$c(1)))
+ ....i DATA'="",$l($p($g(EPVIS(xTM)),$c(1))) s DATA=DATA_"  "_$$exttime^SSUTIL4($p($g(EPVIS(xTM)),$c(1)))
+ ...i $p(field,"-",1)="D" d
+ ....s xDT=$p(field,"-",2) i $l($p($g(EPVIS(xDT)),$c(1))) s DATA=$$extdate2^SSUTIL4($p($g(EPVIS(xDT)),$c(1)))
+ ...i $p(field,"-",1)="T" d
+ ....s xTM=$p(PART,"-",2) i $l($p($g(EPVIS(xTM)),$c(1))) s DATA=$$exttime^SSUTIL4($p($g(EPVIS(xTM)),$c(1)))
+ ..i '$l(field) d
+ ...i code="AMOUNT1" d
+ ....i $d(xxx("AMOUNT1")) s DATA=xxx("AMOUNT1") q
+ ....i $l($g(EPVIS(2))) d
+ .....s epis=$p(EPVIS(2),$c(1)) i $l(epis) s mrn=$p($g(^TEPI(epis)),"\",18),dc=$p($g(^TEPI(epis)),"\",10) d
+ ......i $l(mrn),$l(dc) s DATA=$p($g(^TDEB(mrn,dc,0,epis)),"\",1)
+ ...i code="AMOUNT2" d
+ ....i $d(xxx("AMOUNT2")) s DATA=xxx("AMOUNT2") q
+ ....i $l($g(EPVIS(2))) d
+ .....s epis=$p(EPVIS(2),$c(1)) i $l(epis) s mrn=$p($g(^TEPI(epis)),"\",18),dc=$p($g(^TEPI(epis)),"\",10) d
+ ......i $l(mrn),$l(dc) s DATA=$p($g(^TDEB(mrn,dc,0,epis)),"\",2)
+ ...i code="NAME" D
+ ....i $d(xxx("NAME")) s DATA=xxx("NAME") q
+ ....s DATA=$$NameFormat^LVBCOM03("PT",$p($g(EPVIS(7)),$c(1),2),$g(EPVIS(4)),$g(EPVIS(3)),$g(EPVIS(99)),$g(EPVIS(100)),$g(EPVIS(101)))
+ ...i code="ORDER" s DATA=$g(^TMP("Query",$j,"Order"))
+ ...i code="xxx" d
+ .... ;
+ .... ; Verification queue
+ .... ;
+ ....i nn=1 d
+ .....i $d(^TEPI($p(vts,"||",1),1,$p(vts,"||",2),$p(vts,"||",3),"QUEUE","VQ")) d
+ ......s x=$o(^TEPI($p(vts,"||",1),1,$p(vts,"||",2),$p(vts,"||",3),"QUEUE","VQ",""),-1)
+ ......i '$$select^LVBVISTQ(vts_"||VQ||"_x) d
+ .......f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ .......i '$l(PLIST(7)) s DATA=PLIST(10)
+ .... ;
+ .... ; Result (Item with the synonym <Result>)
+ .... ;
+ ....i nn=2 d
+ .....f j1=1:1:RESULT i $l($p(RESULT(j1),$c(1),2)) d  q:$l(DATA)
+ ......s ti=$p(RESULT(j1),$c(1),2)
+ ......s syn="" i '$$selskip^LVBCTTC(ti) s syn=PLIST(14)
+ ......i $$ALPHAUP^SSUTIL4($p(syn,$c(1)))="RESULT" s DATA=$p(RESULT(j1),$c(1),3)
+ .... ;
+ .... ; MicroOrganism
+ .... ;
+ ....i nn=3 d
+ .....f j1=1:1:RESULT i $l($p(RESULT(j1),$c(1),2)) d
+ ......s ti=$p(RESULT(j1),$c(1),2) i $l(TI),(","_TI_",")'[(","_ti_",") q
+ ......s type="" i '$$selskip^LVBCTTC(ti) s type=PLIST(5)
+ ......i $p(type,$c(1))="V",$l($p(RESULT(j1),$c(1),3)) s DATA=DATA_$s($l(DATA):",",1:"")_$p(RESULT(j1),$c(1),3)
+ .... ;
+ .... ; Number of pathogens
+ .... ;
+ ....i nn=4 d
+ .....f j1=1:1:RESULT i $l($p(RESULT(j1),$c(1),2)) d
+ ......s ti=$p(RESULT(j1),$c(1),2) i $l(TI),(","_TI_",")'[(","_ti_",") q
+ ......s type="" i '$$selskip^LVBCTTC(ti) s type=PLIST(5)
+ ......i $p(type,$c(1))="V",$l($p(RESULT(j1),$c(1),3)) s DATA=DATA+1
+ .... ;
+ .... ; Sensitivities exists (Y/N)
+ .... ;
+ ....i nn=5 d
+ .....f j1=1:1:RESULT i $l($p(RESULT(j1),$c(1),2)) d  q:$l(DATA)
+ ......s ti=$p(RESULT(j1),$c(1),2) i $l(TI),(","_TI_",")'[(","_ti_",") q
+ ......s x="" f  s x=$o(^TEPI($p(vts,"||",1),1,$p(vts,"||",2),$p(vts,"||",3),"DATA",ti,"ANT",x)) q:x=""  i $l($p(^(x),"\",1))!$l($p(^(x),"\",3))!$l($p(^(x),"\",4)) s DATA="Y" q
+ .... ;
+ .... ; Test Items with Antibiotic Panel
+ .... ;
+ ....i nn=6 d
+ .....f j1=1:1:RESULT i $l($p(RESULT(j1),$c(1),2)) d
+ ......s ti=$p(RESULT(j1),$c(1),2) i $l(TI),(","_TI_",")'[(","_ti_",") q
+ ......s (x1,x2)="" i '$$selskip^LVBCTTC(ti) s x1=PLIST(14),x2=PLIST(3)
+ ......s x1=$p(x1,$c(1)),x2=$p(x2,$c(1))
+ ......i $d(^TEPI($p(vts,"||",1),1,$p(vts,"||",2),$p(vts,"||",3),"DATA",ti,"ANT")) s DATA=DATA_$s($l(DATA):",",1:"")_ti_$c(1)_$s($l(x1):x1,1:x2)_$c(1)_$p($g(^TEPI($p(vts,"||",1),1,$p(vts,"||",2),$p(vts,"||",3),"DATA",ti)),"\")
+ .... ;
+ .... ; DayBook Accession numbers
+ .... ;
+ ....i nn=7 d
+ .....f j1=1:1:$l(DB,",") i $l($p(DB,",",j1)) d
+ ......s $p(DATA,$c(1),2)=$p(DATA,$c(1),2)_$s($l($p(DATA,$c(1),2)):",",1:"")_$$AccNoFormat^LVBCOM03($p(DB,",",j1))
+ ......s $p(DATA,$c(1),1)=$p(DATA,$c(1),1)_$s($l($p(DATA,$c(1),1)):",",1:"")_$p(DB,",",j1)
+ .... ;
+ .... ; VisTest RowID
+ .... ;
+ ....i nn=8 s DATA=vts
+ .... ;
+ .... ; Test Set
+ .... ;
+ ....i nn=9 d
+ .....s syn="" i '$$selskip^LVBCTTS($p(vts,"||",2)) s syn=PLIST(4)
+ .....s DATA=$p(syn,$c(1))
+ ..s plist(xj)=DATA
+ k PLIST m PLIST=plist k plist
+ s PLIST=$o(PLIST(""),-1)
+ q $s(PLIST:0,1:100)
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(xx2)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("PC",%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(12)=$g(^TTAB("PC",%mmmsqld(3)))
+ s xx3=$p(%mmmsqld(12),"\",2)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTAB("PC",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("PC",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Priority for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("PC",%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(17)=$g(^TTAB("PC",%mmmsqld(3)))
+ s xx3=$p(%mmmsqld(17),"\",2)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+]]></Routine>
+</Export>

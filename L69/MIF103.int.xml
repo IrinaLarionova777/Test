@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF103" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF103(mi) ; ML 20/09/99 ; RIAMAT 280
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),nak=$c(21)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main f  s record=$$read^MIF000(stx,etx) q:'$l(record)  d
+ .d trace^MIF000(mi,record,"H<--M")
+ .s chsum=$e(record,$l(record)-1,$l(record))
+ .s chrec=stx_$e(record,1,$l(record)-2)
+ .i chsum'=$$CHSUM(chrec) w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect checksum","H-->M") q
+ . ; last record
+ .i $e(record)="S" q
+ . ; send Initial message
+ .i $e(record)="I" d SEND("I") q
+ . ; request for patient info
+ .i $e(record)="N" d LOAD q
+ . ; result record
+ .i $e(record)="E" d RES
+ q
+RES ; process results record
+ s (sample,epis,surname,result,date,time,QC)=""
+ s epis=$p($e(record,2,25)," ",1)
+ i $l(epis)>7 s epis=$e(epis,$l(epis)-6,99)
+ i epis'="" s res="" d
+ .f j=0:1:7 s res=$e(record,26+(j*12),37+(j*12)) d
+ ..s res1=$tr($e(res,1,4)," "),res2=$tr($e(res,5,11)," "),res3=$e(res,12)
+ ..i res2'="" s result=result_res1_$c(par10)_res2_$c(par10)_res3_$c(par11)
+ i epis'="",result'="" d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ ; request next record
+ d SEND("W")
+ q
+LOAD ; send loadlist to instrument
+ i $d(^TMIF(mi,10)) k ^TMIF(mi,10)
+ d loadlist^MIF000(mi)
+ i $d(^TMIF(mi,10)) d
+ .s ord="" f  s ord=$o(^TMIF(mi,10,ord)) q:ord=""  d  q:$e(record)'="N"
+ ..s str=^TMIF(mi,10,ord),$e(str,2,4)=$e(record,2,4)
+ ..d SEND(str)
+ ..s record=$$read^MIF000(stx,etx) q:'$l(record)
+ ..d trace^MIF000(mi,record,"H<--M")
+ ..q:$e(record)'="N"
+ ..s chsum=$e(record,$l(record)-1,$l(record))
+ ..s chrec=stx_$e(record,1,$l(record)-2)
+ ..i chsum'=$$CHSUM(chrec) w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect checksum","H-->M") q
+ d SEND("S")
+ q
+SAVE(mi) ; create loadlist records
+ s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$tr(epis,$c(1)," ")_$j("",24-$l(epis))
+ s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+ s (z,test)="" f  s z=$o(^TMP("MIF000",$j,"LL","TEST",z)) q:z=""  s test=test_z_$j("",4-$l(z))
+ s str="P"_$j(sample,3)_epis_test,ord=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,ord)=str
+ q 0
+SEND(str) ; send string to instrument, wait for ack/nak from instrument - resend a max of 2 times
+ s done="" f i=1:1:2 d  q:done
+ .s chsum=$$CHSUM(stx_str)
+ .w ack,stx,str,chsum,etx,*-3
+ .d trace^MIF000(mi,str_chsum,"H-->M")
+ .r *x:15 d trace^MIF000(mi,$s($c(x)=ack:"ACK",$c(x)=nak:"NAK",1:x),"H<--M")
+ .i $c(x)=ack s done=1
+ q
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ q $c(z#256\16+48)_$c(z#16+48)
+]]></Routine>
+</Export>

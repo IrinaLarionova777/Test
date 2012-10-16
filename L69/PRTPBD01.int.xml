@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTPBD01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTPBD01 ; IG 20/09/98 ; PAID BAD DEBTORS
+ q
+ ; Parameters :  1.Audit number
+ ;               2.Date for journals credits
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Paid Bad Debtors"
+ s line=2,xHEADER(line)=""
+ i $l(PAR1) d
+ .s line=line+1,xHEADER(line)="Audit Number "_PAR1
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR2) d
+ .s line=line+1,xHEADER(line)="with journals from "_$$extdate2^SSUTIL4(PAR2)
+ .s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialise parameters
+INIT f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE," ",MAX)=""
+ q
+ ; create temporary printing file
+BODY i $l(PAR1) d
+ .s x1="" f  s x1=$o(^TBATi("AUDIT",PAR1,x1)) q:x1=""  d
+ ..s x2="" f  s x2=$o(^TBDL(2,x1,x2)) q:x2=""  d
+ ...s epis="" f  s epis=$o(^TBDL(2,x1,x2,epis)) q:epis=""  d
+ ....s (Amount1,Amount2)="" i $d(^TAGE(epis)) s Amount2=+^TAGE(epis)
+ ....s rowid=x2
+ ....i $l(rowid,"||")=2,'$$select^LVBCRBL(rowid) s Amount1=Amount1+PLIST(7)
+ ....i $l(rowid,"||")=3,'$$select^LVBCRBLB(rowid) s Amount1=Amount1+PLIST(3)
+ ....s ^TMP($zn,$j,"REPORT",epis)=Amount2
+ ....s row=$o(^TMP($zn,$j,"REPORT",epis,""),-1)+1,^TMP($zn,$j,"REPORT",epis,row)=Amount1
+ ....s date="" f  s date=$o(^TEPI(epis,"INV",date)) q:date=""  d
+ .....s payc="" f  s payc=$o(^TEPI(epis,"INV",date,payc)) q:payc=""  d
+ ......s inum="" f  s inum=$o(^TEPI(epis,"INV",date,payc,inum)) q:inum=""  s ^TMP($zn,$j,"REPORT",epis,row,date,payc,inum)=""
+ i $l(PAR2) d
+ .s x1=PAR2-1 f  s x1=$o(^TBDL(3,x1)) q:x1=""  d
+ ..s epis="" f  s epis=$o(^TBDL(3,x1,epis)) q:epis=""  d
+ ...s (Amount1,Amount2)="" i $d(^TAGE(epis)) s Amount2=+^TAGE(epis)
+ ...s rowid="" f  s rowid=$o(^TBDL(3,x1,epis,rowid)) q:rowid=""  d
+ ....i '$$select^LVBJOU(rowid) d
+ .....i $p(PLIST(3),$c(1),3)="C" s Amount1=Amount1+PLIST(9)
+ .....i $p(PLIST(3),$c(1),3)="D" s Amount1=Amount1-PLIST(9)
+ ...s ^TMP($zn,$j,"REPORT",epis)=Amount2
+ ...s row=$o(^TMP($zn,$j,"REPORT",epis,""),-1)+1,^TMP($zn,$j,"REPORT",epis,row)="\"_Amount1
+ ...s date="" f  s date=$o(^TEPI(epis,"INV",date)) q:date=""  d
+ ....s payc="" f  s payc=$o(^TEPI(epis,"INV",date,payc)) q:payc=""  d
+ .....s inum="" f  s inum=$o(^TEPI(epis,"INV",date,payc,inum)) q:inum=""  s ^TMP($zn,$j,"REPORT",epis,row,date,payc,inum)=""
+ q
+ ; print report
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",epis)) q:epis=""  d
+ ..s xxx(1)=^(epis) i $$select^LVBEPVIS(epis)
+ ..s row="" f  s row=$o(^TMP($zn,$j,"REPORT",epis,row)) q:row=""  d
+ ...s xxx(2)=$p(^(row),"\",1),xxx(6)=$p(^(row),"\",2)
+ ...s date="" f  s date=$o(^TMP($zn,$j,"REPORT",epis,row,date)) q:date=""  s xxx(3)=$$extdate2^SSUTIL4(date) d
+ ....s payc="" f  s payc=$o(^TMP($zn,$j,"REPORT",epis,row,date,payc)) q:payc=""  d
+ .....s inum="" f  s inum=$o(^TMP($zn,$j,"REPORT",epis,row,date,payc,inum)) q:inum=""  d
+ ......s seq=$p($g(^TMCB(payc,inum,epis)),"\",2)
+ ......s xxx(4)=payc_"-"_inum_"-"_seq
+ ......s xxx(5)=$$extdate2^SSUTIL4($p($g(PLIST(59)),"S-",2))
+ ......d
+ .......n (xxx,payc,inum,seq)
+ .......i '$$summary^LVBINVB(payc_"||"_inum,,seq) s xxx(7)=PLIST(1)
+ ......d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="PBD"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="zmattfile" type="INT" languagemode="0"><![CDATA[
+zmattfile ; create file for THS Labtrak to JCL Testing  ; Compiled December 2, 1999 13:42:24 for Cache for Windows
+ q
+START ; start here
+ d OPEN
+ s (date,epis,first,ts,nnx)="",date=57654
+ f  s date=$o(^TEPIi("AUTHORISED",date),-1) q:date=""  q:date'=57653  d
+ .f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ ..u 0 w epis,! u filename
+ ..d DETpat
+ ..f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  d
+ ...s nnx="" f  s nnx=$o(^TEPIi("AUTHORISED",date,epis,ts,nnx)) q:nnx=""  q:^(nnx)'=""  d
+ ....d DETts
+ ....d BUILD
+ ....d TRANS
+ ..w line,! s first=""
+ c filename
+ q
+DETpat ; extract details - patient
+ k PLIST,visdet,caredet,mrn,caremrn,name,dob,sex,add,homeph
+ s (mrn,caremrn,name,dob,sex,add,homeph)=""
+ q:$$select^LVBEPVIS(epis)  m visdet=PLIST k PLIST
+ s surn=$p(visdet(3),$c(1)),given=$p(visdet(4),$c(1)),dob=$p(visdet(6),$c(1))
+ i dob'=-1,dob'="" s dob=$$extdate^SSUTIL4(dob)
+ s mrn=$p(visdet(20),$c(1)),carepis=$p(visdet(65),",",1),caremrn=$p(visdet(65),",",2)
+ q
+DETts ; extract details - test set
+ k PLIST,vtsRID,tsdet,cumul,disptype,secur,tssyn,tsname
+ s vtsRID=epis_"||"_ts_"||"_nnx
+ q:$$select^LVBCTTS(ts)  m tsdet=PLIST k PLIST
+ s secur=$p(tsdet(22),$c(1)),tssyn=$p(tsdet(4),$c(1)),tsname=$p(tsdet(3),$c(1))
+ q
+BUILD ; build packet strings
+ k PLIST,visres,result
+ q:$$results^LVBVISTS(vtsRID)  m visres=PLIST k PLIST d
+ .s rescnt=$o(visres(""),-1) f i=1:1:rescnt d
+ ..s tc=$p(visres(i),$c(1),2) q:$$select^LVBCTTC(tc)  m tcdet=PLIST k PLIST
+ ..s res=$p(visres(i),$c(1),3),units=tcdet(4)
+ ..s tcdet(14)=$s(tcdet(14)'="":tcdet(14),1:tcdet(3))
+ ..i $e(tcdet(5),1)="N" d
+ ...s result(tcdet(14))=res
+ ..i $e(tcdet(5),1)="S" d
+ ...q:$$select^LVBCTTCT(tc_"||"_res)
+ ...s res=$tr(XX,"|","~")
+ ...s result(tcdet(14))=res
+ ..i $p(visres(i),$c(1),4)'="" d
+ ...s res=$p(visres(i),$c(1),4),res=$tr(res,"|","~")
+ ...s resx="" f k=1:1:$l(res) s char=$e(res,k),comm="" i char="["!(char="{") d  i 'comm s resx=resx_char
+ ....s (charx,code)="",j=k f  s charx=$e(res,j+1) q:charx="]"  q:charx="}"  s code=code_charx,j=j+1
+ ....q:$$select^LVBCTTCT(tc_"||"_code)  s comm=1
+ ....s text="" s k=k+j s text=$tr(XX,"|","~"),resx=resx_" "_text
+ ...s result(tcdet(14),1)=resx
+ q
+TRANS ; transfer results to file
+ s res=""
+ i 'first w epis,?15,surn,?40,given,?60,dob,?75,carepis_"/"_caremrn,! s first=1
+ w !,ts," - ",tsname,!
+ s x="" f  s x=$o(result(x)) q:x=""  s y=$g(result(x)) d
+ .q:y=""
+ .s res=res_x_" "_y_"    " i $l(res)>100 w res,! s res=""
+ i res'="" w res,!
+ s (res,x)="" f  s x=$o(result(x)) q:x=""  d
+ .s y="" f  s y=$o(result(x,y)) q:y=""  d
+ ..s z=result(x,y) s res=res_x_" "_z_"    " i $l(res)>100 w res,! s res=""
+ i res'="" w res,!
+ k result,res
+ q
+OPEN ; open file for use
+ s filename="labtrak to jcl.txt",$p(line,"-",100)=""
+ o filename:"WNS"
+ u filename
+ w "Labtrak to JCL QA file for the date of 5/7/99",!!
+ w "Lab Episode",?15,"Surname",?40,"Given Name",?60,"D.O.B",?75,"Caresys Episode/MRN",!
+ w line,!
+ q
+]]></Routine>
+</Export>

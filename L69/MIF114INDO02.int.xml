@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF114INDO02" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF114INDO02(mi) ; ML 05/09/2000 ; VIDAS (Bi-Directional) - Indonesia - Mayne Health RS Internasional Mitra
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),eot=$c(4),enq=$c(5),ack=$c(6),crlf=$c(13,10),nak=$c(21),gs=$c(29),rs=$c(30)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:30 d
+ .d:" L "[(" "_par9_" ") LOAD
+ i $c(R)'=enq q
+ d trace^MIF000(mi,"ENQ","H<--M")
+ d SEND(ack)
+ s record=$$read^MIF000(stx,etx) q:'$l(record)
+ s record=$tr(record,crlf)
+ d trace^MIF000(mi,record,"H<--M")
+ ; check checksum
+ i $$CHSUM(record) d SEND(nak) q
+ d SEND(ack)
+ s record=$tr(record,rs)
+ s (sample,epis,surname,result,date,time,QC)=""
+ s epis=$tr($p($p(record,"ci",2),"|",1)," ") q:epis=""
+ s test=$tr($p($p(record,"rt",2),"|",1)," ") q:test=""
+ ; extract the qualitative result
+ s qlres=$p($p(record,"ql",2),"|",1)
+ ; extract the quantitative result
+ s qnres=$p($p(record,"qn",2),"|",1)
+ ; if qualitative result exists ignore quantitative
+ s result=$tr(qnres," "),sign=""
+ i "<>"[$e(result) s sign=$e(result),result=$e(result,2,10)
+ s result=+result
+ i $e(result)="." s result="0"_result
+ ; check qualitative result
+ s trans="" i $l(qlres) d
+ .s tc="" f  s tc=$o(^TMIF(mi,3,test,tc)) q:tc=""  d
+ ..i $d(^TMIF(mi,2,tc,1,qlres)) s trans=1
+ i trans=1 s result=qlres
+ s result=test_$c(par10)_result_$c(par11)
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+CHSUM(x) ; calculate check sum for records received and being sent
+ s chsum=$p(x,$c(29),2),x=$p(x,$c(29),1)_$c(29)
+ n num,i,trunc,chk,lc,uc
+ s uc="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+ s lc="abcdefghijklmnopqrstuvwxyz"
+ s num=0
+ f i=1:1:$l(x) s num=num+$a($e(x,i))
+ s trunc=num#256
+ s chk=$tr($zh(trunc),uc,lc)
+ i $l(chk)=1 s chk="0"_chk
+ i chk'=chsum q 1
+ q 0
+LOAD ; check for loadlists which need sending
+ d loadlist^MIF000(mi)
+ d READY
+ q
+SAVE ; create loadlist records
+ s epis=^TMIF("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+ s sample=^TMIF("MIF000",$j,"LL","SAMPLE")
+ s (z,test)="" f  s z=$o(^TMIF("MIF000",$j,"LL","TEST",z)) q:z=""  s test(z)=""
+ d SET(epis,.test)
+ q
+SET(epis,test) ; compile record for unsent episode
+ n name,cnt,epa,epa1,epa2,epa3,epa4,epa10,epa13,tt,data,chksum
+ s z=$g(^TEPI(epis)) f j=1,2,3,4,10,13 s @("epa"_j)=$p(epa,"\",j)
+ s name=$e(epa1_", "_epa2,1,20)
+ s tt=""
+ f  s tt=$o(test(tt)) q:tt=""  d  ;
+ .s data=rs_"mtmpr|pi"_epis_"|pn"_name_"|si|ci"_epis_"|rt"_tt_"|"_gs
+ .s chk=$$CHSUM(data)
+ .s data=data_chksum
+ .s cnt=$o(^TMIF(mi,10,""),-1),^TMIF(mi,10,cnt+1)=data
+ q
+READY ; check for data ready to send to instrument
+ q:'$d(^TMIF(mi,10))
+ f  s line=$o(^TMIF(mi,10,line)) q:line=""  d
+ .s data=$g(^TMIF(mi,10,line))
+ .i data="" q
+ .s data=$C(2)_data
+ .d SEND(enq)
+ .r *R:10 e  q
+ .q:$c(R)'=ack  d trace^MIF000(mi,"ACK","H<--M")
+ .d SEND(data)
+ .r *R:10 e  q
+ .q:$c(R)'=ack  d trace^MIF000(mi,"ACK","H<--M")
+ .k ^TMIF(mi,10,line)
+ .d SEND($c(3,4))
+ .h 2
+ q
+SEND(str) ; send string to instrument
+ w str,*-3
+ s str=$s(str=ack:"ACK",str=nak:"NAK",str=enq:"ENQ",str=$c(3,4):"ETX-EOT",1:str)
+ d trace^MIF000(mi,str,"H-->M")
+ q
+]]></Routine>
+</Export>

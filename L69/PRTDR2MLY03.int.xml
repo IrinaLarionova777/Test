@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR2MLY03" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDR2MLY03 ;IG 27/05/98 ;Doctors Reports printing (single test set - antibiotic panel)
+ ; supported calls :
+ ;
+ ; $$print^PRTDR2MLY03(vtsRID,type,DH)
+ ;
+ ; type  : P - print
+ ;         V - view from Enquiry
+ ;           - view from Entry
+ ; DH    : D - Doctor
+ ;         H - Hospital
+print(vtsRID,type,DH) 
+ n (vtsRID,type,DH,tsLM,tsWD) s vtsRID=$g(vtsRID),type=$g(type),DH=$g(DH)
+ s test=$p(vtsRID,"||",2),ColWidth=9,ColLeft=40,tsLM=$g(tsLM),tsWD=$g(tsWD)
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .s tsLM=PLIST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ i '$$select^MVBCFLAB(1) d
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ k ^TMP($zn,$j,"ANT")
+ k FORMAT i '$$getit^LVBCTTSF(test,,"Y") m FORMAT=PLIST
+ ; print an antibiotic panel
+ s x1="" f  s x1=$o(FORMAT(x1)) q:x1=""  i $p(FORMAT(x1),$c(2),18)="V" d
+ .s rowid=vtsRID_"||"_$p(FORMAT(x1),$c(2),10)
+ .i '$$select^LVBVISTD(rowid),$l(PLIST(3)) d
+ ..i '$$select^LVBCTBUG(PLIST(3),"Y") d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...s cnt=$o(^TMP($zn,$j,"ANT",0,""),-1)+1,^TMP($zn,$j,"ANT",0,cnt)=$s($l(PLIST(3))<ColWidth:PLIST(3),1:PLIST(2))
+ ...i $$open^LVBVISTA(rowid)
+ ...f  q:$$fetch^LVBVISTA(rowid)  d
+ ....i $l(PLIST(2)),$l(PLIST(3)) d
+ .....i $l(type),PLIST(4)'="Y" q
+ .....f j=2:1:6 s $p(^TMP($zn,$j,"ANT",0,cnt,$p(PLIST(2),$c(1))),$c(2),j)=PLIST(j)
+ ...i $$close^LVBVISTA()
+ ... ; check if there is a reportable antibiotic
+ ...i $d(^TMP($zn,$j,"ANT",0,cnt))\10=0 k ^TMP($zn,$j,"ANT",0,cnt)
+ ...s (ok,ant)="" f  s ant=$o(^TMP($zn,$j,"ANT",0,cnt,ant)) q:ant=""  d  i ok
+ ....i $l(type),$p(^TMP($zn,$j,"ANT",0,cnt,ant),$c(2),4)'="Y" q
+ ....s ok=1
+ ...i 'ok k ^TMP($zn,$j,"ANT",0,cnt)
+ ; sort antibiotics
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,"ANT",0,cnt)) q:cnt=""  d
+ .s ant="" f  s ant=$o(^TMP($zn,$j,"ANT",0,cnt,ant)) q:ant=""  d
+ ..s seq=$$seldata^LVBCTANT(ant,4)
+ ..s ^TMP($zn,$j,"ANT",1,+seq,ant,cnt)=""
+ i '$d(^TMP($zn,$j,"ANT",0)) q 0
+ q 0
+ ; print header panel
+printisolate(vtsRID,type,DH,isonode) ;added
+ s vtsRID=$g(vtsRID),type=$g(type),DH=$g(DH),isonode=$G(isonode)
+ d print(vtsRID,type,DH)
+ d printantibio(isonode)
+ k ^TMP($zn,$j,"ANT")
+ q 0
+printantibio(isonode) ;added
+ d checkvolume
+ set tsLM=10,ColLeft=25,ColLeft2=45,ColLeft3=70
+ if $D(^TMP($zn,$j,"ANT",0,isonode)) d
+ .d LN^PRTDR00()
+ .d LN^PRTDR00()
+ .d ADD^PRTDR00(,"~ARIAL")
+ .d ADD^PRTDR00(tsLM,"Antibiotic:")
+ .d ADD^PRTDR00(tsLM+ColLeft,"Sensitivity:")
+ .d ADD^PRTDR00(tsLM+ColLeft2,"Antibiotic:")
+ .d ADD^PRTDR00(tsLM+ColLeft3,"Sensitivity:")
+ .d LN^PRTDR00()
+ .d ADD^PRTDR00(tsLM,"-----------")
+ .d ADD^PRTDR00(tsLM+ColLeft,"------------")
+ .d ADD^PRTDR00(tsLM+ColLeft2,"-----------")
+ .d ADD^PRTDR00(tsLM+ColLeft3,"------------")
+ .d LN^PRTDR00()
+ .d LN^PRTDR00()
+ .set vol=0 f i=1:1:divide  set vol=$o(^TMP($zn,$j,"VOLUME",isonode,vol)) q:vol=""  d
+ ..d ADD^PRTDR00(tsLM,$G(^TMP($zn,$j,"VOLUME",isonode,vol,"ISO")))
+ ..d ADD^PRTDR00(tsLM+ColLeft,$G(^TMP($zn,$j,"VOLUME",isonode,vol,"ANTI")))
+ ..set next=vol+divide
+ ..d ADD^PRTDR00(tsLM+ColLeft2,$G(^TMP($zn,$j,"VOLUME",isonode,next,"ISO")))
+ ..d ADD^PRTDR00(tsLM+ColLeft3,$G(^TMP($zn,$j,"VOLUME",isonode,next,"ANTI")))
+ ..d LN^PRTDR00()
+ .if $o(^TMP($zn,$j,"ANT",0,isonode))="" d
+ ..d LN^PRTDR00()
+ ..d LN^PRTDR00()
+ ..d ADD^PRTDR00(tsLM,"I-Intermediate")
+ ..d ADD^PRTDR00(tsLM+20,"R-Resistant")
+ ..d ADD^PRTDR00(tsLM+40,"S-Sensitive")
+ q 0
+checkvolume 
+ set total=0
+ set antinode="" f  s antinode=$o(^TMP($zn,$j,"ANT",0,isonode,antinode)) q:antinode=""  d 
+ .if ($P($P($G(^TMP($zn,$j,"ANT",0,isonode,antinode)),$C(1),2),$c(2),3)="Y") d
+ ..set total=total+1
+ ..set ^TMP($zn,$j,"VOLUME",isonode,total,"ISO")=$e($P($P($G(^TMP($zn,$j,"ANT",0,isonode,antinode)),$C(1),2),$c(2)),1,20)
+ ..set ^TMP($zn,$j,"VOLUME",isonode,total,"ANTI")=$P($p($G(^TMP($zn,$j,"ANT",0,isonode,antinode)),$C(1),2),$c(2),2)
+ set:total#2=0 divide=total\2
+ set:total#2'=0 divide=total\2+1
+ q 
+]]></Routine>
+</Export>

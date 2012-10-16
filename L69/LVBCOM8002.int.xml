@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCOM8002" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCOM8002 ; IG 29/4/98 ; Common routines - conversion for 6.2
+ q
+ ; convert ^TSCH
+start n  k ^TMP($zn,$j)
+ s comPC=$p($g(^CF("LAB",1)),"^",11),comSchedule=""
+  ;---&SQL(SELECT CTPC_ItemSchedule_DR INTO :comSchedule FROM CT_PaymentCode WHERE CTPC_RowID=:comPC)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, comPC, comSchedule
+ Do %0Ao
+ s comSchedule=$p(comSchedule,$c(1))
+ i '$l(comSchedule) w !,"No Schedule for default payment Code...",! q
+ ; clear old Schedule
+ m ^TSCHx=^TSCH k ^TSCH
+ s x1="" f  s x1=$o(^TSCHx(x1)) q:x1=""  s xx=^(x1) s ^TSCH(x1)=xx d
+ .s x2="" f  s x2=$o(^TSCHx(x1,x2)) q:x2=""  d
+ ..f j=1,2,3 i $d(^TSCHx(x1,x2,j)) m ^TSCH(x1,"RULE-"_j,x2)=^TSCHx(x1,x2,j)
+ k ^TSCHx
+ ; find all dates for Common PayCode
+ s it="" f  s it=$o(^TTAB("IB",it)) q:it=""  d
+ .s dt="" f  s dt=$o(^TTAB("IB",it,0,comPC,dt)) q:dt=""  s date(100000-dt)=""
+ ; create Schedule for Common PayCode
+ s dt="" f  s dt=$o(date(dt)) q:dt=""  d
+ .s ^TSCH(comSchedule,"AMOUNT",comPC,dt)="M\"
+ .s it="" f  s it=$o(^TTAB("IB",it)) q:it=""  d
+ ..s x=100000-dt i '$d(^TTAB("IB",it,0,comPC,x)) s x=$o(^TTAB("IB",it,0,comPC,x)) i '$l(x) s x=100000-dt
+ ..s ^TSCH(comSchedule,"AMOUNT",comPC,dt,it)=$g(^TTAB("IB",it,0,comPC,x))
+ ; create Schedule for other PayCodes
+ i $$open^LVBCTPC()
+ f  q:$$fetch^LVBCTPC(,"Y")  m PC=PLIST i PC(2)'=comPC d
+ .k PCdate m PCdate=date s PC=PC(2)
+ .s it="" f  s it=$o(^TTAB("IB",it)) q:it=""  d
+ ..s dt="" f  s dt=$o(^TTAB("IB",it,0,PC,dt)) q:dt=""  s PCdate(100000-dt)=""
+ .s dt="" f  s dt=$o(PCdate(dt)) q:dt=""  d
+ ..s ^TSCH(comSchedule,"AMOUNT",PC,dt)=PC(4)_"\"_PC(5)
+ ..s it="" f  s it=$o(^TTAB("IB",it)) q:it=""  d
+ ...s x=100000-dt,am="" i '$d(^TTAB("IB",it,0,PC,x)) d
+ ....i $d(^TTAB("IB",it,0,comPC,x)) s am=^(x) q
+ ....s x1=$o(^TTAB("IB",it,0,PC,x)) i $l(x1) s am1=^(x1)
+ ....s x2=$o(^TTAB("IB",it,0,comPC,x)) i $l(x2) s am2=^(x2) d
+ .....i PC(4)="M" q
+ .....i PC(4)="C",PC(5)-100=0 q
+ .....s am2=am2*PC(5)/100,x=am2#.1*100,am2=$s((x>0)&(x<5):am2\.1/10+.05,x>5:am2\.1/10+.1,1:am2)
+ ....i '$l(x1),$l(x2) s am=am2 q
+ ....i $l(x1),'$l(x2) s am=am1 q
+ ....i $l(x1),$l(x2),x1<x2 s am=am2 q
+ ....i $l(x1),$l(x2),x1'<x2 s am=am1 q
+ ....s am=""
+ ...i $l(x) s ^TSCH(comSchedule,"AMOUNT",PC,dt,it)=am
+ i $$close^LVBCTPC()
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(comPC)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TTAB("BI",%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(12)=$g(^TTAB("BI",%mmmsqld(3)))
+ s comSchedule=$p(%mmmsqld(12),"\",21)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTAB("BI",$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TTAB("BI",$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_PaymentCode for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TTAB("BI",%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(17)=$g(^TTAB("BI",%mmmsqld(3)))
+ s comSchedule=$p(%mmmsqld(17),"\",21)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+]]></Routine>
+</Export>

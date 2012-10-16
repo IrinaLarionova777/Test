@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MVBCOM01" type="INT" languagemode="0" generated="1"><![CDATA[
+MVBCOM01 ;         ; Compiled March 17, 2003 17:35:31 for Cache for Windows
+ ; This call is attached to a Test Set Common Action - as a condition. 
+ ; It has to return 0 so no action takes place in LabTrak.
+SetOrder(vtsRID) ;       
+ ;  Updates MedTrak to say that the order has an abnormal item and that the result is to be read.
+ n (vtsRID)
+ s vtsRID=$g(vtsRID)
+ s ^ZJOHN("setorder")=vtsRID
+ s labep=$p(vtsRID,"||",1)
+ s test=$p(vtsRID,"||",2)
+ s seq=$p(vtsRID,"||",3)
+ i labep="" q 0
+ i test="" q 0
+ i seq="" q 0
+ ; does the test have abnormals
+ m MPLIST=PLIST k PLIST
+ s err=$$results^LVBVISTS(vtsRID,"","","","","","")
+ s panic=""
+ s abnormal="" f x=1:1:PLIST  d
+ . i $p($g(PLIST(x)),$c(1),5)="L" s abnormal="Y"
+ . i $p($g(PLIST(x)),$c(1),5)="H" s abnormal="Y"
+ . i $p($g(PLIST(x)),$c(1),7)="L" s panic="Y"
+ . i $p($g(PLIST(x)),$c(1),7)="H" s panic="Y"
+ ; change namespaces and update the order
+ s nm=$zu(5)
+ s mednm=$p($g(^CF("ML",1)),"^",1)
+ s medurl=$p($g(^CF("ML",1)),"^",4)
+ d $zu(5,mednm)
+ s order="" 
+ i medurl="" d
+ . ; get the MedTrak order item
+ . s order=$$GetOrderID(vtsRID) i order="" q  ;d $zu(5,nm) q 0
+ . d SetAbnormal^CLabLink(order,abnormal_"^"_panic)
+ . d SetUnread^CLabLink(order)
+ e  d
+ . s XXXserv=##class(LabLink.LabLinkSoap).%New() 
+ . i XXXserv s result=XXXserv.SetOrder(medurl,vtsRID,abnormal_"^"_panic,.order)
+ . k XXXserv
+ d $zu(5,nm)
+ q:order="" 0
+ m PLIST=MPLIST
+ s ^ZJOHN("setorder","end")=order_"^"_abnormal
+ q 0
+SetBG(vtsRID) ;  
+ ;  Updates MedTrak to give the patient have a blood group.
+ n (vtsRID)
+ s vtsRID=$g(vtsRID)
+ s ^ZJOHN("setbg")=vtsRID
+ s labep=$p(vtsRID,"||",1)
+ s test=$p(vtsRID,"||",2)
+ s seq=$p(vtsRID,"||",3)
+ i labep="" q 0
+ i test="" q 0
+ i seq="" q 0
+ ; get bloodgroup code
+ s debtorno=$p($g(^TEPI(labep)),"\",18)
+ i debtorno="" q 0
+ s bloodgroup=$p($g(^TDEB(debtorno)),"\",4)
+ i bloodgroup="" q 0
+ ; change namespaces and update the order
+ s nm=$zu(5)
+ s mednm=$p($g(^CF("ML",1)),"^",1)
+ s medurl=$p($g(^CF("ML",1)),"^",4)
+ d $zu(5,mednm)
+ i medurl="" d
+ . d SetBG^CLabLink(labep,bloodgroup)
+ e  d
+ . s result=0,XXXserv=##class(LabLink.LabLinkSoap).%New()
+ . I XXXserv s result=XXXserv.SetBG(medurl,labep,bloodgroup)
+ . k XXXserv
+ d $zu(5,nm)
+ s ^ZJOHN("setbg","end")=vtsRID
+ q 0
+ ;
+ChgStat(vtsRID) ;        
+ ;  Updates MedTrak order to EXECUTED status.
+ n (vtsRID)
+ s vtsRID=$g(vtsRID)
+ s ^ZJOHN("chgstat")=vtsRID
+ s labep=$p(vtsRID,"||",1)
+ s test=$p(vtsRID,"||",2)
+ s seq=$p(vtsRID,"||",3)
+ i labep="" q 0
+ i test="" q 0
+ i seq="" q 0
+ ; change namespaces and update the order
+ s nm=$zu(5)
+ s mednm=$p($g(^CF("ML",1)),"^",1)
+ s medurl=$p($g(^CF("ML",1)),"^",4)
+ d $zu(5,mednm)
+ ; get the MedTrak order item
+ i medurl="" d
+ . s order=$$GetOrderID(vtsRID) i order="" q  ;d $zu(5,nm) q 0
+ . d ChangeStatus^COEOrdItem(order,"E","")
+ e  d
+ . s result=0,XXXserv=##class(LabLink.LabLinkSoap).%New()        
+ . i XXXserv s result=XXXserv.ChgStat(medurl,vtsRID)
+ . k XXXserv
+ d $zu(5,nm)
+ s ^ZJOHN("chgstat",2)=vtsRID
+ q 0     
+ ;
+Audit(vtsRID)
+ ; Updates "Autit Table" in MedTrak with Lab Results
+ n (vtsRID)
+ s vtsRID=$g(vtsRID)
+ s ^ZJOHN("audit")=vtsRID
+ s labep=$p(vtsRID,"||",1)
+ s test=$p(vtsRID,"||",2)
+ s seq=$p(vtsRID,"||",3)
+ i labep="" q 0
+ i test="" q 0
+ i seq="" q 0
+ s nm=$zu(5)
+ s mednm=$p($g(^CF("ML",1)),"^",1)
+ s medurl=$p($g(^CF("ML",1)),"^",4)
+ ; retrieve results
+ k PLIST
+ i $$results^LVBVISTS(vtsRID)
+ i $d(PLIST(1)) s ^ZJOHN("plist1")=PLIST(1)
+ i '$d(PLIST(1)) s ^ZJOHN("plist1")=""
+ ; switch to Web namspace
+ d $zu(5,mednm)
+ i medurl="" d
+ . ; get the MedTrak order item
+ . s order=$$GetOrderID(vtsRID) i order="" q  ;d $zu(5,nm) q 0
+ . s sqltablename="EPVisitTestSetData"
+ . s userdr=""
+ . ; for each test item
+ . f x=1:1:PLIST d
+ . . s idxDate="",idxParRef="",itmValue=""
+ . . s recordrowid=$p(PLIST(x),$c(1),1)
+ . . s data=$p(PLIST(x),$c(1),3)
+ . . s type=$p($g(^TTAB("TC",$p(recordrowid,"||",4))),"\",3)
+ . . i type="D" s data=$zdate(data)
+ . . s comment=$p(PLIST(x),$c(1),4)
+ . . s date=+$h
+ . . s time=$p($h,",",2)
+ . . ; find out if (I) Insert or (U) Update
+ . . i '$d(^AUD(0,"TableRow","EPVISITTESTSETDATA",recordrowid)) s mode="I"
+ . . i $d(^AUD(0,"TableRow","EPVISITTESTSETDATA",recordrowid)) s mode="U"
+ . . i mode="U" d
+ . . . ; check if previous value is identical
+ . . . s idxDate=$o(^AUD(0,"TableRow","EPVISITTESTSETDATA",recordrowid,""),-1)
+ . . . s idxParRef=$o(^AUD(0,"TableRow","EPVISITTESTSETDATA",recordrowid,idxDate,""),-1)
+ . . . s itmValue=$p(^AUD(idxParRef,"FLD",1),"^",2)
+ . . i (itmValue'=data) d
+ . . . ; audit results
+ . . . s parref=$$InsertTrail^SSAUDIT(mode,$zu(67,11,$j),date,sqltablename,recordrowid,time,userdr,"")
+ . . . s fieldname="VISTDTestData"
+ . . . i $$InsertTrailFields^SSAUDIT(parref,fieldname,data)
+ . . . s fieldname="VISTDComments"
+ . . . i $$InsertTrailFields^SSAUDIT(parref,fieldname,comment)
+ e  d
+ . s lstItems=""
+ . f x=1:1:PLIST d
+ . . s PLIST(x)=$tr(PLIST(x),"^")
+ . . s recordrowid=$p(PLIST(x),$c(1),1)
+ . . s data=$p(PLIST(x),$c(1),3)
+ . . s type=$p($g(^TTAB("TC",$p(recordrowid,"||",4))),"\",3)
+ . . i type="D" s data=$zdate(data)
+ . . s comment=$p(PLIST(x),$c(1),4)
+ . . s date=+$h
+ . . s time=$p($h,",",2)
+ . . ;  put items in string with $c(6)
+ . . ; - then all test items in a string with $c(5)
+ . . s item=recordrowid_"^"_data_"^"_comment_"^"_date_"^"_time
+ . . s lstItems=lstItems_$s($l(lstItems):"~",1:"")_$tr(item,"~")
+ . k PLIST
+ . s result=0,XXXserv=##class(LabLink.LabLinkSoap).%New()        
+ . s user=$zu(67,11,$j)
+ . i XXXserv s result=XXXserv.Audit(medurl,vtsRID,lstItems,user)
+ . k XXXserv
+ d $zu(5,nm)
+ q 0 
+TestAdd(vtsRID) ;     
+ ;  Called upon test set add
+ n (vtsRID)
+ s ^ZJOHN("testadd")=vtsRID
+ s vtsRID=$g(vtsRID) q:vtsRID="" 0
+ ; quit if we are coming from trakcare - we only want to add if we're coming from labtrak
+ q:$d(^TMP("Medtrak",$J,vtsRID)) 0
+ s labep=$p(vtsRID,"||",1)
+ s ExtCode=$p(vtsRID,"||",2)
+ s seq=$p(vtsRID,"||",3)
+ i labep="" q 0
+ i ExtCode="" q 0
+ i seq="" q 0
+ ;
+ s tepi=$g(^TEPI(labep))
+ i tepi="" q 0
+ s prio=$p(tepi,"\",15)
+ s usercode=$p(tepi,"\",30)
+ ; Get the MedTrak item code
+ d selskip^LVBCTTS(ExtCode)
+ s ExtCodeDesc=$g(PLIST(3))
+ s recloc="",OrdItemcode=""
+ ;
+ s nm=$zu(5)
+ s mednm=$p($g(^CF("ML",1)),"^",1)
+ s medurl=$p($g(^CF("ML",1)),"^",4)
+ d $zu(5,mednm)
+ i medurl="" d
+ . s colldate=$$DateLogicalToHtml^CLabOrderLink($p(tepi,"\",10))
+ . s colltime=$$TimeLogicalToHtml^CLabOrderLink(($p(tepi,"\",11)*60))
+ . ; if known to Medtrak - we are collecting, receiving, etc
+ . ; ONLY add to MedTrak if this is not currently on db.
+ . ; uses temp global set up in visit^CLabLink to do so ...
+ . ; (still also uses old TEPIi logic - needed until w650P3 is the oldest release) 
+ . s order=$g(^TMP("WEB",$J,"lab",labep,ExtCode,seq)) i (order'="")!$d(^TEPIi("MEDTRAKi",labep,ExtCode,seq)) q
+ . k ^TMP("WEB",$J,"lab",labep,ExtCode,seq) 
+ . s OrdItemCode="",recloc=""
+ . s row="" f  s row=$o(^ARCIM(0,"ExtCode",ExtCode,row)) q:row=""  d
+ . . s ver="" f  s ver=$o(^ARCIM(0,"ExtCode",ExtCode,row,ver)) q:ver=""  d
+ . . . ; if there are > 2 Medtrak items that match - check the descriptions
+ . . . i ($o(^ARCIM(0,"ExtCode",ExtCode,""))'=$o(^ARCIM(0,"ExtCode",ExtCode,""),-1)),($$Upper^CLabOrderLink($p($g(^ARCIM(row,ver,1)),"^",2))=$$Upper^CLabOrderLink(ExtCodeDesc)) q
+ . . . s OrdItemCode=row_"||"_ver
+ . . . s rec=$o(^ARCIM(0,"ExtCode",ExtCode,row,ver,""))
+ . . . i rec'="" s recloc=$p(^ARCIM(row,ver,"EXT",rec),"^",8)
+ . q:OrdItemCode=""
+ . q:recloc=""
+ . ; Get the MedTrak internal number
+ . s order=$o(^OEORD(0,"EpisNo",labep,""))
+ . q:+order=0
+ . s intnum=$p(^OEORD($p(order,"||")),"^")
+ . q:intnum=""
+ . s startDate=$$DateLogicalToHtml^CLabOrderLink(+$h)
+ . s startTime=$$TimeLogicalToHtml^CLabOrderLink($p($h,",",2))       
+ . s statdesc=$o(^OEC("OSTAT",0,"Code","IP",""))
+ . i statdesc s statdesc=$p($g(^OEC("OSTAT",+statdesc)),"^",2)
+ . d OIINsert^COEOrdItem(intnum,prio,statdesc,recloc,startDate,startTime,"","","","","",labep,"","","","","","","","",OrdItemCode,"","","","","","","","","","","","","","","","","","","","","","","","","","","","",labep,"","","","","","","","","","","","","","","","","","","","",colldate,colltime,"","","","","","","","","","","","","","")
+ . s ord1=$p($p($p($g(NewOrders),"^"),"&",2),"||",1),itm1=$p($p($p($g(NewOrders),"^"),"&",2),"||",2)
+ . i $d(^OEORD(ord1,"I",itm1,3)) s $p(^OEORD(ord1,"I",itm1,3),"^",35)=vtsRID
+ . s ^OEORDi(0,"LabNotRead",+ord1,+itm1)=""
+ . s ^OEORDi(0,"LabTS",+ord1,vtsRID,+itm1)=""
+ . ; Log 66296 YC - This is called in every trakcare release in OIINSERT^COEOrdItem except for P2 and P3 so we call it below for P2 and P3 (6.51 = P2/P3)
+ . s ver=##class(websys.Configuration).GetCompiledVersion()
+ . i $p(ver,".",1,2)="6.51" d UpdateLabIndex1^COEOrdItem1(ord1_"||"_itm1,vtsRID)
+ e  d
+ . s result=0,XXXserv=##class(LabLink.LabLinkSoap).%New()        
+ . i XXXserv s result=XXXserv.TestAdd(medurl,vtsRID)
+ . k XXXserv
+ d $zu(5,nm)
+ q 0
+ ;
+TestDel(vtsRID) ; 
+ ;  Updates MedTrak order to EXECUTED status.
+ n (vtsRID)
+ s vtsRID=$g(vtsRID)
+ s ^ZJOHN("testdel")=vtsRID
+ s labep=$p(vtsRID,"||",1)
+ s ExtCode=$p(vtsRID,"||",2)
+ s seq=$p(vtsRID,"||",3)
+ i labep="" q 0
+ i ExtCode="" q 0
+ i seq="" q 0
+ ; change namespaces and update the order
+ s nm=$zu(5)
+ s mednm=$p($g(^CF("ML",1)),"^",1)
+ s medurl=$p($g(^CF("ML",1)),"^",4)
+ d $zu(5,mednm)
+ s order="" 
+ i medurl="" d
+ . ; get the MedTrak order item
+ . s order=$$GetOrderID(vtsRID) i order="" q ; d $zu(5,nm) q 0
+ . ; discontinue
+ . d ChangeStatus^COEOrdItem(order,"D","")
+ e  d
+ . s result=0,XXXserv=##class(LabLink.LabLinkSoap).%New()        
+ . i XXXserv s result=XXXserv.TestDel(medurl,vtsRID,.order)
+ . k XXXserv
+ d $zu(5,nm)
+ q:order="" 0
+ ;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ ; remove medtrak link
+ s b=$g(^TEPIi("MEDTRAKi",labep,ExtCode,seq))
+ i b'="" d
+ . k ^TEPIi("MEDTRAKi",labep,ExtCode,seq)
+ . k ^TEPIi("MEDTRAK",$p(b,"\",1),$p(b,"\",2),$p(b,"\",3),$p(b,"\",4),$p(b,"\",5),$p(b,"\",6),ExtCode,seq,labep)
+ ;!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ ;i $d(^OEORD(+order,"I",+$p(order,"||",2),3)) s $p(^OEORD(+order,"I",+$p(order,"||",2),3),"^",35)=""
+ ;k ^OEORDi(0,"LabTS",+order,vtsRID,+$p(order,"||",2))
+ q 0
+ ;
+GetOrderID(VisitTestSetRowID)
+    n ord,int,labep
+    s labep=$p(VisitTestSetRowID,"||",1) i labep="" q ""
+    s ord=$o(^OEORD(0,"EpisNo",labep,"")) i ord="" q ""
+    s int=$o(^OEORDi(0,"LabTS",ord,VisitTestSetRowID,"")) i int="" q ""
+    q ord_"||"_int
+]]></Routine>
+</Export>

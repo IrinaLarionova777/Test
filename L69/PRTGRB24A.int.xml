@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTGRB24A" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTGRB24A ; IG 07/10/98 ; STANDARD DEBTOR - ARL - type A
+ Q
+ ; Parameters :  1.Payment Code
+ ;               2.Batch Number
+ ;               3.Reminder/Duplicate
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($ZN,$J)
+ K xHEADER D INIT
+ s max=MAX*8\10
+ s line=1,xHEADER(line)=""
+ s line=line+1,xHEADER(line)="~FONTSIZE=12"
+ i usersite'="MOE" d
+ .s line=line+1,xHEADER(line)=$j("",7)_COMP(3)
+ .s line=line+1,xHEADER(line)=$j("",7)_COMP(16)
+ .s line=line+1,xHEADER(line)=$j("",7)_"Telephone : "_COMP(12)
+ i usersite="MOE" d 
+ .s line=line+1,xHEADER(line)=$j("",7)_"Latrobe Pathology (Trading name of Analytical Reference Laboratories pty. ltd.)"
+ .s line=line+1,xHEADER(line)=$j("",7)_"46-48 Albert St|MOE|VIC|3825"
+ .s line=line+1,xHEADER(line)=$j("",7)_"Telephone : 03 5126 2999"
+ s line=line+1,xHEADER(line)=$j("",7)_"ABN : "_COMP(10)
+ s line=line+1,xHEADER(line)="~FONTSIZE=11"
+ s line=line+1,xHEADER(line)=$j("",7)_$p(COMP(4),$c(1),2)
+ s line=line+1,xHEADER(line)=$j("",7)_"Provider No: "_COMP(5)
+ s line=line+1,xHEADER(line)=""
+ d
+ .s line=line+1,xHEADER(line)="~FONTSIZE=14"
+ .i '$l(PAR3) s line=line+1,xHEADER(line)=$j("",12)_"Tax INVOICE/STATEMENT : "_PAR1_" "_PAR2_"  Date : "_$$extdate2^SSUTIL4(+$h) q
+ .i 'PAR3 s line=line+1,xHEADER(line)=$j("",12)_"Tax INVOICE/STATEMENT : "_PAR1_" "_PAR2_"(Duplicate)"_"  Date : "_$$extdate2^SSUTIL4(+$h) q
+ .i PAR3 s line=line+1,xHEADER(line)=$j("",12)_"Tax INVOICE/STATEMENT : "_PAR1_" "_PAR2_"(Reminder # "_PAR3_")"_"  Date : "_$$extdate2^SSUTIL4(+$h) q
+ s line=line+1,xHEADER(line)="~FONTSIZE=10"
+ s line=line+1,xHEADER(line)=$j("",7)_PAYCODE(11)
+ s line=line+1,xHEADER(line)=$j("",7)_PAYCODE(12)
+ s line=line+1,xHEADER(line)=$j("",7)_PAYCODE(13)
+ s line=line+1,xHEADER(line)="~FONTSIZE=8"
+ D HEADER^PRTGRB24,BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=PAR1_"-"_PAR2 I $$update^LVBPRPR(REPID)
+ K ^TMP($ZN,$J),^TMP("PRTREP00",$J)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$ZN)
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+ i '$$select^LVBCTPC(PAR1,"Y") k PAYCODE m PAYCODE=PLIST
+ i '$$select^LVBINVB(PAR1_"||"_PAR2),'$$select^LVBCTCO($p(PLIST(6),$c(1))) k COMP m COMP=PLIST
+ s usersite=""
+ s epis=$o(^TMCB(PAR1,PAR2,"")) i $l(epis) d
+ .i '$$select^LVBEPVIS(epis,"Y") i $l(PLIST(15)),'$l(usersite) i '$$select^LVBCTDR(PLIST(15)) s usersite=$p(PLIST(44),$c(1))
+ Q
+ ; create temporary printing file
+BODY s epis="" f  s epis=$o(^TMCB(PAR1,PAR2,epis)) q:epis=""  d
+ .i $$CT007^at345(epis,PAR1_"||"_PAR2)="Y" q
+ .s ^TMP($zn,$j,"REPORT",epis)=""
+ .i '$l(PAR3) d events^LVBCOM01(epis,"ACC","Original invoice "_PAR1_"-"_PAR2_$s($l(USER):" printed by "_USER,1:"")) q
+ .i 'PAR3 d events^LVBCOM01(epis,"ACC","Duplicate invoice "_PAR1_"-"_PAR2_$s($l(USER):" printed by "_USER,1:"")) q
+ .d events^LVBCOM01(epis,"ACC","Reminder "_PAR3_$s($l(USER):" printed by "_USER,1:""))
+ ; check credits
+ i $l(PAR3) d
+ .s (credit,epis)="" f  s epis=$O(^TMP($ZN,$J,"REPORT",epis)) q:epis=""  d
+ ..s cr1=""
+ ..s deb=$$seldata^LVBEPVIS(epis,20),date=$$seldata^LVBEPVIS(epis,12),list=$$seldata^LVBEPVIS(epis,55)
+ ..s list=epis_","_list f jMaster=1:1:$l(list,",") s ep=$p(list,",",jMaster) i $l(ep) d
+ ...s rowid=deb_"||"_date_"||"_ep
+ ...i $$open^LVBDEBVT(rowid)
+ ...f  q:$$fetch^LVBDEBVT(rowid)  d
+ ....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k TRAN m TRAN=PLIST
+ ....i TRAN(5)="JOURNAL",'$$select^LVBJOU(TRAN(2)) s credit=credit-PLIST(14),cr1=cr1-PLIST(14)
+ ....i TRAN(5)="CREDIT",$l(TRAN(2),"||")=2,'$$select^LVBCRBL(TRAN(2)) s credit=credit-PLIST(16),cr1=cr1-PLIST(16)
+ ....i TRAN(5)="CREDIT",$l(TRAN(2),"||")=3,'$$select^LVBCRBLB(TRAN(2)) s credit=credit-PLIST(9),cr1=cr1-PLIST(9)
+ ...i $$close^LVBDEBVT()
+ ..s ^TMP($zn,$j,"REPORT",epis)=cr1
+ .i credit s ^TMP($zn,$j,"CREDIT")=credit
+ ; balance
+ s (SUM,ax)="" f  s ax=$o(^TMCB(PAR1,ax)) q:ax=""  q:ax=PAR2  d
+ .s epis="" f  s epis=$o(^TMCB(PAR1,ax,epis)) q:epis=""  d
+ ..i $$CT007^at345(epis,PAR1_"||"_ax)="Y" q
+ ..s SUM=SUM+^TMCB(PAR1,ax,epis)
+ .. ; check credits
+ ..s deb=$$seldata^LVBEPVIS(epis,20),date=$$seldata^LVBEPVIS(epis,12),list=$$seldata^LVBEPVIS(epis,55)
+ ..s list=epis_","_list f jMaster=1:1:$l(list,",") s ep=$p(list,",",jMaster) i $l(ep) d
+ ...s rowid=deb_"||"_date_"||"_ep
+ ...i $$open^LVBDEBVT(rowid)
+ ...f  q:$$fetch^LVBDEBVT(rowid)  d
+ ....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k TRAN m TRAN=PLIST
+ ....i TRAN(5)="JOURNAL",'$$select^LVBJOU(TRAN(2)) s SUM=SUM+PLIST(14)
+ ....i TRAN(5)="CREDIT",$l(TRAN(2),"||")=2,'$$select^LVBCRBL(TRAN(2)) s SUM=SUM+PLIST(16)
+ ....i TRAN(5)="CREDIT",$l(TRAN(2),"||")=3,'$$select^LVBCRBLB(TRAN(2)) s SUM=SUM+PLIST(9)
+ ...i $$close^LVBDEBVT()
+ I SUM s ^TMP($zn,$j,"REPORT")=SUM
+ q
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s (epis,BTOT1,BTOT2)="" f CNT=0:1 s epis=$O(^TMP($ZN,$J,"REPORT",epis)) q:epis=""  d
+ ..i '$$select^LVBEPVIS(epis) k VISIT m VISIT=PLIST
+ ..s icDescr="" i '$$select^LVBCTIC(VISIT(18),"Y") s icDescr=PLIST(5)
+ ..s lcc="" i '$$select^LVBCTIC($p(VISIT(18),$c(1)),"Y"),PLIST(7)="Y",'$$select^LVBCTCC($p(VISIT(27),$c(1)),"Y") s lcc=$s($l(PLIST(13))&(VISIT(12)<PLIST(13)):PLIST(14),1:PLIST(10))
+ ..s (mess(1),mess(2),nm)="" i '$$select^LVBCTPC(VISIT(9),"Y") s mess(1)=PLIST(10),mess(2)=PLIST(17),nm=PLIST(37)
+ ..s date=VISIT(12),ic=VISIT(54)
+ ..k xxx s (xxx(1),TestList,item)="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  d
+ ...s xxx(1)=xxx(1)+^(item)
+ ...s BTOT1=BTOT1+^(item)
+ ...i $p(^(item),"\",4)="GST" s BTOT2=BTOT2+^(item)
+ ..s xxx(6)=lcc
+ ..i ^TMP($ZN,$J,"REPORT",epis) s xxx(5)=^(epis),xxx(1)=xxx(1)-xxx(5)
+ ..s item="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  d
+ ...s xxx(2)=$p(^(item),"\",2) i item=ic,'$l(xxx(2)) s xxx(2)=icDescr
+ ...i nm'="NM" s xxx(3)=item_$s($p(^TEPI(epis,7,item),"\",4)="Y":"#",1:"")
+ ...s xxx(4)=$p(^TEPI(epis,7,item),"\",1)
+ ...d PRINT^PRTREP00(.VISIT,.N) k VISIT,xxx
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ .d FOOTER^PRTGRB24
+ q
+]]></Routine>
+</Export>

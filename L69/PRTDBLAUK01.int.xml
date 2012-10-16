@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDBLAUK01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDBLAUK01 ; IG 02/09/98 ; Day Book Labels - UK NN
+ Q
+ ; Parameters :  1.Laboratory
+ ;               2.Site
+ ;               3.Date from
+ ;               4.Date to
+ ;               5.List episodes/accesion numbers
+ ;               6.Order RowID
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($ZN,$J)
+ D INIT,BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=$g(TYPE),PLIST(9)="M" I $$update^LVBPRPR(REPID)
+ K ^TMP($ZN,$J),^TMP("PRTREP00",$J)
+ q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ q
+ ; check if visit/accession should print labels
+CHECK(XXrowid) n (XXrowid,PAR3,PAR4) s XXrowid=$g(XXrowid)
+ i '$$select^LVBHIVAC(XXrowid,"Y"),PLIST(18)="Y" q
+ ; check Laboratory
+ i " L M G S F N I P "'[(" "_$e($p(XXrowid,"||",2))_" ") q
+ ; check all blocks
+ i $$open^LVBHIVAB(XXrowid)
+ f  q:$$fetch^LVBHIVAB(XXrowid)  d
+ .f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ .k BLOCK m BLOCK=PLIST
+ . ; check all records
+ .i $$open^LVBHIVAO(BLOCK(1))
+ .f  q:$$fetch^LVBHIVAO(BLOCK(1))  d
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..i $l(PAR3),PLIST(8)<PAR3 q
+ ..i $l(PAR4),PLIST(8)>PAR4 q
+ ..i PLIST(7)'="Y" d
+ ...s xx=$e($p(XXrowid,"||",2))_"||"_PLIST(3)
+ ...i " L M G "[(" "_$e($p(XXrowid,"||",2))_" ") d
+ ....s xx=$e($p(XXrowid,"||",2))_"||"_PLIST(5)
+ ....s yn="N" i $l(PLIST(5)) s yn=$$seldata^LVBCTDBS(xx,6)
+ ...i " L M G "'[(" "_$e($p(XXrowid,"||",2))_" ") d
+ ....s yn="Y" i $l(PLIST(3)) s yn=$$seldata^LVBCTDBP(xx,7)
+ ....i $p(yn,$c(1))="Y" d
+ .....s xx=$e($p(XXrowid,"||",2))_"||"_PLIST(5)
+ .....i $l(PLIST(5)) s yn=$$seldata^LVBCTDBS(xx,6) 
+ ...i $p(yn,$c(1))="Y" s ^TMP($zn,$j,"LIST",PLIST(1))=""
+ ...i $p(yn,$c(1))'="Y" d skip^LVBHIVAO(PLIST(1))
+ .i $$close^LVBHIVAO()
+ i $$close^LVBHIVAB()
+ q
+ ; create list of labels to print
+BODY k ^TMP($zn,$j)
+ ; create list of labels for a laboratory
+ i '$l(PAR5) d
+ .s x1="" f  s x1=$o(^THIRi("PRINT-LABEL",x1)) q:x1=""  d
+ ..s x2="" f  s x2=$o(^THIRi("PRINT-LABEL",x1,x2)) q:x2=""  d
+ ... ; check laboratory
+ ...i $l(PAR1),$e(x2,1)'=PAR1 q
+ ... ; check site
+ ...i $l(PAR2),$e(x2,2)'=PAR2 q
+ ...D CHECK(x1_"||"_x2)
+ ; create list of labels for an episodes
+ i $l(PAR5) d
+ .i '$l(PAR6) d
+ ..f j=1:1:$l(PAR5,"|") s x1=$p($p(PAR5,"|",j),"~",1),x2=$p($p(PAR5,"|",j),"~",2) i $l(x1),$l(x2) d
+ ...i x2'="*",$d(^THIRi("PRINT-LABEL",x1,x2)) D CHECK(x1_"||"_x2)
+ ...i x2="*" s x2="" f  s x2=$o(^THIRi("PRINT-LABEL",x1,x2)) q:x2=""  d
+ .... ; check laboratory
+ ....i $l(PAR1),$e(x2,1)'=PAR1 q
+ .... ; check site
+ ....i $l(PAR2),$e(x2,2)'=PAR2 q
+ ....D CHECK(x1_"||"_x2)
+ .i $l(PAR6) f j=1:1:$l(PAR6,",") i $l($p(PAR6,",",j)) s ^TMP($zn,$j,"LIST",$p(PAR6,",",j))=""
+ ; Sort
+ s xROWID="" f  s xROWID=$o(^TMP($zn,$j,"LIST",xROWID)) q:xROWID=""  d
+ .s SORT=$p(xROWID,"||",2),^TMP($zn,$j,"REPORT",SORT,xROWID)=""
+ q
+ ; print all labels
+PRINT i $d(^TMP($zn,$j,"REPORT")) s Position=0 d
+ .s SORT="" f  s SORT=$o(^TMP($zn,$j,"REPORT",SORT)) q:SORT=""  d
+ ..s xROWID="" f  s xROWID=$o(^TMP($zn,$j,"REPORT",SORT,xROWID)) q:xROWID=""  d
+ ...s TYPE=$e($p(xROWID,"||",2))_"-"_PAR2 d
+ .... ; order information
+ ....i $$select^LVBHIVAO(xROWID) q
+ ....f j=1:1:4,6:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k HIVAO m HIVAO=PLIST
+ .... ; update record that it had been printed already
+ ....f j=1:1:9 i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s PLIST(7)="Y" i $$update^LVBHIVAO(xROWID)
+ .... ; visit information
+ ....i $$select^LVBEPVIS($p(xROWID,"||"),"Y") q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k VISIT m VISIT=PLIST
+ ....s recdate="" i $l(VISIT(61)) s recdate=$$extdate2^SSUTIL4(VISIT(61))
+ .... ; accession number information
+ ....i $$select^LVBHIVAC($p(xROWID,"||",1,2)) q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k HIVAC m HIVAC=PLIST
+ .... ; accession number information
+ ....s NO=0 i '$$getall^LVBHIVAC($p(xROWID,"||",1)) s NO=PLIST
+ ....s NB=0 i '$$getall^LVBHIVAB($p(xROWID,"||",1,2)) s NB=PLIST
+ ....i $$select^LVBHIVAB($p(xROWID,"||",1,3)) q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k HIVAB m HIVAB=PLIST
+ .... ; start build lines
+ ....i " S F N I P "[HIVAC(8) d
+ .....s Position=Position+1
+ .....s LINE(1,Position)=HIVAC(9)_HIVAC(8)_$e(HIVAC(10),1,$l(HIVAC(10))-1)_$s(NO>1:"/"_($a($e(HIVAC(10),$l(HIVAC(10))))-64),1:"")
+ .....s LINE(2,Position)=$s($l($p(HIVAO(5),$c(1),2))>10:$p(HIVAO(5),$c(1),1),1:$p(HIVAO(5),$c(1),2))
+ .....s LINE(3,Position)=$e(VISIT(3),1,11)_" "_$e(VISIT(4))
+ .....i NB>1 s LINE(4,Position)=HIVAB(2)
+ ....i " M "[HIVAC(8) d
+ .....s Position=Position+1
+ .....s LINE(1,Position)=HIVAC(9)_HIVAC(8)_$e(HIVAC(10),1,$l(HIVAC(10))-1)_"/"_($a($e(HIVAC(10),$l(HIVAC(10))))-64)
+ .....s LINE(2,Position)=$s($l($p(HIVAO(5),$c(1),2))>10:$p(HIVAO(5),$c(1),1),1:$p(HIVAO(5),$c(1),2))
+ .....s LINE(3,Position)=$e(VISIT(3),1,11)_" "_$e(VISIT(4))
+ .....i NB>1 s LINE(4,Position)=HIVAB(2)
+ ....i " L G "[HIVAC(8) d
+ .....s Position=Position+1
+ .....s LINE(1,Position)=HIVAC(9)_HIVAC(8)_$e(HIVAC(10),1,$l(HIVAC(10))-1)_"/"_($a($e(HIVAC(10),$l(HIVAC(10))))-64)
+ .....s LINE(3,Position)=$e(VISIT(3),1,11)_" "_$e(VISIT(4))
+ ....i Position=4 d print
+ .d print
+ q
+print ; print created lines
+ i $d(LINE) d
+ .s lf=$c(10),labnum=1
+ .d ADD^SSPRINT(REPID,"PRT",lf)
+ .d ADD^SSPRINT(REPID,"PRT","FK""*"""_lf)
+ .d ADD^SSPRINT(REPID,"PRT","FK""LABEL"_labnum_""""_lf)
+ .d ADD^SSPRINT(REPID,"PRT","FS""LABEL"_labnum_""""_lf)
+ .d ADD^SSPRINT(REPID,"PRT","Q184,24"_lf)
+ .d ADD^SSPRINT(REPID,"PRT","R0,0"_lf)
+ .f Position=1:1:4 d
+ ..i $d(LINE(1,Position)) d ADD^SSPRINT(REPID,"PRT","A"_(25+(Position-1*203))_",30,0,4,1,1,N,"""_LINE(1,Position)_""""_lf)
+ ..i $d(LINE(2,Position)) d ADD^SSPRINT(REPID,"PRT","A"_(25+(Position-1*203))_",70,0,3,1,1,N,"""_LINE(2,Position)_""""_lf)
+ ..i $d(LINE(4,Position)) d ADD^SSPRINT(REPID,"PRT","A"_(170+(Position-1*203))_",67,0,4,1,1,N,"""_LINE(4,Position)_""""_lf)
+ ..i $d(LINE(3,Position)) d ADD^SSPRINT(REPID,"PRT","A"_(25+(Position-1*203))_",110,0,3,1,1,N,"""_LINE(3,Position)_""""_lf)
+ .d ADD^SSPRINT(REPID,"PRT","FE"_lf)
+ .d ADD^SSPRINT(REPID,"PRT","FR""LABEL"_labnum_""""_lf)
+ .d ADD^SSPRINT(REPID,"PRT","P1"_lf)
+ k LINE s Position=0
+ q
+]]></Routine>
+</Export>

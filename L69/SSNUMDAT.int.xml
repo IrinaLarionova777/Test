@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="SSNUMDAT" type="INT" languagemode="0"><![CDATA[
+SSNUMDAT ;routine to convert number and date formats
+ ;
+ ; this fixes up number formatting issues.
+ ; it is required for countries which don't have 123,456.99 format
+ ;
+ ; it modifies all the code that is compiled into tables for
+ ; internal to external conversion on ^mdd
+ ; options for date : DD/MM/YY or MM/DD/YY
+ ;
+ q
+ ;1234567.89
+ ;1234567,89
+ ;1,234,567.89
+ ;1.234.567,89
+ ;1 234 567.89 
+ ;1'234'567,89
+extint(numtype,numdec) ;external to internal        
+ q "n num s num=$$numint^%razdt(%val,"_numtype_","_numdec_","""",1) s:(num="""")&(%val'="""") %ok=0 s %val=num"
+ ;
+intext(numtype,numdec) ;internal to external        
+ n str,str1
+ s str=$s(numdec="":"",1:","_numdec)
+ s str1="$s(%val'<1:"","",%val'>-1:"","",1:"""")"
+ i numtype=1 q "s %val=$s(%val'=+%val:"""",1:$fn(%val,"""""_str_"))"
+ i numtype=2 q "s %val=$s(%val'=+%val:"""",1:$tr($fn(%val,"""""_str_"),""."","",""))"
+ i numtype=3 q "s %val=$s(%val'=+%val:"""",1:$fn(%val,"_str1_str_"))"
+ i numtype=4 q "s %val=$s(%val'=+%val:"""",1:$tr($fn(%val,"_str1_str_"),"",."","".,""))"
+ i numtype=5 q "s %val=$s(%val'=+%val:"""",1:$tr($fn(%val,"_str1_str_"),"","","" ""))"
+ i numtype=6 q "s %val=$s(%val'=+%val:"""",1:$tr($fn(%val,"_str1_str_"),"",."",""',""))"
+ ;i numtype=3 q "s %val=$s(%val'=+%val:"""",1:$fn(%val,"","""_str_"))"
+ ;i numtype=4 q "s %val=$s(%val'=+%val:"""",1:$tr($fn(%val,"","""_str_"),"",."","".,""))"
+ ;i numtype=5 q "s %val=$s(%val'=+%val:"""",1:$tr($fn(%val,"","""_str_"),"","","" ""))"
+ ;i numtype=6 q "s %val=$s(%val'=+%val:"""",1:$tr($fn(%val,"","""_str_"),"",."",""',""))"
+ q ""
+ ;
+ ;internal to external
+ ;^mdd(1,TableNo,2,FieldNo,21,0)=num
+ ;^mdd(1,TableNo,2,FieldNo,21,1-num)=...
+ ;external to internal
+ ;^mdd(1,TableNo,2,FieldNo,20,0)=num
+ ;^mdd(1,TableNo,2,FieldNo,20,1-num)=...
+ ;additional validation M -code
+ ;^mdd(1,TableNo,2,FieldNo,22,0)=num
+ ;^mdd(1,TableNo,2,FieldNo,22,1-num)=...
+ ;
+all ;update all tables        
+ s table=0 f  s table=$o(^mdd(1,table)) q:'table  d onetable(table)
+ q
+onetable(table) ;
+ ;get defult data from configuration
+ s NUMFORM=$p($g(^CF("SM",1)),"^",18)
+ s DATEFORM=$p($g(^CF("SM",1)),"^",19)
+ ;if nothing setup
+ s:NUMFORM="" NUMFORM="1," ;1000
+ s:DATEFORM="" DATEFORM=4 ;dd/mm/yy
+ k ^TMP("NUM",$j)
+ w !,table
+ s field=0 f  s field=$o(^mdd(1,table,2,field)) q:'field  d
+ .s type=$p($g(^mdd(1,table,2,field,3)),$c(1)) 
+ .;type 5 - number, type 1 - date
+ .i type'=5,type'=1 q        
+ .s name=$g(^mdd(1,table,2,field,1)) q:$$ALPHAUP(name)["CHILDSUB"
+ .q:$$ALPHAUP(name)["VERSION"
+ .q:$$ALPHAUP(name)["SUBSCRIPT"
+ .q:$$ALPHAUP(name)["ARCIMSUB"
+ .;convert number
+ .d:type=5
+ ..s numtype=$p($g(^mdd(1,table,2,field,35)),$c(1),4)
+ ..s numdec=$p($g(^mdd(1,table,2,field,35)),$c(1),3)
+ ..s numtype=+NUMFORM,numdec=$p(NUMFORM,",",2)
+ ..s $p(^mdd(1,table,2,field,35),$c(1),4)=numtype
+ ..s $p(^mdd(1,table,2,field,35),$c(1),3)=numdec
+ ..s extint=$$extint(numtype,numdec)
+ ..s intext=$$intext(numtype,numdec)
+ ..k ^mdd(1,table,2,field,20)
+ ..s ^mdd(1,table,2,field,20,0)=1
+ ..s ^mdd(1,table,2,field,20,1)=extint
+ ..k ^mdd(1,table,2,field,21)
+ ..s ^mdd(1,table,2,field,21,0)=1
+ ..s ^mdd(1,table,2,field,21,1)=intext
+ ..k ^mdd(1,table,2,field,22)
+ ..s ^mdd(1,table,2,field,22,0)=1
+ ..s ^mdd(1,table,2,field,22,1)="i %val'=+%val s %ok=0,%msg=$$setmsg^%razset(""DTNumIn"")"
+ ..i numdec d
+ ...s ^mdd(1,table,2,field,22,0)=3
+ ...s ^mdd(1,table,2,field,22,2)="#library %mtrans"
+ ...s ^mdd(1,table,2,field,22,3)="i $l($p(%val,""."",2))>"_numdec_" s %ok=0,%msg=$$setmsgp^%razset2(""DTNUDEC"",$$$Language_""*"","_numdec_")"
+ ..i numdec=0 d
+ ...s ^mdd(1,table,2,field,22,0)=2
+ ...s ^mdd(1,table,2,field,22,2)="i $l($p(%val,""."",2))>0 s %ok=0,%msg=$$setmsg^%razset(""DTNNDEC"")"
+ .;convert date
+ .d:type=1
+ ..s datetype=$p($g(^mdd(1,table,2,field,31)),$c(1),3)
+ ..s datetype=DATEFORM
+ ..s $p(^mdd(1,table,2,field,31),$c(1),3)=datetype
+ ..k ^mdd(1,table,2,field,20)
+ ..s ^mdd(1,table,2,field,20,0)=1
+ ..s ^mdd(1,table,2,field,20,1)="s %val=$$dateint^%razdt(%val,"_datetype_","""") s:%val<0 %ok=0"
+ ..k ^mdd(1,table,2,field,21)
+ ..s ^mdd(1,table,2,field,21,0)=2
+ ..s ^mdd(1,table,2,field,21,1)="s %val=+$g(%val) s:%val<1 %val="""" q:%val="""""
+ ..s ^mdd(1,table,2,field,21,2)="##vendor(daten"_datetype_")"
+ k ^TMP("NUM",$j)
+ q
+         ;type 1
+ ;""
+ ;%val=$s(%val'=+%val:"",1:$fn(%val,""))
+ ;num s num=$$numint^%razdt(%val,1,"","",1) s:(num="")&(%val'="") %ok=0
+ ;dec char 0
+ ;s %val=$s(%val'=+%val:"",1:$fn(%val,"",0))
+ ;n num s num=$$numint^%razdt(%val,1,0,"",1) s:(num="")&(%val'="") %ok=0 s %val=num
+ ;dec char 1
+ ;s %val=$s(%val'=+%val:"",1:$fn(%val,"",1))
+ ;n num s num=$$numint^%razdt(%val,1,1,"",1) s:(num="")&(%val'="") %ok=0 s %val=num
+ ;type 2
+ ;""
+ ;s        %val=$s(%val'=+%val:"",1:$tr($fn(%val,""),".",","))
+ ;n        num s num=$$numint^%razdt(%val,2,"","",1) s:(num="")&(%val'="") %ok=0
+ ;0
+ ;s        %val=$s(%val'=+%val:"",1:$tr($fn(%val,"",0),".",","))
+ ;n        num s num=$$numint^%razdt(%val,2,0,"",1) s:(num="")&(%val'="") %ok=0
+ ;type 3
+ ;""
+ ;s        %val=$s(%val'=+%val:"",1:$fn(%val,","))
+ ;n        num s num=$$numint^%razdt(%val,3,"","",1) s:(num="")&(%val'="") %ok=0
+ ;0
+ ;s        %val=$s(%val'=+%val:"",1:$fn(%val,",",0))
+ ;n        num s num=$$numint^%razdt(%val,3,0,"",1) s:(num="")&(%val'="") %ok=0
+ ;type 4
+ ;""
+ ;s        %val=$s(%val'=+%val:"",1:$tr($fn(%val,","),",.",".,"))
+ ;n        num s num=$$numint^%razdt(%val,4,"","",1) s:(num="")&(%val'="") %ok=0
+ ;0
+ ;s        %val=$s(%val'=+%val:"",1:$tr($fn(%val,",",0),",.",".,"))
+ ;n        num s num=$$numint^%razdt(%val,4,0,"",1) s:(num="")&(%val'="") %ok=0 
+ ;type 5
+ ;""
+ ;s        %val=$s(%val'=+%val:"",1:$tr($fn(%val,","),","," "))_
+ ;n        num s num=$$numint^%razdt(%val,5,"","",1) s:(num="")&(%val'="") %ok=0
+ ;0
+ ;s        %val=$s(%val'=+%val:"",1:$tr($fn(%val,",",0),","," "))
+ ;n        num s num=$$numint^%razdt(%val,5,0,"",1) s:(num="")&(%val'="") %ok=0
+ ;type 6
+ ;""
+ ;s        %val=$s(%val'=+%val:"",1:$tr($fn(%val,","),",.","',"))
+ ;n        num s num=$$numint^%razdt(%val,6,"","",1) s:(num="")&(%val'="") %ok=0 
+ ;0
+ ;s        %val=$s(%val'=+%val:"",1:$tr($fn(%val,",",0),",.","',"))
+n ;num s num=$$numint^%razdt(%val,6,0,"",1) s:(num="")&(%val'="") %ok=0
+ALPHAUP(val,remove) ;
+ s %trans(1)="abcdefghijklmnopqrstuvwxyz !""#$%&'()*+-./:;<=>@[\]^_`{|}~"
+ s %trans(2)="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+ q:'$d(remove) $tr(val,%trans(1),%trans(2)) q $tr(val,$tr(%trans(1),remove),%trans(2))
+]]></Routine>
+</Export>

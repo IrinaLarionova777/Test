@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBVIS16" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBVIS16 ; IG 2/6/98 ; Visit selection routines - Donor module
+ ;
+ ; supported calls:
+ ;
+ ; $$view^LVBVIS16(epis)
+ ; $$open^LVBVIS16(type,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBVIS16(type,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBVIS16(type,p1,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBVIS16()
+ ; $$getall^LVBVIS16(type)
+ ;
+view(epis) n (epis,PLIST) s epis=$g(epis) k ^TMP($zn,$j)
+ k VISTS i '$$getall^LVBVISTS(epis,,,,,,,,"ALL") m VISTS=PLIST
+ f j1=1:1:VISTS s vtsRID=$p($p(VISTS(j1),$c(2),4),$c(28),1) d
+ .k PLIST i $$single^PRTDR00(vtsRID)
+ .i $g(PLIST) d
+ ..i $d(^TMP($zn,$j)) d
+ ...s x=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,x)="!"
+ ...s xx="",$p(xx,"-",80)="",x=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,x)=xx
+ ...s x=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,x)="!"
+ ..f j2=1:1:PLIST s x=$o(^TMP($zn,$j,""),-1)+1,^TMP($zn,$j,x)=PLIST(j2)
+ k PLIST m PLIST=^TMP($zn,$j)
+ k ^TMP($zn,$j)
+ q 0
+check(ti,result) n (ti,result) s ti=$g(ti),result=$g(result),ok=""
+ ; standard comments
+ s line=result f  q:line'["{"  q:line'["}"  d  q:$l(ok)
+ .s line=$p(line,"{",2,$l(line,"{")),code=$p(line,"}",1),line=$p(line,"}",2,$l(line,"}"))
+ .i '$$select^LVBCTTCT(ti_"||"_code,"Y"),$p(PLIST(5),$c(1))="A" s ok="Y"
+ ; auto comments
+ s line=result f  q:line'["["  q:line'["]"  d  q:$l(ok)
+ .s line=$p(line,"[",2,$l(line,"[")),code=$p(line,"]",1),line=$p(line,"]",2,$l(line,"]"))
+ .i '$$select^LVBCTTCT(ti_"||"_code,"Y"),$p(PLIST(5),$c(1))="A" s ok="Y"
+ q ok
+open(type,p1,p2,p3,p4,p5,p6,p7,p8,p9) s ^TMP($zn,$j,"open")=""
+ q 0
+ ; PLIST : 1.Episode
+ ;         2.BBP_RowID
+ ;         3.Access flag
+ ;         4.Fail flag
+ ;
+fetch(type,p1,p2,p3,p4,p5,p6,p7,p8,p9) n (type,PLIST) s type=$g(type)
+ s xx=$g(^TMP($zn,$j,"open")) f j=1,2 s @("x"_j)=$p(xx,"\",j)
+ s found="" f  d:$l(x1)  q:found  s x1=$o(^TEPIi("Donor",x1)),x2="" q:x1=""
+ .f  s x2=$o(^TEPIi("Donor",x1,x2)) q:x2=""  i '$$select^LVBBBP(x2),PLIST(26)'="Y" s found=1 q
+ k PLIST s SQLCODE=100 i $l(x2) d
+ .s SQLCODE=0
+ .k VISTS i '$$getall^LVBVISTS(x1,,,,,,,,"ALL") m VISTS=PLIST
+ .k PLIST
+ .s PLIST(1)=x1,PLIST(2)=x2
+ .s PLIST(3)="Y" f j=1:1:VISTS i $p($p(VISTS(j),$c(2),4),$c(28),33)'="A" s PLIST(3)="N" q
+ .s PLIST(4)="" i PLIST(3)="Y" f j=1:1:VISTS d  q:PLIST(4)="Y"
+ ..s ep=$p($p($p($p(VISTS(j),$c(2),4),$c(28),1),$c(1)),"||",1)
+ ..s ts=$p($p($p($p(VISTS(j),$c(2),4),$c(28),1),$c(1)),"||",2)
+ ..s tscnt=$p($p($p($p(VISTS(j),$c(2),4),$c(28),1),$c(1)),"||",3)
+ ..s ti="" f  s ti=$o(^TEPI(ep,1,ts,tscnt,"DATA",ti)) q:ti=""  d  q:PLIST(4)="Y"  
+ ...s res="{"_$p(^(ti),"\")_"}",PLIST(4)=$$check(ti,res) q:PLIST(4)="Y"
+ ...s x="" f  s x=$o(^TEPI(ep,1,ts,tscnt,"DATA",ti,"REM",x)) q:x=""  s res=^(x),PLIST(4)=$$check(ti,res) q:PLIST(4)="Y"
+ s PLIST=$o(PLIST(""),-1)
+ s ^TMP($zn,$j,"open")=x1_"\"_x2
+ i 'SQLCODE,type="P",PLIST(4)="Y" g fetch+1
+ i 'SQLCODE,type="F",PLIST(4)'="Y" g fetch+1
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(type,p1,p2,p3,p4,p5,p6,p7,p8,p9) s type=$g(type) k ^TMP($zn,$j,1)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ s xSUM=0
+ f xxx=1:1:max s SQLCODE=$$fetch(type) q:SQLCODE  d  q:xSUM>15000
+ .s cnt=$o(^TMP($zn,$j,1,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,1,cnt),$c(28),j)=$g(PLIST(j))
+ .s xSUM=xSUM+$l(^TMP($zn,$j,1,cnt))
+ k PLIST m PLIST=^TMP($zn,$j,1) k ^TMP($zn,$j,1)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ;
+close() k ^TMP($zn,$j,"open")
+ q 0
+getall(type) n (type,PLIST) s type=$g(type) k ^TMP($zn,$j)
+ i $$open(type)
+ f cnt=1:1 q:$$fetch(type)  d
+ .s str="" f j=1:1:PLIST s $p(str,$c(28),j)=PLIST(j)
+ .s ^TMP($zn,$j,cnt)=$p(PLIST(1),$c(1))_$c(2,2,2)_str
+ i $$close()
+ k PLIST m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k TMP($zn,$j)
+ q 0
+]]></Routine>
+</Export>

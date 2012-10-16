@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTGRB06" type="INT" languagemode="0"><![CDATA[
+PRTGRB06 ; ML 5/11/99 ; STANDARD DEBTOR - Monash IVF
+ q
+ ; Parameters :  1.Payment Code
+ ;               2.Batch Number
+ ;               3.Reminder/Duplicate
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ ;n (REPID,PAR,USER,%msql) 
+ k ^TMP($zn,$j)
+ k xHEADER d INIT,QDR,BODY
+ ; print invoice
+ i '$l(PAR3)!'PAR3 d PINV
+CREND i '$$select^LVBPRPR(REPID) s PLIST(12)=PAR1_"-"_PAR2 i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialize parameters
+INIT f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ s invdate=$p(^TMCB(PAR1,PAR2),"\",1)
+ s COMP=$p(^TMCB(PAR1,PAR2),"\",3),$p(line,"-",145)=""
+ i '$$select^LVBCTCO(COMP,"Y") k COMP m COMP=PLIST
+ i '$$select^LVBCTPC(PAR1,"Y") k PAYCODE m PAYCODE=PLIST
+ i '$$select^LVBCTDR(PAR1,"Y") k DOC m DOC=PLIST
+ s type=$p($g(PAYCODE(25)),$c(1))
+ q
+ ; create temporary printing file
+BODY s epis="" f  s epis=$o(^TMCB(PAR1,PAR2,epis)) q:epis=""  d
+ .i $$CT007^at345(epis,PAR1_"||"_PAR2)="Y" q
+ .q:$$select^LVBEPVIS(epis)
+ .s ^TMP($zn,$j,"REPORT",PLIST(14),epis)=^TMCB(PAR1,PAR2,epis)
+ .i '$l(PAR3) d events^LVBCOM01(epis,"ACC","Original invoice "_PAR1_"-"_PAR2_$s($l(USER):" printed by "_USER,1:"")) q
+ .i 'PAR3 d events^LVBCOM01(epis,"ACC","Duplicate invoice "_PAR1_"-"_PAR2_$s($l(USER):" printed by "_USER,1:"")) q
+ .d events^LVBCOM01(epis,"ACC","Reminder "_PAR3_$s($l(USER):" printed by "_USER,1:""))
+ ; no check for credits as they use an external account system
+ q
+PINV ; print invoice
+ d ADD^PRTREP00(REPID,"PRT","#"),LINE
+ s totamt=""
+ s date="" f  s date=$o(^TMP($zn,$j,"REPORT",date)) q:date=""  d
+ .s epis="" f  s epis=$O(^TMP($ZN,$J,"REPORT",date,epis)) q:epis=""  d
+ ..s (amt,paid)=""
+ ..q:$$select^LVBEPVIS(epis)  k VISIT m VISIT=PLIST
+ ..d ADD^PRTREP00(REPID,"PRT","?3  "_$$extdate2^SSUTIL4(VISIT(14)))
+ .. ; print GF type format
+ ..i type="GF" d
+ ...d ADD^PRTREP00(REPID,"PRT","?17 "_VISIT(3))
+ ...s (amt,item)="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  d
+ ....s amt=$p(^(item),"\",1),service=$p(^(item),"\",2)
+ ....d ADD^PRTREP00(REPID,"PRT","?47 "_item)
+ ....d ADD^PRTREP00(REPID,"PRT","?60 "_service)
+ ....d ADD^PRTREP00(REPID,"PRT","?80 "_$j(amt,7,2)) s totamt=totamt+amt
+ ....d LINE s cntline=$g(cntline)+1 i cntline=43 d ADD^PRTREP00(REPID,"PRT","#"),LINE s cntline=""
+ .. ; print SG type header
+ ..i type="SG" d
+ ...d ADD^PRTREP00(REPID,"PRT","?16 "_VISIT(3))
+ ...d ADD^PRTREP00(REPID,"PRT","?38 "_VISIT(60))
+ ...s (amt,item)="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  d
+ ....s amt=$p(^(item),"\",1),service=$p(^(item),"\",2)
+ ....d ADD^PRTREP00(REPID,"PRT","?54 "_item)
+ ....d ADD^PRTREP00(REPID,"PRT","?66 "_service)
+ ....d ADD^PRTREP00(REPID,"PRT","?80 "_$j(amt,7,2)) s totamt=totamt+amt
+ ....d LINE s cntline=$g(cntline)+1 i cntline=43 d ADD^PRTREP00(REPID,"PRT","#"),LINE s cntline=""
+ d LINE
+ d ADD^PRTREP00(REPID,"PRT",$c(27)_"&a0h7400V")
+ d ADD^PRTREP00(REPID,"PRT","?80 Amount Due:")
+ d ADD^PRTREP00(REPID,"PRT","?93 "_$j(totamt,7,2))
+ q
+ ; print header
+QDR s QDR="MIVF-GRB",x="" f  s x=$o(^SS("QDR",QDR,x)) q:x=""  d
+ .d ADD^PRTREP00(REPID,"HDR",^SS("QDR",QDR,x))
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"(s1p10v0s0b4101T")
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a200h2000V")
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SDate")
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ ; global fee type header
+ i type="GF" d
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a1050h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SPatient Surname")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a2800h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SItem No.")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a3570h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SServices")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a5020h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SFee")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ ; study group type header
+ i type="SG" d
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a200h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SDate")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a950h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SPatient Surname")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a2260h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SStudy Group")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a3230h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SItem No.")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a3940h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SServices")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a5030h2000V")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f0SFee")
+ .d ADD^PRTREP00(REPID,"HDR",$c(27)_"&f1S")
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"(s0p12h0s0b4099T")
+ d ADD^PRTREP00(REPID,"HDR",$c(27)_"&a0h0V")
+ ; print dr details and date of invoice
+ s drname=$$NameFormat^LVBCOM03("DR",DOC(26),DOC(4),DOC(3),DOC(49),DOC(50),DOC(51)) f i=1:1 q:$e(drname)'=" "  s drname=$e(drname,2,99)
+ s linecnt=10 f i=1:1:10 d ADD^PRTREP00(REPID,"HDR","!")
+ d ADD^PRTREP00(REPID,"HDR","?12 "_drname)
+ d ADD^PRTREP00(REPID,"HDR","?73 "_$$extdate2^SSUTIL4(invdate))
+ d ADD^PRTREP00(REPID,"HDR","!") s linecnt=linecnt+1
+ f i=1:1:$l(DOC(33),"|") d ADD^PRTREP00(REPID,"HDR","?12 "_$p(DOC(33),"|",i)),ADD^PRTREP00(REPID,"HDR","!") s linecnt=linecnt+1
+ f i=linecnt:1:16 d ADD^PRTREP00(REPID,"HDR","!")
+ q
+ ; add line to report
+LINE d ADD^PRTREP00(REPID,"PRT","!")
+ q
+]]></Routine>
+</Export>

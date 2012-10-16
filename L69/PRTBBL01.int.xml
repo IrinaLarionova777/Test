@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTBBL01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTBBL01 ; ML 13/09/99 ; BloodBank Labels - Trak Systems
+ q
+ ; Parameters :  1. vtsRID
+ ;               2. list of packRID
+ ;               4. R - Blood Group Check
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j),^TMP("PRTDR00",$j),^TMP("REPORT",$j)
+ k xHEADER d INIT i $l(PAR1) d BODY,PRINT
+ k ^TMP($zn,$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ q
+BODY ; create report
+ i $l(PAR1) d
+ .s epis=$p(PAR1,"||",1)
+ .k EPVIS i '$$select^LVBEPVIS(epis) m EPVIS=PLIST
+ .k VISTS i '$$select^LVBVISTS(PAR1) m VISTS=PLIST
+ .i $$open^LVBVISTE(PAR1)
+ .f  q:$$fetch^LVBVISTE(PAR1)  k VISTE m VISTE=PLIST d
+ ..i $l(PAR2),(","_PAR2_",")'[(","_$p(PLIST(2),$c(1))_"||"_$p(PLIST(3),$c(1))_",") q
+ ..s rowid=$p(PLIST(2),$c(1))_"||"_$p(PLIST(3),$c(1))
+ ..i '$$select^LVBBBP(rowid) k PACK m PACK=PLIST d
+ ...d LABEL
+ ... ; create page for printing
+ ...k PLIST m PLIST=^TMP("PRTDR00",$j,"RESULT") s PLIST=$o(PLIST(""),-1)
+ ...k ^TMP("PRTDR00",$j)
+ ...s page=$o(^TMP("REPORT",$j,""),-1)+1,^TMP("REPORT",$j,page,"TEST",PAR1)=""
+ ...f jLine=1:1:PLIST s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ...k PLIST m PLIST=PACK s PLIST(22)=+$h,PLIST(23)=$p(EPVIS(20),$c(1)) i $$update^LVBBBP(rowid)
+ .i $$close^LVBVISTE()
+ q
+ ; format label
+LABEL d ADD^PRTDR00(,$c(27)_"(s7B"),LN^PRTDR00()
+ d ADD^PRTDR00(,$c(27)_"&a50h700V")
+ f j=1:1:3 d LN^PRTDR00()
+ d ADD^PRTDR00(10,"!R! UNIT C; BARC 19,Y,'"_$p(PACK(2),$c(1),1)_"',1,1,.034,.068,.102,.136,.034,.068,.102,.136; EXIT;")
+ f j=1:1:5 d LN^PRTDR00()
+ d ADD^PRTDR00(10,"!R! UNIT C; BARC 19,Y,'"_$p(PACK(8),$c(1),3)_"',1,1,.034,.068,.102,.136,.034,.068,.102,.136; EXIT;")
+ f j=1:1:5 d LN^PRTDR00()
+ d ADD^PRTDR00(10,"!R! UNIT C; BARC 19,Y,'"_epis_"',1,1,.034,.068,.102,.136,.034,.068,.102,.136; EXIT;")
+ d ADD^PRTDR00(,$c(27)_"&a50h700V"),LN^PRTDR00()
+ d ADD^PRTDR00(,"~BOLD")
+ d ADD^PRTDR00(60,"BLOOD COMPATIBILITY SLIP")
+ d ADD^PRTDR00(,"~NORMAL"),LN^PRTDR00()
+ d ADD^PRTDR00(50,"LAB Number :"_epis),LN^PRTDR00()
+ d ADD^PRTDR00(50,"Blood Group: "_$p($p(EPVIS(69),$c(1),2),"/",2))
+ f i=1:1:3 d LN^PRTDR00()
+ d ADD^PRTDR00(50,"This unit of blood is compatible"),LN^PRTDR00()
+ d ADD^PRTDR00(50,"with the patient's serum"),LN^PRTDR00()
+ d ADD^PRTDR00(50,"supplied:")
+ f i=1:1:2 d LN^PRTDR00()
+ d ADD^PRTDR00(50,"Bag Group            Bag Number"),LN^PRTDR00()
+ d ADD^PRTDR00(50,$p($p(PACK(9),$c(1),2),"/",2)),ADD^PRTDR00(71,$p(PACK(2),$c(1),1)),LN^PRTDR00()
+ d LN^PRTDR00()
+ s user=$p(VISTS(9),$c(1),2) i '$l(user) s user=$p(VISTS(6),$c(1),2)
+ d ADD^PRTDR00(50,"Matched on "_$$extdate2^SSUTIL4(VISTS(7))_"  by "_user)
+ f i=1:1:2 d LN^PRTDR00()
+ d ADD^PRTDR00(50,"Hold until:    "_$$extdate2^SSUTIL4($p(VISTE(8),$c(1),1))_"  "_$$exttime^SSUTIL4($p(VISTE(9),$c(1),1)))
+ f i=1:1:2 d LN^PRTDR00()
+ d ADD^PRTDR00(50,"COMPLETE ATTACHED CARD"),LN^PRTDR00()
+ d ADD^PRTDR00(50,"AND RETURN TO BLOOD BANK"),LN^PRTDR00()
+ q
+PRINT ; print report
+ ; xPAR1 - U-User
+ ;         C-Courier
+ ; xPAR2 - User RowID/Courier
+ ; get patient information
+ k VISIT i '$$select^LVBEPVIS(epis) m VISIT=PLIST
+ ; get doctor information
+ s doc=$p(VISIT(15),$c(1)) k DOC i '$$select^LVBCTDR(doc,"Y") m DOC=PLIST
+ s xPAR1="",xPAR2="BBLABELS"
+ s page="" f  s page=$o(^TMP("REPORT",$j,page)) q:page=""  d
+ . ; print page Header
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ . ; print report
+ .f j=1:1 q:'$d(^TMP("REPORT",$j,page,"TEXT",j))  s xx=^(j) d ADDLINE^PRTREP00(REPID,"PRT",xx)
+ . ; print page Footer
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBDEB2" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBDEB2 ; IG 04/08/98 ; LVB Control data access for DEB_Debtor
+ ;
+ ; supported calls:
+ ;
+ ; $$open^LVBDEB2(RowID,Master,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBDEB2(RowID,Master,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBDEB2(RowID,Master,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBDEB2(RowID,Master,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBDEB2()
+ ;
+open(RowID,Master,p2,p3,p4,p5,p6,p7,p8,p9) s RowID=$g(RowID),Master=$g(Master),epis=$p(RowID,"||",3) k ^TMP($zn,$j)
+ s ListOfEpisodes=epis i Master="Y" d
+ .s list=""
+ .  ;---&sql(SELECT EPVIS_PricingEpisodes INTO :list FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  .  ;--- ** SQL PUBLIC Variables: SQLCODE, epis, list
+ . Do %0Ao
+ .s ListOfEpisodes=epis_","_$p(list,$c(1))
+ f j1=1:1:$l(ListOfEpisodes,",") s epis=$p(ListOfEpisodes,",",j1) i $l(epis) d
+ .s (mrn,date)=""
+ .  ;---&sql(SELECT EPVIS_DebtorNumber_DR,EPVIS_DateOfCollection INTO :mrn,:date FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+  .  ;--- ** SQL PUBLIC Variables: SQLCODE, date, epis, mrn
+ . Do %0Co
+ .s ROWID=$p(mrn,$c(1))_"||"_$p(date,$c(1))_"||"_epis
+ . ; get data from Debtor Visit
+ .i $$open^LVBDEBVT(ROWID)
+ .f  q:$$fetch^LVBDEBVT(ROWID)  d
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k DEBVT m DEBVT=PLIST
+ ..i DEBVT(5)="CREDIT" d
+ ...s (amount,date)=""
+ ...i $l(DEBVT(2),"||")=3 s rowid=DEBVT(2) i '$$select^LVBCRBLB(rowid) s amount=PLIST(9),date=PLIST(5)
+ ...i $l(DEBVT(2),"||")=2 s rowid=DEBVT(2) i '$$select^LVBCRBL(rowid) s amount=PLIST(16),date=PLIST(12)
+ ...s rowid=$p(DEBVT(2),"||",1,2)
+ ...i $$open^LVBCRBLA(rowid)
+ ...f  q:$$fetch^LVBCRBLA(rowid)  d
+ ....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s cnt=$o(^TMP($zn,$j,0,""),-1)+1 m ^TMP($zn,$j,0,cnt)=PLIST
+ ....s ^TMP($zn,$j,0,cnt,1)="CREDIT"
+ ....s ^TMP($zn,$j,0,cnt,2)=$p(rowid,"||",1)_"-"_$p(rowid,"||",2)
+ ....s ^TMP($zn,$j,0,cnt,10)=amount
+ ....s ^TMP($zn,$j,0,cnt,11)=date
+ ...i $$close^LVBCRBLA()
+ ..i DEBVT(5)="JOURNAL" d
+ ...s rowid=DEBVT(2) i $$select^LVBJOU(rowid) q
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...s cnt=$o(^TMP($zn,$j,0,""),-1)+1
+ ...s ^TMP($zn,$j,0,cnt,1)="JOURNAL"
+ ...s ^TMP($zn,$j,0,cnt,2)=PLIST(6)
+ ...s ^TMP($zn,$j,0,cnt,3)=PLIST(3)
+ ...s ^TMP($zn,$j,0,cnt,4)=PLIST(9)
+ ...s ^TMP($zn,$j,0,cnt,10)=PLIST(14)
+ ...s ^TMP($zn,$j,0,cnt,11)=PLIST(4)
+ ...s ^TMP($zn,$j,0,cnt,12)=PLIST(15)
+ ...s ^TMP($zn,$j,0,cnt,13)=PLIST(17)
+ ...s ^TMP($zn,$j,0,cnt,14)=PLIST(18)
+ .i $$close^LVBDEBVT()
+ ; sort it
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,0,cnt)) q:cnt=""  d
+ .s date=^TMP($zn,$j,0,cnt,11),type=^TMP($zn,$j,0,cnt,1),line=^TMP($zn,$j,0,cnt,2)
+ .i '$l(date) s date=" "
+ .i $l(date),$l(type),$l(line) s ^TMP($zn,$j,1,date,type,line,cnt)=""
+ s (date,x)="" f  s date=$o(^TMP($zn,$j,1,date)) q:date=""  d
+ .s type="" f  s type=$o(^TMP($zn,$j,1,date,type)) q:type=""  d
+ ..s line="" f  s line=$o(^TMP($zn,$j,1,date,type,line)) q:line=""  d
+ ...s cnt="" f  s cnt=$o(^TMP($zn,$j,1,date,type,line,cnt)) q:cnt=""  s x=x+1 m ^TMP($zn,$j,2,x)=^TMP($zn,$j,0,cnt)
+ s ^TMP($zn,$j)=""
+ q 0
+fetch(RowID,Master,p2,p3,p4,p5,p6,p7,p8,p9) s RowID=$g(RowID),Master=$g(Master),line=^TMP($zn,$j),SQLCODE=100
+ k PLIST s line=$o(^TMP($zn,$j,2,line))
+ i $l(line) s SQLCODE=0 m PLIST=^TMP($zn,$j,2,line) s ^TMP($zn,$j)=line
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(RowID,Master,p2,p3,p4,p5,p6,p7,p8,p9) s RowID=$g(RowID),Master=$g(Master) k ^TMP($zn,$j,3)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(RowID,Master) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,3,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,3,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j,3) k ^TMP($zn,$j,3)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(RowID,Master,p2,p3,p4,p5,p6,p7,p8,p9) N (RowID,Master,PLIST) s RowID=$g(RowID),Master=$g(Master) K ^TMP($zn,$j,3)
+ i $$open(RowID,Master)
+ f cnt=1:1 Q:$$fetch(RowID,Master)  s ^TMP($zn,$j,3,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,3,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST M PLIST=^TMP($zn,$j,3)
+ s PLIST=$o(PLIST(""),-1)
+ i $$close()
+ q 0
+close() k ^TMP($zn,$j)
+ q 0
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(10)=$g(^TEPI(%mmmsqld(3),7))
+ s list=$p(%mmmsqld(10),"\",2)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^TEPI($p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TEPI(%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(13)=$g(^TEPI(%mmmsqld(3),7))
+ s list=$p(%mmmsqld(13),"\",2)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(8)=0,%mmmsqld(9)=""
+ s %mmmsqld(6)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0CBdun
+ s %mmmsqld(12)=$g(^TEPI(%mmmsqld(5)))
+ s mrn=$p(%mmmsqld(12),"\",18) s date=$p(%mmmsqld(12),"\",10)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(5),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(8)=1,%mmmsqld(9)=$name(^TEPI($p(%mmmsqld(5),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(5)'="",$d(^TEPI(%mmmsqld(5)))
+ e  g %0CCdun
+ s %mmmsqld(15)=$g(^TEPI(%mmmsqld(5)))
+ s mrn=$p(%mmmsqld(15),"\",18) s date=$p(%mmmsqld(15),"\",10)
+%0CBuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) s %mmmsqld(8)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(8))=1 { l -@%mmmsqld(9) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+]]></Routine>
+</Export>

@@ -1,0 +1,1366 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTHTML00" type="INT" languagemode="0"><![CDATA[
+PRTHTML00 ; IG 06/03/99 ; Doctor's reports (main routine)  ; Compiled September 6, 2000 11:12:17 for Cache for Windows
+ Q
+ ; Parameters :  1.Type  : U - user
+ ;                         C - courier runs
+ ;                         F - Faxes
+ ;               2.Param : user code or courier run
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) 
+ k ^TMP($zn,$j)
+ d INIT,BODY,PRINT
+CREND i '$$select^LVBPRPR(REPID) s PLIST(12)=PAR1_"-"_PAR2_"-"_count s:PAR1="U" PLIST(11)=PAR2 I $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j),^TMP("REPORT",$j)
+ i $l($g(PAR1)),$l($g(PAR2)) k ^TRPT(PAR1,PAR2)
+ q
+ ; initialize parameters
+INIT f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k CONFIG i '$$select^MVBCFLAB(1) m CONFIG=PLIST
+ q
+test(xxTest,dh1) n (xxTest,dh1) s xxTest=$g(xxTest),dh1=$g(dh1) s (report,depseq,dep,tsseq,group)=""
+ d %0Ao
+ i $l(group) d
+ .i dh1="D" d %0Bo
+ .i dh1="H" d %0Co
+ .s DepOrder="" d %0Do
+ .i $p(DepOrder,$c(1))="Y" d %0Eo
+ .i $p(DepOrder,$c(1))'="Y" d %0Fo
+ i '$l(group) d
+ .i dh1="D" d %0Go
+ .i dh1="H" d %0Ho
+ .s DepOrder="" d %0Io
+ .i $p(DepOrder,$c(1))="Y" d %0Jo
+ .i $p(DepOrder,$c(1))'="Y" d %0Ko
+ s report=$p(report,$c(1)),dep=$p(dep,$c(1)),depseq=$p(depseq,$c(1)),tsseq=$p(tsseq,$c(1)),group=$p(group,$c(1))
+ s:report="" report=" " s:dep="" dep=" " s:depseq="" depseq=" " s:tsseq="" tsseq=" " s:group="" group=" "
+ q report_$c(1)_depseq_$c(1)_dep_$c(1)_tsseq_$c(1)_group
+ ; create temporary printing file
+BODY s dh1="" f  s dh1=$o(^TRPT(PAR1,PAR2,dh1)) q:dh1=""  d
+ .s dh2="" f  s dh2=$o(^TRPT(PAR1,PAR2,dh1,dh2)) q:dh2=""  d
+ ..s RepType=""
+ ..i dh1="D" d
+ ... ; if copy to not a doctor get requested doctor
+ ...s doc=dh2 i $p(dh2,"-")="xxx" s doc=$p(dh2,"-",2)
+ ...s RepType="" d %0Lo
+ ...s RepType=$p(RepType,$c(1))
+ ..i dh1="H" d
+ ...s RepType="" d %0Mo
+ ...s RepType=$p(RepType,$c(1))
+ ..s epis="" f  s epis=$o(^TRPT(PAR1,PAR2,dh1,dh2,epis)) q:epis=""  d
+ ...s SORT=" "
+ ... ; sort by Doctor/Hospital - Normal
+ ...i CONFIG(67)="D" s SORT=$s($p(dh2,"-",1)="xxx":"xxx",1:dh2)
+ ... ; sort by Doctor/Hospital,CollDT,Name
+ ...i CONFIG(67)="DCN" d
+ .... d %0No
+ ....f j=3,12,13 s visit(j)=$p(visit(j),$c(1))
+ ....s SORT=$s($p(dh2,"-",1)="xxx":"xxx",1:dh2)_" "_visit(12)_" "_$e(100000+visit(13),2,6)_" "_$$ALPHAUP^SSUTIL4(visit(3))
+ ...s test="" f  s test=$o(^TRPT(PAR1,PAR2,dh1,dh2,epis,test)) q:test=""  d
+ .... d %0Po
+ ....s tscnt="" f  s tscnt=$o(^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)) q:tscnt=""  d
+ .....s x=$$test(test,dh1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5)
+ ..... ; already exist in a list
+ .....i $d(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test,tscnt)) q
+ .....s ok=$$printable^LVBCTTS(test) i ok d
+ ......s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test,tscnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ...... ; get list of all group with tests
+ ......f j=1:1:$l(list,",") s ts=$p(list,",",j) i $$status(epis_"||"_ts_"||"_tscnt)="A" d
+ .......s x=$$test(ts,dh1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5)
+ .......s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,ts,tscnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ...... ; print single test if instant/partial print
+ ......i $p(^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt),"\",1)'="" q
+ ...... ; get all other related tests to print
+ ......i RepType="F" d
+ .......s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$status(epis_"||"_ts_"||"_cnt)="A" d
+ .........s x=$$test(ts,dh1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5)
+ .........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ......i RepType="AI" d
+ .......s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$status(epis_"||"_ts_"||"_cnt)="A" d
+ .........s x=$$test(ts,dh1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5)
+ .........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ......i RepType="FI" d
+ .......s ok=1,ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d  i 'ok q
+ ........s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d  i 'ok q
+ .........s status=$$status(epis_"||"_ts_"||"_cnt) i $l(status),status'="A" s ok=0
+ .......i ok s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ .........s x=$$test(ts,dh1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5)
+ .........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ......i RepType="DF" d
+ .......s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........i $e(test)=$e(ts) s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$status(epis_"||"_ts_"||"_cnt)="A" d
+ .........s x=$$test(ts,dh1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5)
+ .........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ......i RepType="DAI" d
+ .......s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........i $e(test)=$e(ts) s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$status(epis_"||"_ts_"||"_cnt)="A" d
+ .........s x=$$test(ts,dh1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5)
+ .........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ......i RepType="DFI" d
+ .......s ok=1,ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d  i 'ok q
+ ........i $e(test)=$e(ts) s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d  i 'ok q
+ .........s status=$$status(epis_"||"_ts_"||"_cnt) i $l(status),status'="A" s ok=0
+ .......i ok s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........i $e(test)=$e(ts) s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ .........s x=$$test(ts,dh1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5)
+ .........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ q
+PRINT s count=0
+ ; get client specific init parameters
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) x "d INIT^"_%routine
+ ; print reports
+ s dh1="" f  s dh1=$o(^TMP($zn,$j,"LIST",dh1)) q:dh1=""  d
+ .s SORT="" f  s SORT=$o(^TMP($zn,$j,"LIST",dh1,SORT)) q:SORT=""  d
+ ..s dh2="" f  s dh2=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2)) q:dh2=""  d
+ ...s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis)) q:epis=""  s count=count+1 d
+ ....s SortEpisode=$o(^PR(REPID,""),-1)+1,^PR(REPID,SortEpisode)=dh1_"\"_dh2_"\"_epis
+ .... ; update printed status
+ ....s (list,report)="" f  s report=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report)) q:report=""  d
+ .....s depseq="" f  s depseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq)) q:depseq=""  d
+ ......s dep="" f  s dep=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep)) q:dep=""  d
+ .......s tsseq="" f  s tsseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq)) q:tsseq=""  d
+ ........s group="" f  s group=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group)) q:group=""  d
+ .........s test="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test)) q:test=""  d
+ ..........s tscnt="" f  s tscnt=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test,tscnt)) q:tscnt=""  d
+ ...........s vtsRID=epis_"||"_test_"||"_tscnt,list=list_$s($l(list):",",1:"")_vtsRID
+ ...........i $$status(vtsRID)="A",'$$select^LVBVISTS(vtsRID,"Y"),PLIST(31)'="Y" s PLIST(31)="Y" i $$update^LVBVISTS(vtsRID)
+ ....k DOC,HOSP
+ ....i dh1="D" d
+ .....i $p(dh2,"-")'="xxx",'$$select^LVBCTDR(dh2,"Y") m DOC=PLIST
+ .....i $p(dh2,"-")="xxx" d
+ ......k DOC f j=1:1:40 s DOC(j)=""
+ ......s DOC(3)=$p($p(dh2,"-",3,99),"^") f j=2:1:6 s DOC(j+7)=$p($p(dh2,"-",3,99),"^",j)
+ ....i dh1="H",'$$select^LVBCTHOS(dh2,"Y") m HOSP=PLIST
+ ....i $$select^LVBEPVIS(epis) q
+ ....k VISIT m VISIT=PLIST k ^TMP("REPORT",$j)
+ .... ; create list of episodes for cumulative layouts
+ ....s report="" f  s report=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report)) q:report=""  d
+ .....k ^TMP($zn,$j,"EpisodeList",report)
+ .....k REPORT i '$$select^LVBCTRG(report,"Y") m REPORT=PLIST
+ .....i report=" "!'$d(REPORT) s REPORT(4)=0,REPORT(5)="Y"
+ ..... ; Report type - 1,5 - Cumulative layout,Horizontal - Variable
+ .....i (REPORT(4)=1)!(REPORT(4)=5) d
+ ......k xx s (xx,TestList)=""
+ ......s depseq="" f  s depseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq)) q:depseq=""  d
+ .......s dep="" f  s dep=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep)) q:dep=""  d
+ ........s tsseq="" f  s tsseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq)) q:tsseq=""  d
+ .........s group="" f  s group=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group)) q:group=""  d
+ ..........s test="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test)) q:test=""  i '$d(xx(test)) d
+ ...........s xx=$s($l(xx):xx_",",1:"")_test,xx(test)=""
+ ...........s x1="" d %0Qo
+ ...........i $l(x1) s x2="" f  s x2=$o(^TTAB("GR",x1,"TS",x2)) q:x2=""  i '$d(xx(x2)) s xx=$s($l(xx):xx_",",1:"")_x2,xx(x2)=""
+ ......s TestList=xx k xx
+ ...... ; print page Header
+ ......i $d(TestList) d
+ .......s visit="" f j=1:1:VISIT s $p(visit,$c(28),j)=$g(VISIT(j))
+ .......s visit=$tr(visit,"""","'") d CumList(TestList,epis,visit,$s(REPORT(4)=1:"Y",1:""))
+ .......m ^TMP($zn,$j,"EpisodeList",report)=PLIST
+ .......s ^TMP($zn,$j,"ReportType",report)=ReportType
+ ..... ; Report type - 4,6 - Cumulative layout,Horizontal - Fixed
+ .....i (REPORT(4)=4)!(REPORT(4)=6) d
+ ......s visit="" f j=1:1:VISIT s $p(visit,$c(28),j)=$g(VISIT(j))
+ ......s visit=$tr(visit,"""","'") d CumListFixed(REPORT(4),epis,visit,$s(REPORT(4)=4:"Y",1:""),dh1)
+ ......m ^TMP($zn,$j,"EpisodeList",report)=PLIST
+ ......m ^TMP($zn,$j,"ReportType",report)=ReportType
+ ....f j="DR","IP","PP" s list(j)=""
+ ....s report="" f  s report=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report)) q:report=""  d
+ .....k REPORT i '$$select^LVBCTRG(report,"Y") m REPORT=PLIST
+ .....i report=" "!'$d(REPORT) s REPORT(4)=0,REPORT(5)="Y"
+ .....s ForceNewPage=1
+ .....s depseq="" f  s depseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq)) q:depseq=""  d
+ ......s dep="" f  s dep=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep)) q:dep=""  d
+ .......s PrintDepHeader=1,separate=""
+ ....... ; print department on a separate page
+ ....... d %0Ro
+ .......s separate=$p(separate,$c(1)) i separate="Y" s ForceNewPage=1
+ .......s tsseq="" f  s tsseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq)) q:tsseq=""  d
+ ........s group="" f  s group=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group)) q:group=""  d
+ ......... ; check if group will be printed as cumulative
+ .........i group'=" " d
+ ..........s test="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test)) q:test=""  d
+ ...........s CumTSType="" d %0So
+ ...........s CumTSType=$p(CumTSType,$c(1))
+ ...........s ok=0 i CumTSType="F" s ok=1
+ ...........e  i dh1="D",CumTSType="D",$p(DOC(34),$c(1))="Y" s ok=1
+ ...........e  i dh1="H",CumTSType="D",$p(HOSP(15),$c(1))="Y" s ok=1
+ ...........i 'ok d
+ ............m ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq," ")=^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group)
+ ............k ^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group)
+ ........s group="" f  s group=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group)) q:group=""  d
+ .........i group'=" " d  q
+ ..........s (name,GroupName)="" d %0To
+ ..........i GroupName="*" s GroupName=name
+ ..........s test="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test)) q:test=""  d
+ ...........s (synonym,CumTSType)=""
+ ........... d %0Uo
+ ...........s synonym=$p(synonym,$c(1)),CumTSType=$p(CumTSType,$c(1))
+ ...........s tscnt="" f  s tscnt=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test,tscnt)) q:tscnt=""  d
+ ............s j=^(tscnt),j=$s(j="PP":j,j="IP":j,1:"DR"),list(j)=list(j)_" "_$s($l(synonym):synonym,1:test)
+ ............s vtsRID=epis_"||"_test_"||"_tscnt
+ .......... ; Report type - 0 - Normal layout, multiple tests per page
+ ..........i REPORT(4)=0 d Create1(vtsRID,"C",group)
+ .......... ; Report type - 2 - Normal layout, one test per page
+ ..........i REPORT(4)=2 s ForceNewPage=1 d Create1(vtsRID,"C",group)
+ .......... ; Report type - 3 - Cumulative layout - Finland
+ ..........i REPORT(4)=3 d Create3(vtsRID,report,group)
+ .......... ; Report type - 1,5 - Cumulative layout - Variable
+ ..........i (REPORT(4)=1)!(REPORT(4)=5) d Create2(vtsRID,report,group)
+ .......... ; Report type - 4,6 - Cumulative layout - Fixed
+ ..........i (REPORT(4)=4)!(REPORT(4)=6) d Create2(vtsRID,report,group)
+ .........s test="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test)) q:test=""  d
+ ..........s (synonym,CumTSType)=""
+ .......... d %0Vo
+ ..........s synonym=$p(synonym,$c(1)),CumTSType=$p(CumTSType,$c(1))
+ ..........s tscnt="" f  s tscnt=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,epis,report,depseq,dep,tsseq,group,test,tscnt)) q:tscnt=""  d
+ ...........s j=^(tscnt),j=$s(j="PP":j,j="IP":j,1:"DR"),list(j)=list(j)_" "_$s($l(synonym):synonym,1:test)
+ ...........s vtsRID=epis_"||"_test_"||"_tscnt
+ ........... ; Report type - 0 - Normal layout, multiple tests per page
+ ...........i REPORT(4)=0 d
+ ............ ; print normal copy
+ ............d Create1(vtsRID,"",group)
+ ............ ; print cumulative copy
+ ............s ok=0 i CumTSType="F" s ok=1
+ ............e  i dh1="D",CumTSType="D",$p(DOC(34),$c(1))="Y" s ok=1
+ ............e  i dh1="H",CumTSType="D",$p(HOSP(15),$c(1))="Y" s ok=1
+ ............i ok d Create1(vtsRID,"C",group)
+ ........... ; Report type - 2 - Normal layout, one test per page
+ ...........i REPORT(4)=2 s ForceNewPage=1 d
+ ............ ; print normal copy
+ ............d Create1(vtsRID,"",group)
+ ............ ; print cummulative copy
+ ............s ok=0 i CumTSType="F" s ok=1
+ ............e  i dh1="D",CumTSType="D",$p(DOC(34),$c(1))="Y" s ok=1
+ ............e  i dh1="H",CumTSType="D",$p(HOSP(15),$c(1))="Y" s ok=1
+ ............i ok d Create1(vtsRID,"C",group)
+ ........... ; Report type - 3 - Cumulative layout - Finland
+ ...........i REPORT(4)=3 d Create3(vtsRID,report)
+ ........... ; Report type - 1,5 - Cumulative layout - Variable
+ ...........i (REPORT(4)=1)!(REPORT(4)=5) d Create2(vtsRID,report,group)
+ ........... ; Report type - 4,6 - Cumulative layout - Fixed
+ ...........i (REPORT(4)=4)!(REPORT(4)=6) d Create2(vtsRID,report,group)
+ .... ; print original copy
+ ....k CopyToDoctor s copy=""
+ ....i PAR1="F" d
+ .....i dh1="D",DOC(39)'="" s copy=DOC(39)
+ .....i dh1="H",HOSP(20)'="" s copy=HOSP(20)
+ ....i PAR1'="F" d
+ .....i dh1="H" s copy=HOSP(11)
+ .....i dh1="D" d
+ ......i dh2=$p(VISIT(15),$c(1)) s copy=$s(VISIT(85):VISIT(85),1:DOC(14))
+ ......i dh2'=$p(VISIT(15),$c(1)) d
+ .......i $$open^LVBVISDC(epis)
+ .......f  q:$$fetch^LVBVISDC(epis)  i dh2=$p(PLIST(3),$c(1)) s copy=PLIST(14) q
+ .......i $$close^LVBVISDC()
+ ....s:copy="" copy=1 f CopyNumber=1:1:copy d PrintReport
+ .... ; print all copies to requesting doctor CR
+ ....i CONFIG(36)="Y",dh1="D",$p(VISIT(15),$c(1))=DOC(2) d
+ .....i $$open^LVBVISDC(epis)
+ .....f copycnt=1:1 q:$$fetch^LVBVISDC(epis)  d
+ ......s CopyToDoctor(copycnt)="" f j=1:1:PLIST s $p(CopyToDoctor(copycnt),$c(1),j)=$p(PLIST(j),$c(1))
+ .....i $$close^LVBVISDC()
+ .....s copycnt="" f  s copycnt=$o(CopyToDoctor(copycnt)) q:copycnt=""  d
+ ......k PLIST f j=1:1:$l(CopyToDoctor(copycnt),$c(1)) s PLIST(j)=$p(CopyToDoctor(copycnt),$c(1),j)
+ ......s CopyDoc=$p(PLIST(3),$c(1)) d
+ ....... ; doctor exist in CT_Doctor
+ .......i $l(CopyDoc),'$$select^LVBCTDR(CopyDoc,"Y") k DOC m DOC=PLIST d  q
+ ........i $p(CopyToDoctor(copycnt),$c(1),14) s DOC(14)=$p(CopyToDoctor(copycnt),$c(1),14)
+ ....... ; doctor does not exist in CT_Doctor
+ .......k DOC f j=1:1:40 s DOC(j)=""
+ .......s DOC(3)=PLIST(4),DOC(8)=PLIST(11),DOC(5)=PLIST(13),DOC(14)=PLIST(14) f j=9:1:13 s DOC(j)=PLIST(j-4)
+ ......i PAR1="F",DOC(39)'="" s copy=DOC(39)
+ ......e  s copy=DOC(14) s:copy="" copy=1
+ ......f CopyNumber=1:1:copy d PrintReport
+ ....s status=""
+ .... d %0Wo
+ ....s status=$p(status,$c(1))
+ ....f j="DR","IP","PP" i $l(list(j)) d events^LVBCOM01(epis,j,$s(status="F":"Final",1:"Interim")_"-"_$g(REPID)_"-"_list(j))
+ .... ; set report index
+ ....i (PAR1="U")!(PAR1="C") d
+ .....s ^TEPIi("REPORT",REPID)=PAR1_"\"_PAR2_"\"_$h
+ .....f j=1:1:$l(list,",") s x=$p(list,",",j) i $l(x) s ^TEPIi("REPORT",REPID,epis_"||"_dh1_"||"_dh2,x)=""
+ ; reset printer at end of report run
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Reset^"_%routine i $l($t(@LineRoutine)) x "d Reset^"_%routine_"("""_PAR2_""")"
+ q
+ ; print report for one patient
+PrintReport s page="" f  s page=$o(^TMP("REPORT",$j,page)) q:page=""  d
+ . ; print page Header
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_PAR1_""","""_PAR2_""")"
+ . ; print report
+ .f j=1:1 q:'$d(^TMP("REPORT",$j,page,"TEXT",j))  s xx=^(j) d ADDLINE^PRTREP00(REPID,SortEpisode_$c(1)_"PRT"_$c(1)_0,xx)
+ . ; print page Footer
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_PAR1_""","""_PAR2_""")"
+ .i $l($o(^TMP("REPORT",$j,page))) d ADDLINE^PRTREP00(REPID,SortEpisode_$c(1)_"PRT"_$c(1)_0,"#")
+ q
+ ; create normal layouts
+Create1(vtsRID,cum,group) k Breaks
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Create1^"_%routine i $l($t(@LineRoutine)) x "d Create1^"_%routine_"("""_vtsRID_""","""_cum_""","""_group_""")" q
+ s DH=dh1,PrintTestHeader=1
+ i '$$SINGLE(vtsRID,"P",cum,,DH,group),PLIST d
+ . ; check Breaks
+ .s (x1,x2)="" f  s x1=$o(Breaks(x1)) q:x1=""  d:$l(x2)  s x2=x1
+ ..s x3=0 f j=x2:1:x1 i $e($g(PLIST(j)))="!" s x3=x3+1
+ ..s Breaks(x2)=x3
+ .i $l(x2) d
+ ..s x3=0 f j=x2:1:PLIST i $e($g(PLIST(j)))="!" s x3=x3+1
+ ..s Breaks(x2)=x3
+ .s TestHeader=0 f j=1:1:HEADER i HEADER(j)="!" s TestHeader=TestHeader+1
+ .s TestBody=0 f j=1:1:PLIST i PLIST(j)="!",j<PLIST s TestBody=TestBody+1
+ .s test=$p(vtsRID,"||",2) d %0Xo
+ .s StopSplit=$p(StopSplit,$c(1))
+ .s Start="Y",NewPage=ForceNewPage f jLine=1:1:PLIST d
+ ..i $o(^TMP("REPORT",$j,""))="" s NewPage=1
+ ..i 'NewPage,jLine=1,StopSplit="Y",PageLine+TestHeader+TestBody+2>MaxLine s NewPage=1
+ ..i 'NewPage,$d(Breaks(jLine)),PageLine+TestHeader+Breaks(jLine)>MaxLine s NewPage=1
+ ..i (jLine=1)!NewPage d
+ ...i 'NewPage d OldPage(vtsRID)
+ ...i NewPage d NewPage(vtsRID)
+ ..i Start="Y" d  s Start="N"
+ ...i REPORT(5)="Y" d PrintDepHeader
+ ...d PrintTestHeader(1)
+ ..i PLIST(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i jLine=PLIST q
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ .. ; i " ! # ~ "[(" "_$e(PLIST(jLine))_" ") s ^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ .. ; e  s ^TMP("REPORT",$j,page,"TEXT",x)=$j(PageLine,2)_" "_PLIST(jLine)
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ .d CheckLastPage
+ q
+ ; create cumulative layouts
+Create2(vtsRID,report,group) k Breaks
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Create2^"_%routine i $l($t(@LineRoutine)) x "d Create2^"_%routine_"("""_vtsRID_""","""_report_""","""_group_""")" q
+ s DH=dh1,(EpisodeList,ReportType)="" i $l(report) d
+ .s col="" f  s col=$o(^TMP($zn,$j,"EpisodeList",report,col)) q:col=""   s EpisodeList=$s($l(EpisodeList):EpisodeList_",",1:"")_^(col)
+ i '$$SINGLE(vtsRID,"P","C",EpisodeList,DH,group),PLIST d
+ . ; check Breaks
+ .s (x1,x2)="" f  s x1=$o(Breaks(x1)) q:x1=""  d:$l(x2)  s x2=x1
+ ..s x3=0 f j=x2:1:x1 i $e($g(PLIST(j)))="!" s x3=x3+1
+ ..s Breaks(x2)=x3
+ .i $l(x2) d
+ ..s x3=0 f j=x2:1:PLIST i $e($g(PLIST(j)))="!" s x3=x3+1
+ ..s Breaks(x2)=x3
+ .s TestHeader=0 f j=1:1:HEADER i HEADER(j)="!" s TestHeader=TestHeader+1
+ .s TestBody=0 f j=1:1:PLIST i PLIST(j)="!" s TestBody=TestBody+1
+ .s test=$p(vtsRID,"||",2) d %0Yo
+ .s StopSplit=$p(StopSplit,$c(1))
+ .s Start="Y",NewPage=ForceNewPage f jLine=1:1:PLIST d
+ ..i $o(^TMP("REPORT",$j,""))="" s NewPage=1
+ ..i 'NewPage,jLine=1,StopSplit="Y",PageLine+TestHeader+TestBody+2>MaxLine s NewPage=1
+ ..i 'NewPage,$d(Breaks(jLine)),PageLine+TestHeader+Breaks(jLine)>MaxLine s NewPage=1
+ ..i (jLine=1)!NewPage d
+ ...i 'NewPage d OldPage(vtsRID)
+ ...i NewPage d NewPage(vtsRID)
+ ..i Start="Y" d  s Start="N"
+ ...i REPORT(5)="Y" d PrintDepHeader
+ ...d PrintTestHeader(1)
+ ..i PLIST(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i jLine=PLIST q
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ .. ; i " ! # ~ "[(" "_$e(PLIST(jLine))_" ") s ^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ .. ; e  s ^TMP("REPORT",$j,page,"TEXT",x)=$j(PageLine,2)_" "_PLIST(jLine)
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ .d CheckLastPage
+ q
+ ; create Finland cumulative layouts
+Create3(vtsRID,report) k Breaks
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Create3^"_%routine i $l($t(@LineRoutine)) x "d Create3^"_%routine_"("""_vtsRID_""","""_report_""")" q
+ s DH=dh1 i '$$SINGLE(vtsRID,"P","FC",,DH),PLIST d
+ . ; check Breaks
+ .s (x1,x2)="" f  s x1=$o(Breaks(x1)) q:x1=""  d:$l(x2)  s x2=x1
+ ..s x3=0 f j=x2:1:x1 i $e($g(PLIST(j)))="!" s x3=x3+1
+ ..s Breaks(x2)=x3
+ .i $l(x2) d
+ ..s x3=0 f j=x2:1:PLIST i $e($g(PLIST(j)))="!" s x3=x3+1
+ ..s Breaks(x2)=x3
+ .m SPLIT("HEADER")=HEADER k HEADER
+ .m SPLIT("PLIST")=PLIST k PLIST
+ .s TestHeader=0 f j=1:1:SPLIT("HEADER") i SPLIT("HEADER",j)="!" s TestHeader=TestHeader+1
+ .s NewPage=ForceNewPage f SPLIT=1:1 q:'$d(SPLIT("SPLIT",SPLIT))  d
+ ..k HEADER f j=1:1:SPLIT("HEADER") d
+ ...s x1=$p(SPLIT("SPLIT",0),"-",1),x2=$p(SPLIT("SPLIT",0),"-",2)
+ ...s x3=$p(SPLIT("SPLIT",SPLIT),"-",1),x4=$p(SPLIT("SPLIT",SPLIT),"-",2)
+ ...s HEADER(j)=$e(SPLIT("HEADER",j),x1,x2)_$e(SPLIT("HEADER",j),x3,x4)
+ ..s HEADER=$o(HEADER(""),-1)
+ ..k PLIST f j=1:1:SPLIT("PLIST") d
+ ...s x1=$p(SPLIT("SPLIT",0),"-",1),x2=$p(SPLIT("SPLIT",0),"-",2)
+ ...s x3=$p(SPLIT("SPLIT",SPLIT),"-",1),x4=$p(SPLIT("SPLIT",SPLIT),"-",2)
+ ...s PLIST(j)=$e(SPLIT("PLIST",j),x1,x2)_$e(SPLIT("PLIST",j),x3,x4)
+ ..s PLIST=$o(PLIST(""),-1)
+ ..s Start="Y",PrintTestHeader=1 f jLine=1:1:PLIST d
+ ...i $o(^TMP("REPORT",$j,""))="" s NewPage=1
+ ...i 'NewPage,$d(Breaks(jLine)),PageLine+TestHeader+Breaks(jLine)>MaxLine s NewPage=1
+ ...i (jLine=1)!NewPage d
+ ....i 'NewPage d OldPage(vtsRID)
+ ....i NewPage d NewPage(vtsRID)
+ ...i Start="Y" d  s Start="N"
+ ....i REPORT(5)="Y" d PrintDepHeader
+ ....d PrintTestHeader($s(SPLIT=1:1,1:SPLIT("H1")))
+ ...i PLIST(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i jLine=PLIST q
+ ...s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ... ; i " ! # ~ "[(" "_$e(PLIST(jLine))_" ") s ^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ... ; e  s ^TMP("REPORT",$j,page,"TEXT",x)=$j(PageLine,2)_" "_PLIST(jLine)
+ ...s ^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ .d CheckLastPage
+ q
+Future(jLine) s result="" f j=jLine:1:PLIST i " ! # ~ "'[(" "_$e(PLIST(j))_" "),$l($tr(PLIST(j)," ")) s result=1 q
+ q result
+PrintTestHeader(H1) i PrintTestHeader s PrintTestHeader=0 f j=H1:1:HEADER d
+ .i HEADER(j)="!" s PageLine=PageLine+1
+ .s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ . ; i " ! # ~ "[(" "_$e(HEADER(j))_" ") s ^TMP("REPORT",$j,page,"TEXT",x)=HEADER(j)
+ . ; e  s ^TMP("REPORT",$j,page,"TEXT",x)=$j(PageLine,2)_"*"_HEADER(j)
+ .s ^TMP("REPORT",$j,page,"TEXT",x)=HEADER(j)
+ q
+ ; check if Last page has info to print
+CheckLastPage s page=$o(^TMP("REPORT",$j,""),-1) i $l(page) d
+ .s x="" f  s x=$o(^TMP("REPORT",$j,page,"TEXT",x)) q:x=""  i $l($tr(^(x),"! ")) q
+ .i '$l(x) k ^TMP("REPORT",$j,page)
+ q
+ ; request for new page
+NewPage(vtsRID) s vtsRID=$g(vtsRID),(ForceNewPage,NewPage)=0,PrintTestHeader=1
+ d CheckLastPage
+ s page=$o(^TMP("REPORT",$j,""),-1)+1,PageLine=0
+ s ^TMP($zn,$j,"Page")=$g(^TMP($zn,$j,"Page"))+1
+ s ^TMP("REPORT",$j,page,"TEST",vtsRID)=""
+ s ^TMP("REPORT",$j,page,"PageType")=report
+ i $l(report) s ^TMP("REPORT",$j,page,"ReportType")=$g(^TMP($zn,$j,"ReportType",report))
+ s ^TMP("REPORT",$j,page,"PageCounter")=^TMP($zn,$j,"Page")
+ q
+ ; request for old page
+OldPage(vtsRID) s vtsRID=$g(vtsRID)
+ s page=$o(^TMP("REPORT",$j,""),-1)
+ i 'page s page=1,PageLine=0
+ s ^TMP("REPORT",$j,page,"TEST",vtsRID)=""
+ q
+ ; print department header
+PrintDepHeader ;
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="PrintDepHeader^"_%routine i $l($t(@LineRoutine)) x "d PrintDepHeader^"_%routine q
+ i PrintDepHeader d  s PrintDepHeader=0
+ .n (dep,page,PageLine,tsLM) s (print,name)=""
+ . d %0Zo
+ .i $p(print,$c(1))="Y" d
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ..i $d(^TMP("REPORT",$j,page,"TEST")) s ^TMP("REPORT",$j,page,"TEXT",x)="!",x=x+1,PageLine=PageLine+1
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)="~BOLD"
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+1)=$c(13)
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+2)=$j("",tsLM)_name
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+3)="~NORMAL"
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+4)="!"
+ ..s PageLine=PageLine+1
+ q
+status(rowid) n (rowid) s rowid=$g(rowid),status=""
+ d %00o
+ s status=$p(status,$c(1))
+ q status
+ ; print multiple reports
+CumView(type,CumType) n (type,CumType,PLIST) s type=$g(type),CumType=$g(CumType)
+ k ^TMP($zn,$j,"ViewList"),^TMP($zn,$j,"ViewList-Report") m ^TMP($zn,$j,"ViewList")=PLIST
+ s viewcnt="" f  s viewcnt=$o(^TMP($zn,$j,"ViewList",viewcnt)) q:viewcnt=""  d
+ .s test=$p(^(viewcnt),$c(1),1),EpisodeList=$p(^(viewcnt),$c(1),2)
+ .s epis=$p(EpisodeList,","),tscnt=$o(^TEPI(epis,1,test,"")),vtsRID=epis_"||"_test_"||"_tscnt
+ .i $$SINGLE(vtsRID,type,$s(CumType="H":"FC",1:"C"),EpisodeList)
+ .f j=1:1:HEADER s cnt=$o(^TMP($zn,$j,"ViewList-Report",""),-1)+1 s ^TMP($zn,$j,"ViewList-Report",cnt)=HEADER(j)
+ .f j=1:1:PLIST s cnt=$o(^TMP($zn,$j,"ViewList-Report",""),-1)+1 s ^TMP($zn,$j,"ViewList-Report",cnt)=PLIST(j)
+ .f j=1:1:2 s cnt=$o(^TMP($zn,$j,"ViewList-Report",""),-1)+1 s ^TMP($zn,$j,"ViewList-Report",cnt)="!"
+ k PLIST m PLIST=^TMP($zn,$j,"ViewList-Report") k ^TMP($zn,$j,"ViewList"),^TMP($zn,$j,"ViewList-Report")
+ s PLIST=$o(PLIST(""),-1)
+ s Lines=0 f j=1:1:PLIST s PLIST(j)=$tr(PLIST(j),"^",$c(28)) i PLIST(j)="!" s Lines=Lines+1
+ q Lines
+ ; same as SINGLE but to run from VB to convert all ^ into $c(28)
+single(vtsRID,type,format,EpisodeList,DH) n (vtsRID,type,format,EpisodeList,DH,PLIST)
+ s vtsRID=$g(vtsRID),type=$g(type),format=$g(format),EpisodeList=$g(EpisodeList),DH=$g(DH)
+ s test=$p(vtsRID,"||",2),group=""
+ d %01o
+ s group=$p(group,$c(1))
+ i $$SINGLE(vtsRID,type,format,EpisodeList,DH,group)
+ s Lines=0 f j=1:1:PLIST s PLIST(j)=$tr(PLIST(j),"^",$c(28)) i PLIST(j)="!" s Lines=Lines+1
+ q Lines
+ ; type          : P - print
+ ;                 V - view from Enquiry
+ ;                   - view from Entry
+ ; format        : C - cumulative
+ ;                   - normal
+ ; EpisodeList   : list of episodes
+ ; DH            : D - Doctor
+ ;                 H - Hospital
+SINGLE(vtsRID,type,format,EpisodeList,DH,group) n (vtsRID,type,format,EpisodeList,DH,group,PLIST,HEADER,tsLM,tsWD,Breaks,SPLIT,GroupName)
+ s vtsRID=$g(vtsRID),type=$g(type),format=$g(format),EpisodeList=$g(EpisodeList),DH=$g(DH),group=$g(group) k Breaks
+ s test=$p(vtsRID,"||",2),dep="",tsLM=0
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ s tsWD=80 i '$$select^MVBCFLAB(1) d
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ k ^TMP($zn,$j,"RESULT"),^TMP($zn,$j,"RESULT-HEADER")
+ ; print Cumulative test sets
+ i format="FC" d
+ . ; print test set
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP5")),"\",1) i $l(%routine) d
+ ..x "s error=$$print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""","""_group_""")"
+ i format="C" d
+ . ; print test set
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP3")),"\",1) i $l(%routine) d
+ ..x "s error=$$print^"_%routine_"("""_vtsRID_""","""_type_""","""_EpisodeList_""","""_DH_""","""_group_""")"
+ ..i error=1,type="P" k ^TMP($zn,$j,"RESULT"),^TMP($zn,$j,"RESULT-HEADER") q
+ ..i error-100=0,type'="P" s MainTest=$p(vtsRID,"||",2) k ^TMP($zn,$j,"xRESULT") d
+ ...s Episodes=$p(error,$c(1),2) f jj1=1:1:$l(Episodes,",") s epis=$p(Episodes,",",jj1) d
+ ....s Counter="" f  s Counter=$o(^TEPI(epis,1,MainTest,Counter)) q:Counter=""  d
+ .....s x=$$SINGLE(epis_"||"_MainTest_"||"_Counter,type,"")
+ ..... d %02o
+ .....k xPLIST
+ .....s xPLIST(1)="~BOLD"
+ .....s xPLIST(2)="Episode        : "_epis,xPLIST(3)="!"
+ .....s xPLIST(4)="Date collected : "_$$extdate2^SSUTIL4(date),xPLIST(5)="!"
+ .....s xPLIST(6)="Time collected : "_$$exttime^SSUTIL4(time*60),xPLIST(7)="!"
+ .....s xPLIST(8)="~NORMAL" f j=1:1:PLIST s xPLIST(8+j)=PLIST(j)
+ .....s x=$o(^TMP($zn,$j,"xRESULT",""),-1)+1 m ^TMP($zn,$j,"xRESULT",x)=xPLIST
+ .....k ^TMP($zn,$j,"RESULT") f j=1:1:x d
+ ......s x1="" f  s x1=$o(^TMP($zn,$j,"xRESULT",j,x1)) q:x1=""  d
+ .......s x2=$o(^TMP($zn,$j,"RESULT",""),-1)+1,^TMP($zn,$j,"RESULT",x2)=^TMP($zn,$j,"xRESULT",j,x1)
+ ......i j<x f x=1,1 s x2=$o(^TMP($zn,$j,"RESULT",""),-1)+1,^TMP($zn,$j,"RESULT",x2)="!"
+ ; print Normal test sets
+ i format="" d
+ . ; print test set
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP1")),"\",1)
+ .i $l(%routine) x "s error=$$print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+ . ; print test set comments
+ .s x=$o(^TMP($zn,$j,"RESULT",""),-1)+1,Breaks(x)=""
+ .k PLIST i '$$COMMENTS^LVBCOM01(vtsRID,,type,"N") d Lines(2) f j=1:1:PLIST d ADD(tsLM,PLIST(j)),LN()
+ . ; print BB antibody
+ .s x=$o(^TMP($zn,$j,"RESULT",""),-1)+1,Breaks(x)=""
+ .s epis=$p(vtsRID,"||",1),ts=$p(vtsRID,"||",2) i '$$getall2^BVBCTCTS("UAR") d
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..s (Antib,cnt)="" f  s cnt=$o(PLIST(cnt)) q:cnt=""  i $p(PLIST(cnt),$c(2),3)=ts s Antib="Y" q
+ ..i Antib="Y" d
+ ...s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP4")),"\",1)
+ ...i $l(%routine) x "s error=$$print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+ . ; print pathogens
+ .s x=$o(^TMP($zn,$j,"RESULT",""),-1)+1,Breaks(x)=""
+ .i '$$getit^LVBCTTSF(,vtsRID) d
+ ..f j=1:1:PLIST s PLIST(j)=$tr($p(PLIST(j),$c(1)),$c(20),"^")
+ ..s (Bugs,cnt)="" f  s cnt=$o(PLIST(cnt)) q:cnt=""  i $p(PLIST(cnt),$c(2),18)="V" s Bugs="Y" q
+ ..i Bugs="Y" d
+ ...s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP2")),"\",1)
+ ...i $l(%routine) x "s error=$$print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+ . ; print pathogens comments
+ .s x=$o(^TMP($zn,$j,"RESULT",""),-1)+1,Breaks(x)=""
+ .k PLIST i '$$COMMENTS^LVBCOM01(vtsRID,,type,"V") d Lines(2) f j=1:1:PLIST d ADD(tsLM,PLIST(j)),LN()
+ ; delete Breaks point for Word T/S
+ i TEST(31)="Y" k Breaks
+ d Lines(1)
+ k PLIST m PLIST=^TMP($zn,$j,"RESULT")
+ s PLIST=$o(PLIST(""),-1)
+ i '$$Future(1) k PLIST,Breaks s PLIST=0
+ s (Breaks(1),x)="" f  s x=$o(Breaks(x)) q:x=""  i '$d(PLIST(x)) k Breaks(x)
+ k Breaks(PLIST)
+ k HEADER m HEADER=^TMP($zn,$j,"RESULT-HEADER")
+ s HEADER=$o(HEADER(""),-1)
+ k ^TMP($zn,$j,"RESULT"),^TMP($zn,$j,"RESULT-HEADER")
+ q 0
+ ; check only one line space
+Lines(MaxCnt) n (MaxCnt) s x="" f cnt=0:1 s x=$o(^TMP($zn,$j,"RESULT",x),-1) q:x=""  i ^(x)'="!" q
+ i cnt>MaxCnt s x="" f j=1:1:cnt-MaxCnt s x=$o(^TMP($zn,$j,"RESULT",x),-1) q:x=""  k ^(x)
+ i cnt<MaxCnt f j=1:1:MaxCnt-cnt s x=$o(^TMP($zn,$j,"RESULT",""),-1)+1,^TMP($zn,$j,"RESULT",x)="!"
+ q
+LN(header) s header=$g(header) d ADD(,"!",header)
+ q
+ ; add new line to PR
+ADD(col0,line0,header) n (col0,line0,header) s col0=$g(col0),line0=$g(line0),header=$g(header)
+ i header="" d ADDLINE(col0,line0,"RESULT") i $e(line0)="~" d ADDLINE(,$c(13),"RESULT")
+ i header="Y" d ADDLINE(col0,line0,"RESULT-HEADER") i $e(line0)="~" d ADDLINE(,$c(13),"RESULT-HEADER")
+ q
+ ; add new line to PR
+ADDLINE(col,line,part) n (col,line,part) s col=$g(col),line=$g(line),part=$g(part)
+ s stOLD=$o(^TMP($zn,$j,part,""),-1)
+ i col="" s st=stOLD+1,^TMP($zn,$j,part,st)=line q
+ s lineOLD=""
+ i $l(stOLD) s lineOLD=$g(^TMP($zn,$j,part,stOLD)),st=stOLD
+ i (lineOLD="!")!(lineOLD=$c(13))!($e(lineOLD)="~")!(stOLD="") s lineOLD="",st=stOLD+1
+ s line=$e(lineOLD_$j("",col),1,col)_line_$e(lineOLD,col+$l(line)+1,$l(lineOLD))
+ s ^TMP($zn,$j,part,st)=line
+ Q
+IS ; Standard comments
+IX ; Free Text
+ s width=tsWD-$p(FORMAT(cnt),$c(2),7) n (result,tc,width) s result=$tr(result,"{}[]")
+ i $l(result),$l(result)<30,$d(^TTAB("TC",tc,2,result)) d  s result=""
+ .s x=0 f i=1:1 s x=$o(^TTAB("TC",tc,2,result,x)) q:x=""  s res(i)=$tr(^(x),$c(20,21),"^|")
+ . ; adjust width of the free text to a width of the report
+ .s x="" f  s x=$o(res(x)) q:x=""  s line=res(x) d
+ ..f  q:$l(line)'>width  d
+ ...f xx1=1:1 i $l($p(line," ",1,xx1))>width s l1=$p(line," ",1,xx1-1),line=$p(line," ",xx1,$l(line," ")) q
+ ...i l1="" s l1=$e(line,1,width),line=$e(width+1,$l(line))
+ ...s xx2=$o(result(""),-1)+1,result(xx2)=l1
+ ..s xx2=$o(result(""),-1)+1,result(xx2)=line
+ q
+IN ; Numeric
+IM ; Numeric *1000
+ n (result,tc,FORMAT,cnt)
+ i $d(^TTAB("RC",result)) s result(1)=$p(^(result),"\",1),result="" q
+ s Flag="" i "<>+-"[$e(result) s Flag=$e(result),result=$e(result,2,$l(result))
+ i (result?1.N.E)!(result?1"."1.N.E) s result=+result
+ i (result'?.N.1".".N)!(result="")!(result=".") q
+ i $l(Flag),"<>+-"'[Flag q
+ s result=$j(result,0,$e($p(FORMAT(cnt),$c(2),18),2,4))
+ s result=Flag_result,result=$j(result,$p(FORMAT(cnt),$c(2),19))
+ q
+IV ; Micro Pathogen
+ i $d(^TTAB("BUG",result)) s result=$p(^TTAB("BUG",result),"\",1) q
+ q
+ID ; Date
+ i result?5N s result=$$extdate2^SSUTIL4(result)
+ q
+IY ; Yes/No
+ s result=$s("Yy"[result:"Yes",1:"No")
+ q
+IZ ; Special fields
+ q
+ ; create list of episodes and results
+CumList(TestList,epis,visit,Last) n (TestList,epis,visit,Last,PLIST,ReportType) s max=6,ReportType=""
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="CumList^"_%routine i $l($t(@LineRoutine)) x "d CumList^"_%routine_"("""_TestList_""","""_epis_""","""_visit_""","""_Last_""")" q
+ k ^TMP($zn,$j,"EPIS"),^TMP($zn,$j,"COL")
+ i '$$select^MVBCFLAB(1),$l(PLIST(14)) s max=PLIST(14)
+ s col=$s(Last="Y":max,1:1)
+ f j=1:1:$l(visit,$c(28)) s visit(j)=$p($p(visit,$c(28),j),$c(1))
+ s ur=visit(20),date=+visit(12),time=visit(13)\60
+ s ^TMP($zn,$j,"COL",col)=epis
+ s ^TMP($zn,$j,"EPIS",epis)=col
+ i $l(ur),$l(date),$l(time) s stop=0 d
+ .f  d:$l(date)  s date=$o(^TDEBi(ur,"DATE",date),-1) q:date=""  q:stop
+ ..f  d:$l(time)  s time=$o(^TDEBi(ur,"DATE",date,time),-1) q:time=""  q:stop
+ ...s ep="" f  s ep=$o(^TDEBi(ur,"DATE",date,time,ep)) q:ep=""  d  q:stop
+ ....f j=1:1:$l(TestList,",") s test=$p(TestList,",",j) i $l(test) d  q:stop
+ .....s cnt="" f  s cnt=$o(^TEPI(ep,1,test,cnt)) q:cnt=""  d  q:stop
+ ......i '$d(^TMP($zn,$j,"EPIS",ep)) d
+ .......i Last="Y" s col=col-1 i col=1 s stop=1
+ .......i Last'="Y" s col=col+1 i col=max s stop=1
+ .......s ^TMP($zn,$j,"COL",col)=ep
+ .......s ^TMP($zn,$j,"EPIS",ep)=col
+ k PLIST m PLIST=^TMP($zn,$j,"COL") k ^TMP($zn,$j,"EPIS"),^TMP($zn,$j,"COL")
+ s PLIST=$o(PLIST(""),-1)
+ q
+ ; create list of episodes and results
+CumListFixed(ReportGroup,epis,visit,Last,dh1) n (ReportGroup,epis,visit,Last,dh1,PLIST,ReportType) s ReportType=""
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="CumListFixed^"_%routine i $l($t(@LineRoutine)) x "d CumListFixed^"_%routine_"("""_ReportGroup_""","""_epis_""","""_visit_""","""_Last_""","""_dh1_""")" q
+ k ^TMP($zn,$j,"EPIS"),^TMP($zn,$j,"COL")
+ s max=6 i '$$select^MVBCFLAB(1),$l(PLIST(14)) s max=PLIST(14)
+ s col=$s(Last="Y":max,1:1)
+ f j=1:1:$l(visit,$c(28)) s visit(j)=$p($p(visit,$c(28),j),$c(1))
+ s ur=visit(20)
+ i $l(ur) s (col,stop)=0 d
+ .s date="" f  s date=$o(^TDEBi(ur,"DATE",date)) q:date=""  d  q:stop
+ ..s time="" f  s time=$o(^TDEBi(ur,"DATE",date,time)) q:time=""  d  q:stop
+ ...s ep="" f  s ep=$o(^TDEBi(ur,"DATE",date,time,ep)) q:ep=""  d  q:stop
+ ....i epis=ep s stop=1
+ ....s (epstop,ts)="" f  s ts=$o(^TEPI(ep,1,ts)) q:ts=""  d  q:epstop
+ .....s rg=""
+ .....i dh1="D" d %03o
+ .....i dh1="H" d %04o
+ .....i ReportGroup=$p(rg,$c(1)) s epstop=1,col=col+1,^TMP($zn,$j,"EPIS",col)=ep
+ .s (jstart,jend,col)="" f j=1:1 s col=$o(^TMP($zn,$j,"EPIS",col)) q:col=""  s jend=j i j#max=1 s jstart=j
+ .i jstart,Last="Y" s x2=0 f x1=jstart:1:jend s x2=x2+1,^TMP($zn,$j,"COL",x2)=^TMP($zn,$j,"EPIS",x1)
+ .i jstart,Last'="Y" s x2=0 f x1=jend:-1:jstart s x2=x2+1,^TMP($zn,$j,"COL",x2)=^TMP($zn,$j,"EPIS",x1)
+ k PLIST m PLIST=^TMP($zn,$j,"COL") k ^TMP($zn,$j,"EPIS"),^TMP($zn,$j,"COL")
+ s PLIST=$o(PLIST(""),-1) i PLIST=max s ReportType="Final"
+ q
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(xxTest,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(xxTest,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0ABdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s group=$p(%mmmsqln,"\",41)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0Bo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Berr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(group,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(group,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("GR",%mmmsqld(6)))
+ e  g %0BBdun
+ s %mmmsqln=$g(^TTAB("GR",%mmmsqld(6)))
+ s report=$p(%mmmsqln,"\",6)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Bc
+%0BBdun 
+%0BAdun 
+%0Bc q
+%0Berr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0BAdun
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Cerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(group,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(group,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("GR",%mmmsqld(6)))
+ e  g %0CBdun
+ s %mmmsqln=$g(^TTAB("GR",%mmmsqld(6)))
+ s report=$p(%mmmsqln,"\",7)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Cc
+%0CBdun 
+%0CAdun 
+%0Cc q
+%0Cerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0CAdun
+%0DBs1 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%0Do n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Derr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(report,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(report,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("RP",%mmmsqld(6)))
+ e  g %0DBdun
+ s %mmmsqln=$g(^TTAB("RP",%mmmsqld(6)))
+ s DepOrder=$p(%mmmsqln,"\",4)
+ 
+ s %val=$P(DepOrder,$C(1)) d %0DBs1:%val'="" s $P(DepOrder,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Dc
+%0DBdun 
+%0DAdun 
+%0Dc q
+%0Derr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0DAdun
+%0EBr2 s dep=$$CT004^at238($g(%mmmsqld(11))) q
+%0EBs1 s %val=$s(%val'=+%val:"",1:$fn(%val,"",0)) q
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Eerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(8)=$P(group,$C(1))
+ s:%mmmsqld(8)="" %mmmsqld(8)=$E(group,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(11)=$p($g(%mmmsqld(8)),"||",1,1)
+ s %mmmsqld(7)=$g(%mmmsqld(8))
+ i %mmmsqld(11)'="",$d(^TTAB("GR",%mmmsqld(11)))
+ e  g %0EBdun
+ s %mmmsqln=$g(^TTAB("GR",%mmmsqld(11)))
+ s tsseq=$p(%mmmsqln,"\",5) s:tsseq'="" tsseq=+tsseq
+ 
+ s %val=$P(tsseq,$C(1)) d %0EBs1:%val'="" s $P(tsseq,$C(1),2)=%val
+ d %0EBr2
+ s %mmmsqld(12)=$p($g(dep),"||",1,1)
+ s %mmmsqld(10)=$g(dep)
+ i %mmmsqld(12)'="",$d(^TTAB("DEP",%mmmsqld(12)))
+ e  s (%mmmsqld(10),depseq)="" g %0EBp2
+ s %mmmsqln=$g(^TTAB("DEP",%mmmsqld(12)))
+ s depseq=$p(%mmmsqln,"\",3)
+%0EBp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ec
+%0EBdun 
+%0EAdun 
+%0Ec q
+%0Eerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0EAdun
+%0Fo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Ferr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(group,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(group,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("GR",%mmmsqld(6)))
+ e  g %0FBdun
+ s %mmmsqln=$g(^TTAB("GR",%mmmsqld(6)))
+ s tsseq=$p(%mmmsqln,"\",5) s:tsseq'="" tsseq=+tsseq
+ 
+ s %val=$P(tsseq,$C(1)) d %0EBs1:%val'="" s $P(tsseq,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Fc
+%0FBdun 
+%0FAdun 
+%0Fc q
+%0Ferr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0FAdun
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Gerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(xxTest,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(xxTest,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0GBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s report=$p(%mmmsqln,"\",21)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Gc
+%0GBdun 
+%0GAdun 
+%0Gc q
+%0Gerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0GAdun
+%0Ho n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Herr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(xxTest,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(xxTest,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0HBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s report=$p(%mmmsqln,"\",19)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Hc
+%0HBdun 
+%0HAdun 
+%0Hc q
+%0Herr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0HAdun
+%0Io n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Ierr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(report,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(report,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("RP",%mmmsqld(6)))
+ e  g %0IBdun
+ s %mmmsqln=$g(^TTAB("RP",%mmmsqld(6)))
+ s DepOrder=$p(%mmmsqln,"\",4)
+ 
+ s %val=$P(DepOrder,$C(1)) d %0DBs1:%val'="" s $P(DepOrder,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ic
+%0IBdun 
+%0IAdun 
+%0Ic q
+%0Ierr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0IAdun
+%0JBr2 s dep=$e($g(%mmmsqld(11)),1) q
+%0JBs1 s %val=$s(%val'=+%val:"",1:$fn(%val,"")) q
+%0Jo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Jerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(8)=$P(xxTest,$C(1))
+ s:%mmmsqld(8)="" %mmmsqld(8)=$E(xxTest,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(11)=$p($g(%mmmsqld(8)),"||",1,1)
+ s %mmmsqld(7)=$g(%mmmsqld(8))
+ i %mmmsqld(11)'="",$d(^TTAB("TS",%mmmsqld(11)))
+ e  g %0JBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(11)))
+ s tsseq=$p(%mmmsqln,"\",18) s:tsseq'="" tsseq=+tsseq
+ 
+ s %val=$P(tsseq,$C(1)) d %0JBs1:%val'="" s $P(tsseq,$C(1),2)=%val
+ d %0JBr2
+ s %mmmsqld(12)=$p($g(dep),"||",1,1)
+ s %mmmsqld(10)=$g(dep)
+ i %mmmsqld(12)'="",$d(^TTAB("DEP",%mmmsqld(12)))
+ e  s (%mmmsqld(10),depseq)="" g %0JBp2
+ s %mmmsqln=$g(^TTAB("DEP",%mmmsqld(12)))
+ s depseq=$p(%mmmsqln,"\",3)
+%0JBp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Jc
+%0JBdun 
+%0JAdun 
+%0Jc q
+%0Jerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0JAdun
+%0Ko n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Kerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(xxTest,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(xxTest,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0KBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s tsseq=$p(%mmmsqln,"\",18) s:tsseq'="" tsseq=+tsseq
+ 
+ s %val=$P(tsseq,$C(1)) d %0JBs1:%val'="" s $P(tsseq,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Kc
+%0KBdun 
+%0KAdun 
+%0Kc q
+%0Kerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0KAdun
+%0LBs1 n v s v=%val
+ s %val=$p("Interims only|Finals only|Accumulating interims|Interims and Full Finals|Accumulating interims - Department|Finals only - Department||~","|",$l($p("|I|F|AI|FI|DAI|DF|","|"_v_"|"),"|")) q:%val'="~"
+ s %val=$p("Interims and Full Finals - Department","|",$l($p("|DFI|","|"_v_"|"),"|")) q
+%0Lo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Lerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(doc,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(doc,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(8)'="",$d(^TTAB("DR",%mmmsqld(8)))
+ e  g %0LBdun
+ s %mmmsqln=$g(^TTAB("DR",%mmmsqld(8),0))
+ s %mmmsqld(6)=$p(%mmmsqln,"\",4)
+ s %mmmsqld(9)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(7)=$g(%mmmsqld(6))
+ i %mmmsqld(9)'="",$d(^TTAB("PF",%mmmsqld(9)))
+ e  s (%mmmsqld(7),RepType)="" g %0LBp2
+ s %mmmsqln=$g(^TTAB("PF",%mmmsqld(9)))
+ s RepType=$p(%mmmsqln,"\",2)
+ 
+ s %val=$P(RepType,$C(1)) d %0LBs1:%val'="" s $P(RepType,$C(1),2)=%val
+%0LBp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Lc
+%0LBdun 
+%0LAdun 
+%0Lc q
+%0Lerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0LAdun
+%0Mo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Merr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(dh2,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(dh2,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(8)'="",$d(^TTAB("RH",%mmmsqld(8)))
+ e  g %0MBdun
+ s %mmmsqln=$g(^TTAB("RH",%mmmsqld(8)))
+ s %mmmsqld(6)=$p(%mmmsqln,"\",10)
+ s %mmmsqld(9)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(7)=$g(%mmmsqld(6))
+ i %mmmsqld(9)'="",$d(^TTAB("PF",%mmmsqld(9)))
+ e  s (%mmmsqld(7),RepType)="" g %0MBp2
+ s %mmmsqln=$g(^TTAB("PF",%mmmsqld(9)))
+ s RepType=$p(%mmmsqln,"\",2)
+ 
+ s %val=$P(RepType,$C(1)) d %0LBs1:%val'="" s $P(RepType,$C(1),2)=%val
+%0MBp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Mc
+%0MBdun 
+%0MAdun 
+%0Mc q
+%0Merr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0MAdun
+%0NBs1 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,4,-1,4) q
+%0No n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Nerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(epis,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(epis,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(8)'="",$d(^TEPI(%mmmsqld(8)))
+ e  g %0NBdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(8)))
+ s visit(12)=$p(%mmmsqln,"\",10) s visit(13)=$p(%mmmsqln,"\",11) s:visit(13)'="" visit(13)=+visit(13) s visit(3)=$p(%mmmsqln,"\",1)
+ 
+ s %val=$P(visit(12),$C(1)) d %0NBs1:%val'="" s $P(visit(12),$C(1),2)=%val
+ s %val=$P(visit(13),$C(1)) d %0JBs1:%val'="" s $P(visit(13),$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Nc
+%0NBdun 
+%0NAdun 
+%0Nc q
+%0Nerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0NAdun
+%0Po n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Perr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(test,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(test,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0PBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s list=$p(%mmmsqln,"\",8)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Pc
+%0PBdun 
+%0PAdun 
+%0Pc q
+%0Perr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0PAdun
+%0Qo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Qerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(test,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(test,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0QBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s x1=$p(%mmmsqln,"\",41)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Qc
+%0QBdun 
+%0QAdun 
+%0Qc q
+%0Qerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0QAdun
+%0Ro n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Rerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(dep,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(dep,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("DEP",%mmmsqld(6)))
+ e  g %0RBdun
+ s %mmmsqln=$g(^TTAB("DEP",%mmmsqld(6)))
+ s separate=$p(%mmmsqln,"\",6)
+ 
+ s %val=$P(separate,$C(1)) d %0DBs1:%val'="" s $P(separate,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Rc
+%0RBdun 
+%0RAdun 
+%0Rc q
+%0Rerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0RAdun
+%0SBs1 s %val=$p("No|Force|Client","|",$l($p("|N|F|D|","|"_%val_"|"),"|")) q
+%0So n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Serr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(test,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(test,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0SBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s CumTSType=$p(%mmmsqln,"\",5)
+ 
+ s %val=$P(CumTSType,$C(1)) d %0SBs1:%val'="" s $P(CumTSType,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Sc
+%0SBdun 
+%0SAdun 
+%0Sc q
+%0Serr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0SAdun
+%0To n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Terr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(group,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(group,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(8)'="",$d(^TTAB("GR",%mmmsqld(8)))
+ e  g %0TBdun
+ s %mmmsqln=$g(^TTAB("GR",%mmmsqld(8)))
+ s GroupName=$p(%mmmsqln,"\",8) s name=$p(%mmmsqln,"\",1)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Tc
+%0TBdun 
+%0TAdun 
+%0Tc q
+%0Terr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0TAdun
+%0Uo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Uerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(test,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(test,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(8)'="",$d(^TTAB("TS",%mmmsqld(8)))
+ e  g %0UBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(8)))
+ s synonym=$p(%mmmsqln,"\",2) s CumTSType=$p(%mmmsqln,"\",5)
+ 
+ s %val=$P(CumTSType,$C(1)) d %0SBs1:%val'="" s $P(CumTSType,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Uc
+%0UBdun 
+%0UAdun 
+%0Uc q
+%0Uerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0UAdun
+%0Vo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Verr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(test,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(test,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(8)'="",$d(^TTAB("TS",%mmmsqld(8)))
+ e  g %0VBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(8)))
+ s synonym=$p(%mmmsqln,"\",2) s CumTSType=$p(%mmmsqln,"\",5)
+ 
+ s %val=$P(CumTSType,$C(1)) d %0SBs1:%val'="" s $P(CumTSType,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Vc
+%0VBdun 
+%0VAdun 
+%0Vc q
+%0Verr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0VAdun
+%0WBr1 s $P(status,$C(1))=$$CT029^at42($g(%mmmsqld(3)),$g(%mmmsqld(6))) q
+%0WBs2 s %val=$p("Not Printed|Printed Interim|Printed Final","|",$l($p("|N|I|F|","|"_%val_"|"),"|")) q
+%0Wo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Werr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(epis,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(epis,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(7)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(7)'="",$d(^TEPI(%mmmsqld(7)))
+ e  g %0WBdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(7)))
+ s %mmmsqld(6)=$p(%mmmsqln,"\",18)
+ d %0WBr1
+ s %val=$P(status,$C(1)) d %0WBs2:%val'="" s $P(status,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Wc
+%0WBdun 
+%0WAdun 
+%0Wc q
+%0Werr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0WAdun
+%0Xo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Xerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(test,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(test,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0XBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s StopSplit=$p(%mmmsqln,"\",25)
+ 
+ s %val=$P(StopSplit,$C(1)) d %0DBs1:%val'="" s $P(StopSplit,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Xc
+%0XBdun 
+%0XAdun 
+%0Xc q
+%0Xerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0XAdun
+%0Yo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Yerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(test,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(test,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %0YBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s StopSplit=$p(%mmmsqln,"\",25)
+ 
+ s %val=$P(StopSplit,$C(1)) d %0DBs1:%val'="" s $P(StopSplit,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Yc
+%0YBdun 
+%0YAdun 
+%0Yc q
+%0Yerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0YAdun
+%0Zo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Zerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(dep,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(dep,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(8)'="",$d(^TTAB("DEP",%mmmsqld(8)))
+ e  g %0ZBdun
+ s %mmmsqln=$g(^TTAB("DEP",%mmmsqld(8)))
+ s print=$p(%mmmsqln,"\",5) s name=$p(%mmmsqln,"\",1)
+ 
+ s %val=$P(print,$C(1)) d %0DBs1:%val'="" s $P(print,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Zc
+%0ZBdun 
+%0ZAdun 
+%0Zc q
+%0Zerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0ZAdun
+%00Br1 s $P(status,$C(1))=""
+ i $g(%mmmsqld(6))'="" s $P(status,$C(1))="A" q
+ i $g(%mmmsqld(7))'="" s $P(status,$C(1))="P" q
+ i $g(%mmmsqld(8))'="" s $P(status,$C(1))="E" q
+ s $P(status,$C(1))="C" q
+%00Bs2 s %val=$p("Created|Entered|Pathologist|Authorised","|",$l($p("|C|E|P|A|","|"_%val_"|"),"|")) q
+%00o n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%00err^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(rowid,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(rowid,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(9)=$p($g(%mmmsqld(4)),"||",1,1),%mmmsqld(10)=$p($g(%mmmsqld(4)),"||",2,2),%mmmsqld(11)=$p($g(%mmmsqld(4)),"||",3,3)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(9)'="",%mmmsqld(10)'="",%mmmsqld(11)'="",$d(^TEPI(%mmmsqld(9),1,%mmmsqld(10),%mmmsqld(11)))
+ e  g %00Bdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(9),1,%mmmsqld(10),%mmmsqld(11)))
+ s %mmmsqld(6)=$p(%mmmsqln,"\",4) s %mmmsqld(7)=$p(%mmmsqln,"\",18) s %mmmsqld(8)=$p(%mmmsqln,"\",1)
+ d %00Br1
+ s %val=$P(status,$C(1)) d %00Bs2:%val'="" s $P(status,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %00c
+%00Bdun 
+%00Adun 
+%00c q
+%00err ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %00Adun
+%01o n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%01err^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(test,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(test,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(6)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(6)'="",$d(^TTAB("TS",%mmmsqld(6)))
+ e  g %01Bdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6)))
+ s group=$p(%mmmsqln,"\",41)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %01c
+%01Bdun 
+%01Adun 
+%01c q
+%01err ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %01Adun
+%02o n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%02err^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(epis,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$E(epis,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(5)=$g(%mmmsqld(6))
+ i %mmmsqld(8)'="",$d(^TEPI(%mmmsqld(8)))
+ e  g %02Bdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(8)))
+ s date=$p(%mmmsqln,"\",10) s time=$p(%mmmsqln,"\",11) s:time'="" time=+time
+ 
+ s %val=$P(date,$C(1)) d %0NBs1:%val'="" s $P(date,$C(1),2)=%val
+ s %val=$P(time,$C(1)) d %0JBs1:%val'="" s $P(time,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %02c
+%02Bdun 
+%02Adun 
+%02c q
+%02err ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %02Adun
+%03Bs1 n v s v=%val
+ s %val=$p("Normal layout, multiple tests per page|Cumulative layout, Horizontal, Variable, current last|Normal layout, one test per page||~","|",$l($p("|0|1|2|","|"_v_"|"),"|")) q:%val'="~"
+ s %val=$p("Cumulative layout, Vertical - Finland|Cumulative layout, Horizontal, Fixed, current last|Cumulative layout, Horizontal, Variable, current first||~","|",$l($p("|3|4|5|","|"_v_"|"),"|")) q:%val'="~"
+ s %val=$p("Cumulative layout, Horizontal, Fixed, current first","|",$l($p("|6|","|"_v_"|"),"|")) q
+%03o n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%03err^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(ts,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(ts,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(8)'="",$d(^TTAB("TS",%mmmsqld(8)))
+ e  g %03Bdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(8)))
+ s %mmmsqld(6)=$p(%mmmsqln,"\",21)
+ s %mmmsqld(9)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(7)=$g(%mmmsqld(6))
+ i %mmmsqld(9)'="",$d(^TTAB("RP",%mmmsqld(9)))
+ e  s (%mmmsqld(7),rg)="" g %03Bp2
+ s %mmmsqln=$g(^TTAB("RP",%mmmsqld(9)))
+ s rg=$p(%mmmsqln,"\",2)
+ 
+ s %val=$P(rg,$C(1)) d %03Bs1:%val'="" s $P(rg,$C(1),2)=%val
+%03Bp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %03c
+%03Bdun 
+%03Adun 
+%03c q
+%03err ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %03Adun
+%04o n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%04err^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(ts,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$E(ts,2,999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(8)=$p($g(%mmmsqld(4)),"||",1,1)
+ s %mmmsqld(3)=$g(%mmmsqld(4))
+ i %mmmsqld(8)'="",$d(^TTAB("TS",%mmmsqld(8)))
+ e  g %04Bdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(8)))
+ s %mmmsqld(6)=$p(%mmmsqln,"\",19)
+ s %mmmsqld(9)=$p($g(%mmmsqld(6)),"||",1,1)
+ s %mmmsqld(7)=$g(%mmmsqld(6))
+ i %mmmsqld(9)'="",$d(^TTAB("RP",%mmmsqld(9)))
+ e  s (%mmmsqld(7),rg)="" g %04Bp2
+ s %mmmsqln=$g(^TTAB("RP",%mmmsqld(9)))
+ s rg=$p(%mmmsqln,"\",2)
+ 
+ s %val=$P(rg,$C(1)) d %03Bs1:%val'="" s $P(rg,$C(1),2)=%val
+%04Bp2 
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %04c
+%04Bdun 
+%04Adun 
+%04c q
+%04err ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %04Adun
+]]></Routine>
+</Export>

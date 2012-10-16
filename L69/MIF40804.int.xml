@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF40804" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF40804(mi)	; ML 02/06/2004 ; ASTM protocol - ORGANON TEKNIKA BacT/Alert : Darwin
+	s mi=$g(mi) i '$l(mi) q
+	k ^TMIF(mi,10) s $zt="err^MIF000"
+	i $$select^LVBMIMP(mi) q
+	f j=1:1:PLIST s @("par"_j)=PLIST(j)
+	s stx=$c(2),etx=$c(3),eot=$c(4),enq=$c(5),ack=$c(6),lf=$c(10),cr=$c(13),nak=$c(21)
+	s (sample,epis,surname,result,date,time,QC,TimeCheck)=""
+	i $$start^MIF000() q
+	f  d Main i $$stop^MIF000() q
+	c par4
+	q
+Main	r *R:10 e  d  q
+	.d:" L "[(" "_par9_" ") loadlist^MIF000(mi)
+	.i $d(^TMIF(mi,10)) d Send
+	. ; check loaded bottles status - check every hour
+	.i +$h*(3600*24)+$p($h,",",2)>TimeCheck s TimeCheck=+$h*(3600*24)+$p($h,",",2)+3600 d Results
+	i $c(R)=enq d
+	.d trace^MIF000(mi,"ENQ","H<--M")
+	.d ACK
+	.f  r *R:10 q:$c(R)=eot  d
+	..i $c(R)'=stx q
+	..s record=$$read^MIF000("",lf) q:'$l(record)
+	..s record=$e(record,1,$l(record)-1)
+	..d trace^MIF000(mi,$tr(record,$c(13,3)," "),"H<--M")
+	.. ; check record validity
+	..s chsum=$p(record,etx,2),chrecord=$p(record,etx,1)_etx
+	..i $$CHSUM(chrecord)'=chsum d  q
+	...w nak,*-3 d trace^MIF000(mi,"NAK - Incorrect Checksum","H-->M")
+	..d ACK
+	.. ; query record
+	..i $e(record,2)="Q" d  q
+	...s epis=$p($p(record,"|",3),"^",2) i $l(epis),$d(^TEPI(epis,1)) s ^TMP($zn,$j,"ENQ",epis)=""
+	.. ; header record
+	..q:$e(record,2)="H"
+	.. ; patient record
+	..i $e(record,2)="P" d  q
+	...d Last s (sample,epis,surname,result,date,time,QC)=""
+	...s surname=$tr($tr($p(record,"|",6)," "),"^"," ")
+	.. ; order record
+	..i $e(record,2)="O" d  q
+	...s epis=$tr($p($p(record,"|",3),"^",1)," "),QC=$tr($p(record,"|",12)," ") s:'$l(epis) epis=$tr($p($p(record,"|",4),"^",1)," ")
+	...s cup=$p($p(record,"|",4),"^",3)
+	...i QC="Q" s QC=cup_"\"_epis
+	.. ; result record
+	..i $e(record,2)="R" d  q
+	... ; result of testing so far + = pos, - = neg, * = neg, still under testing
+	...q:" + - * "'[(" "_$p(record,"|",4)_" ")  s res=$p(record,"|",4)
+	... ; extract status of bottle - I = negative to date, still under test.  P = prelim status.  F = final status
+	...s stat=$p(record,"|",9) q:stat=""
+	... ; extract bottle type and bottle number
+	...s bot=$p($p(record,"|",3),"^",5),botnum=$p($p(record,"|",3),"^",6) q:bot=""  q:botnum=""  
+	...s bot=$$UPPER^SSUTIL4(bot),botnum=$$UPPER^SSUTIL4(botnum)
+	...q:$p($g(^TMIF(mi,33,"Res",epis,bot,botnum)),"\",1)="F"
+	... ; allow only bottles with previous negative history to continue
+	...q:$p($g(^TMIF(mi,33,"Res",epis,bot,botnum)),"\",2)="+"
+	...s (DateLoad,Datelo,DateRes,Daters,DateDiff)=""
+	... ; date bottle loaded
+	...s DateLoad=$p(record,"|",12)
+	...i DateLoad="" s Datelo=$p($g(^TMIF(mi,33,"Epis",epis,bot,botnum)),"\",2) q:Datelo=""
+	...e  s Datelo=$$intdate^SSUTIL4($e(DateLoad,1,8))*24*3600+$$inttime^SSUTIL4($e(DateLoad,9,10)_":"_$e(DateLoad,11,12))+$e(DateLoad,13,14)
+	... ; use machine date and time loaded if available
+	...i DateLoad'="" s $p(^TMIF(mi,33,"Epis",epis,bot,botnum),"\",2)=Datelo
+	... ; date result determined
+	...s DateRes=$p(record,"|",13) i DateRes="" s Daters=+$h*24*3600+$p($h,",",2)
+	...e  s Daters=$$intdate^SSUTIL4($e(DateRes,1,8))*24*3600+$$inttime^SSUTIL4($e(DateRes,9,10)_":"_$e(DateRes,11,12))+$e(DateRes,13,14)
+	... ; calculate date difference between date loaded and date of result
+	...s DateDiff=Daters-Datelo,DateDiff=DateDiff\24\3600
+	...i res="-"!(res="*"),DateDiff<5 q
+	... ; ignore already reported 5 day negatives - update only
+	...i DateDiff>5,$p($g(^TMIF(mi,33,"Res",epis,bot,botnum)),"\",3)=6 s $p(^TMIF(mi,33,"Res",epis,bot,botnum),"\",1,3)=stat_"\"_res_"\"_DateDiff q
+	...i DateDiff>5,(res="-"!(res="*")) s DateDiff=5
+	...i res="+",DateDiff>5 s DateDiff=6
+	...s $p(^TMIF(mi,33,"Res",epis,bot,botnum),"\",1,3)=stat_"\"_res_"\"_DateDiff
+	...s cnt=""
+	...s x1="" f  s x1=$o(^TMIF(mi,33,"Res",epis,x1)) q:x1=""  d
+	....s x2="" f  s x2=$o(^TMIF(mi,33,"Res",epis,x1,x2)) q:x2=""  d
+	.....i cnt<$p(^TMIF(mi,33,"Res",epis,x1,x2),"\",4) s cnt=$p(^TMIF(mi,33,"Res",epis,x1,x2),"\",4)
+	...s cnt=cnt+1
+	...s $p(^TMIF(mi,33,"Res",epis,bot,botnum),"\",1,4)=stat_"\"_res_"\"_DateDiff_"\"_cnt
+	...i res="+" s result=result_"RES"_cnt_$c(par10)_"MBP"_$c(par11)
+	...i res="-" s result=result_"RES"_cnt_$c(par10)_"MBN"_$c(par11)
+	.. ; last record
+	..i $e(record,2)="L" d Last q
+	.d trace^MIF000(mi,$s($c(R)=eot:"EOT",1:R),"H<--M")
+	.d ORDER
+	q
+Last	; file result if exist
+	i epis?1.99AN,$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+	s (sample,epis,surname,result,date,time,QC)=""
+	q
+Results	s date=$$extdate2^SSUTIL4(+$h),date=$p(date,"/",3)_$p(date,"/",2)_$p(date,"/",1)_$tr($$exttime^SSUTIL4($p($h,",",2)),":","")_"00"
+	s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="H|\^&|||LABTRAK|||||BACT/ALERT||P|1"_date
+	s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="Q|1|ALL||||||||||N"
+	s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1"
+	q
+single(epis)	d PATDET(epis)
+	   s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|F"
+	   d Send
+	   k ^TMP("MIF-SINGLE",$j,mi,epis),^TMP($zn,$j,"ENQ",epis)
+	   k ^TMP("MIF-SCAN",$j,mi,epis)
+	   q
+ORDER	; create list of orders if exists
+	i '$d(^TMP($zn,$j,"ENQ")) d  q
+	.d scanall^MIF000(mi)
+	.s epis="" f  s epis=$o(^TMP("MIF-SCAN",$j,mi,epis)) q:epis=""  d single(epis)
+	i $d(^TMP($zn,$j,"ENQ")) d  q
+	.s epis="" f  s epis=$o(^TMP($zn,$j,"ENQ",epis)) q:epis=""  d
+	..d scanone^MIF000(mi,epis),single(epis)
+	q
+SAVE(mi)	; create loadlist records
+	s epis=^TMP("MIF000",$j,"LL","EPISODE"),epis=$p(epis,$c(1),1)
+	s sample=^TMP("MIF000",$j,"LL","SAMPLE")
+	d PATDET(epis)
+	s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|F"
+	q 0
+PATDET(epis)	; set patient details record
+	s date=$$extdate2^SSUTIL4(+$h),date=$p(date,"/",3)_$p(date,"/",2)_$p(date,"/",1)_$tr($$exttime^SSUTIL4($p($h,",",2)),":","")_"00"
+	s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="H|\^&|||LABTRAK|||||BACT/ALERT||P|1"_date
+	i '$$select^LVBEPVIS(epis,"Y") d  q
+	.f j=1:1:PLIST i $d(PLIST) s PLIST(j)=$p(PLIST(j),$c(1))
+	.s dob="" i PLIST(6)'="" s dob=$$extdate2^SSUTIL4(PLIST(6)),dob=$p(dob,"/",3)_$p(dob,"/",2)_$p(dob,"/",1)
+	.s sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+	.s mrn=$s(PLIST(65)'=",":$p(PLIST(65),",",2),1:PLIST(20))
+	.s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1|"_mrn_"|||"_$g(PLIST(3))_"^"_$g(PLIST(4))_"||"_dob_"|"_sex_"|||||"
+	.s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="O|1|"_epis_"|||||||||||||||||||||||I"
+	s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1||||^||||||||"
+	s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="O|1|"_epis_"|||||||||||||||||||||||I"
+	q
+Send	; send list of orders if exists
+	w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M")
+	f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
+	d trace^MIF000(mi,$s($c(R)=ack:"ACK",$c(R)=enq:"ENQ",$c(R)=nak:"NAK",1:R),"H<--M")
+	i $c(R)=enq q
+	i $c(R)'=ack w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+	s x="" f FRAME=1:1 s x=$O(^TMIF(mi,10,x)) q:x=""  q:$$SEND(FRAME#8_^TMIF(mi,10,x))
+	i x="" k ^TMIF(mi,10)
+	w eot,*-3 d trace^MIF000(mi,"EOT","H-->M")
+	q
+SEND(str)	; send string to instrument
+	s str=str_cr_etx,chsum=$$CHSUM(str)
+	w stx,str,chsum,cr,lf,*-3 d trace^MIF000(mi,str_chsum,"H-->M")
+	f j=1:1:6 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+	i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+	i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 1
+	d trace^MIF000(mi,R,"H<--M")
+	q 2
+CHSUM(x)	; calculate check sum
+	n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+	s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+	q z
+ACK	; send 'ack' to instrument
+	w ack,*-3
+	d trace^MIF000(mi,"ACK","H-->M")
+	q
+NEXTTRAY(tray)	
+	q tray
+]]></Routine>
+</Export>

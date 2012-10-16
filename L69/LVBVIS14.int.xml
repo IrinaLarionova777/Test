@@ -1,0 +1,867 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBVIS14" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBVIS14 ; IG 7/5/98 ; Visit routines
+ ;
+ ; supported calls :
+ ;
+ ; $$results^LVBVIS14(RowID,mi_sampleRID,wsRID,empty,NoValid,Extra,Transl,lan)
+ ; $$MVresults^LVBVIS14(RowID,mi_sampleRID,web)
+ ; $$ValUser^LVBVIS14(user,vtsRowID,FlagPE)
+ ; $$getallDB^LVBVIS14(par,user)
+ ; $$zResult^LVBVIS14(type,RowID)
+ ; $$getResult^LVBVIS14(RowID)
+ ;
+ ; get Result from DB test set
+getResult(RowID) s RowID=$g(RowID),result=""
+ f j=1:1:3 s @("x"_j)=$p(RowID,"||",j)
+ i '$$select^LVBCTTS(x2,"Y"),'$$select^LVBVISTD(RowID_"||"_PLIST(64)),PLIST(6)'="Y" s result=PLIST(3)
+ q result
+getallDB(par,user) n (par,user,PLIST) k ^TMP($zn,$j) s par=$g(par),user=$g(user)
+ i $$open^LVBVISTS(par,,,user)
+ f  q:$$fetch^LVBVISTS(par,,,user)  s ^TMP($zn,$j,0,$p(PLIST(1),$c(1)))=""
+ i $$close^LVBVISTS()
+ i '$$fetchall^LVBHIVAC(par) d
+ .m HIVAC=PLIST k PLIST f i=1:1:HIVAC d
+ ..s x=$p(HIVAC(i),$c(28),6) f j=1:1:$l(x,",") s vtsRID=$p(x,",",j) q:vtsRID=""  i $d(^TMP($zn,$j,0,vtsRID)) k ^TMP($zn,$j,0,vtsRID)
+ .s vtsRID="" f  s vtsRID=$o(^TMP($zn,$j,0,vtsRID)) q:vtsRID=""  d
+ ..i '$$getall^LVBVISSN(vtsRID) d
+ ...f i=1:1:PLIST s code=$p(PLIST(i),$c(2),2) i $p(code,"-")="T" d
+ ....s descr=$p($p(PLIST(i),$c(2),4),$c(28),1)
+ ....s group=$p($p(PLIST(i),$c(2),4),$c(28),2) i '$l(group) s group=" "
+ ....s $p(^TMP($zn,$j,3,vtsRID,group),$c(2),1)=vtsRID
+ ....s $p(^TMP($zn,$j,3,vtsRID,group),$c(2),2)=$p(vtsRID,"||",2)
+ ....s x=$p(^TMP($zn,$j,3,vtsRID,group),$c(2),3),x=x_$s($l(x):",",1:"")_code,$p(^TMP($zn,$j,3,vtsRID,group),$c(2),3)=x
+ ....s $p(^TMP($zn,$j,3,vtsRID,group),$c(2),4)=descr
+ .... ;---s (xx1,xx2)="" &SQL(SELECT TSNO_Specimen_DR,TSNO_Specimen_DR->CTSPE_Desc INTO :xx1,:xx2 FROM TSNO_SNOMED WHERE TSNO_ROWID=:code)
+  .... ;--- ** SQL PUBLIC Variables: SQLCODE, code, xx1, xx2
+ ....s (xx1,xx2)="" Do %0Ao
+ ....s x=$p(^TMP($zn,$j,3,vtsRID,group),$c(2),4),$p(x,$c(28),2)=xx1_$c(1)_xx2,$p(^TMP($zn,$j,3,vtsRID,group),$c(2),4)=x
+ s (cnt,x1)="" f  s x1=$o(^TMP($zn,$j,3,x1)) q:x1=""  d
+ .s x2="" f  s x2=$o(^TMP($zn,$j,3,x1,x2)) q:x2=""  d
+ ..s cnt=cnt+1,^TMP($zn,$j,1,cnt)=^(x2)
+ k PLIST m PLIST=^TMP($zn,$j,1)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+check s x1=$p(%ROWID,"||",1),x2=$p(%ROWID,"||",2),x3=$p(%ROWID,"||",3)
+ f j="SN","SB","R3C" i $l(x1),$l(x2),$l(x3),'$g(^TEPI(x1,1,x2,x3,j,0)) k ^TEPI(x1,1,x2,x3,j)
+ i $d(^TMOVE("TEMP","46I",x1,%ROWID)) q
+ i $d(^TMOVE("TEMP","46U",x1,%ROWID)) q
+ i $d(^TMOVE("TEMP","46D",x1,%ROWID)) q
+ ; set movement to ReferralLab/UserSite
+ i $l(x1),$l(x2),$l(x3) d
+ .s x01=$p($g(^TEPI(x1,1,x2,x3)),"\",37),x02=$p($g(^TEPI(x1,1,x2,x3)),"\",38) i $l(x01)!$l(x02) d
+ ..i $$status^LVBVIS1(%ROWID)'="C" q
+ .. ; check existing movement
+ ..s x="" f  s x=$o(^TEPI(x1,9,x)) q:x=""  i " W S "[(" "_$p(^(x),"\",9)_" "),$d(^TEPI(x1,9,x,"VTS",%ROWID)) q
+ ..i '$l(x) d
+ ...s (stop,x)="" f  s x=$o(^TEPI(x1,9,x)) q:x=""  s xx=$g(^TEPI(x1,9,x)) d  i stop q
+ ....i $p(xx,"\",9)="W",$p(xx,"\",3)=$p($g(^TEPI(x1,1,x2,x3)),"\",26),$p(xx,"\",4)=x02,$p(xx,"\",5)=x01 s stop=1
+ .. ; insert new movement group
+ ..i '$l(x) d  q
+ ...s par=x1 n %ROWID k PLIST
+ ...s PLIST(3)=$$site^LVBVISTS(x1_"||"_x2_"||"_x3)
+ ...s PLIST(4)=x02
+ ...s PLIST(5)=x01
+ ...s PLIST(12)="W"
+ ...s PLIST=$o(PLIST(""),-1) i $l(PLIST(3)),'$$insert^LVBVISMV(par) d
+ ....s par=%ROWID n %ROWID k PLIST
+ ....s PLIST(2)=x1_"||"_x2_"||"_x3
+ ....s PLIST=$o(PLIST(""),-1) i '$$insert^LVBVISMT(par) d
+ .....k %d m %d=^TEPI($p(par,"||",1),9,$p(par,"||",2))
+ .....d SetAll^LVBCOM50($p(par,"||",1),"551U",.%d,par)
+ .. ; update movement group
+ ..i $l(x),'$d(^TEPI(x1,9,x,"VTS",%ROWID)) d  q
+ ...s par=x1_"||"_x n %ROWID k PLIST
+ ...s PLIST(2)=x1_"||"_x2_"||"_x3
+ ...s PLIST=$o(PLIST(""),-1) i '$$insert^LVBVISMT(par) d
+ ....k %d m %d=^TEPI($p(par,"||",1),9,$p(par,"||",2))
+ ....d SetAll^LVBCOM50($p(par,"||",1),"551U",.%d,par)
+ q
+ ; special results for MedicalValidation screen
+ ; same as results +
+ ; 30 - units
+ ; 31 - range low
+ ; 32 - range high
+ ; 33 - Previous Value
+ ; 34 - Previous DateOfCollection
+ ; 35 - Previous TimeOfCollection
+ ; 36 - TestItem Synonym
+ ; 37 - Entry Type
+ ; 38 - Format
+ ; 39 - Length
+ ; 40 - Description
+ ; 41 - SOP Short
+ ; 42 - SOP File
+ ; 43 - tabing order
+MVresults(RowID,mismpl,web) N (RowID,mismpl,web,PLIST) s RowID=$g(RowID),mismpl=$p($g(mismpl),$c(1)),web=$g(web)
+ s epis=$p(RowID,"||",1),(ur,ColDate,ColTime,lan)=""
+  ;---&sql(SELECT EPVIS_DebtorNumber_DR,EPVIS_DateOfCollection,EPVIS_TimeOfCollection,EPVIS_DoctorCode_DR->CTDR_Language_DR INTO :ur,:ColDate,:ColTime,:lan FROM EP_VisitNumber WHERE EPVIS_RowID=:epis)
+   ;--- ** SQL PUBLIC Variables: ColDate, ColTime, SQLCODE, epis, lan, ur
+ Do %0Co
+ s ur=$p(ur,$c(1)),ColDate=$p(ColDate,$c(1)),ColTime=$p(ColTime,$c(1)),lan=$p(lan,$c(1))
+ i '$$results(RowID,mismpl,"Y","Y",,web,"Y",lan) d
+ .m ^TMP($zn,$j,1)=PLIST
+ .s x="" f  s x=$o(^TMP($zn,$j,1,x)) q:x=""  s line=^(x),tc=$p(line,$c(1),2) i $l(tc) s ^TMP($zn,$j,0,tc)=line i web="Y",$p(line,$c(1),22)="Y" s ^TMP($zn,$j,0,tc)="DEL"
+ i '$$getit^LVBCTTSF($p(RowID,"||",2),RowID) d
+ .m ^TMP($zn,$j,2)=PLIST
+ .s x="" f  s x=$o(^TMP($zn,$j,2,x)) q:x=""  s line=^(x),tc=$p(line,$c(2),10) i $l(tc) d
+ ..i web="Y",$p(line,$c(2),15)'="Y" s ^TMP($zn,$j,0,tc)="DEL" q
+ ..i $g(^TMP($zn,$j,0,tc))="DEL" q
+ ..s (synonym,sop1,sop2)="",order=$p(line,$c(2),26)
+ ..  ;---&SQL(SELECT CTTC_Synonym,CTTC_SOPShort,CTTC_SOPFile INTO :synonym,:sop1,:sop2 FROM CT_TestCode WHERE CTTC_RowID=:tc)
+  ..  ;--- ** SQL PUBLIC Variables: SQLCODE, sop1, sop2, synonym, tc
+ .. Do %0Eo
+ ..k XX m XX=sop1 i '$$remarks^LVBCOM01("IE",.XX) k sop1 m sop1=XX
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),1)=RowID_"||"_tc         ; RowID
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),2)=tc                    ; TestItem
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),30)=$p(line,$c(2),17)    ; units
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),31)=$p(line,$c(2),22)    ; range low
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),32)=$p(line,$c(2),23)    ; range high
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),36)=synonym              ; TestItem Synonym
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),37)=$p(line,$c(2),8)     ; Entry Type
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),38)=$p(line,$c(2),18)    ; Format
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),39)=$p(line,$c(2),19)    ; Length
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),40)=$p(line,$c(2),24)    ; Description
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),41)=sop1                 ; SOP Short
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),42)=sop2                 ; SOP File
+ ..s $p(^TMP($zn,$j,0,tc),$c(1),43)=$p(line,$c(2),26)    ; tabing order
+ ..s xColDate=ColDate,xColTime=ColTime,xepis=epis
+ ..f jk=1:1:5 s prev=$$previous^LVBVIS1(ur,xColDate,xColTime,xepis,tc) q:$p(prev,$c(1))'="Y"  d
+ ...s x1=$p($p(prev,$c(1),2),"||"),x2=$p(prev,$c(1),2),xepis=$p(x2,"||")
+ ... ;---s result="" &sql( SELECT VISTD_TestData INTO :result FROM EP_VisitTestSetData WHERE VISTD_RowID=:x2)
+  ... ;--- ** SQL PUBLIC Variables: SQLCODE, result, x2
+ ...s result="" Do %0Go
+ ...s xColDate=$$seldata^LVBEPVIS(x1,12),xColTime=$$seldata^LVBEPVIS(x1,13)\60
+ ...s y=$p(^TMP($zn,$j,0,tc),$c(1),33),$p(y,$c(22),jk)=$p(result,$c(1))
+ ...s $p(^TMP($zn,$j,0,tc),$c(1),33)=y                   ; Previous Value
+ ...s y=$p(^TMP($zn,$j,0,tc),$c(1),34),$p(y,$c(22),jk)=$p(xColDate,$c(1))
+ ...s $p(^TMP($zn,$j,0,tc),$c(1),34)=y                   ; Previous DateOfCollection
+ ...s y=$p(^TMP($zn,$j,0,tc),$c(1),35),$p(y,$c(22),jk)=$p(xColTime,$c(1))
+ ...s $p(^TMP($zn,$j,0,tc),$c(1),35)=y                   ; Previous TimeOfCollection
+ s tc="" f  s tc=$o(^TMP($zn,$j,0,tc)) q:tc=""  i ^TMP($zn,$j,0,tc)="DEL" k ^(tc)
+ s tc="" f  s tc=$o(^TMP($zn,$j,0,tc)) q:tc=""  s cnt=+$p(^(tc),$c(1),43),^TMP($zn,$j,10,cnt,tc)=^(tc)
+ k PLIST s cnt="" f  s cnt=$o(^TMP($zn,$j,10,cnt)) q:cnt=""  d
+ .s tc="" f  s tc=$o(^TMP($zn,$j,10,cnt,tc)) q:tc=""  d
+ ..s j=$o(PLIST(""),-1)+1,PLIST(j)=^TMP($zn,$j,10,cnt,tc)
+ s PLIST=$o(PLIST(""),-1) k ^TMP($zn,$j)
+ q 0
+pre(xUpdate,move) d PreSQL^SSUTIL4("23,53,56","11")
+ f j=8,5,22,25 i $g(PLIST(j)) s PLIST(j)=PLIST(j)\60
+ i move q
+ s pat="" i $l($g(PLIST(0))) s pat=PLIST(0)
+ e  s pat=$p($g(PLIST(1)),"||")
+ ; set last change date/time/user
+ s PLIST(75)=+$h,PLIST(76)=$p($h,",",2),PLIST(77)=$g(user)
+ ; check printed status
+ i '$l($g(PLIST(7))),'$l($g(PLIST(8))),'$l($g(PLIST(9))) s PLIST(31)=""
+ ; check and change user site ONLY for inserted test sets
+ i '$d(PLIST(1)) d
+ . ; set test location as default test set location
+ .i '$l($g(PLIST(29))) d
+ ..s location="" d  s PLIST(29)=location
+ ...s test=PLIST(3) n (test,location)
+ ...s location="" i $l(test) s location=$p($g(^TTAB("TS",test)),"\",36)
+ .i '$l($g(PLIST(29))),$l($g(PLIST(39))) s PLIST(29)=$p($g(^SSU("SSUSR",1,PLIST(39))),"^",11)
+ ; check test location
+ i $l($g(PLIST(29))),PLIST(29)=$$seldata^LVBEPVIS(pat,66) s PLIST(29)=""
+ i $p($g(PLIST(29)),$c(1))=$p($g(PLIST(41)),$c(1)) s PLIST(41)=""
+ ; check test set priority
+ i $l($g(PLIST(13))) d
+ .s priority=PLIST(13) d  s PLIST(13)=priority
+ ..s test=PLIST(3) n (test,pat,priority)
+ ..s pTS="" i $l(test) s pTS=$p($g(^TTAB("TS",test)),"\",10)
+ ..i priority'=$p(pTS,$c(1)) d
+ ...s pEP="" i $l(pat) s pEP=$p($g(^TEPI(pat)),"\",15)
+ ...i priority=$p(pEP,$c(1)) s priority=""
+ ; check test set confidential status
+ i $g(PLIST(46))="" s result="" d  s PLIST(46)=$s((res1="Y")&(res2="Y"):"Y",res1="Y":"P",res2="Y":"D",1:"N")
+ .s test=PLIST(3) n (test,res1,res2)
+ .s res1=$$seldata^LVBCTTS(test,52),res2=$$seldata^LVBCTTS(test,22)
+ ;
+ q
+adjust s xx=$p(PLIST(1),$c(1),2) d PostSQL^SSUTIL4("23,53,56") i $l(xx) s $p(PLIST(1),$c(1),2)=xx
+ n plist,I,J,j,SQLCODE,X
+ f j=5,8,22,25 i $g(PLIST(j)) s PLIST(j)=PLIST(j)*60
+ ;
+ i $g(skip)="Y" q
+ i $g(PLIST(3))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$selskip^LVBCTTS(plist(3))
+ .s X="" i 'SQLCODE s X=PLIST(2)_$c(1)_$s(PLIST(4)="":PLIST(2),1:PLIST(4))_$c(1)_PLIST(3)_$c(1)_PLIST(24)_$c(1)_PLIST(5)_$c(1)_PLIST(54)_$c(1)_PLIST(60)
+ .k PLIST m PLIST=plist s PLIST(3)=X k plist
+ f J=6,9,10,54,61,77 i $g(PLIST(J))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$selrow^MVBSSUSR(plist(J),"Y")
+ .s X="" i 'SQLCODE s X=PLIST(2)_$c(1)_PLIST(3)
+ .k PLIST m PLIST=plist s PLIST(J)=X k plist
+ i $g(PLIST(13))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$select^LVBCTPR(plist(13),"Y")
+ .s X="" i 'SQLCODE s X=PLIST(2)_$c(1)_PLIST(3)_$c(1)_PLIST(4)
+ .k PLIST m PLIST=plist s PLIST(13)=X k plist
+ i $g(PLIST(19))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$select^LVBBBTE(plist(19),"Y")
+ .s X="" i 'SQLCODE s X=PLIST(2)_$c(1)_PLIST(3)
+ .k PLIST m PLIST=plist s PLIST(19)=X k plist
+ i $g(PLIST(32))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$select^LVBCTSS(plist(32),"Y")
+ .s X="" i 'SQLCODE s X=PLIST(2)_$c(1)_PLIST(3)
+ .k PLIST m PLIST=plist s PLIST(32)=X k plist
+ f J=29,41 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTUSL(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ f J=40 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTRL(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ f J=47 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTSPE(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ f J=51 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTPER(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ f J=57 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTAS(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ f J=58 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTR(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ f J=64 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTPC(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ f J=65 I $G(PLIST(J))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTSG(plist(J),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(J)=X K plist
+ q
+zc(text,tc) n (text,tc) s text=$g(text),tc=$g(tc) k ^TMP($zn,$j,"zc")
+ s type=$$seldata^LVBCTTC(tc,5)
+ f cnt=1:1:$l(text,"|") s ^TMP($zn,$j,"zc","COM-0",cnt)=$p(text,"|",cnt)
+ s st1="{",st2="}",read="COM-0",write="COM-1" d  s st1="[",st2="]",read="COM-1",write="COM-2" d
+ .s cnt="" f  s cnt=$o(^TMP($zn,$j,"zc",read,cnt)) q:cnt=""  d
+ ..s line1=^(cnt),line2=""
+ ..f jj=1:1 d  s line1=l2 i '$l(line1) q
+ ...i line1'[st1 s line2=line2_$tr(line1,st2,$s(st2="}":$c(6),st2="]":$c(12),1:"")),l2="" q
+ ...i line1'[st2 s line2=line2_$tr(line1,st1,$s(st1="{":$c(5),st1="[":$c(11),1:"")),l2="" q
+ ...s l1=$p(line1,st1,1),sc=$p($p(line1,st1,2,999),st2,1),l2=$p($p(line1,st1,2,999),st2,2,999)
+ ...f  q:sc'[st1  s l1=l1_st1_$p(sc,st1,1),sc=$p(sc,st1,2,999)
+ ...d
+ ....i type="V",'$$select^LVBCTANC(sc,"Y") s line2=line2_l1_st1_sc_st2 q
+ ....i type'="V",'$$select^LVBCTTCT(tc_"||"_sc,"Y") s line2=line2_l1_st1_sc_st2 q
+ ....s line2=line2_l1_$tr(st1,"{[",$c(5,11))_sc_$tr(st2,"}]",$c(6,12))
+ ..s ^TMP($zn,$j,"zc",write,cnt)=line2
+ s (cnt,result)="" f  s cnt=$o(^TMP($zn,$j,"zc","COM-2",cnt)) q:cnt=""  s result=result_$s($l(result):"|",1:"")_^(cnt)
+ k ^TMP($zn,$j,"zc")
+ q result
+zResult(type,RowID) s type=$g(type),RowID=$g(RowID),result=""
+ i type="Z1" s epis=$p(RowID,"||") d
+ .i $$open^LVBHIVAC(epis)
+ .f  q:$$fetch^LVBHIVAC(epis)  d  q:$l(result)
+ ..i $l(PLIST(2)),$l(PLIST(6)) f i=1:1:$l($p(PLIST(6),$c(1)),",") i RowID=$p($p(PLIST(6),$c(1)),",",i) s result=$p(PLIST(2),$c(1),2) q
+ .i $$close^LVBHIVAC()
+ i type="Z2" s epis=$p(RowID,"||") d
+ .i $$open^LVBHIVAC(epis)
+ .f  q:$$fetch^LVBHIVAC(epis)  d  q:$l(result)
+ ..i $l(PLIST(2)),$l(PLIST(6)) f i=1:1:$l($p(PLIST(6),$c(1)),",") i RowID=$p($p(PLIST(6),$c(1)),",",i) s result=$p(PLIST(3),$c(1),2) q
+ .i $$close^LVBHIVAC()
+ i type="Z3" s epis=$p(RowID,"||") d
+ .i $$open^LVBHIVAC(epis)
+ .f  q:$$fetch^LVBHIVAC(epis)  d  q:$l(result)
+ ..i $l(PLIST(2)),$l(PLIST(6)) f i=1:1:$l($p(PLIST(6),$c(1)),",") i RowID=$p($p(PLIST(6),$c(1)),",",i) s result=$p(PLIST(7),$c(1),2) q
+ .i $$close^LVBHIVAC()
+ i type="Z4" s epis=$p(RowID,"||") d
+ .i $$open^LVBHIVAC(epis)
+ .f  q:$$fetch^LVBHIVAC(epis)  d  q:$l(result)
+ ..i $l(PLIST(2)),$l(PLIST(6)) f i=1:1:$l($p(PLIST(6),$c(1)),",") i RowID=$p($p(PLIST(6),$c(1)),",",i),PLIST(16)="Y" s result="Specimen received unlabelled" q
+ .i $$close^LVBHIVAC()
+ i type="Z5" s result=$$ccr^LVBVIS4(RowID)
+ i type="Z6" s result=$$seldata^LVBVISTS(RowID,17)
+ i type="Z7" s result=$$seldata^LVBVISTS(RowID,18)
+ i type="Z8" s result=$$seldata^LVBVISTS(RowID,15)
+ i type="Z9" s result=$$seldata^LVBVISTS(RowID,16)
+ i type="Z10" s result=$$snomed^LVBVIS4(RowID)
+ i type="Z11" s result=$$xm^LVBVIS4(RowID)
+ i type="Z12" s result=$$abScreen^LVBVIS4(RowID)
+ i type="Z13" s result=$$seldata^LVBEPVIS(epis,64)
+ i type="Z14" s dt=$$fHoldDT^LVBCOM03(RowID),result="" i dt d
+ .s tr=$$tr^LVBVIS4(RowID,"Y")
+ .i $l(tr) s date=$p(tr,","),time=$p(tr,",",2)
+ .e  d
+ ..s date=$$seldata^LVBEPVIS(epis,12),time=$$seldata^LVBEPVIS(epis,13)
+ .s dt1=$p(dt,$c(1),1),dt2=$p(dt,$c(1),2,3)
+ .s x1=((date*24)+(time/3600)+$s(dt2:dt2,1:dt1))\24
+ .s x2=(((date*24)+(time/3600)+$s(dt2:dt2,1:dt1))#24)*3600\1
+ .s result=$$extdate2^SSUTIL4(x1)_" "_$$exttime^SSUTIL4(x2)
+ i type="Z15" s result=$$tr^LVBVIS4(RowID) i $l(result) s result=$$extdate2^SSUTIL4($p(result,","))
+  ;---i type="Z16" &sql(SELECT VISTS_AnatomicalSite_DR->CTAS_Description INTO :result FROM EP_VisitTestSet WHERE VISTS_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: RowID, SQLCODE, result
+ i type="Z16" Do %0Io
+  ;---i type="Z17" &sql(SELECT VISTS_SpecimenType_DR->CTSPE_Desc INTO :result FROM EP_VisitTestSet WHERE VISTS_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: RowID, SQLCODE, result
+ i type="Z17" Do %0Ko
+ i type="Z18" s result=$$seldata^LVBEPVIS(epis,19) i $l(result) s result=$$seldata^LVBCTFAS(result,3)
+ i type="Z19" s epis=$p(RowID,"||") d
+ .i $$open^LVBHIVAC(epis)
+ .f  q:$$fetch^LVBHIVAC(epis)  d
+ ..i $l(PLIST(2)),$l(PLIST(6)) f i=1:1:$l($p(PLIST(6),$c(1)),",") i RowID=$p($p(PLIST(6),$c(1)),",",i) s result=result_$s($l(result):",",1:"")_$p(PLIST(2),$c(1),2) q
+ .i $$close^LVBHIVAC()
+ i type="Z20" s result=$$seldata^LVBEPVIS(epis,122)
+ i type="Z21" s result=$$seldata^LVBEPVIS(epis,121)
+ q $p(result,$c(1))
+ ;  1 - RowID
+ ;  2 - Test Item
+ ;  3 - Result
+ ;  4 - Comment
+ ;  5 - flag.ABNORMAL
+ ;  6 - flag.PATH
+ ;  7 - flag.PANIC
+ ;  8 - flag.DELTA
+ ;  9 - flag.PREVIOUS
+ ; 10 - flag.AUTO
+ ; 11 - flag.UNACCEPT
+ ; 12 - flag.INVALID
+ ; 13 - flag.Bitmap
+ ; 14 - validation.Bold
+ ; 15 - validation.Italic
+ ; 16 - validation.Underline
+ ; 17 - validation.BackColour
+ ; 18 - validation.ForeColour
+ ; 19 - antibiotics (Y/N)
+ ; 20 - validation.for S/B1/V Description
+ ;      validation.for N - Units/Description
+ ; 21 - validation.for S/B1 CCR codes
+ ; 22 - Suppress Report
+ ; 23 - validation.BorderColour
+ ; 24 - Machine
+ ; 25 - Status
+ ; 26 - RepeatRequest
+ ; 27 - PreviousResult
+ ; 28 - Numeric result (Y/N)
+ ; 29 - Original Suppress (Y/N)
+results(RowID,mismpl,wsRID,empty,NoValid,Extra,Transl,lan) N (RowID,mismpl,wsRID,empty,NoValid,Extra,Transl,lan,CFLI,PLIST) k ^TMP($zn,$j)
+ s RowID=$g(RowID),mismpl=$p($g(mismpl),$c(1)),wsRID=$g(wsRID),empty=$g(empty),NoValid=$g(NoValid),Extra=$g(Extra),Transl=$g(Transl),lan=$g(lan)
+ i $p(mismpl,"||")="" s mismpl=""
+ i wsRID'["||" s wsRID=""
+ s epis=$p(RowID,"||"),test=$p(RowID,"||",2),tscnt=$p(RowID,"||",3)
+ i '$l(epis)!'$l(test)!'$l(tscnt) g resultsEnd
+ s Alternate=$$seldata^MVBCFLAB(1,69)
+ i $$open^LVBVISTD(RowID)
+ f  q:$$fetch^LVBVISTD(RowID)  d
+ .s tc=$p(PLIST(1),"||",4) i $l(tc) d
+ ..s cnt=$o(^TMP($zn,$j,0,""),-1)+1
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),1)=$g(PLIST(1))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),2)=$g(PLIST(2))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),3)=$g(PLIST(3))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),22)=$g(PLIST(6))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),24)=$g(PLIST(9))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),25)=$g(PLIST(5))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),26)=$g(PLIST(13))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),27)=$g(PLIST(14))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),29)=""
+ ..i Transl'="Y" s $p(^TMP($zn,$j,0,cnt),$c(1),4)=$g(PLIST(4))
+ ..i Transl="Y" s $p(^TMP($zn,$j,0,cnt),$c(1),4)=$$zc($g(PLIST(4)),tc)
+ ..s ^TMP($zn,$j,1,tc)=PLIST(3)
+ ..i NoValid'="Y" d
+ ...s comm=''$d(^TEPI(epis,1,test,tscnt,"DATA",tc,"REM")),comm=$s(comm:"Y",1:"N")
+ ...s ant="N",x="" f  s x=$o(^TEPI(epis,1,test,tscnt,"DATA",tc,"ANT",x)) q:x=""  i $l($p(^(x),"\",1))!$l($p(^(x),"\",3))!$l($p(^(x),"\",4)) s ant="Y" q
+ ...s err=$$validres^LVBVIS12(epis,tc,PLIST(3),RowID,comm,ant,,,,lan_$c(1)_$g(PLIST(6)))
+ ...f j=1:1:8 s $p(^TMP($zn,$j,0,cnt),$c(1),4+j)=$p(err,$c(1),j)
+ ...f j=1:1:6 s $p(^TMP($zn,$j,0,cnt),$c(1),12+j)=$p(PLIST(j),$c(1))
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),23)=$p(PLIST(10),$c(1))
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),19)=ant
+ ...i Extra="Y" f j=7,8 s $p(^TMP($zn,$j,0,cnt),$c(1),13+j)=$p(PLIST(j),$c(1))
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),3)=$p(PLIST(9),$c(1))
+ ...s ^TMP($zn,$j,1,tc)=$p(PLIST(9),$c(1))
+ ...s ^TMP($zn,$j,1.1,tc)=$p(^TMP($zn,$j,0,cnt),$c(1),26)
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),28)=$p(PLIST(11),$c(1))
+ i $$close^LVBVISTD()
+ s new="Y" i $d(^TMP($zn,$j,0)) s new="N"
+ ; find DayBook fields
+ i $d(^THIR(epis)) d
+ .i $$open^LVBHIVAC(epis)
+ .f  q:$$fetch^LVBHIVAC(epis)  d
+ ..i $l(PLIST(2)),$l(PLIST(6)) f i=1:1:$l(PLIST(6),",") s ts=$p(PLIST(6),",",i) d
+ ... ; set accession number index
+ ...s ^TMP($zn,$j,5,ts)=PLIST(2)
+ ... ; set specimen type
+ ...s ^TMP($zn,$j,6,ts)=$p(PLIST(3),$c(1),2)
+ ... ; set specimen site
+ ...s ^TMP($zn,$j,7,ts)=$p(PLIST(7),$c(1),2)
+ ... ; set specimen unlabeled
+ ...s ^TMP($zn,$j,16,ts)=PLIST(16)
+ .i $$close^LVBHIVAC()
+ i '$$getall1^LVBCTTC(test) m ^TMP($zn,$j,2)=PLIST
+ s cnt1="" f  s cnt1=$o(^TMP($zn,$j,2,cnt1)) q:cnt1=""  s tc=$p(^(cnt1),$c(2),1) i $l(tc),$p($p(^(cnt1),$c(2),5),$c(28),15)'="Y" s ^TMP($zn,$j,99,tc)=""
+ s cnt1="" f  s cnt1=$o(^TMP($zn,$j,2,cnt1)) q:cnt1=""  s tc=$p(^(cnt1),$c(2),1) i $l(tc),'$d(^TMP($zn,$j,1,tc)) d
+ .s result=$$zResult($p($p(^TMP($zn,$j,2,cnt1),$c(2),4),$c(28),5),RowID)
+ .i $l(result) d
+ ..s ^TMP($zn,$j,1,tc)=result
+ ..s cnt=$o(^TMP($zn,$j,0,""),-1)+1
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),1)=RowID_"||"_tc
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),3)=result
+ ..i $d(^TMP($zn,$j,99,tc)) s $p(^TMP($zn,$j,0,cnt),$c(1),22)="Y",$p(^TMP($zn,$j,0,cnt),$c(1),29)="Y"
+ ..s comm=''$d(^TEPI(epis,1,test,tscnt,"DATA",tc,"REM")),comm=$s(comm:"Y",1:"N")
+ ..s ant="N",x="" f  s x=$o(^TEPI(epis,1,test,tscnt,"DATA",tc,"ANT",x)) q:x=""  i $l($p(^(x),"\",1))!$l($p(^(x),"\",3))!$l($p(^(x),"\",4)) s ant="Y" q
+ ..s err=$$validres^LVBVIS12(epis,tc,result,RowID,comm,ant,,,,lan_$c(1)_$s($d(^TMP($zn,$j,99,tc)):"Y",1:""))
+ ..f j=1:1:8 s $p(^TMP($zn,$j,0,cnt),$c(1),4+j)=$p(err,$c(1),j)
+ ..f j=1:1:6 s $p(^TMP($zn,$j,0,cnt),$c(1),12+j)=$p(PLIST(j),$c(1))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),23)=$p(PLIST(10),$c(1))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),19)=ant
+ ..i Extra="Y" f j=7,8 s $p(^TMP($zn,$j,0,cnt),$c(1),13+j)=$p(PLIST(j),$c(1))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),3)=$p(PLIST(9),$c(1))
+ ..s ^TMP($zn,$j,1,tc)=$p(PLIST(9),$c(1))
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),28)=$p(PLIST(11),$c(1))
+ ; check mi results
+ i $l(mismpl) d
+ .s cnt1="" f  s cnt1=$o(^TMP($zn,$j,2,cnt1)) q:cnt1=""  s tc=$p(^(cnt1),$c(2),1) i $l(tc) d
+ ..s cnt2=""
+ ..i $d(^TMP($zn,$j,1,tc)),$g(^TMP($zn,$j,1.1,tc))'="Y" q
+ ..i $d(^TMP($zn,$j,1,tc)),$g(^TMP($zn,$j,1.1,tc))="Y" d
+ ...f  s cnt2=$o(^TMP($zn,$j,0,cnt2)) q:cnt2=""  i $p(^TMP($zn,$j,0,cnt2),$c(1),2)=tc d  q
+ ....s $p(^TMP($zn,$j,0,cnt2),$c(1),27)=$p(^TMP($zn,$j,0,cnt2),$c(1),3)
+ ....s $p(^TMP($zn,$j,0,cnt2),$c(1),26)=""
+ ..i '$$selactive^LVBMIRI(mismpl_"||"_tc) k MIRI m MIRI=PLIST d
+ ...s xx="" f j2=1:1:$l(MIRI(4),",") i '$$select^LVBCTMF($p(MIRI(4),",",j2)),PLIST(4)="E" s xx="Y" q
+ ...i xx="" d
+ ....s ^TMP($zn,$j,1,tc)=MIRI(3)
+ ....s cnt=cnt2 i 'cnt s cnt=$o(^TMP($zn,$j,0,""),-1)+1
+ ....s $p(^TMP($zn,$j,0,cnt),$c(1),1)=RowID_"||"_tc
+ ....s $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc
+ ....s $p(^TMP($zn,$j,0,cnt),$c(1),3)=MIRI(3)
+ ....s $p(^TMP($zn,$j,0,cnt),$c(1),24)=$p(mismpl,"||")
+ ....i $d(^TMP($zn,$j,99,tc)) s $p(^TMP($zn,$j,0,cnt),$c(1),22)="Y",$p(^TMP($zn,$j,0,cnt),$c(1),29)="Y"
+ ....i Transl'="Y" s $p(^TMP($zn,$j,0,cnt),$c(1),4)=MIRI(9)
+ ....i Transl="Y" s $p(^TMP($zn,$j,0,cnt),$c(1),4)=$$zc(MIRI(9),tc)
+ ....i NoValid'="Y" d
+ .....s comm=$g(^TMIF($p(mismpl,"||"),1,$p(mismpl,"||",2),"DATA",tc,$p(MIRI(1),"||",4),"REM",0)),comm=$s(comm:"Y",1:"N")
+ .....s ant="N",x="" f  s x=$o(^TMIF($p(mismpl,"||"),1,$p(mismpl,"||",2),"DATA",tc,$p(MIRI(1),"||",4),"ANT",x)) q:x=""  i $l($p(^(x),"\",1))!$l($p(^(x),"\",3))!$l($p(^(x),"\",4)) s ant="Y" q
+ .....s err=$$validres^LVBVIS12(epis,tc,MIRI(3),RowID,comm,ant,mismpl,,,lan_$c(1)_$s($d(^TMP($zn,$j,99,tc)):"Y",1:""))
+ .....f j=1:1:8 s $p(^TMP($zn,$j,0,cnt),$c(1),4+j)=$p(err,$c(1),j)
+ .....f j=1:1:6 s $p(^TMP($zn,$j,0,cnt),$c(1),12+j)=$p(PLIST(j),$c(1))
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),23)=$p(PLIST(10),$c(1))
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),19)=ant
+ .....i Extra="Y" f j=7,8 s $p(^TMP($zn,$j,0,cnt),$c(1),13+j)=$p(PLIST(j),$c(1))
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),3)=$p(PLIST(9),$c(1))
+ .....s ^TMP($zn,$j,1,tc)=$p(PLIST(9),$c(1))
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),28)=$p(PLIST(11),$c(1))
+ ; copy same TestItems
+ i $$status^LVBVIS1(RowID)'="A" d
+ .s copied=0
+ .s cnt1="" f  s cnt1=$o(^TMP($zn,$j,2,cnt1)) q:cnt1=""  s tc=$p(^(cnt1),$c(2),1) i $l(tc),'$d(^TMP($zn,$j,1,tc)) d
+ ..s rc=$$seldata^LVBCTTC(tc,55),rf=$$seldata^LVBCTTC(tc,5)
+ ..i rc="Y" d
+ ...s x1="" f  s x1=$o(^TEPI(epis,1,x1)) q:x1=""  d
+ ....s x2="" f  s x2=$o(^TEPI(epis,1,x1,x2)) q:x2=""  d
+ .....i RowID=(epis_"||"_x1_"||"_x2) q
+ .....s result=""
+ .....i rf="Z10" s result=$$snomed^LVBVIS4(epis_"||"_x1_"||"_x2) m ^TEPI(epis,1,test,tscnt,"SNOMED")=^TEPI(epis,1,x1,x2,"SNOMED")
+ .....i $d(^TEPI(epis,1,x1,x2,"DATA",tc)) s result=$p(^(tc),"\")
+ .....i $l(result) d
+ ......i rf="V" m ^TEPI(epis,1,test,tscnt,"DATA",tc)=^TEPI(epis,1,x1,x2,"DATA",tc)
+ ......s copied=1
+ ......s ^TMP($zn,$j,1,tc)=result
+ ......f cnt=1:1 q:'$d(^TMP($zn,$j,0,cnt))  i $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc q
+ ......s $p(^TMP($zn,$j,0,cnt),$c(1),1)=RowID_"||"_tc
+ ......s $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc
+ ......s $p(^TMP($zn,$j,0,cnt),$c(1),3)=result
+ ......s comm="",x=0 f  s x=$o(^TEPI(epis,1,test,tscnt,"DATA",tc,"REM",x)) q:x=""  s comm=comm_$s($l(comm):"|",1:"")_^(x)
+ ......i Transl'="Y" s $p(^TMP($zn,$j,0,cnt),$c(1),4)=comm
+ ......i Transl="Y" s $p(^TMP($zn,$j,0,cnt),$c(1),4)=$$zc(comm,tc)
+ ......i NoValid'="Y" d
+ .......s comm=''$d(^TEPI(epis,1,test,tscnt,"DATA",tc,"REM")),comm=$s(comm:"Y",1:"N")
+ .......s ant="N",x="" f  s x=$o(^TEPI(epis,1,test,tscnt,"DATA",tc,"ANT",x)) q:x=""  i $l($p(^(x),"\",1))!$l($p(^(x),"\",3))!$l($p(^(x),"\",4)) s ant="Y" q
+ .......s err=$$validres^LVBVIS12(epis,tc,result,RowID,comm,ant,,,,lan)
+ .......f j=1:1:8 s $p(^TMP($zn,$j,0,cnt),$c(1),4+j)=$p(err,$c(1),j)
+ .......f j=1:1:6 s $p(^TMP($zn,$j,0,cnt),$c(1),12+j)=$p(PLIST(j),$c(1))
+ .......s $p(^TMP($zn,$j,0,cnt),$c(1),23)=$p(PLIST(10),$c(1))
+ .......s $p(^TMP($zn,$j,0,cnt),$c(1),19)=ant
+ .......i Extra="Y" f j=7,8 s $p(^TMP($zn,$j,0,cnt),$c(1),13+j)=$p(PLIST(j),$c(1))
+ .......s $p(^TMP($zn,$j,0,cnt),$c(1),3)=$p(PLIST(9),$c(1))
+ .......s ^TMP($zn,$j,1,tc)=$p(PLIST(9),$c(1))
+ .......s $p(^TMP($zn,$j,0,cnt),$c(1),28)=$p(PLIST(11),$c(1))
+ .i copied d
+ ..k PLIST
+ ..s cnt="" f j=1:1 s cnt=$o(^TMP($zn,$j,0,cnt)) q:cnt=""  s PLIST(j)=$p(^TMP($zn,$j,0,cnt),$c(1),2)_$c(1)_$p(^TMP($zn,$j,0,cnt),$c(1),3)
+ ..s PLIST=$o(PLIST(""),-1)
+ ..i $$autocomm^LVBVIS1(epis_"||"_test_"||"_tscnt)
+ ..f j1=1:1:PLIST s tc=$p(PLIST(j1),$c(1),1),result=$p(PLIST(j1),$c(1),2) i $l(tc) d
+ ...f j2=1:1:$l(result,$c(2)) s res=$p(result,$c(2),j2) i $l(res) d
+ ....s cnt="" f  s cnt=$o(^TMP($zn,$j,0,cnt)) q:cnt=""  i $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc q
+ ....i cnt d
+ .....i $p($g(^TMP($zn,$j,0,cnt)),$c(1),4)[("{"_res_"}") q
+ .....i $p($g(^TMP($zn,$j,0,cnt)),$c(1),4)[("["_res_"]") q
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),4)=$p($g(^TMP($zn,$j,0,cnt)),$c(1),4)_$s($l($p($g(^TMP($zn,$j,0,cnt)),$c(1),4)):"|",1:"")_"["_res_"]"
+ ....i 'cnt d
+ .....s cnt=$o(^TMP($zn,$j,0,""),-1)+1
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),1)=RowID_"||"_tc
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),4)=$p($g(^TMP($zn,$j,0,cnt)),$c(1),4)_$s($l($p($g(^TMP($zn,$j,0,cnt)),$c(1),4)):"|",1:"")_"["_res_"]"
+ i new="Y" d
+ .s cnt1="" f  s cnt1=$o(^TMP($zn,$j,2,cnt1)) q:cnt1=""  s tc=$p(^(cnt1),$c(2),1),def=$p($p(^(cnt1),$c(2),5),$c(28),13) d
+ ..i $l(tc),$l(def),'$d(^TMP($zn,$j,1,tc)) d
+ ... ; compute date field
+ ...i $p($p(^TMP($zn,$j,2,cnt1),$c(2),4),$c(28),5)="D",def["T" d
+ ....i def="T" s def=+$h
+ ....i $e(def,1,2)="T+" s def=$h+$p(def,"T+",2)
+ ....i $e(def,1,2)="T-" s def=$h-$p(def,"T-",2)
+ ...s cnt=$o(^TMP($zn,$j,0,""),-1)+1
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),1)=RowID_"||"_tc
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),3)=def
+ ...i $d(^TMP($zn,$j,99,tc)) s $p(^TMP($zn,$j,0,cnt),$c(1),22)="Y"
+ ...s ^TMP($zn,$j,1,tc)=def
+ ...i NoValid'="Y" d
+ ....s comm=''$d(^TEPI(epis,1,test,tscnt,"DATA",tc,"REM")),comm=$s(comm:"Y",1:"N")
+ ....s ant="N",x="" f  s x=$o(^TEPI(epis,1,test,tscnt,"DATA",tc,"ANT",x)) q:x=""  i $l($p(^(x),"\",1))!$l($p(^(x),"\",3))!$l($p(^(x),"\",4)) s ant="Y" q
+ ....s err=$$validres^LVBVIS12(epis,tc,def,RowID,comm,ant,$c(1)_"Y",,,lan_$c(1)_$s($d(^TMP($zn,$j,99,tc)):"Y",1:""))
+ ....f j=1:1:8 s $p(^TMP($zn,$j,0,cnt),$c(1),4+j)=$p(err,$c(1),j)
+ ....f j=1:1:6 s $p(^TMP($zn,$j,0,cnt),$c(1),12+j)=$p(PLIST(j),$c(1))
+ ....s $p(^TMP($zn,$j,0,cnt),$c(1),23)=$p(PLIST(10),$c(1))
+ ....s $p(^TMP($zn,$j,0,cnt),$c(1),19)=ant
+ ....i Extra="Y" f j=7,8 s $p(^TMP($zn,$j,0,cnt),$c(1),13+j)=$p(PLIST(j),$c(1))
+ ....s $p(^TMP($zn,$j,0,cnt),$c(1),3)=$p(PLIST(9),$c(1))
+ ....s ^TMP($zn,$j,1,tc)=$p(PLIST(9),$c(1))
+ ....s $p(^TMP($zn,$j,0,cnt),$c(1),28)=$p(PLIST(11),$c(1))
+ ; compute calculated fields
+ i $$status^LVBVIS1(RowID)'="A" d
+ .s cnt1="" f  s cnt1=$o(^TMP($zn,$j,2,cnt1)) q:cnt1=""  s tc=$p(^(cnt1),$c(2),1) i $l(tc) d
+ ..n (cnt1,tc,epis,test,tscnt,RowID,NoValid,Extra,lan,CFLI)
+ ..i '$$select^LVBCTTCC(tc_"||"_test,"Y") d
+ ...s formula=PLIST(3),required=PLIST(4),always=PLIST(5),(param,data)="",compute=1
+ ...i always'="Y" f cnt=1:1 q:'$d(^TMP($zn,$j,0,cnt))  i $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc,$p(^TMP($zn,$j,0,cnt),$c(1),3)'="" s compute="" q
+ ...i compute d
+ ....s x="" f  s x=$o(^TMP($zn,$j,2,x)) q:x=""  s xx=$p(^(x),$c(2),1) i formula[xx s param=param_"^"_xx,data=data_"^"_$g(^TMP($zn,$j,1,xx))
+ ....i '$$compute^LVBCTTCC(param,data,formula,required,RowID,tc),$l(PLIST(1)) d
+ .....s (^TMP($zn,$j,1,tc),result)=PLIST(1)
+ .....f cnt=1:1 q:'$d(^TMP($zn,$j,0,cnt))  i $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc q
+ ..... ; compute date field
+ .....i $p($p(^TMP($zn,$j,2,cnt1),$c(2),4),$c(28),5)="D",result["T" d
+ ......i result="T" s result=+$h
+ ......i $e(result,1,2)="T+" s result=$h+$p(result,"T+",2)
+ ......i $e(result,1,2)="T-" s result=$h-$p(result,"T-",2)
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),1)=RowID_"||"_tc
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc
+ .....s $p(^TMP($zn,$j,0,cnt),$c(1),3)=result
+ .....i $d(^TMP($zn,$j,99,tc)) s $p(^TMP($zn,$j,0,cnt),$c(1),22)="Y"
+ .....i NoValid'="Y" d
+ ......s comm=''$d(^TEPI(epis,1,test,tscnt,"DATA",tc,"REM")),comm=$s(comm:"Y",1:"N")
+ ......s ant="N",x="" f  s x=$o(^TEPI(epis,1,test,tscnt,"DATA",tc,"ANT",x)) q:x=""  i $l($p(^(x),"\",1))!$l($p(^(x),"\",3))!$l($p(^(x),"\",4)) s ant="Y" q
+ ......s err=$$validres^LVBVIS12(epis,tc,result,RowID,comm,ant,,,,lan_$c(1)_$s($d(^TMP($zn,$j,99,tc)):"Y",1:""))
+ ......f j=1:1:8 s $p(^TMP($zn,$j,0,cnt),$c(1),4+j)=$p(err,$c(1),j)
+ ......f j=1:1:6 s $p(^TMP($zn,$j,0,cnt),$c(1),12+j)=$p(PLIST(j),$c(1))
+ ......s $p(^TMP($zn,$j,0,cnt),$c(1),23)=$p(PLIST(10),$c(1))
+ ......s $p(^TMP($zn,$j,0,cnt),$c(1),19)=ant
+ ......i Extra="Y" f j=7,8 s $p(^TMP($zn,$j,0,cnt),$c(1),13+j)=$p(PLIST(j),$c(1))
+ ......s $p(^TMP($zn,$j,0,cnt),$c(1),3)=$p(PLIST(9),$c(1))
+ ......s ^TMP($zn,$j,1,tc)=$p(PLIST(9),$c(1))
+ ......s $p(^TMP($zn,$j,0,cnt),$c(1),28)=$p(PLIST(11),$c(1))
+ ; send empty fields
+ i empty="Y" d
+ .s items="" i $l(wsRID) s ws=$p(wsRID,"||") i $l(ws) s items=$p($g(^TTAB("WS",ws,10,test)),"\",4)
+ .s cnt1="" f  s cnt1=$o(^TMP($zn,$j,2,cnt1)) q:cnt1=""  s tc=$p(^(cnt1),$c(2),1) i $l(tc),'$d(^TMP($zn,$j,1,tc)) d
+ ..i $l(items),(","_items_",")'[(","_tc_",") q
+ ..f cnt=1:1 q:'$d(^TMP($zn,$j,0,cnt))  i $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc q
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),1)=RowID_"||"_tc
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),2)=tc
+ ..s $p(^TMP($zn,$j,0,cnt),$c(1),3)=""
+ ..i $d(^TMP($zn,$j,99,tc)) s $p(^TMP($zn,$j,0,cnt),$c(1),22)="Y"
+ ..s ^TMP($zn,$j,1,tc)=""
+ ..i NoValid'="Y" d
+ ...s comm=''$d(^TEPI(epis,1,test,tscnt,"DATA",tc,"REM")),comm=$s(comm:"Y",1:"N")
+ ...s ant="N",x="" f  s x=$o(^TEPI(epis,1,test,tscnt,"DATA",tc,"ANT",x)) q:x=""  i $l($p(^(x),"\",1))!$l($p(^(x),"\",3))!$l($p(^(x),"\",4)) s ant="Y" q
+ ...s err=$$validres^LVBVIS12(epis,tc,"",RowID,comm,ant,,,,lan_$c(1)_$s($d(^TMP($zn,$j,99,tc)):"Y",1:""))
+ ...f j=1:1:8 s $p(^TMP($zn,$j,0,cnt),$c(1),4+j)=$p(err,$c(1),j)
+ ...f j=1:1:6 s $p(^TMP($zn,$j,0,cnt),$c(1),12+j)=$p(PLIST(j),$c(1))
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),23)=$p(PLIST(10),$c(1))
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),19)=ant
+ ...i Extra="Y" f j=7,8 s $p(^TMP($zn,$j,0,cnt),$c(1),13+j)=$p(PLIST(j),$c(1))
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),3)=$p(PLIST(9),$c(1))
+ ...s ^TMP($zn,$j,1,tc)=$p(PLIST(9),$c(1))
+ ...s $p(^TMP($zn,$j,0,cnt),$c(1),28)=$p(PLIST(11),$c(1))
+ s cnt="" f  s cnt=$o(^TMP($zn,$j,0,cnt)) q:cnt=""  d
+ .s tc=$p(^(cnt),$c(1),2) i $l(tc),$d(^TMP($zn,$j,99,tc)) s $p(^TMP($zn,$j,0,cnt),$c(1),29)="Y"
+ ; create PLIST
+resultsEnd
+ ; sort
+ k PLIST
+ s x1="" f  s x1=$o(^TMP($zn,$j,0,x1)) q:x1=""  s tc=$p(^(x1),$c(1),2) i $l(tc) s ^TMP($zn,$j,0.1,tc)=x1
+ s (x1,x3)="" f  s x1=$o(^TMP($zn,$j,2,x1)) q:x1=""  s tc=$p(^(x1),$c(2),1) i $l(tc) s x2=$g(^TMP($zn,$j,0.1,tc)) i x2 s x3=x3+1,PLIST(x3)=^TMP($zn,$j,0,x2)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ; validate user
+ ; FlagPE : P - Print
+ ;          V - Enquiry
+ ;            - Entry
+ValUser(user,vtsRowID,FlagPE,recLoc) n (user,vtsRowID,FlagPE,recLoc)
+ s user=$g(user),vtsRowID=$g(vtsRowID),FlagPE=$g(FlagPE),recLoc=$g(recLoc),(ok,VQok)=0
+ s epis=$p(vtsRowID,"||",1),test=$p(vtsRowID,"||",2),tscnt=$p(vtsRowID,"||",3)
+ s ok1=$$ValUser^LVBEPVIS(user,epis,recLoc,$s(FlagPE="V":"Y",1:""))
+ i $l(user),$l(epis),$l(test),$l(tscnt),$d(^TEPI(epis,1,test,tscnt,"QUEUE","VQ")) d
+ .s vq1=""
+ .i $$open^LVBVISTQ(vtsRowID,"VQ")
+ .f  q:$$fetch^LVBVISTQ(vtsRowID,"VQ")  i $p(PLIST(9),$c(1))="" s vq1=$p(PLIST(10),$c(1))
+ .i $$close^LVBVISTQ()
+ .i $l(vq1) d
+ ..i FlagPE="V",$$seldata^LVBCTVQ(vq1,6)'="Y" s VQok=100
+ ..i FlagPE="P",$$seldata^LVBCTVQ(vq1,5)'="Y" s VQok=100
+ ..i FlagPE="",$$select^LVBCTVQU(vq1_"||"_user) s VQok=100
+ i $l(FlagPE),$p($$seldata^LVBCTTS(test,15),$c(1))="C" s ok=100
+ i $l(user),'ok d
+ .s Department=$$seldata^LVBCTTS(test,26)
+ .s TestLocation=$s($l(recLoc):recLoc,1:$$site^LVBVISTS(vtsRowID))
+ .s EpisLocation=$$seldata^LVBEPVIS(epis,66)
+ .i 'ok s ok=$$ValUser^LVBCTUSL(user,TestLocation) i ok,$l(FlagPE) s ok=$$ValUser^LVBCTUSL(user,EpisLocation)
+ .i 'ok s ok=$$ValUser^LVBCTDEP(user,Department)
+ .i 'ok d
+ ..s Supervisor=$$seldata^MVBSSUSR(user,8)
+ .. ; find Security
+ ..s Security=$$seldata^LVBVISTS(vtsRowID,46) i Security="" d
+ ...s Security=$$seldata^LVBEPVIS(epis,84)
+ ...s Security=$p(Security,$c(1))
+ .. ; find Security type
+ ..s SecurityType=$$seldata^MVBSSUSR(user,10)
+ ..i '$l(SecurityType) s SecurityType=$$seldata^MVBCFLAB(1,66)
+ .. ; find doctor
+ ..s doc=$$seldata^LVBEPVIS(epis,15)
+ ..i FlagPE="" d
+ ...i $l(SecurityType),SecurityType'=1," Y D "[(" "_Security_" "),Supervisor'="Y",$$status^LVBVIS1(vtsRowID)="A" d
+ .... ; bypass security if doctor set-up as a user
+ ....i $l($$seldata^MVBSUDR(user_"||"_doc,1)) q
+ ....s ok=$s(SecurityType=2:50,1:60)
+ ..i FlagPE="P" d
+ ...i $l(SecurityType),SecurityType'=1," Y P "[(" "_Security_" "),Supervisor'="Y" d
+ .... ; bypass security if doctor set-up as a user
+ ....i $l($$seldata^MVBSUDR(user_"||"_doc,1)) q
+ ....s ok=$s(SecurityType=2:50,1:60)
+ ..i FlagPE="V" d
+ ...i " Y D "[(" "_Security_" "),Supervisor'="Y" d
+ .... ; bypass security if doctor set-up as a user
+ ....i $l($$seldata^MVBSUDR(user_"||"_doc,1)) q
+ ....s ok=$s(SecurityType<3:50,1:60)
+ ..i $l(SecurityType),SecurityType'=1,VQok,'ok s ok=$s(SecurityType=2:50,1:60)
+ i ok1>ok s ok=ok1
+ q ok
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(9)=0,%mmmsqld(10)="",%mmmsqld(11)=0,%mmmsqld(12)=""
+ s %mmmsqld(7)=$g(code)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(6)=%mmmsqld(7)
+ i %mmmsqld(6)'="",$d(^TSNO(%mmmsqld(6)))
+ e  g %0ABdun
+ s %mmmsqld(15)=$g(^TSNO(%mmmsqld(6)))
+ s xx1=$p(%mmmsqld(15),"\",7)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TSNO($p(%mmmsqld(6),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(9)=1,%mmmsqld(10)=$name(^TSNO($p(%mmmsqld(6),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.TSNO_SNOMED for RowID value: "_%mmmsqld(6) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(6)'="",$d(^TSNO(%mmmsqld(6)))
+ e  g %0ACdun
+ s %mmmsqld(18)=$g(^TSNO(%mmmsqld(6)))
+ s xx1=$p(%mmmsqld(18),"\",7)
+%0ABuncommitted ;
+ s %mmmsqld(2)=xx1
+ i %mmmsqld(2)'="",$d(^TTAB("SPEC",%mmmsqld(2)))
+ e  s xx2="",%mmmsqld(2)="" g %0ACp4
+ s %mmmsqld(23)=$g(^TTAB("SPEC",%mmmsqld(2)))
+ s xx2=$p(%mmmsqld(23),"\",1)
+%0ACp4 
+ g:$zu(115,2)=0 %0ACuncommitted i $zu(115,2)=1 l +^TTAB("SPEC",$p(%mmmsqld(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(11)=1,%mmmsqld(12)=$name(^TTAB("SPEC",$p(%mmmsqld(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Specimen for RowID value: "_%mmmsqld(2) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %mmmsqld(2)'="",$d(^TTAB("SPEC",%mmmsqld(2)))
+ e  s xx2="",%mmmsqld(2)="" g %0ADp1
+ s %mmmsqld(28)=$g(^TTAB("SPEC",%mmmsqld(2)))
+ s xx2=$p(%mmmsqld(28),"\",1)
+%0ADp1 
+%0ACuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ADdun i $zu(115,2)=1,$g(%mmmsqld(11))=1 { l -@%mmmsqld(12) s %mmmsqld(11)=0 }
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(9))=1 { l -@%mmmsqld(10) s %mmmsqld(9)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(9))=1 { l -@%mmmsqld(10) } i $zu(115,2)=1,$g(%mmmsqld(11))=1 { l -@%mmmsqld(12) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(14)=0,%mmmsqld(15)="",%mmmsqld(16)=0,%mmmsqld(17)=""
+ s %mmmsqld(12)=$g(epis)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(11)=%mmmsqld(12)
+ i %mmmsqld(11)'="",$d(^TEPI(%mmmsqld(11)))
+ e  g %0CBdun
+ s %mmmsqld(20)=$g(^TEPI(%mmmsqld(11)))
+ s ur=$p(%mmmsqld(20),"\",18) s ColDate=$p(%mmmsqld(20),"\",10) s ColTime=$p(%mmmsqld(20),"\",11) s %mmmsqld(4)=$p(%mmmsqld(20),"\",13)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(11),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(14)=1,%mmmsqld(15)=$name(^TEPI($p(%mmmsqld(11),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitNumber for RowID value: "_%mmmsqld(11) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(11)'="",$d(^TEPI(%mmmsqld(11)))
+ e  g %0CCdun
+ s %mmmsqld(23)=$g(^TEPI(%mmmsqld(11)))
+ s ur=$p(%mmmsqld(23),"\",18) s ColDate=$p(%mmmsqld(23),"\",10) s ColTime=$p(%mmmsqld(23),"\",11) s %mmmsqld(4)=$p(%mmmsqld(23),"\",13)
+%0CBuncommitted ;
+ s %mmmsqld(5)=%mmmsqld(4)
+ i %mmmsqld(5)'="",$d(^TTAB("DR",%mmmsqld(5)))
+ e  s lan="",%mmmsqld(5)="" g %0CCp4
+ s %mmmsqld(28)=$g(^TTAB("DR",%mmmsqld(5)))
+ s lan=$p(%mmmsqld(28),"\",25)
+%0CCp4 
+ g:$zu(115,2)=0 %0CCuncommitted i $zu(115,2)=1 l +^TTAB("DR",$p(%mmmsqld(5),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(16)=1,%mmmsqld(17)=$name(^TTAB("DR",$p(%mmmsqld(5),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Doctor for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %mmmsqld(5)'="",$d(^TTAB("DR",%mmmsqld(5)))
+ e  s lan="",%mmmsqld(5)="" g %0CDp1
+ s %mmmsqld(33)=$g(^TTAB("DR",%mmmsqld(5)))
+ s lan=$p(%mmmsqld(33),"\",25)
+%0CDp1 
+%0CCuncommitted ;
+ s SQLCODE=0 g %0Cc
+%0CDdun i $zu(115,2)=1,$g(%mmmsqld(16))=1 { l -@%mmmsqld(17) s %mmmsqld(16)=0 }
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(14))=1 { l -@%mmmsqld(15) s %mmmsqld(14)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(14))=1 { l -@%mmmsqld(15) } i $zu(115,2)=1,$g(%mmmsqld(16))=1 { l -@%mmmsqld(17) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Eerr" s %mmmsqld(10)=0,%mmmsqld(11)=""
+ s %mmmsqld(8)=$g(tc)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(7)=%mmmsqld(8)
+ i %mmmsqld(7)'="",$d(^TTAB("TC",%mmmsqld(7)))
+ e  g %0EBdun
+ s %mmmsqld(16)=$g(^TTAB("TC",%mmmsqld(7)))
+ s synonym=$p(%mmmsqld(16),"\",12)
+ s sop2=$g(^TTAB("TC",%mmmsqld(7),"MANUAL-1"))
+ s sop1="" f %irep=1:1:$g(^TTAB("TC",%mmmsqld(7),"MANUAL-2",0)) s $li(sop1,%irep)=$g(^(%irep))
+ g:$zu(115,2)=0 %0EBuncommitted i $zu(115,2)=1 l +^TTAB("TC",$p(%mmmsqld(7),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(10)=1,%mmmsqld(11)=$name(^TTAB("TC",$p(%mmmsqld(7),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_TestCode for RowID value: "_%mmmsqld(7) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(7)'="",$d(^TTAB("TC",%mmmsqld(7)))
+ e  g %0ECdun
+ s %mmmsqld(21)=$g(^TTAB("TC",%mmmsqld(7)))
+ s synonym=$p(%mmmsqld(21),"\",12)
+ s sop2=$g(^TTAB("TC",%mmmsqld(7),"MANUAL-1"))
+ s sop1="" f %irep=1:1:$g(^TTAB("TC",%mmmsqld(7),"MANUAL-2",0)) s $li(sop1,%irep)=$g(^(%irep))
+%0EBuncommitted ;
+ s SQLCODE=0 g %0Ec
+%0ECdun i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) s %mmmsqld(10)=0 }
+%0EBdun 
+%0EAdun 
+%0Ec s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) } q
+%0Eerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ec
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Gerr" s %mmmsqld(10)=0,%mmmsqld(11)=""
+ s %mmmsqld(4)=$g(x2)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2),%mmmsqld(8)=$p(%mmmsqld(3),"||",3),%mmmsqld(9)=$p(%mmmsqld(3),"||",4)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",%mmmsqld(9)'="",$d(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8),"DATA",%mmmsqld(9)))
+ e  g %0GBdun
+ s %mmmsqld(21)=$g(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8),"DATA",%mmmsqld(9)))
+ s result=$p(%mmmsqld(21),"\",1)
+ g:$zu(115,2)=0 %0GBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(3),"||",1),1,$p(%mmmsqld(3),"||",2),$p(%mmmsqld(3),"||",3),"DATA",$p(%mmmsqld(3),"||",4))#"S":$zu(115,4) i $t { s %mmmsqld(10)=1,%mmmsqld(11)=$name(^TEPI($p(%mmmsqld(3),"||",1),1,$p(%mmmsqld(3),"||",2),$p(%mmmsqld(3),"||",3),"DATA",$p(%mmmsqld(3),"||",4)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitTestSetData for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(6)=$p(%mmmsqld(3),"||"),%mmmsqld(7)=$p(%mmmsqld(3),"||",2),%mmmsqld(8)=$p(%mmmsqld(3),"||",3),%mmmsqld(9)=$p(%mmmsqld(3),"||",4)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",%mmmsqld(9)'="",$d(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8),"DATA",%mmmsqld(9)))
+ e  g %0GCdun
+ s %mmmsqld(31)=$g(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8),"DATA",%mmmsqld(9)))
+ s result=$p(%mmmsqld(31),"\",1)
+%0GBuncommitted ;
+ s SQLCODE=0 g %0Gc
+%0GCdun i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) s %mmmsqld(10)=0 }
+%0GBdun 
+%0GAdun 
+%0Gc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(10))=1 { l -@%mmmsqld(11) } q
+%0Gerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Gc
+%0Io n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Ierr" s %mmmsqld(11)=0,%mmmsqld(12)="",%mmmsqld(13)=0,%mmmsqld(14)=""
+ s %mmmsqld(6)=$g(RowID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ s %mmmsqld(8)=$p(%mmmsqld(5),"||"),%mmmsqld(9)=$p(%mmmsqld(5),"||",2),%mmmsqld(10)=$p(%mmmsqld(5),"||",3)
+ i %mmmsqld(8)'="",%mmmsqld(9)'="",%mmmsqld(10)'="",$d(^TEPI(%mmmsqld(8),1,%mmmsqld(9),%mmmsqld(10)))
+ e  g %0IBdun
+ s %mmmsqld(21)=$g(^TEPI(%mmmsqld(8),1,%mmmsqld(9),%mmmsqld(10)))
+ s %mmmsqld(1)=$p(%mmmsqld(21),"\",51)
+ g:$zu(115,2)=0 %0IBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(5),"||",1),1,$p(%mmmsqld(5),"||",2),$p(%mmmsqld(5),"||",3))#"S":$zu(115,4) i $t { s %mmmsqld(11)=1,%mmmsqld(12)=$name(^TEPI($p(%mmmsqld(5),"||",1),1,$p(%mmmsqld(5),"||",2),$p(%mmmsqld(5),"||",3)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitTestSet for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(8)=$p(%mmmsqld(5),"||"),%mmmsqld(9)=$p(%mmmsqld(5),"||",2),%mmmsqld(10)=$p(%mmmsqld(5),"||",3)
+ i %mmmsqld(8)'="",%mmmsqld(9)'="",%mmmsqld(10)'="",$d(^TEPI(%mmmsqld(8),1,%mmmsqld(9),%mmmsqld(10)))
+ e  g %0ICdun
+ s %mmmsqld(28)=$g(^TEPI(%mmmsqld(8),1,%mmmsqld(9),%mmmsqld(10)))
+ s %mmmsqld(1)=$p(%mmmsqld(28),"\",51)
+%0IBuncommitted ;
+ s %mmmsqld(2)=%mmmsqld(1)
+ i %mmmsqld(2)'="",$d(^TTAB("AS",%mmmsqld(2)))
+ e  s result="",%mmmsqld(2)="" g %0ICp5
+ s %mmmsqld(33)=$g(^TTAB("AS",%mmmsqld(2)))
+ s result=$p(%mmmsqld(33),"\",1)
+%0ICp5 
+ g:$zu(115,2)=0 %0ICuncommitted i $zu(115,2)=1 l +^TTAB("AS",$p(%mmmsqld(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(13)=1,%mmmsqld(14)=$name(^TTAB("AS",$p(%mmmsqld(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_AnatomicalSite for RowID value: "_%mmmsqld(2) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %mmmsqld(2)'="",$d(^TTAB("AS",%mmmsqld(2)))
+ e  s result="",%mmmsqld(2)="" g %0IDp1
+ s %mmmsqld(38)=$g(^TTAB("AS",%mmmsqld(2)))
+ s result=$p(%mmmsqld(38),"\",1)
+%0IDp1 
+%0ICuncommitted ;
+ s SQLCODE=0 g %0Ic
+%0IDdun i $zu(115,2)=1,$g(%mmmsqld(13))=1 { l -@%mmmsqld(14) s %mmmsqld(13)=0 }
+%0ICdun i $zu(115,2)=1,$g(%mmmsqld(11))=1 { l -@%mmmsqld(12) s %mmmsqld(11)=0 }
+%0IBdun 
+%0IAdun 
+%0Ic s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(11))=1 { l -@%mmmsqld(12) } i $zu(115,2)=1,$g(%mmmsqld(13))=1 { l -@%mmmsqld(14) } q
+%0Ierr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ic
+%0Ko n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Kerr" s %mmmsqld(11)=0,%mmmsqld(12)="",%mmmsqld(13)=0,%mmmsqld(14)=""
+ s %mmmsqld(6)=$g(RowID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ s %mmmsqld(8)=$p(%mmmsqld(5),"||"),%mmmsqld(9)=$p(%mmmsqld(5),"||",2),%mmmsqld(10)=$p(%mmmsqld(5),"||",3)
+ i %mmmsqld(8)'="",%mmmsqld(9)'="",%mmmsqld(10)'="",$d(^TEPI(%mmmsqld(8),1,%mmmsqld(9),%mmmsqld(10)))
+ e  g %0KBdun
+ s %mmmsqld(21)=$g(^TEPI(%mmmsqld(8),1,%mmmsqld(9),%mmmsqld(10)))
+ s %mmmsqld(1)=$p(%mmmsqld(21),"\",46)
+ g:$zu(115,2)=0 %0KBuncommitted i $zu(115,2)=1 l +^TEPI($p(%mmmsqld(5),"||",1),1,$p(%mmmsqld(5),"||",2),$p(%mmmsqld(5),"||",3))#"S":$zu(115,4) i $t { s %mmmsqld(11)=1,%mmmsqld(12)=$name(^TEPI($p(%mmmsqld(5),"||",1),1,$p(%mmmsqld(5),"||",2),$p(%mmmsqld(5),"||",3)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.EP_VisitTestSet for RowID value: "_%mmmsqld(5) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(8)=$p(%mmmsqld(5),"||"),%mmmsqld(9)=$p(%mmmsqld(5),"||",2),%mmmsqld(10)=$p(%mmmsqld(5),"||",3)
+ i %mmmsqld(8)'="",%mmmsqld(9)'="",%mmmsqld(10)'="",$d(^TEPI(%mmmsqld(8),1,%mmmsqld(9),%mmmsqld(10)))
+ e  g %0KCdun
+ s %mmmsqld(28)=$g(^TEPI(%mmmsqld(8),1,%mmmsqld(9),%mmmsqld(10)))
+ s %mmmsqld(1)=$p(%mmmsqld(28),"\",46)
+%0KBuncommitted ;
+ s %mmmsqld(2)=%mmmsqld(1)
+ i %mmmsqld(2)'="",$d(^TTAB("SPEC",%mmmsqld(2)))
+ e  s result="",%mmmsqld(2)="" g %0KCp5
+ s %mmmsqld(33)=$g(^TTAB("SPEC",%mmmsqld(2)))
+ s result=$p(%mmmsqld(33),"\",1)
+%0KCp5 
+ g:$zu(115,2)=0 %0KCuncommitted i $zu(115,2)=1 l +^TTAB("SPEC",$p(%mmmsqld(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(13)=1,%mmmsqld(14)=$name(^TTAB("SPEC",$p(%mmmsqld(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_Specimen for RowID value: "_%mmmsqld(2) ztrap "LOCK"  }
+ ; asl MOD# 4
+ i %mmmsqld(2)'="",$d(^TTAB("SPEC",%mmmsqld(2)))
+ e  s result="",%mmmsqld(2)="" g %0KDp1
+ s %mmmsqld(38)=$g(^TTAB("SPEC",%mmmsqld(2)))
+ s result=$p(%mmmsqld(38),"\",1)
+%0KDp1 
+%0KCuncommitted ;
+ s SQLCODE=0 g %0Kc
+%0KDdun i $zu(115,2)=1,$g(%mmmsqld(13))=1 { l -@%mmmsqld(14) s %mmmsqld(13)=0 }
+%0KCdun i $zu(115,2)=1,$g(%mmmsqld(11))=1 { l -@%mmmsqld(12) s %mmmsqld(11)=0 }
+%0KBdun 
+%0KAdun 
+%0Kc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(11))=1 { l -@%mmmsqld(12) } i $zu(115,2)=1,$g(%mmmsqld(13))=1 { l -@%mmmsqld(14) } q
+%0Kerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Kc
+]]></Routine>
+</Export>

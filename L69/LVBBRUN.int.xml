@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBBRUN" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBBRUN ; IG 13/10/98 ; BANKING RUN
+ ;
+ ; supported calls:
+ ;
+ ; $$ext^LVBBRUN(user,Parameters)
+ ;
+ ; Parameters :  1.Banking Slip
+ ;               2.Receipts
+ ;               3.Part Paid list
+ ;               4.Pid Bad Debtors
+ ;               5.Unposted batches
+ ;               6.Adjustment notes - Journal/Rebills
+ ;               7.Paid Bad Debtors - Journal Date from
+ext(user,Parameters) s user=$g(user),Parameters=$g(Parameters)
+ k ^TMP($zn,$j)
+ d SORT
+ s audit="" f  s audit=$o(^TMP($zn,$j,"Audit",audit)) q:audit=""  d REPORT1
+ d REPORT2
+ k ^TMP($zn,$j)
+ q 0
+SORT ; sort batch details
+ s aucode="" f  s aucode=$o(^TTAB("AU",aucode)) q:aucode=""  d
+ .l +^TTAB("AU",aucode)
+ .s (AC,TOTAL,NewAudit)="" f  s AC=$o(^TTAB("AU",aucode,AC)) q:AC=""  d
+ ..i $$select^LVBCTBT(AC,"Y") q
+ ..f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k BCType m BCType=PLIST
+ ..s batch=AC f  s batch=$o(^TBATi("POSTED",batch)) q:batch=""  q:$e(batch,1,$l(AC))'=AC  d
+ ... ; get New Audit number
+ ...i 'NewAudit s audit=$g(^TTAB("AU"))+1,^TTAB("AU")=audit,NewAudit=1,^TMP($zn,$j,"Audit",audit)=""
+ ... ; process credit batch
+ ...i $$select^LVBCRBT(batch) q
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...k CRBatch m CRBatch=PLIST
+ ...s bline="" f  s bline=$o(^TBAT(batch,bline)) q:bline=""  d
+ ....i $$select^LVBCRBL(batch_"||"_bline) q
+ ....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k CRBatchLine m CRBatchLine=PLIST
+ .... ; include in banking slip
+ ....i BCType(6)="Y" s ^TMP($zn,$j,8,batch,bline)=""
+ .... ; receipt
+ ....q:BCType(7)'="Y"
+ .... ; receipt already exist
+ ....i CRBatchLine(4)'="" q
+ .... ; find amount
+ ....s (cash,other)="",par=batch_"||"_bline
+ ....i $$open^LVBCRBLA(par)
+ ....f  q:$$fetch^LVBCRBLA(par)  d
+ .....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .....s:PLIST(3)="CS" cash=cash+PLIST(4)
+ .....s:PLIST(3)'="CS" other=other+PLIST(4)
+ ....i $$close^LVBCRBLA()
+ .... ; check if paycode needs receipts
+ ....s pctype=""
+ ....i $l(CRBatchLine(3)) s pctype=$$seldata^LVBCTPC($$seldata^LVBEPVIS($p(CRBatchLine(3),$c(1)),9),32)
+ ....i '$l(CRBatchLine(3)) s epis="" f  s epis=$o(^TBAT(batch,bline,1,epis)) q:epis=""  i ^(epis) s pctype=$$seldata^LVBCTPC($$seldata^LVBEPVIS(epis,9),32) i pctype="Y" q
+ ....i pctype="Y" d
+ .....l +^TRCT s receipt=$g(^TRCT)+1,^TRCT=receipt l -^TRCT
+ .....s ^TRCT(receipt)=$s(CRBatch(13)="Y":"Skip",1:"")_"\"_cash_"\"_other_"\\\"_batch_"||"_bline
+ .....i $l(CRBatchLine(3)) d SetRec(receipt,CRBatchLine(3))
+ .....i '$l(CRBatchLine(3)) s epis="" f  s epis=$o(^TBAT(batch,bline,1,epis)) q:epis=""  i ^(epis) d SetRec(receipt,epis)
+ .....k PLIST m PLIST=CRBatchLine s PLIST=$o(PLIST(""),-1)
+ .....s PLIST(4)=receipt i $$update^LVBCRBL(batch_"||"_bline)
+ ...i '$$select^LVBCRBT(batch) s PLIST(8)=audit,PLIST(9)=+$h,PLIST(11)=aucode i $$update^LVBCRBT(batch)
+ .l -^TTAB("AU",aucode)
+ q
+SetRec(rec,epis) n (rec,epis) s rec=$g(rec),epis=$g(epis)
+ s pctype=$$seldata^LVBCTPC($$seldata^LVBEPVIS(epis,9),32)
+ i pctype="Y" d
+ .s list=$$seldata^LVBEPVIS(epis,58),ok=0
+ .f j=1:1:$l(list,",") i $p(list,",",j)=rec s ok=1 q
+ .i 'ok d
+ ..s list=list_$s($l(list):",",1:"")_rec
+ ..i '$$select^LVBEPVIS(epis,"Y") d
+ ...f j=1:1:PLIST s PLIST(j)=$p($g(PLIST(j)),$c(1))
+ ...s PLIST(58)=list i $$update^LVBEPVIS(epis,"Set Receipt",$$newgroup^LVBCOM02(epis))
+ q
+ ; create receipt for single credit
+REC(bROWID) n (bROWID) s bROWID=$g(bROWID),batch=$p(bROWID,"||",1),bline=$p(bROWID,"||",2),receipt=""
+ i $$select^LVBCRBT(batch) q
+ f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ k CRBatch m CRBatch=PLIST
+ i '$$select^LVBCRBL(bROWID) d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k CRBatchLine m CRBatchLine=PLIST
+ .i $l(CRBatchLine(3)) s pctype=$$seldata^LVBCTPC($$seldata^LVBEPVIS($p(CRBatchLine(3),$c(1)),9),32)
+ .i '$l(CRBatchLine(3)) s epis="" f  s epis=$o(^TBAT(batch,bline,1,epis)) q:epis=""  i ^(epis) s pctype=$$seldata^LVBCTPC($$seldata^LVBEPVIS(epis,9),32) i pctype="I" q
+ .i pctype="Y" d
+ ..s (cash,other)=""
+ ..i $$open^LVBCRBLA(bROWID)
+ ..f  q:$$fetch^LVBCRBLA(bROWID)  d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...s:PLIST(3)="CS" cash=cash+PLIST(4)
+ ...s:PLIST(3)'="CS" other=other+PLIST(4)
+ ..i $$close^LVBCRBLA()
+ ..l +^TRCT s receipt=$g(^TRCT)+1,^TRCT=receipt l -^TRCT
+ ..s ^TRCT(receipt)=$s(CRBatch(13)="Y":"Skip",1:"")_"\"_cash_"\"_other_"\\\"_bROWID
+ ..i $l(CRBatchLine(3)) d SetRec(receipt,CRBatchLine(3))
+ ..i '$l(CRBatchLine(3)) s epis="" f  s epis=$o(^TBAT(batch,bline,1,epis)) q:epis=""  i ^(epis) d SetRec(receipt,epis)
+ ..k PLIST m PLIST=CRBatchLine s PLIST=$o(PLIST(""),-1)
+ ..s PLIST(4)=receipt i $$update^LVBCRBL(bROWID)
+ q receipt
+REPORT1 ; start audit reports
+ ; posting audit
+ i $l($g(audit)) s ROWID=$$START^PRTREP00(user,"",audit,"PAU")
+ ; banking slips
+ i $l($g(audit)),$p(Parameters,"\",1)="Y" s ROWID=$$START^PRTREP00(user,"",audit,"BSL")
+ ; Paid Bad Debtors
+ i $l($g(audit)),$p(Parameters,"\",4)="Y" s ROWID=$$START^PRTREP00(user,"",audit_"\"_$p(Parameters,"\",7),"PBD")
+ q
+REPORT2 ; start common reports
+ ; receipts
+ i $p(Parameters,"\",2)="Y" s rec=""  f  s rec=$o(^TRCT(rec)) q:rec=""  i $p(^(rec),"\")="" s ROWID=$$START^PRTREP00(user,"",rec,"REC")
+ ; Part Paid List
+ i $p(Parameters,"\",3)="Y" s ROWID=$$START^PRTREP00(user,"","","PPL")
+ ; UnPosted Batches
+ i $p(Parameters,"\",5)="Y" s ROWID=$$START^PRTREP00(user,"","","UPB")
+ ; Adjustment notes - Journal/Rebills
+ i $p(Parameters,"\",6)="Y" s ROWID=$$START^PRTREP00(user,"","J","ADN")
+ i $p(Parameters,"\",6)="Y" s ROWID=$$START^PRTREP00(user,"","R","ADN")
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBEDI02" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBEDI02 ; EDI module
+ ;
+ ; supported calls:
+ ;
+ ; $$open^LVBEDI02(type,client,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBEDI02(type,client,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBEDI02(type,client,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBEDI02(type,client,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBEDI02()
+ ; $$getall^LVBEDI02(type,client,file,Continue)
+ ;
+ ; list ALL records to be sent
+ ; PLIST - 1.Client
+ ;         2.File number
+ ;         3.Episode
+ ;         4.Test Set
+ ;         5.Date
+ ;         6.Time
+open(type,client,p2,p3,p4,p5,p6,p7,p8,p9) s type=$g(type),client=$g(client) k ^TMP($zn,$j,"open")
+ s x1="" f  s x1=$o(^TEDI("SENT-DATA",type,x1)) q:x1=""  d
+ .i $l(client),client'=x1 q
+ .s x2="" f  s x2=$o(^TEDI("SENT-DATA",type,x1,x2)) q:x2=""  d
+ ..s sort1=$p($g(^(x2)),",",1) i '$l(sort1) s sort1=" "
+ ..s sort2=$p($g(^(x2)),",",2) i '$l(sort2) s sort2=" "
+ ..s x3="" f  s x3=$o(^TEDI("SENT-DATA",type,x1,x2,"EPIS",x3)) q:x3=""  d
+ ...s x4="" f  s x4=$o(^TEDI("SENT-DATA",type,x1,x2,"EPIS",x3,x4)) q:x4=""  d
+ ....s ^TMP($zn,$j,"open",sort1,sort2,x1,x2,x3,x4)=""
+ q 0
+fetch(type,client,p2,p3,p4,p5,p6,p7,p8,p9) s type=$g(type),client=$g(client),SQLCODE=100 k PLIST
+ f j=1:1:6 s @("x"_j)=$p($g(^TMP($zn,$j,"open")),"\",j)
+ f  d:$l(x1)  q:'SQLCODE  s x1=$o(^TMP($zn,$j,"open",x1),-1) q:x1=""
+ .f  d:$l(x2)  q:'SQLCODE  s x2=$o(^TMP($zn,$j,"open",x1,x2),-1) q:x2=""
+ ..f  d:$l(x3)  q:'SQLCODE  s x3=$o(^TMP($zn,$j,"open",x1,x2,x3)) q:x3=""
+ ...f  d:$l(x4)  q:'SQLCODE  s x4=$o(^TMP($zn,$j,"open",x1,x2,x3,x4)) q:x4=""
+ ....f  s x5=$o(^TMP($zn,$j,"open",x1,x2,x3,x4,x5)) q:x5=""  d  q
+ .....s PLIST(1)=x3
+ .....s PLIST(2)=x4
+ .....s PLIST(3)=x5
+ .....s PLIST(4)=""
+ .....s PLIST(5)=$tr(x1," ")
+ .....s PLIST(6)=$tr(x2," ")
+ .....s SQLCODE=0
+ .....s x6="" f  s x6=$o(^TMP($zn,$j,"open",x1,x2,x3,x4,x5,x6)) q:x6=""  s PLIST(4)=PLIST(4)_$s($l(PLIST(4)):",",1:"")_x6
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ f j=1:1:6 s $p(^TMP($zn,$j,"open"),"\",j)=@("x"_j)
+ q SQLCODE
+ ; fetch all data
+fetchbuffer(type,client,p2,p3,p4,p5,p6,p7,p8,p9) k ^TMP($zn,$j,"fb") s type=$g(type),client=$g(client)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(type,client) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,"fb",""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,"fb",cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j,"fb") k ^TMP($zn,$j,"fb")
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(type,client,p2,p3,p4,p5,p6,p7,p8,p9) n (type,client,PLIST) k ^TMP($zn,$j,"fa") s type=$g(type),client=$g(client)
+ i $$open(type,client)
+ f cnt=1:1 q:$$fetch(type,client)  s ^TMP($zn,$j,"fa",cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,"fa",cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST m PLIST=^TMP($zn,$j,"fa")
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j,"fa")
+ q 0
+close() k ^TMP($zn,$j,"open")
+ q 0
+ ; Post-filing adjustments
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("")
+ f J=1 i $g(PLIST(J))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$select^LVBCTCLN(plist(J),"Y")
+ .s X="" i 'SQLCODE s X=PLIST(2)_$c(1)_PLIST(3)
+ .k PLIST m PLIST=plist s PLIST(J)=X k plist
+ f J=3 i $g(PLIST(J))'="",$p($g(^TEPI($p(PLIST(J),$c(1)))),"\",44)'=9 d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$select^LVBEPVIS(plist(J),"Y")
+ .s X="" i 'SQLCODE d
+ ..s X=PLIST(2)_$c(1)_$$NameFormat^LVBCOM03("PT",$p(PLIST(7),$c(1),2),PLIST(4),PLIST(3),PLIST(99),PLIST(100),PLIST(101))
+ .k PLIST m PLIST=plist s PLIST(J)=X k plist
+ f J=4 i $g(PLIST(J))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s X="" f J1=1:1:$l(plist(J),",") d
+ ..s SQLCODE=$$selskip^LVBCTTS($p(plist(J),",",J1))
+ ..i 'SQLCODE s $p(X,",",J1)=PLIST(4)
+ .k PLIST m PLIST=plist s $p(PLIST(J),$c(1),2)=X k plist
+ q
+getall(type,client,file,Continue) n (type,client,file,Continue,PLIST)
+ s type=$g(type),client=$g(client),file=$g(file),Continue=$g(Continue)
+ i Continue="" k ^TMP($zn,$j) m ^TMP($zn,$j)=^TEDI("SENT-DATA",type,client,file,"SEQ")
+ k PLIST
+ s (x,cnt,sum)="" f  s x=$o(^TMP($zn,$j,x)) q:x=""  q:(sum+$l(^TMP($zn,$j,x)))>15000  s cnt=cnt+1,PLIST(cnt)=$tr(^(x),"^\|",$c(16,17,18)),sum=sum+$l(^(x)) k ^(x)
+ s PLIST=$o(PLIST(""),-1)
+ q $s($d(^TMP($zn,$j)):0,1:100)
+]]></Routine>
+</Export>

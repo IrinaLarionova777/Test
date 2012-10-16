@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTBBXMR02" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTBBXMR02 ; ML 11/07/01 ; BloodBank XMatch report - SJOG
+ q
+ ; Parameters :  1. vtsRID
+ ;               2. Event : U-Update
+ ;                           -Authorize
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j),^TMP("PRTDR00",$j),^TMP("REPORT",$j)
+ k xHEADER d INIT,BODY(1),PRINT(1) i xSITE="E",$e(VISIT(66))'="G" d BODY(2),PRINT(2)
+ k ^TMP($zn,$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ s xSITE="W" i '$$select^MVBCFSM(1),$$UPPER^SSUTIL4(PLIST(10))["EAST" s xSITE="E"
+ q
+BODY(BBpart)    ; create report
+ s vtsRID=PAR1,epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2)
+ k VISTE i '$$getall^LVBVISTE(vtsRID) d
+ .f j=1:1:PLIST d
+ ..i PAR2="U",$p($p($p(PLIST(j),$c(2),4),$c(28),12),$c(1))'="Y" q
+ ..s x=$p($p($p(PLIST(j),$c(2),4),$c(28),13),$c(1)),VISTE(x)=$p(PLIST(j),$c(2),4)
+ i '$d(VISTE) q
+ k VISTD i '$$results^LVBVISTS(vtsRID,,,,"Y") m VISTD=PLIST
+ k VISTS i '$$select^LVBVISTS(vtsRID) m VISTS=PLIST
+ k VISIT i '$$select^LVBEPVIS(epis) m VISIT=PLIST
+ ; get doctor information
+ s doc=$p(VISIT(15),$c(1)) k DOC i '$$select^LVBCTDR(doc,"Y") m DOC=PLIST
+ s dep="",tsLM=0,tsWD=80
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ s tsWD=80 i '$$select^MVBCFLAB(1) d
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ ; print xmatch grid report
+ s $p(LINE,"_",85)="",TEXT="",UL=LINE
+ ; extract product details - one product per page
+ s (tr,ind)="" f  s ind=$o(VISTE(ind)) q:ind=""  d
+ .f j=1:1:$l(VISTE(ind),$c(28)) s @("x"_j)=$p(VISTE(ind),$c(28),j)
+ .k PACK i '$$select^LVBBBP($p(x2,$c(1))_"||"_$p(x3,$c(1))) m PACK=PLIST 
+ .s PROD(" ")=$p(PACK(8),$c(1)),PROD(" ",ind)=""
+ .i tr'="GSPI" s tr=$p(x5,$c(1))
+ ; print pack details
+ d LN^PRTDR00()
+ s product="" f  s product=$o(PROD(product)) q:product=""  d
+ .s hold=99999
+ .s ind="" f  s ind=$o(PROD(product,ind)) q:ind=""  d
+ ..f j=1:1:$l(VISTE(ind),$c(28)) s @("x"_j)=$p(VISTE(ind),$c(28),j)
+ ..i hold>x8 s hold=x8_","_x9
+ .s hold=$$exttime^SSUTIL4($p(hold,",",2))_" "_$$extdate2^SSUTIL4($p(hold,",",1))
+ . ; print blood group
+ .d BloodGrp
+ . ; insert grid
+ .d XMGrid
+ . ; pack details
+ .s (ind,cntline)="" f  s ind=$o(PROD(product,ind)) q:ind=""  d
+ ..s cntline=cntline+1
+ ..f j=1:1:$l(VISTE(ind),$c(28)) s @("x"_j)=$p(VISTE(ind),$c(28),j)
+ ..k PACK i '$$select^LVBBBP($p(x2,$c(1))_"||"_$p(x3,$c(1))) m PACK=PLIST
+ ..k TAGS i '$$getall^LVBBBPA($p(x2,$c(1))_"||"_$p(x3,$c(1))) m TAGS=PLIST 
+ ..d PackLine i cntline>9 d
+ ...s cntline="" d ADD^PRTDR00(,"#")
+ ...d BloodGrp,XMGrid
+ . ; new page for next product
+ .i $o(PROD(product))'="" d ADD^PRTDR00(,"#")
+ ; back to normal
+ d ADD^PRTDR00(,$c(27)_"(s0p12h0s0b4099T"),LN^PRTDR00()
+ ; create page for printing
+ k PLIST m PLIST=^TMP("PRTDR00",$j,"RESULT") s PLIST=$o(PLIST(""),-1)
+ d
+ .n PAR1,PAR2
+ .s PAR1="C",PAR2="XMR"
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1) i $l(%routine) x "d INIT^"_%routine
+ k ^TMP("PRTDR00",$j)
+ s page=1,^TMP("REPORT",$j,page,"TEST",vtsRID)=""
+ s PageLine="" f jLine=1:1:PLIST d
+ .i PLIST(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s PageLine="",page=page+1
+ .i PLIST(jLine)="#" s PageLine="",page=page+1,^TMP("REPORT",$j,page,"TEST",vtsRID)="" q
+ .s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ; save patient events
+ d events^LVBCOM01(epis,"XMR","Report type "_tr_"-"_$g(REPID))
+ q
+ ; print report
+ ; xPAR1 - U-User
+ ;         C-Courier
+ ; xPAR2 - User RowID/Courier
+PRINT(BBpart) 
+ s xPAR1="C",xPAR2="SJGPA4" i xSITE="E" s xPAR2="ESJGPA4" i $e(VISIT(66))="G" s xPAR2="GSJGPA4"
+ s page="" f  s page=$o(^TMP("REPORT",$j,page)) q:page=""  d  k ^TMP("REPORT",$j,page)
+ . ; print page Header
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ . ; print report
+ .f j=1:1 q:'$d(^TMP("REPORT",$j,page,"TEXT",j))  s xx=^(j) d
+ ..i xx="#" d  q
+ ... ; print page Footer
+ ...s vtsRID=PAR1
+ ...s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ ...i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ ...d ADDLINE^PRTREP00(REPID,"PRT",xx)
+ ... ; print page Header
+ ...i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xx)
+ . ; print page Footer
+ .s vtsRID=PAR1
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ q
+PackLine 
+ i xSITE="E" d PackLineE
+ i xSITE="W" d PackLineW
+ q
+PackLineE 
+ d ADD^PRTDR00(,$c(27)_"(s1p10v0s0b4099T")
+ d ADD^PRTDR00(,$c(27)_"&a"_(cntline*180+3500)_"V")
+ d ADD^PRTDR00(,"~NORMAL")
+ d ADD^PRTDR00(,$c(27)_"&a360H"_$e($p(PACK(8),$c(1),2),1,29))
+ d ADD^PRTDR00(,"~BOLD")
+ d ADD^PRTDR00(,$c(27)_"&a1500H"_$p(PACK(2),$c(1)))
+ d ADD^PRTDR00(,"~NORMAL")
+ d ADD^PRTDR00(,$c(27)_"&a2200H"_$p($p(PACK(9),$c(1),2),"/"))
+ d ADD^PRTDR00(,$c(27)_"&a300h"_(cntline*180+3590)_"V")
+ d ADD^PRTDR00(,$c(27)_"%1BSP1;PW0.2;PD;PR7200,0")
+ d ADD^PRTDR00(,$c(27)_"%1A")
+ i TAGS d
+ .d ADD^PRTDR00(,$c(27)_"(s1p6v0s0b4099T")
+ .d ADD^PRTDR00(,$c(27)_"&a"_(cntline*180+3570)_"V")
+ .d ADD^PRTDR00(,"~NORMAL")
+ .d ADD^PRTDR00(,$c(27)_"&a360H")
+ .f j=1:1:TAGS d ADD^PRTDR00(,$s(j>1:", ",1:"")_$p(TAGS(j),$c(2),2))
+ q
+PackLineW 
+ d ADD^PRTDR00(,$c(27)_"&a"_(cntline*230+3670)_"V")
+ d ADD^PRTDR00(,$c(27)_"&a535H"_$e($p(PACK(8),$c(1),2),1,29))
+ d ADD^PRTDR00(,$c(27)_"&a1435H"_$p(PACK(2),$c(1)))
+ d ADD^PRTDR00(,$c(27)_"&a2035H"_$p($p(PACK(9),$c(1),2),"/"))
+ q
+ ; print blood group
+BloodGrp 
+ i $$open^LVBANTRG("",VISIT(20))
+ f  q:$$fetch^LVBANTRG("",VISIT(20))  d
+ .s desc=$p(PLIST(6),$c(1)) f  q:$e(desc,$l(desc))'=" "  s desc=$e(desc,1,$l(desc)-1)
+ .i $l(desc),'$d(anti(desc)) s antidate(PLIST(7),desc)="",anti(desc)=""
+ i $$close^LVBANTRG()
+ i xSITE="E" d BloodGrpE i $d(anti) d
+ .d ADD^PRTDR00(,"~BOLD")
+ .d ADD^PRTDR00(,$c(27)_"&a400HAntibodies"_$c(13))
+ .d ADD^PRTDR00(,"~NORMAL")
+ .d ADD^PRTDR00(tsLM+18," :")
+ .s desc="" f  s desc=$o(anti(desc)) q:desc=""  d ADD^PRTDR00(," "_desc_" ")
+ i xSITE="W" d BloodGrpW d
+ .s (cnt,msg,date)="" f  s date=$o(antidate(date)) q:date=""  d  q:cnt=4
+ ..s datex=$$extdate2^SSUTIL4(date)
+ ..s desc="" f  s desc=$o(antidate(date,desc)) q:desc=""  d  q:cnt=4
+ ...s cnt=cnt+1,msg=desc_" Identified "_datex
+ ...d ADD^PRTDR00(,$c(27)_"&a400HAntibodies"_$c(13))
+ ...d ADD^PRTDR00(tsLM+20," : "_msg),LN^PRTDR00()
+ d BloodGrpC
+ q
+BloodGrpC ; common
+ d LN^PRTDR00()
+ ; 
+ i $$getall^LVBDEBBT($p(VISIT(20),$c(1)))
+ s bbtag="" f j=1:1:PLIST s bbtag=bbtag_$s($l(bbtag):",",1:"")_$p(PLIST(j),$c(2),2)
+ i $l(bbtag) d
+ .d ADD^PRTDR00(,"~BOLD")
+ .d ADD^PRTDR00(,$c(27)_"&a400HSpecial Requirements")
+ .d ADD^PRTDR00(,"~NORMAL")
+ .d ADD^PRTDR00(tsLM+18," : "_bbtag),LN^PRTDR00()
+ s xxx=0 f item="L0140","L0142" s result="" d
+ .f j=1:1:VISTD s ti=$p(VISTD(j),$c(1),2) i ti=item d  q
+ ..s result=$p(VISTD(j),$c(1),3) i $l(result),'$$select^LVBCTTCT(item_"||"_result) d
+ ...s result=$tr(PLIST(3),"|"," ") k PLIST s PLIST(1)="1"_$c(1)_item_$c(1)_result,PLIST=1
+ ...s result="" i '$$COMMENTS^LVBCOM01(,test,"P") d
+ ....s result="" i PLIST d
+ .....i 'xxx s result="Comment : "
+ .....f j1=1:1:PLIST s result=result_$s($l(result):"|",1:"")_PLIST(j1)
+ ...f j1=1:1:$l(result,"|") d ADD^PRTDR00(tsLM,$p(result,"|",j1)),LN^PRTDR00()
+ ..i $l($p(VISTD(j),$c(1),4)) k PLIST s PLIST(1)="1"_$c(1)_item_$c(1)_$p(VISTD(j),$c(1),4),PLIST=1 d
+ ...s result="" i '$$COMMENTS^LVBCOM01(,test,"P") d
+ ....s result="" i PLIST d
+ .....i 'xxx s result="Comment : "
+ .....f j1=1:1:PLIST s result=result_$s($l(result):"|",1:"")_PLIST(j1)
+ ...i $l(result) f j1=1:1:$l(result,"|") d ADD^PRTDR00(tsLM,$p(result,"|",j1)),LN^PRTDR00()
+ q
+BloodGrpW ; west
+ d ADD^PRTDR00(,$c(27)_"(s0p12h0s0b4099T")
+ d ADD^PRTDR00(,$c(27)_"&a1000h1500V")
+ f j=1:1:3 d LN^PRTDR00()
+ i $l(VISIT(69)) d
+ .d ADD^PRTDR00(tsLM+5,"Blood Group")
+ .s xx=$p(VISIT(69),$c(1),2) i $l($p(xx,"/",2)) s xx=$p(xx,"/",2)
+ .d ADD^PRTDR00(tsLM+25," : "_xx)
+ .d LN^PRTDR00()
+ i tr'="CL" d
+ .d ADD^PRTDR00(tsLM+5,"Antibody Screen")
+ .s result="",item="L0004"
+ .f j=1:1:VISTD s ti=$p(VISTD(j),$c(1),2) i ti=item d  q
+ ..s result=$p(VISTD(j),$c(1),3) i $l(result),'$$select^LVBCTTCT(item_"||"_result) d
+ ...s result=PLIST(3) f j1=1:1:$l(result,"|") d ADD^PRTDR00(tsLM+25," : "_$p(result,"|",j1)),LN^PRTDR00()
+ q
+BloodGrpE ; east
+ ; line - 1
+ d ADD^PRTDR00(,$c(27)_"(s0p12h0s3b4099T")
+ d ADD^PRTDR00(,$c(27)_"&a3200HCollected : ")
+ d ADD^PRTDR00(,"~NORMAL")
+ d ADD^PRTDR00(tsLM+58,$$extdate2^SSUTIL4(VISIT(12))_"  "_$$exttime^SSUTIL4(VISIT(13)))
+ d LN^PRTDR00()
+ ; line - 2
+ d ADD^PRTDR00(,"~BOLD")
+ d ADD^PRTDR00(,$c(27)_"&a400HPatient Blood Group")
+ d ADD^PRTDR00(,"~NORMAL")
+ i $l(VISIT(69)) d
+ .s xx=$p(VISIT(69),$c(1),2) i $l($p(xx,"/",2)) s xx=$p(xx,"/",2)
+ .d ADD^PRTDR00(tsLM+18," : "_xx)
+ d ADD^PRTDR00(,"~BOLD")
+ d ADD^PRTDR00(,$c(27)_"&a3200HReceived  : ")
+ d ADD^PRTDR00(,"~NORMAL")
+ d ADD^PRTDR00(tsLM+58,$$extdate2^SSUTIL4(VISIT(61))_"  "_$$exttime^SSUTIL4(VISIT(62)))
+ d LN^PRTDR00()
+ ; line - 3
+ d ADD^PRTDR00(,"~BOLD")
+ d ADD^PRTDR00(,$c(27)_"&a400HAntibody Screen")
+ d ADD^PRTDR00(,$c(27)_"&a3200HLab No    : ")
+ d ADD^PRTDR00(,"~NORMAL")
+ d ADD^PRTDR00(tsLM+58,VISIT(2))
+ d ADD^PRTDR00(,$c(13))
+ s result="",item="L0004"
+ f j=1:1:VISTD s ti=$p(VISTD(j),$c(1),2) i ti=item d  q
+ .s result=$p(VISTD(j),$c(1),3) i $l(result),'$$select^LVBCTTCT(item_"||"_result) d
+ ..s result=PLIST(3) f j1=1:1:$l(result,"|") d ADD^PRTDR00(tsLM+18," : "_$p(result,"|",j1)),LN^PRTDR00()
+ i '$l(result) d LN^PRTDR00()
+ q
+XMGrid ; print xm grid
+ i xSITE="E" d XMGridE
+ i xSITE="W" d XMGridW
+ q
+XMGridW ; west
+ d ADD^PRTDR00(,$c(27)_"(s1p12v0s1b4101T")
+ d ADD^PRTDR00(,$c(27)_"&a500h3150VFollowing units are compatible with the specimen supplied and available until "_hold)
+ d ADD^PRTDR00(,$c(27)_"(s0p10v0s0b4101T"),ADD^PRTDR00(,$c(27)_"&a1000h1500V")
+ s x="" f  s x=$o(^SS("QDR","SJOG-XMR",x)) q:x=""  d ADD^PRTDR00(,^(x))
+ d ADD^PRTDR00(,$c(27)_"&a0h3450V"),LN^PRTDR00()
+ f i="26:Bag","46:Commencement","64:Commenced by","82:Reaction" d ADD^PRTDR00($p(i,":"),$p(i,":",2))
+ d LN^PRTDR00()
+ f i="11:Product","25:Number","36:Group","48:Date/Time","59:Signature","71:Signature","83:Yes/No" d ADD^PRTDR00($p(i,":"),$p(i,":",2))
+ d LN^PRTDR00()
+ q
+XMGridE ; east
+ i BBpart=1 s x="" f  s x=$o(^SS("QDR","SJOG-XMR-G1",x)) q:x=""  d ADD^PRTDR00(,^(x))
+ i BBpart=2 s x="" f  s x=$o(^SS("QDR","SJOG-XMR-G2",x)) q:x=""  d ADD^PRTDR00(,^(x))
+ s (dt,tm)=""
+ s item="L0068" f j=1:1:VISTD s ti=$p(VISTD(j),$c(1),2) i ti=item s dt=$p($p(VISTD(j),$c(1),3),"\",1) q
+ s item="L0067" f j=1:1:VISTD s ti=$p(VISTD(j),$c(1),2) i ti=item s tm=$p($p(VISTD(j),$c(1),3),"\",1) q
+ s hold=tm_"  "_$$extdate2^SSUTIL4(dt)
+ d ADD^PRTDR00(,$c(27)_"&a2000h6000V"_hold)
+ d ADD^PRTDR00(,$c(27)_"(s1p14v0s3b4099T")
+ d ADD^PRTDR00(,$c(27)_"&a400h1650VCrossmatch Report")
+ i tr="GSPI" d
+ .d ADD^PRTDR00(,$c(27)_"(s1p14v0s3b4099T")
+ .d ADD^PRTDR00(,"~BOLD")
+ .d ADD^PRTDR00(,$c(27)_"&a300h3000VUNCROSSMATCHED BLOOD ABO & Rh GROUP COMPATIBLE ONLY")
+ .d ADD^PRTDR00(,"~NORMAL")
+ .d ADD^PRTDR00(,$c(27)_"(s0p12h0s3b4099T")
+ d ADD^PRTDR00(,$c(27)_"(s0p12h0s0b4099T")
+ d ADD^PRTDR00(,$c(27)_"&a0h1500V")
+ q
+]]></Routine>
+</Export>

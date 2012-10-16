@@ -1,0 +1,422 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MXXGRE05" type="INT" languagemode="0" generated="1"><![CDATA[
+MXXGRE05(MI01A,SPFORM,SCANMODE) ;;IAN@Trak|MXXGRE05|MAXM and STKS WITH HANDSHAKE|Cache' 2.0 ; 25 Sep 98  09:55AM
+ ;;(c) Copyright TRAK Systems Pty Ltd - march 1998
+ ;
+ ; Unidirectional interface, with MAXM running in maxm mode
+ ; A Pioneering interface!
+ ; Don't know why I didn't think of this before.  All that Block crap
+ ; with the number of blocks, test type, number of tests -
+ ;                 IT'S ALL CRAP!!!!
+ ;
+ ; So this interface lists in the line DATA at the bottom all the
+ ; tests listed
+ ; in the transmitted data of the haematology instrument.
+ ; Obviously only working if there is positive test ID in the
+ ; transmission, this uses the tests in DATA as $P in the
+ ; transmission and extracts the results alot more easily than
+ ; farting about with positions in blocks etc
+ ;
+ ; It should also work with the STKS.  mmmhh!  we'll see!
+ ;                               Ian
+ ;                               (March 1998)
+ ;
+ ; Bidirectional mode added, Oct 1998
+ ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+ S $ZT="ERROR^MXXGRE05"
+ ;S MI01A="MAXM"
+ I '$$INIT^MXXGRE99() Q
+ ;
+ ;
+ For  Do Main If $$SHUTDOWN^MXDA() Quit
+ Close MIA2
+ Quit
+ ;
+Main I $$SYNCH^MXXGRE99(SYN,30)=1 D  Q
+ . ;Q
+ . S MSG="Uploading ..." D TRACE
+ . D UPLOAD
+ . Q
+ ;
+ S MSG="Synchronised.  Acknowledge with SYN" D TRACE
+ ;
+ ; send a SYN in reply, and get it to send the Number of
+ ; Blocks
+ D SEND^MXXGRE99(syn,0,0)
+ ;
+ ; Now read the number of blocks (2 characters)
+ R NBL#2:10 E  W NAK,! Q
+ S NBL=$ZHEX(NBL)
+ I NBL<1 W NAK,! Q
+ D SEND^MXXGRE99(ack,0,0)
+ S MSG="Number of Blocks expected: "_NBL D TRACE
+ K XW S ER=0
+ ;
+ ; A10 will read the entire specimen into local "R"
+ ; which can be processed all in one go into XW, and TMIF
+ ;
+ S XXW=""
+M1 F BLOCK=1:1:NBL D GETBLOCK I ER Q
+ I ER S ER=0 D SEND^MXXGRE99(syn,0,0) K XW G M1
+ I $$SHUTDOWN^MXDA() G MAINX
+ ;
+ ; at the end we always expect a SYN, otherwise something
+ ; has gone wrong
+ R *R:2
+ I R'=SYN D SEND^MXXGRE99(syn,0,0) K XW G M1
+ ;
+ ; compile results from the list of test codes in the line tag DATA
+ ; any other data can be extracted by including the transmitted
+ ; TAG name
+ ;
+ k scatres
+ s scatres("DIFF")=1 f test="VAL1","VAL2","VAL3","VAL4","VAL5","RBCH","PLTH","PLTF","V","C","S" s scatres(test)="0"
+ S RES=""
+ S DATA=$P($T(DATA),";;",2)
+ S XXW=$TR(XXW,$C(13,10,0),"\")
+ F I=1:1:$L(DATA,",") D
+ . S TEST=$P(DATA,",",I)
+ . S FLAG=""
+ . S TRES=$TR($P($P(XXW,TEST,2),"\",1)," ")
+ . ;BREAK
+ . I TEST="ID1" S SPID1=TRES Q
+ . I TEST="ID2" S SPID2=TRES Q
+ . i TEST="VAL1"!(TEST="VAL2")!(TEST="VAL3")!(TEST="VAL4")!(TEST="VAL5") d SCATPLOT(TEST,TRES) q
+ . i TEST="\V "!(TEST="\C ")!(TEST="\S ") S TEST=$E(TEST,2) D SCATPLOT(TEST,TRES) q
+ . i TEST="RBCH"!(TEST="PLTH")!(TEST="PLTF")!(TEST="DIF1")!(TEST="DIF2") d SCATPLOT(TEST,TRES) q
+ . ; At this point, TRES must be a numeric value, so we must
+ . ; guarantee this; one "0" should be insert at the begining of
+ . ; the converted value to provid a proper cientific notation
+ . ; in case of fractional values less than 1; NEGATIVE values
+ . ; must be handle as well.
+ . ;
+ . S TRES=+TRES,TRFC=$E(TRES,1)
+ . S:(TRFC=".") TRES=0_TRES
+ . S:(TRFC="-")&($E(TRES,2)=".") TRES="-0"_$E(TRES,2,255)
+ . ;
+ . S RES=RES_TEST_"|"_TRES_"|"_FLAG_"\"
+ . Q
+ ;
+ ;
+ ;S MSG="RES = "_RES D TRACE
+ ;
+ I +SPID1=0,+SPID2=0 D  G M2
+ . S MSG="Invalid Specimen Number(s) - BOTH NULL " D TRACE
+ I +SPID1=0,+SPID2'=0 S SPID1=SPID2
+ ;
+ I SPID1'?@SPFORM D  G M2
+ . S MSG="Invalid specimen number format "_SPID1
+ . D TRACE
+ . Q
+ ;
+ ; This is the stuff to control the specimen type functions
+ ; The sites that use this, have the specimen type encoded
+ ; into barcode.
+ ; anything that does not match the specimen type is rejected
+ ; however, you can delete or activate as necessary
+ S SPTYPE=$E(SPID1,1)
+ ;I SPTYPE'=2 D  G M2
+ ;. S SPTYPE=$G(^TMIF(MI01A,32,"LABTYPES",SPTYPE))
+ ;. S MSG="Received specimen type "_SPTYPE
+ ;. Q
+ ;
+ S SPID1=+$E(SPID1,2,10)
+ ;
+ S MSG="Filing Specimen: "_SPID1_"|<"_RES_">" D TRACE
+ d file^MIF000(MI01A,SPID1,SPID1,"",RES,"","","")
+ d FILESCAT
+ ;
+M2 D SEND^MXXGRE99(ack,0,0)
+MAINX K XW,XXW,R,GRP,SUB,N,NBL,DATA
+ Q
+ ;
+ ;
+GETBLOCK S MSG="Expecting Block # "_BLOCK D TRACE
+ S tBLOCK=$ZH(BLOCK) I $L(tBLOCK)<1 S tbLOCK="0"_tBLOCK
+ ; synch on STX (every block has one)
+ I $$SYNCH^MXXGRE99(STX,10)=1 Q
+ ;
+ ; then get the rest, terminating on ETX, but not including
+ ; etx in the message.
+ ; the last "0" indicates that READ should not file the R in TMIF(,99)
+ S ER=$$READ^MXXGRE99(ETX,0,.R,1)
+ I ER=1 Q
+ ;
+ ; S MSG="R:<"_R_">" D TRACE
+ S RBN=$E(R,1,2)
+ S MSG="Got Block # "_RBN D TRACE
+ I RBN'=tBLOCK S MSG="M I S M A T C H   in Block numbers" D TRACE
+ ; Checksum verification process
+ ;
+ S RCK=$E(R,$L(R)-3,255)
+ S MSG="Received Checksum = "_RCK D TRACE
+ S R=$E(R,3,$L(R)-4)
+ ; S CCK=$$STKS^MXXCRC(R)
+ ; S MSG="  Calc'd Checksum = "_CCK D TRACE
+ ; I CCK'=RCK D SEND^MXXGRE99(nak,0,0) D  q
+ ; . S MSG="Sending NAK"
+ ; . S BLOCK=BLOCK-1
+ ; . Q
+ ;
+ s ER=0
+ ;
+ ;;; ??? ;;; S XXW=XXW_RS
+ S XXW=XXW_R
+ D SEND^MXXGRE99(ack,0,0)
+ Q
+ ;
+UPLOAD ; Upload patient information to MAXM's DMS
+ ;
+ ; construct the data fields, concatenate and
+ ; carve into blocks
+ ; note the number of blocks and pad to 2 hex
+ S MSG="Scanning ..." D TRACE
+ D ^MXXGRE97(MI01A)
+ ;
+ ; test it first
+ ;I $G(SENT) Q
+ ;
+ ;S MSG="Continuing .... (SENT '= 1)" D TRACE
+ I '$D(soh) D
+ . S soh=$C(1)
+ . S stx=$c(2)
+ . s etx=$c(3)
+ . S MI01A="MAXM"
+ . q
+ ;
+ i '$O(^XW($J,"SEND","")) S MSG="Nothing in SEND" D TRACE Q
+ S T=$C(13,10)
+ ; The intro field tells it to add to the worklist
+ ; WL = Worklist
+ ; AD = Add
+ ;
+ ; Number of fields will always be 8 + intro = 9
+ S NUMFIELDS="06"
+ ;
+ S PAD="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+ S PREAMBLE=soh_NUMFIELDS_T
+ S INTRO="WLAD"_T
+ S SMP="SMP"_T
+ K DATA
+ ;
+ ; This is where you construct individual packages from
+ ; the XW($J,"SEND")
+ ; Now I am adding another 8 fields
+ S SPID=""
+ S MES=$O(^TMIF(MI01A,15,""),-1)+1
+ F  S SPID=$O(^XW($J,"SEND",SPID)) Q:SPID=""  D
+ . I '$$DEMOGS(SPID) D  Q
+ . . S MSG="No Demographics for SPID "_SPID
+ . . D TRACE
+ . . Q
+ . ;
+ . S MSG="Adding SPID "_SPID D TRACE
+ . S CP="CP"_"000202"_T
+ . S SN="SN"_"111111"_T
+ . S I1="I1"_SPID_T
+ . S I2="I2"_SNM_T
+ . S BD="BD"_DOB_T
+ . S SX="SX"_SEX_T
+ . S LN="LN"_LOCN_T
+ . S PH="PH"_PHY_T
+ . S U1="U1"_SNM_T
+ . S U2="U2"_T
+ . S U3="U3"_T
+ . S C1="C1"_T
+ . S C2="C2"_T
+ . S SPACES="                                                                                                "
+ . ;
+ . S DATA=PREAMBLE_INTRO_SMP_I1_I2_BD_SX_LN_PH_U1_U2
+ . ; Pack into data blocks and count the number of blocks
+ . F I=1:1 Q:'$L(DATA)  D
+ . . S MSG="Data: ("_$l(DATA)_")"_DATA D TRACE
+ . . S BLOCK=$ZH(I) I $L(BLOCK)<2 S BLOCK="0"_BLOCK
+ . . S NUMBLOCKS=BLOCK
+ . . S t1=$E(DATA_SPACES,1,128)
+ . . S MSG="Length: "_$l(t1) D TRACE
+ . . S CRC=$$STKS^MXXCRC(t1)
+ . . S DATA(I)=$c(2)_BLOCK_t1_CRC_$c(3)
+ . . S ^TMIF(MI01A,17,MES)=DATA(I)
+ . . S ^TMIF(MI01A,10,MES)=DATA(I)
+ . . S ^TMIF(MI01A,10)=MES_"\"_(+$H)
+ . . S DATA=$E(DATA,129,9999)
+ . . Q
+ . ;
+ . S MSG="Sending ..." D TRACE
+ . D SEND
+ . ;I 'SENT S MSG=SPID_"  NOT Sent" D TRACE Q
+ . K ^XW($J,"SEND",SPID)
+ Q
+ ;
+ ;  Test block, if necessary.
+TEST S I1="I1IDENTIFY19990001"_T        ; 1       16 MAX
+ S I2="I2IDENTIFY29990001"_T        ; 2       16 MAX
+ S BD="BD12/31/1989"_T              ; 3 DOB - 10 MAX
+ S SX="SXM"_T                       ; 4 SEX - 1 MAX
+ S LN="LNDUMMYXXXLOCATION"_T        ; 5 LOC - 16 MAX
+ S PH="PHDUMMYXXXXXXXXPHYSICIAN"_T  ; 6 PHY - 22 MAX
+ S U1="U1DUMMYXXXXSURNAME"_T        ; 7 SNM - 16 MAX
+ S U2="U2DUMMYXXXFORENAME"_T        ; 8 FNM - 16 MAX
+ S U3="U3DUMMYXXXXXXXXXXX"_T        ;
+ ; preamble contains the number of fields that follow the
+ ; preamble.  i.e. 8 fields plus 8 data fields
+ ;
+ S DATA=PREAMBLE_INTRO_I1_I2_BD_SX_LN_PH_U1_U2
+ ;
+ ; carve the concatenated data into blocks of 128, and
+ ; terminate with the CRC
+ ;
+ F I=1:1 Q:'$L(DATA)  D
+ . S BLOCK=$ZH(I) I $L(BLOCK)<2 S BLOCK="0"_BLOCK
+ . S NUMBLOCKS=BLOCK
+ . S t1=$E(DATA,1,128)
+ . S CRC=$$STKS^MXXCRC(t1)
+ . S DATA(I)=$c(2)_BLOCK_t1_CRC_$c(3)
+ . S DATA=$E(DATA,129,999)
+ . Q
+ ;
+ D SEND
+ Q
+ ;
+ ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+ ;=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+ ; Open comms with ENQ
+ ; a reply of ENQ means its ready to take the messages
+ ; anything else and its not ready
+ ; actually if it sends SYN (22) its not ready, but if it sends
+ ; anyting other that 6 we can't proceed, so the result is the same
+ ;
+SEND ;
+ S MSG="IN SEND ..." D TRACE
+ S NEXT=$O(^IAN(""),-1)+1
+ M ^IAN($ZN,NEXT)=DATA
+ K ^IAN($ZN,NEXT-50)
+ ;
+ S SENT=0
+ S LOOP=0
+LOOP S LOOP=LOOP+1
+ I LOOP>2 D  Q
+ . S MSG="tried to send 3 times and failed.  Quitting"
+ . D TRACE
+ . Q
+ ;
+ D SEND^MXXGRE99(enq,0,0)
+ R *ANS:5 E  D  Q
+ . S MSG="Timeout waiting for reply after sending ENQ"
+ . D TRACE
+ . Q
+ ;
+ I ANS'=5 D  Q
+ . S MSG="Expected enq (5), but received "_ANS_" ("_$C(ANS)_")"
+ . D TRACE
+ . Q
+ ;
+ S MSG="Acked" D TRACE
+ ; now tell it how many blocks there are to receive
+ D SEND^MXXGRE99(NUMBLOCKS,5,5)
+ I 'acked D  Q
+ . S MSG="No ACK received.  Quitting"
+ . D TRACE
+ . Q
+ ;
+ ; Now send the data, thats already packaged up nicely
+ S LINE="",QUIT=0
+ F  S LINE=$O(DATA(LINE)) Q:LINE=""  Q:QUIT  D
+ . S DATA=$G(DATA(LINE))
+ . I DATA="" D  Q
+ . . S MSG="Data problem in array DATA:  Null entry"
+ . . D TRACE
+ . . Q
+ . ;
+ . D SEND^MXXGRE99(DATA,30,5)
+ . I 'acked D  Q
+ . . S QUIT=1
+ . . S MSG="No ACK after sending DATA.   Aborting Transfer"
+ . . D TRACE
+ . . Q
+ . ;
+ ;
+ I QUIT Q
+ ;
+ ; Tell it you have finished by sending an ENQ
+ D SEND^MXXGRE99(enq,0,0)
+ ; then expect and ENQ to say OK
+ R *ANS:5 E  D  Q
+ . S MSG="Timeout after sending last ENQ"
+ . D TRACE
+ . Q
+ ;
+ ; Then it sends a presentation level response to say
+ ; whether it accepted the message or not
+ I $$SYNCH^MXXGRE99(DLE,30)=1 Q
+ R *ANS:5 E  D  Q
+ . S MSG="Timeout after DLE.  quitting"
+ . D TRACE
+ . Q
+ ;
+ S ANS=$C(ANS)
+ I "ABCD"'[ANS D  Q
+ . S MSG="Expected A, B, C or D.   Got "_ANS
+ . D TRACE
+ . Q
+ ;
+ I ANS="C" S MSG="Received C.  Need to retry." D TRACE G LOOP
+ I "BD"[ANS D
+ . S MSG="Data rejected. "_ANS
+ . D TRACE
+ . Q
+ ;
+ I ANS="A" S MSG="Data ACCEPTED." D TRACE
+ S SENT=1
+ Q
+ ;
+DEMOGS(spid) 
+ S demogs=0
+ S t1=$G(^TEPI(spid))
+ I t1="" S demogs=0 G DEMOGSX
+ S SNM=$TR($P(t1,"\",1),GREEK,ENGLI)
+ S FNM=$TR($P(t1,"\",2),GREEK,ENGLI)
+ S SEX=$P(t1,"\",3) I "MF"'[SEX S SEX="U"
+ S tDOB=$P(t1,"\",4)
+ I 'tDOB S DOB=""
+ I tDOB D
+ . S %DN=tDOB
+ . D 300^%DO
+ . S DOB=$E(%DS,5,6)_"/"_$E(%DS,7,8)_"/"_$E(%DS,1,4)
+ . Q
+ ;
+ S LOCN="LOCATION"
+ S PHY="PHYSICIAN"
+ ;
+ S demogs=1
+ ;
+DEMOGSX Q demogs
+ ;
+TRACE D TRACE^MXXGRE99
+ Q
+ ;
+ERROR S ZE=$ZE
+ S MSG=ZE
+ D TRACE
+ ;D ^%ET
+ Q
+ ;
+SCATPLOT(test,tres) ; extract scatter plot data in 64 character lines
+ s test=$s(test="DIF1":"DIFF",test="DIF2":"DIFF",1:test)
+ i $e(test,1,3)="VAL" s scatres(test)=tres q
+ s block128=$l(tres)/64 f i=1:1:block128 d
+ .s res=$e(tres,1,64),tres=$e(tres,65,99999)
+ .s num=scatres(test),scatres(test)=num+1
+ .s scatres(test,num)=test_"|"_num_"|"_res_"\"
+ q
+FILESCAT ; file scatter plot data
+ s scatres=""
+ s scatres="DIFF|0|"_scatres("VAL1")_$c(20)_scatres("VAL2")_$c(20)_scatres("VAL3")_$c(20)_scatres("VAL4")_$c(20)_scatres("VAL5")_"\"
+ f test="DIFF","RBCH","PLTH","PLTF","V","C","S" d
+ .s num="" f  s num=$o(scatres(test,num)) q:num=""  s scatres=scatres_scatres(test,num)
+ i $l(scatres) d filesp^MIF000(MI01A,SPID1,SPID1,scatres)
+ q
+DATA ;;ID1,ID2,WBC,RBC,HGB,HCT,MCV,MCH,MCHC,RDW,PLT,PCT,MPV,PDW,LY#,MO#,NE#,EO#,BA#,LY%,MO%,NE%,EO%,BA%,\V ,\C ,\S ,VAL1,VAL2,VAL3,VAL4,VAL5,RBCH,PLTH,PLTF,DIF1,DIF2
+]]></Routine>
+</Export>

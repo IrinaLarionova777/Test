@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTBBXMR20" type="INT" languagemode="0"><![CDATA[
+PRTBBXMR20 ; ML 11/07/01 ; BloodBank XMatch report - Abbott pathology
+ q
+ ; Parameters :  1. vtsRID
+ ;               2. Event : U-Update
+ ;                           -Authorize
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j),^TMP("PRTDR00",$j),^TMP("REPORT",$j)
+ k xHEADER d INIT,BODY
+ k ^TMP($zn,$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ q
+BODY ; create report
+ s vtsRID=PAR1,epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2)
+ k VISTE i '$$getall^LVBVISTE(vtsRID) d
+ .f j=1:1:PLIST d
+ ..i PAR2="U",$p($p($p(PLIST(j),$c(2),4),$c(28),12),$c(1))'="Y" q
+ ..s tr=$p($p($p(PLIST(j),$c(2),4),$c(28),5),$c(1)) i $l(tr) s tr=$s(tr="CL":"CL",1:" "),x=$o(VISTE(tr,""),-1)+1,VISTE(tr,x)=$p(PLIST(j),$c(2),4)
+ i '$d(VISTE) q
+ k VISTD i '$$results^LVBVISTS(vtsRID,,,,"Y") m VISTD=PLIST
+ k VISTS i '$$select^LVBVISTS(vtsRID) m VISTS=PLIST
+ k VISIT i '$$select^LVBEPVIS(epis) m VISIT=PLIST
+ ; get doctor information
+ s doc=$p(VISIT(15),$c(1)) k DOC i '$$select^LVBCTDR(doc,"Y") m DOC=PLIST
+ s dep="",tsLM=0,tsWD=80
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ s tsWD=80 i '$$select^MVBCFLAB(1) d
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ s tr="" f  s tr=$o(VISTE(tr)) q:tr=""  d BODY1(tr),PRINT
+ q
+ ; tr : CL  - Direct Issue
+ ;      XM  - X-Match
+ ;      I   - Issue
+ ;      HI  - Hospital Issue
+ ;      GS  - Group Specific Issue
+ ;      W   - Issue to DPH
+ ;
+BODY1(tr) s tr=$g(tr)
+ ; print xmatch grid report
+ s $p(LINE,"_",85)="",TEXT="",UL=LINE,cntline="" 
+ ; extract product details - one product per page
+ s ind="" f  s ind=$o(VISTE(tr,ind)) q:ind=""  d
+ .f j=1:1:$l(VISTE(tr,ind),$c(28)) s @("x"_j)=$p(VISTE(tr,ind),$c(28),j)
+ .k PACK i '$$select^LVBBBP($p(x2,$c(1))_"||"_$p(x3,$c(1))) m PACK=PLIST 
+ .s product=$p(PACK(8),$c(1))
+ .s sort=$$seldata^LVBBBBP(product,8)
+ .i '$l(sort)!(sort="N") s sort="N-"_product
+ .s PROD(sort)="",PROD(sort,ind)=product
+ ; print pack details
+ d LN^PRTDR00()
+ s sort="" f  s sort=$o(PROD(sort)) q:sort=""  d
+ .s cntline=""
+ . ; print blood group
+ .d BloodGrp
+ . ; insert title boxes
+ .d Title
+ . ; pack details
+ .s ind="" f  s ind=$o(PROD(sort,ind)) q:ind=""  d
+ ..s product=PROD(sort,ind)
+ ..f j=1:1:$l(VISTE(tr,ind),$c(28)) s @("x"_j)=$p(VISTE(tr,ind),$c(28),j)
+ ..k PACK i '$$select^LVBBBP($p(x2,$c(1))_"||"_$p(x3,$c(1))) m PACK=PLIST
+ ..s cntline=cntline+1,vert=(comm+cntline-1)*110+1400
+ ..d ADD^PRTDR00(,$c(27)_"&a0h"_vert_"V")
+ ..s xx=$p(PACK(8),$c(1),2) i xx["/" s xx=$p(xx,"/",2)
+ ..d ADD^PRTDR00(,$c(13))
+ ..d ADD^PRTDR00(tsLM,xx)
+ ..d ADD^PRTDR00(28,$p(PACK(2),$c(1)))
+ ..d ADD^PRTDR00(45,$p(PACK(9),$c(1),2))
+ ..d ADD^PRTDR00(70,$s(x4="C":"Yes",x4="A":"Yes",x4="I":"No",1:""))
+ ..i cntline>7 d  q
+ ...s cntline="" d ADD^PRTDR00(,"#")
+ ...d BloodGrp,Title
+ ..d LN^PRTDR00()
+ .d TestCom
+ . ; new page for next product
+ .i $o(PROD(sort))'="" d ADD^PRTDR00(,"#")
+ ; back to normal
+ d ADD^PRTDR00(,$c(27)_"(s0p12h0s0b4101T"),LN^PRTDR00()
+ ; create page for printing
+ k PLIST m PLIST=^TMP("PRTDR00",$j,"RESULT") s PLIST=$o(PLIST(""),-1)
+ d
+ .n PAR1,PAR2
+ .s PAR1="C",PAR2="XMR"
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1) i $l(%routine) x "d INIT^"_%routine
+ k ^TMP("PRTDR00",$j)
+ s page=1,^TMP("REPORT",$j,page,"TEST",vtsRID)=""
+ s PageLine="" f jLine=1:1:PLIST d
+ .i PLIST(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s PageLine="",page=page+1
+ .i PLIST(jLine)="#" s PageLine="",page=page+1,^TMP("REPORT",$j,page,"TEST",vtsRID)="" q
+ .s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ; save patient events
+ d events^LVBCOM01(epis,"XMR","Report type "_tr_"-"_$g(REPID))
+ q
+PRINT ; print report
+ ; xPAR1 - U-User
+ ;         C-Courier
+ ; xPAR2 - User RowID/Courier
+ s xPAR1="C",xPAR2="XMR"
+ s page="" f  s page=$o(^TMP("REPORT",$j,page)) q:page=""  d  k ^TMP("REPORT",$j,page)
+ . ; print page Header
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ . ; print report
+ .f j=1:1 q:'$d(^TMP("REPORT",$j,page,"TEXT",j))  s xx=^(j) d
+ ..i xx="#" d  q
+ ... ; print page Footer
+ ...s vtsRID=PAR1
+ ...s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ ...i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ ...d ADDLINE^PRTREP00(REPID,"PRT",xx)
+ ... ; print page Header
+ ...i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xx)
+ . ; print page Footer
+ .s vtsRID=PAR1
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_xPAR1_""","""_xPAR2_""")"
+ q
+ ; print blood group
+BloodGrp d ADD^PRTDR00(,$c(27)_"(s0p12h0s0b4101T")
+ d LN^PRTDR00()
+ d
+ .s result="",item="A0001"
+ .f j=1:1:VISTD s ti=$p(VISTD(j),$c(1),2) i ti=item s result=$p(VISTD(j),$c(1),3) i $l(result) d  q
+ ..d ADD^PRTDR00(,"~BOLD")
+ ..d ADD^PRTDR00(tsLM,"HAEMOGLOBIN   : ")
+ ..d ADD^PRTDR00(,"~NORMAL")
+ ..d ADD^PRTDR00(tsLM+19,result),LN^PRTDR00()
+ i $l(VISIT(69)) d
+ .d ADD^PRTDR00(,"~BOLD")
+ .d ADD^PRTDR00(tsLM,"PATIENT GROUP  : ")
+ .d ADD^PRTDR00(,"~NORMAL")
+ .d ADD^PRTDR00(tsLM+19,$p(VISIT(69),$c(1),2)),LN^PRTDR00()
+ s comm=0 i tr'="CL" d  i comm s comm=comm-1
+ .d ADD^PRTDR00(,"~BOLD")
+ .d ADD^PRTDR00(tsLM,"ANTIBODY SCREEN: ")
+ .d ADD^PRTDR00(,"~NORMAL")
+ .s (xx,result)="",item="B0034"
+ .f j=1:1:VISTD s ti=$p(VISTD(j),$c(1),2) i ti=item d  q
+ ..s result=$p(VISTD(j),$c(1),3) i $l(result),'$$select^LVBCTTCT(item_"||"_result) d
+ ...s result=PLIST(3) f j1=1:1:$l(result,"|") d ADD^PRTDR00(tsLM+19,$p(result,"|",j1)),LN^PRTDR00() s xx=1,comm=comm+1
+ .d LN^PRTDR00() i 'xx d LN^PRTDR00()
+ q
+TestCom d ADD^PRTDR00(,$c(27)_"(s0p12h0s0b4101T")
+ d LN^PRTDR00()
+ d LN^PRTDR00()
+ d
+ .s result="",item="B0040"
+ .f j=1:1:VISTD s ti=$p(VISTD(j),$c(1),2) i ti=item d  q
+ ..s result=$p(VISTD(j),$c(1),3) i $l(result),'$$select^LVBCTTCT(item_"||"_result) d
+ ...d LN^PRTDR00() s result=PLIST(3) f j1=1:1:$l(result,"|") d ADD^PRTDR00(tsLM,$p(result,"|",j1)),LN^PRTDR00()
+ ..i $l($p(VISTD(j),$c(1),4)) k PLIST s PLIST(1)="1"_$c(1)_item_$c(1)_$p(VISTD(j),$c(1),4),PLIST=1 d
+ ...s result="" i '$$COMMENTS^LVBCOM01(,test,"P") s result="" f j1=1:1:PLIST s result=result_$s($l(result):"|",1:"")_PLIST(j1)
+ ...i $l(result) f j1=1:1:$l(result,"|") d ADD^PRTDR00(tsLM,$p(result,"|",j1)),LN^PRTDR00()
+ q
+ ; title boxes
+Title d ADD^PRTDR00(,$c(27)_"&a0h"_(1100+(comm*110))_"V")
+ d LN^PRTDR00()
+ d ADD^PRTDR00(,"~BOLD")
+ f i=tsLM_":PRODUCT","28:ID NUMBER","45:PRODUCT GROUP","70:COMPATIBLE" d ADD^PRTDR00($p(i,":"),$p(i,":",2))
+ d ADD^PRTDR00(,"~NORMAL")
+ d ADD^PRTDR00(,$c(27)_"&a0h"_(1100+(comm*110))_"V")
+ d LN^PRTDR00()
+ q
+]]></Routine>
+</Export>

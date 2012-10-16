@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="CLNBQBUILD01" type="INT" languagemode="0"><![CDATA[
+CLNBQBUILD01(swfull)
+	; +----------------------+
+	; | Binary Queries       |
+	; | Rebuild Request cube |
+	; +----------------------+
+	;  Nov 21, 2006 by Mc_Fly
+	;  TrakHealth BCN
+	;  
+	; swfull=2 k ^BQD(cube) + swfull=1
+	; swfull=1, scan ^TEPI
+	; swfull=0, scan only ^TMPBQ(cube,epis)
+	; 
+	; Tables/globals affected:
+	; 
+	; DEB_Debtor                     ^TDEB(mrn)
+	; EP_VisitNumber                 ^TEPI(epis)
+	; EP_VisitActions                ^TEPI(epis,"VA",n)
+	; EP_VisitTestSet                ^TEPI(epis,1,ts,cnt)
+	; EP_VisitTestSetQueue           ^TEPI(epis,1,ts,cnt,"QUEUE",type,queue)
+	; EP_VisitTestSetData            ^TEPI(epis,1,ts,cnt,"DATA",tc)
+	; EP_VisitTestSetDataAntibiotics ^TEPI(epis,1,ts,cnt,"DATA",tc,"ANT",ant)
+	; HI_HistDayBookVisitAccession   ^THIR(epis,db)
+	; HI_HistDayBookVisitAccessTest  ^THIR(epis,db,"TEST",epis_"||"_ts_"||"_cnt)
+	; HI_HistDBVABlockOrder          ^THIR(epis,db,"BLOCK",block,order)
+	; 
+	; Code Tables:
+	; ^TTAB("UA",user,4,dep)
+	; ^TTAB("TC",tc)
+	; ^TTAB("TS",ts)
+	; ^TTAB("GR",gr,"TS",ts)
+	; ^TTAB("CTSG",code,spec)
+	; ^TTAB("BUG-GROUP"
+	; ^SSU("SSUSR",1,user)
+	; 
+	s $zt="err^CLNBQAUX"
+	n (swfull)
+	s isajob=$zjob\2#2
+	s swfull=+$g(swfull)
+	s cube=1
+	l +^BQD(cube,$s(swfull>0:"full",1:"partial")):5 e  q
+	d setmess^CLNBQAUX("*** Starting swfull="_swfull_" ***")
+	d DISABLE^%NOJRN
+	i $zu(68,25,1) ; Batch status
+ 
+	i swfull=2 k ^BQD(cube) s swfull=1
+	
+	k ^TMP($zn,$j)
+	s (i,j)=""
+	f  s i=$o(^TTAB("CTSG",i)) q:i=""  d
+	. f  s j=$o(^TTAB("CTSG",i,j)) q:j=""  s ^TMP($zn,$j,"CTSG",j,i)=""
+	f  s i=$o(^TTAB("GR",i)) q:i=""  d
+	. f  s j=$o(^TTAB("GR",i,"TS",j)) q:j=""  s ^TMP($zn,$j,"GR",j,i)=""
+	f  s i=$o(^TTAB("BUG-GROUP",i)) q:i=""  d
+	. f  s j=$o(^TTAB("BUG-GROUP",i,"BUGS",j)) q:j=""  s ^TMP($zn,$j,"BUG-GROUP",j,i)=""
+	      
+	d setmess^CLNBQAUX("Rebuilding... Done=0/0")
+	s zhini=$zh,zhnow=zhini
+	s (epis,ts,cnt,tc,ant)="",(cur,changed)=0
+	i swfull f  s epis=$o(^TEPI(epis),-1) q:epis=""  d doit
+	i 'swfull f  s epis=$o(^TMPBQ(cube,epis),-1) q:epis=""  d
+	. k ^TMPBQ(cube,epis) d doit
+	d end^CLNBQAUX
+	q
+doit
+	i $zh-zhnow>60 s zhnow=$zh d setmess^CLNBQAUX("Rebuilding... Done="_changed_"/"_cur)
+	k make
+	s cur=cur+1
+	s r=$g(^TEPI(epis))
+	; ***** Level 1 *****
+	s rowid=epis
+	d make(rowid,31,,epis) ; Episode
+	d make(rowid,42,,$p(r,"\",1)) ; Patient Surname
+	d make(rowid,41,,$p(r,"\",2)) ; Patient Given Name
+	d make(rowid,35,,$p(r,"\",3)) ; Sex
+	d make(rowid,13,,$p(r,"\",4)) ; Date of Birth
+	d make(rowid,3,,$p($$extdate2^SSUTIL4($p(r,"\",10)),"/",3)) ; Year of Collection
+	d make(rowid,17,,$p(r,"\",10)) ; Date of Collection
+	d make(rowid,9,,$p(r,"\",13)) ; Doctor Code
+	s mrn=$p(r,"\",18),rmrn=""
+	i $l(mrn) s rmrn=$g(^TDEB(mrn))
+	d make(rowid,25,,$p(rmrn,"\",3)) ; Warning message
+	d make(rowid,81,,$p(rmrn,"\",4)) ; Blood group
+	d make(rowid,72,,$p(r,"\",6)) ; Medicare
+	d make(rowid,39,,$p(r,"\",20)) ; Patient Location
+	d make(rowid,24,,$p(r,"\",25)) ; Patient age
+	d make(rowid,60,,$p(r,"\",26)) ; Centre Code
+	d make(rowid,14,,$p(r,"\",33)*60) ; Time of receival
+	d make(rowid,30,,mrn) ; MRN
+	d make(rowid,88,,$p(r,"\",36)) ; UserSite
+	d make(rowid,73,,$p($p(r,"\",37),",",1)) ; Hospital episode number
+	d make(rowid,74,,$p($p(r,"\",37),",",2)) ; Hospital MRN number	
+	d make(rowid,34,,$p(r,"\",47)) ; Speciality
+	d make(rowid,90,,$p(r,"\",48)) ; Patient type
+	d make(rowid,87,,$p(r,"\",49)) ; Category
+	d make(rowid,6,,$p(r,"\",52)) ; Aerobic bottle
+	d make(rowid,10,,$p(r,"\",53)) ; Anaerobic bottle
+	d make(rowid,36,,$p(r,"\",54)) ; Patient Location Original
+	; ---
+	s r0=$g(^TEPI(epis,0))
+	d make(rowid,21,,$p(r0,"\",19)) ; Deceased
+	d make(rowid,77,,$p(r0,"\",23)) ; Extra name 1
+	d make(rowid,82,,$p(r0,"\",26)) ; Case Study
+	d make(rowid,83,,$p(r0,"\",27)) ; Case QC
+	d make(rowid,8,,$p(r0,"\",29)) ; Bed
+	d make(rowid,11,,$p(r0,"\",30)) ; Date of Admission
+	d make(rowid,32,,$p(r0,"\",33)) ; Special Iterest Group
+	; Internal infection
+	s doc=$p(r,"\",10),toc=$p(r,"\",11),doa=$p(r0,"\",30),toa=$p(r0,"\",34)
+	s infec="N"
+	i doc,doa,$p($g(^CF("LAB",1)),"^",74),(((doc*24)+(toc\3600))-((doa*24)+(toa\3600)))>$p($g(^CF("LAB",1)),"^",74) s infec="Y"
+	d make(rowid,15,,infec) ; Internal infection
+	; Patient name
+	d make(rowid,29,,$$NameFormat^LVBCOM03("PT",,$p(r,"\",2),$p(r,"\",1),$p(r0,"\",23),$p(r0,"\",24),$p(r0,"\",25)))
+	; ---
+	s r8=$g(^TEPI(epis,8))
+	d make(rowid,23,,$p(r8,"\",1)) ; Extra 1
+	d make(rowid,26,,$p(r8,"\",2)) ; Extra 2
+	d make(rowid,27,,$p(r8,"\",3)) ; Extra 3
+	d make(rowid,37,,$p(r8,"\",4)) ; Extra 4
+	d make(rowid,40,,$p(r8,"\",5)) ; Extra 5
+	d make(rowid,43,,$p(r8,"\",6)) ; Extra 6
+	d make(rowid,44,,$p(r8,"\",7)) ; Extra 7
+	d make(rowid,45,,$p(r8,"\",8)) ; Extra 8
+	d make(rowid,46,,$p(r8,"\",9)) ; Extra 9
+	d make(rowid,47,,$p(r8,"\",10)) ; Extra 10
+	; Staff notes
+	i $$enabled(69) s i=0 f  s i=$o(^TEPI(epis,"SN",i)) q:i=""  d make(rowid,69,,^(i))
+	; Clinical History
+	i $$enabled(70) s i=0 f  s i=$o(^TEPI(epis,3,i)) q:i=""  d make(rowid,70,,^(i))
+	; Visit Actions
+	i $$enabled(71) s i="" f  s i=$o(^TEPI(epis,"VA",i)) q:i=""  d make(rowid,71,,i)
+	; Storage
+	i $$enabled(84)!($$enabled(85)) s (con,pos)="" d
+	. f  s con=$o(^TTSTi("Episode",epis,con)) q:con=""  d
+	.. f  s pos=$o(^TTSTi("Episode",epis,con,pos)) q:pos=""  d
+	... d make(rowid,84,,con) ; Storage-Container
+	... d make(rowid,85,,pos) ; Storage-Position
+	; ---
+	; Movements
+	s (ord,vts)=""
+	i $$enabled(93)!($$enabled(94))!($$enabled(95))!($$enabled(96))!($$enabled(97))!($$enabled(98)) d
+	. f  s ord=$o(^TEPI(epis,9,ord)) q:ord=""  d
+	.. f  s vts=$o(^TEPI(epis,9,ord,"VTS",vts)) q:vts=""  s ^TMP($zn,$j,"MOVE",vts,ord)=""
+	; ---
+	; Events
+	s ord=""
+	i $$enabled(101)!($$enabled(102))!($$enabled(103)) d
+	. f  s ord=$o(^TEPI(epis,6,ord)) q:ord=""  d
+	.. s r=$g(^TEPI(epis,6,ord))
+	.. i $p(r,"\",1)'="PHD" q
+	.. d make(rowid,101,,$p(r,"\",2)) ; Event date
+	.. d make(rowid,102,,$p(r,"\",3)) ; Event time
+	.. d make(rowid,103,,$p(r,"\",4)) ; Event text
+	; ---
+	s prio=$p(r,"\",15)
+	s bugnum=0
+	s (listts,listbug,lastadat)=""
+	s pstat="N" ; StatusPrinting
+	k sres ; StatusResult
+	f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+	. f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+	.. s r=$g(^(cnt))
+	.. ; ***** Level 3 *****
+	.. n rowid
+	.. s rowid=epis_"||"_ts_"||"_cnt
+	.. s tsprintable=0
+	.. s rts=$g(^TTAB("TS",ts))
+	.. s listpresuf="",exclude=",MH001,MH002,MH003,MH004,MH007,MH008,M9999,"
+	.. d make(rowid,86,,$p(r,"\",6)) ; User authorised
+	.. d make(rowid,100,,$p(r,"\",3)) ; User entered
+	.. s adat=$p(r,"\",4)
+	.. i adat>lastadat s lastadat=adat
+	.. s atim=$p(r,"\",5) i $l(atim) s atim=atim*60
+	.. s reason=$p(r,"\",52),printed=$p(r,"\",28)
+	.. d make(rowid,4,,$p($$extdate2^SSUTIL4(adat),"/",3)) ; Year of Authorisation
+	.. d make(rowid,18,,adat) ; Date of Authorisation
+	.. d make(rowid,92,,atim) ; Time of Authorisation
+	.. d make(rowid,22,,ts) ; Test Set
+	.. d make(rowid,67,,$e(ts)) ; Department
+	.. i $$enabled(68) s i="" f  s i=$o(^TMP($zn,$j,"GR",ts,i)) q:i=""  d make(rowid,68,,i) ; TestSet Group
+	.. d make(rowid,89,,$p(r,"\",26)) ; UserSite (TestSet)
+	.. s sres=$p(r,"\",31) 
+	.. i $l(sres) s sres(sres)=""
+	.. d make(rowid,28,,sres) ; Status Results
+	.. d make(rowid,78,,$p(r,"\",37)) ; Move to referral lab
+	.. d make(rowid,66,,$p(r,"\",44)) ; Date of collection
+	.. d make(rowid,91,,reason) ; Reason
+	.. i $$enabled(-1) s user="" f  s user=$o(^SSU("SSUSR",1,user)) q:user=""  i $$access(user,rowid) d make(rowid,-1,,user)
+	.. s tsprio=$p(r,"\",10) i '$l(tsprio) s tsprio=prio
+	.. d make(rowid,38,,tsprio) ; Priority
+	.. s listts=listts_$s(listts="":"",1:" ")_ts
+	.. d make(rowid,57,,$p(rts,"\",2)) ; Test Set Synomim
+	.. d make(rowid,80,,$p(rts,"\",52)) ; Section
+	.. ; Verification Queues
+	.. s (qtype,queue)=""
+	.. i $$enabled(19)!($$enabled(20)) f  s qtype=$o(^TEPI(epis,1,ts,cnt,"QUEUE",qtype)) q:qtype=""  d
+	... f  s queue=$o(^TEPI(epis,1,ts,cnt,"QUEUE",qtype,queue)) q:queue=""  d
+	.... s r=$g(^(queue))
+	.... s val=$p(r,"\",1)
+	.... i $l(val)=0 q
+	.... i $l($p(r,"\",5)) q
+	.... i qtype="VQ" d make(rowid,19,,val) ; Verification Queues
+	.... i qtype="RQ" d make(rowid,20,,val) ; ReadOnly Queues
+	.. s ord=""
+	.. f  s ord=$o(^TMP($zn,$j,"MOVE",rowid,ord)) q:ord=""  d
+	... s r=$g(^TEPI(epis,9,ord))
+	... d make(rowid,97,,$p(r,"\",3)) ; From user site
+	... d make(rowid,98,,$p(r,"\",4)) ; To user site
+	... d make(rowid,93,,$p(r,"\",6)) ; Date sent
+	... d make(rowid,94,,$p(r,"\",7)) ; Time sent
+	... d make(rowid,95,,$p(r,"\",11)) ; Date received
+	... d make(rowid,96,,$p(r,"\",12)) ; Time received
+	.. f  s tc=$o(^TEPI(epis,1,ts,cnt,"DATA",tc)) q:tc=""  d
+	... s r=$g(^(tc))
+	... ; ***** Level 4 *****
+	... n rowid
+	... s rowid=epis_"||"_ts_"||"_cnt_"||"_tc
+	... s swmicro=0
+	... s rtc=$g(^TTAB("TC",tc))
+	... d make(rowid,51,,tc) ; TestItem Code
+	... s syn=$p(rtc,"\",12)
+	... d make(rowid,52,,syn) ; TestItem Synonim
+	... s result=$p(r,"\",1)
+	... i $l($tr(result," "))=0 s result=""
+	... d make(rowid,53,,result) ; Result
+	... d make(rowid,59,tc,result) ; TestItem=Result
+	... i $p(r,"\",3)'="Y" s tsprintable=1
+	... i $l(result),exclude'[(","_tc_","),$e(tc,2)<8 s listpresuf=listpresuf_$s($l(listpresuf):" ",1:"")_$p(rtc,"\",24)_result_$p(rtc,"\",11)
+	... i $g(^TEPI(epis,1,ts,cnt,"DATA",tc,"REM",0))>0,($$enabled(75)!$$enabled(76)) d
+	.... s rem=0 f  s rem=$o(^TEPI(epis,1,ts,cnt,"DATA",tc,"REM",rem)) q:rem=""  d
+	..... s rrem=$g(^(rem))
+	..... i $$enabled(76) d make(rowid,76,,rrem)
+	..... i $$enabled(75) d wordextract(rrem)
+	... i $p(rtc,"\",3)="V" d
+	.... d make(rowid,1,,result) s swmicro=1
+	.... i '$l(result) q
+	.... s bugnum=bugnum+1,listbug=listbug_$s($l(listbug):" ",1:"")_result ; MicroOrganism
+	.... i $$enabled(56) s bg="" f  s bg=$o(^TMP($zn,$j,"BUG-GROUP",result,bg)) q:bg=""  d make(rowid,56,,bg) ; Bug group
+	... s exist="N"
+	... f  s ant=$o(^TEPI(epis,1,ts,cnt,"DATA",tc,"ANT",ant)) q:ant=""  d
+	.... s r=$g(^(ant))
+	.... ; ***** Level 5 *****
+	.... n rowid
+	.... s rowid=epis_"||"_ts_"||"_cnt_"||"_tc_"||"_ant
+	.... d make(rowid,2,,ant) ; Antibiotic
+	.... d make(rowid,12,,$p(r,"\",1)) ; Sensitivity
+	.... d make(rowid,58,ant,$p(r,"\",1)) ; Antibiotic=Sensitivity
+	.... s mic=$p(r,"\",3)
+	.... i $e(mic,1,2)=">." s mic=">0."_$e(mic,3,$l(mic))
+	.... i $e(mic,1,2)="<." s mic="<0."_$e(mic,3,$l(mic))
+	.... d make(rowid,54,,mic) ; MIC
+	.... i exist="N",$l($p(r,"\",1))!$l($p(r,"\",3))!$l($p(r,"\",4)) s exist="Y"
+	... i swmicro d make(rowid,16,,exist) ; Antibiotic panel exist
+	.. d make(rowid,61,,listpresuf) ; Result list with prefix and sufix
+	.. i tsprintable d
+	... i printed="Y",pstat'="I",$l(adat_reason) s pstat="F" q
+	... i printed'="Y" s pstat="I"
+	d make(rowid,5,,lastadat) ; Date of last Authorisation
+	d make(rowid,55,,bugnum)
+	d make(rowid,62,,listts)
+	d make(rowid,63,,listbug)
+	d make(rowid,79,,pstat) ; StatusPrinting
+	s i="" f  s i=$o(sres(i)) q:i=""  d make(rowid,99,,i) ; Request Status
+	s (db,block,order,rowid)=""
+	f  s db=$o(^THIR(epis,db)) q:db=""  d
+	. s r=$g(^(db))
+	. s spec=$p(r,"\",1),loc=$p($p(r,"\",5),"||",2)
+	. f  s block=$o(^THIR(epis,db,"BLOCK",block)) q:block=""  d
+	.. f  s order=$o(^THIR(epis,db,"BLOCK",block,order)) q:order=""  d
+	... s r=^(order)
+	... s proc=$p(r,"\",1)
+	... f  s rowid=$o(^THIR(epis,db,"TEST",rowid)) q:rowid=""  d
+	.... d make(rowid,64,,proc)
+	.... d make(rowid,65,proc,$p(r,"\",14))
+	. s wdb=$e(db,4,$l(db)-1),wdb=$e("00000",1,5-$l(wdb))_wdb
+	. s wdb=$e(db,1,3)_wdb_$e(db,$l(db))
+	. s wdb=$$AccNoFormat^LVBCOM03(wdb)
+	. f  s rowid=$o(^THIR(epis,db,"TEST",rowid)) q:rowid=""  d
+	.. d make(rowid,7,,wdb) ; DayBook Accession number
+	.. d make(rowid,33,,$e(db)) ; DayBook Laboratory
+	.. d make(rowid,48,,spec) ; DayBook Specimen
+	.. d make(rowid,49,,loc) ; DayBook Anatomical Location
+	.. i $l(spec) s i="" f  s i=$o(^TMP($zn,$j,"CTSG",spec,i)) q:i=""  d make(rowid,50,,i) ; Daybook specimen group
+	d save^CLNBQAUX
+	q
+wordextract(txt) n w,n,c
+	s w=""
+	f n=1:1:$l(txt) s c=$e(txt,n) d
+	. i c?1p d  s w="" q
+	.. i $l(w) d make(rowid,75,,w)
+	. s w=w_c
+	i $l(w) d make(rowid,75,,w)
+	q
+access(user,rowid)
+	s sectype=$p($g(^SSU("SSUSR",1,user)),"^",9) i '$l(sectype) s sectype=$p(^CF("LAB",1),"^",49)
+	i sectype<2 q 1
+	i '$d(^TTAB("UA",user,4)) q 1
+	s dep=$e($p(rowid,"||",2))
+	i $d(^TTAB("UA",user,4,dep)) q 1
+	q 0
+make(rowid,field,val1,val2)
+	n o,double,v,rf
+	i '$$enabled(field) q
+	s rf=^BQC(cube,2,field)
+	s type=$p(rf,"\",3),double=$p(rf,"\",5)
+	i type="ALF"!(type="FAL") s val2=$$UPPER^SSUTIL4(val2)
+	i $$isanum^CLNBQAUX(val2) s val2=+val2 ; Because there are results nn.0
+	i '$l(val2) q
+	i type="FAL" s val2=" "_val2 ; Force Alpha, not tested
+	s v=$e(val2,1,200) ; For avoid <subscript> errors
+	i double d  i '$l(val1) q
+	. i $$isanum^CLNBQAUX(val1) s val1=+val1 q
+	. s val1=$e($$UPPER^SSUTIL4(val1),1,200)
+	i double s v=v_"\"_val1
+	s o=$o(make(" "_rowid,field,""),-1)+1
+	s make(" "_rowid,field,o)=v
+	q
+enabled(field)
+	q +$p($g(^BQZ(cube,2,field)),"\",2)
+ 
+]]></Routine>
+</Export>

@@ -1,0 +1,1048 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR00" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDR00 ; IG 06/03/99 ; Doctor's reports (main routine)
+ Q
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) 
+ k ^TMP($zn,$j)
+ d INIT,BODY i PAR1="CP" s PAR2=$p(PAR2,"-")
+ ; find report parameter to save against events for an episode
+ s eventParam=PAR1_"-"_PAR2
+ i PAR1="CU" s eventParam="U-"_$p(PAR2,"||",2)
+ i PAR1="D" s eventParam=PAR1_"-"_PAR5
+ i PAR1="V" s eventParam="View episode "_$p(PAR2,"-",3)
+ d PRINT
+CREND i '$$select^LVBPRPR(REPID) d  i $$update^LVBPRPR(REPID)
+ .s PLIST(12)=PAR1_"-"_PAR2_"-"_count
+ .i PAR1="U" s PLIST(11)=PAR2
+ .i PAR1="CU" s PLIST(12)="U-"_$p(PAR2,"||",2)_"-"_count,PLIST(11)=$p(PAR2,"||",2)
+ .i PAR1="D" s PLIST(12)=PAR1_"-"_PAR5
+ .i PAR1="V" s PLIST(12)="View episode "_$p(PAR2,"-",3)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j),^TMP("REPORT",$j)
+ q
+ ; initialize parameters
+INIT s xx=$l(PAR,$c(1)) s:xx<7 xx=7 f j=1:1:xx s @("PAR"_j)=$p(PAR,$c(1),j)
+ k CFSM i '$$select^MVBCFSM(1) m CFSM=PLIST
+ k CONFIG i '$$select^MVBCFLAB(1) m CONFIG=PLIST
+ s Confidential="" i CONFIG(125)="Y" d
+ .s x=$s(PAR1="C":PAR2,PAR1="CU":$p(PAR2,"||"),1:"")
+ .i '$$select^LVBCTCR(x,"Y") s Confidential=$p(PLIST(5),$c(1))
+ q
+ ; create temporary printing file
+BODY s dh1="" f  s dh1=$o(^TRPT(PAR1,PAR2,dh1)) q:dh1=""  d
+ .k (REPID,PAR,USER,%msql,PAR1,PAR2,PAR3,PAR4,PAR5,PAR7,dh1,CONFIG,CFSM,Confidential)
+ .s dh2="" f  s dh2=$o(^TRPT(PAR1,PAR2,dh1,dh2)) q:dh2=""  d
+ ..s RepType=""
+ ..i dh1="D" d
+ ... ; if copy to not a doctor get requested doctor
+ ...s doc=dh2 i $p(dh2,"-")="xxx" s doc=$p(dh2,"-",2)
+ ...s pf=$$seldata^LVBCTDR(doc,19),RepType=$$seldata^LVBCTPF(pf,4)
+ ..i dh1="H" s pf=$$seldata^LVBCTHOS(dh2,12),RepType=$$seldata^LVBCTPF(pf,4)
+ ..s epis="" f  s epis=$o(^TRPT(PAR1,PAR2,dh1,dh2,epis)) q:epis=""  d
+ ...i $l(PAR3),(","_PAR3_",")'[(","_epis_",") q
+ ...s SORT=" "
+ ... ; sort by Doctor/Hospital,Episode - Normal
+ ...i PAR1'="D",CONFIG(67)="D" s SORT=$s($p(dh2,"-",1)="xxx":"xxx",1:dh2)
+ ... ; sort by Doctor/Hospital,CollDT,Name,Episode
+ ...f jk=3,12,13 s visit(jk)=$p($$seldata^LVBEPVIS(epis,jk),$c(1))
+ ...s sort=visit(12)_" "_$e(100000+visit(13),2,6)
+ ...i PAR1'="D",CONFIG(67)="DCN" d
+ ....s SORT=$s($p(dh2,"-",1)="xxx":"xxx",1:dh2)_" "_visit(12)_" "_$e(100000+visit(13),2,6)_" "_$$ALPHAUP^SSUTIL4(visit(3))
+ ... ; sort by Hospital MRN,Episode
+ ...i PAR1'="D",CONFIG(67)="H" d
+ ....s visit(65)=$$seldata^LVBEPVIS(epis,65),visit(65)=$p($p(visit(65),$c(1)),",",2)
+ ....s SORT=$s($l(visit(65)):visit(65),1:" ")
+ ...s test="" f  s test=$o(^TRPT(PAR1,PAR2,dh1,dh2,epis,test)) q:test=""  d
+ ....s list=$$seldata^LVBCTTS(test,10)
+ ....s tscnt="" f  s tscnt=$o(^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)) q:tscnt=""  d
+ .....s x=$$test^LVBCOM07(test,dh1,dh2,PAR1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5),sectseq=$p(x,$c(1),6),sect=$p(x,$c(1),7),reportFormat=$p(x,$c(1),8)
+ ..... ; already exist in a list
+ .....i $d(^TMP($zn,$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test,tscnt)) q
+ .....s ok=$$printable^LVBCTTS(test,epis_"||"_test_"||"_tscnt) i ok d
+ ......i reportFormat'="N" s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test,tscnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ...... ; get list of all group with tests
+ ......f j=1:1:$l(list,",") s ts=$p(list,",",j) i $$status^LVBVIS1(epis_"||"_ts_"||"_tscnt)="A" d
+ .......s x=$$test^LVBCOM07(ts,dh1,dh2,PAR1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5),sectseq=$p(x,$c(1),6),sect=$p(x,$c(1),7),reportFormat=$p(x,$c(1),8)
+ .......i reportFormat'="N" d
+ ........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,ts,tscnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ........k ^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,tscnt)
+ ...... ; print single test if instant/partial print
+ ......i $p(^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt),"\",1)'="" q
+ ...... ; get all other related tests to print  
+ ......i RepType="F" d
+ .......s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$status^LVBVIS1(epis_"||"_ts_"||"_cnt)="A",$$printable^LVBCTTS(ts,epis_"||"_ts_"||"_cnt) d
+ .........i test=ts,tscnt=cnt q
+ .........s x=$$test^LVBCOM07(ts,dh1,dh2,PAR1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5),sectseq=$p(x,$c(1),6),sect=$p(x,$c(1),7),reportFormat=$p(x,$c(1),8)
+ .........i reportFormat'="N" d
+ ..........i CONFIG(125)="Y",Confidential'="Y"," Y P "[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i CONFIG(125)="Y",Confidential="Y"," Y P "'[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i PAR1="F",'$d(^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)) q
+ ..........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ..........k ^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)
+ ......i RepType="AI" d
+ .......s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$status^LVBVIS1(epis_"||"_ts_"||"_cnt)="A",$$printable^LVBCTTS(ts,epis_"||"_ts_"||"_cnt) d
+ .........i test=ts,tscnt=cnt q
+ .........s x=$$test^LVBCOM07(ts,dh1,dh2,PAR1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5),sectseq=$p(x,$c(1),6),sect=$p(x,$c(1),7),reportFormat=$p(x,$c(1),8)
+ .........i reportFormat'="N" d
+ ..........i CONFIG(125)="Y",Confidential'="Y"," Y P "[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i CONFIG(125)="Y",Confidential="Y"," Y P "'[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i PAR1="F",'$d(^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)) q
+ ..........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ..........k ^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)
+ ......i RepType="FI" d
+ .......s ok=1,ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d  i 'ok q
+ ........s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d  i 'ok q
+ .........s status=$$status^LVBVIS1(epis_"||"_ts_"||"_cnt) i $l(status),status'="A" s ok=0
+ .......i ok s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$printable^LVBCTTS(ts,epis_"||"_ts_"||"_cnt) d
+ .........i test=ts,tscnt=cnt q
+ .........s x=$$test^LVBCOM07(ts,dh1,dh2,PAR1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5),sectseq=$p(x,$c(1),6),sect=$p(x,$c(1),7),reportFormat=$p(x,$c(1),8)
+ .........i reportFormat'="N" d
+ ..........i CONFIG(125)="Y",Confidential'="Y"," Y P "[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i CONFIG(125)="Y",Confidential="Y"," Y P "'[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i PAR1="F",'$d(^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)) q
+ ..........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ..........k ^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)
+ ......i RepType="DF" d
+ .......s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........i $e(test)=$e(ts) s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$status^LVBVIS1(epis_"||"_ts_"||"_cnt)="A",$$printable^LVBCTTS(ts,epis_"||"_ts_"||"_cnt) d
+ .........i test=ts,tscnt=cnt q
+ .........s x=$$test^LVBCOM07(ts,dh1,dh2,PAR1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5),sectseq=$p(x,$c(1),6),sect=$p(x,$c(1),7),reportFormat=$p(x,$c(1),8)
+ .........i reportFormat'="N" d
+ ..........i CONFIG(125)="Y",Confidential'="Y"," Y P "[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i CONFIG(125)="Y",Confidential="Y"," Y P "'[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i PAR1="F",'$d(^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)) q
+ ..........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ..........k ^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)
+ ......i RepType="DAI" d
+ .......s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........i $e(test)=$e(ts) s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$status^LVBVIS1(epis_"||"_ts_"||"_cnt)="A",$$printable^LVBCTTS(ts,epis_"||"_ts_"||"_cnt) d
+ .........i test=ts,tscnt=cnt q
+ .........s x=$$test^LVBCOM07(ts,dh1,dh2,PAR1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5),sectseq=$p(x,$c(1),6),sect=$p(x,$c(1),7),reportFormat=$p(x,$c(1),8)
+ .........i reportFormat'="N" d
+ ..........i CONFIG(125)="Y",Confidential'="Y"," Y P "[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i CONFIG(125)="Y",Confidential="Y"," Y P "'[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i PAR1="F",'$d(^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)) q
+ ..........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ..........k ^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)
+ ......i RepType="DFI" d
+ .......s ok=1,ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d  i 'ok q
+ ........i $e(test)=$e(ts) s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d  i 'ok q
+ .........s status=$$status^LVBVIS1(epis_"||"_ts_"||"_cnt) i $l(status),status'="A" s ok=0
+ .......i ok s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ........i $e(test)=$e(ts) s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $$printable^LVBCTTS(ts,epis_"||"_ts_"||"_cnt) d
+ .........i test=ts,tscnt=cnt q
+ .........s x=$$test^LVBCOM07(ts,dh1,dh2,PAR1),report=$p(x,$c(1)),depseq=$p(x,$c(1),2),dep=$p(x,$c(1),3),tsseq=$p(x,$c(1),4),group=$p(x,$c(1),5),sectseq=$p(x,$c(1),6),sect=$p(x,$c(1),7),reportFormat=$p(x,$c(1),8)
+ .........i reportFormat'="N" d
+ ..........i CONFIG(125)="Y",Confidential'="Y"," Y P "[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i CONFIG(125)="Y",Confidential="Y"," Y P "'[(" "_$$conf^LVBVISTS(epis_"||"_ts_"||"_cnt)_" ") q
+ ..........i PAR1="F",'$d(^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)) q
+ ..........s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,$s($l(PAR4):PAR4,1:epis),report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,ts,cnt)=^TRPT(PAR1,PAR2,dh1,dh2,epis,test,tscnt)
+ ..........k ^TRPT(PAR1,PAR2,dh1,dh2,epis,ts,cnt)
+ ...k ^TRPT(PAR1,PAR2,dh1,dh2,epis)
+ q
+TestList k xx s (xx,TestList)=""
+ s sort="" f  s sort=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort),-1) q:sort=""  d
+ .s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis)) q:epis=""  d
+ ..s depseq="" f  s depseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseq)) q:depseq=""  d
+ ...s dep="" f  s dep=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseq,dep)) q:dep=""  d
+ ....s sectseq="" f  s sectseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseq,dep,sectseq)) q:sectseq=""  d
+ .....s sect="" f  s sect=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseq,dep,sectseq,sect)) q:sect=""  d
+ ......s tsseq="" f  s tsseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseq,dep,sectseq,sect,tsseq)) q:tsseq=""  d
+ .......s group="" f  s group=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseq,dep,sectseq,sect,tsseq,group)) q:group=""  d
+ ........s test="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test)) q:test=""  d
+ .........s xx=$s($l(xx):xx_",",1:"")_test,xx(test)=depseq_"\"_dep_"\"_sectseq_"\"_sect_"\"_tsseq_"\"_group
+ .........s x1=$$seldata^LVBCTTS(test,46)
+ .........i $l(x1) s x2="" f  s x2=$o(^TTAB("GR",x1,"TS",x2)) q:x2=""  i '$d(xx(x2)) s xx=$s($l(xx):xx_",",1:"")_x2,xx(x2)=depseq_"\"_dep_"\"_sectseq_"\"_sect_"\"_tsseq_"\"_group
+ s TestList=xx
+ q
+ ; Report Page Type - 0 - Normal layout, multiple tests per page
+ ;                    2 - Normal layout, one test per page
+ ;                    3 - Cumulative RP layout, vertical
+ ;                    1 - Cumulative RP layout, horizontal, variable
+ ;                    4 - Cumulative RP layout, horizontal, fixed
+ ;                    5 - First episode normal layout, subsequent cumulative vertical
+ ;                    7 - First episode normal layout, subsequent cumulative horizontal
+PRINT s count=0 d DFT^LVBCOM12
+ ; print reports
+ s dh1="" f  s dh1=$o(^TMP($zn,$j,"LIST",dh1)) q:dh1=""  d
+ .s SORT="" f  s SORT=$o(^TMP($zn,$j,"LIST",dh1,SORT)) q:SORT=""  d
+ ..s dh2="" f  s dh2=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2)) q:dh2=""  d
+ ...s Master="" f  s Master=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master)) q:Master=""  d
+ ....s xPAR1=$s(PAR1="D":"D",$g(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master))="D":"D",1:"")
+ ....d updPS^LVBCOM07
+ ....i '$d(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master)) q
+ ....s count=count+1
+ ....i $$select^LVBEPVIS(Master) q
+ ....k VISIT m VISIT=PLIST k ^TMP("REPORT",$j)
+ ....k DOC,HOSP
+ ....i dh1="D" d
+ .....i $p(dh2,"-")'="xxx",'$$select^LVBCTDR(dh2,"Y") m DOC=PLIST
+ .....i $p(dh2,"-")="xxx" d
+ ......k DOC f j=1:1:60 s DOC(j)=""
+ ......s DOC(3)=$p($p(dh2,"-",3,99),"^"),(DOC(39),DOC(14))=$p($p(dh2,"-",3,99),"^",7) f j=2:1:6 s DOC(j+7)=$p($p(dh2,"-",3,99),"^",j)
+ ......i '$$select^LVBCTDR(VISIT(15),"Y") s DOC(34)=PLIST(34)
+ ....i dh1="H",'$$select^LVBCTHOS(dh2,"Y") m HOSP=PLIST
+ .... ; create list of episodes for cumulative layouts
+ ....s report="" f  s report=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report)) q:report=""  d
+ .....k REPORT i '$$select^LVBCTRG(report,"Y") m REPORT=PLIST
+ .....i report=" "!'$d(REPORT) s REPORT(4)=0,REPORT(5)="Y"
+ .....k ^TMP($zn,$j,"EpisodeList",report),^TMP($zn,$j,"ReportType",report)
+ ..... ; Report type - 1 - Cumulative RP layout, Horizontal, Variable
+ .....i REPORT(4)=1 d
+ ......d TestList
+ ...... ; print page Header
+ ......i $l(TestList) d
+ .......s sort="" f  s sort=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort),-1) q:sort=""  d
+ ........s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis)) q:epis=""  d
+ .........s visit="" i '$$select^LVBEPVIS(epis) s visit="" f j=1:1:PLIST s $p(visit,$c(28),j)=$g(PLIST(j))
+ .........s visit=$tr(visit,"""","'") d CumList(TestList,epis,visit,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""),,,report)
+ .........k ^TMP($zn,$j,"EpisodeList",report,epis),^TMP($zn,$j,"ReportType",report,epis)
+ .........m ^TMP($zn,$j,"EpisodeList",report,epis)=PLIST
+ .........s ^TMP($zn,$j,"ReportType",report,epis)=ReportType
+ .......d TestList
+ ...... ; remove already printed episodes
+ ......s sort="" f  s sort=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort),-1) q:sort=""  d
+ .......s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis)) q:epis=""  d
+ ........k PLIST m PLIST=^TMP($zn,$j,"EpisodeList",report,epis)
+ ........s xx1="" f j=1:1:$g(PLIST) s xx1=xx1_$s($l(xx1):",",1:"")_PLIST(j)
+ ........s xx2="" f j=1:1:$g(PLIST) i PLIST(j)'=epis s xx2=xx2_$s($l(xx2):",",1:"")_PLIST(j)
+ ........i $l(xx2) d
+ .........s sortX="" f  s sortX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sortX)) q:sortX=""  d
+ ..........s episX="" f  s episX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sortX,episX)) q:episX=""  d
+ ...........i (","_xx2_",")[(","_episX_",") d
+ ............f j=1:1:$l(TestList,",") s testX=$p(TestList,",",j) i $l(testX) d
+ .............s depseqX=$p(xx(testX),"\",1),depX=$p(xx(testX),"\",2),sectseqX=$p(xx(testX),"\",3),sectX=$p(xx(testX),"\",4),tsseqX=$p(xx(testX),"\",5),groupX=$p(xx(testX),"\",6)
+ .............k ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sortX,episX,depseqX,depX,sectseqX,sectX,tsseqX,groupX,testX)
+ .............k ^TMP($zn,$j,"EpisodeList",report,episX),^TMP($zn,$j,"ReportType",report,episX)
+ .............i $d(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseqX,depX,sectseqX,sectX,tsseqX,groupX,testX)) q
+ .............s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseqX,depX,sectseqX,sectX,tsseqX,groupX,testX,0)=""
+ ..... ; Report type - 4 - Cumulative RP layout, horizontal, fixed
+ .....i REPORT(4)=4 d
+ ......d TestList
+ ...... ; print page Header
+ ......i $l(TestList) d
+ .......s sort="" f  s sort=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort),-1) q:sort=""  d
+ ........s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis)) q:epis=""  d
+ .........s visit="" i '$$select^LVBEPVIS(epis) s visit="" f j=1:1:PLIST s $p(visit,$c(28),j)=$g(PLIST(j))
+ .........s visit=$tr(visit,"""","'") d CumListFixed(report,epis,visit,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""),dh1,dh2,SORT)
+ .........k ^TMP($zn,$j,"EpisodeList",report,epis),^TMP($zn,$j,"ReportType",report,epis)
+ .........m ^TMP($zn,$j,"EpisodeList",report,epis)=PLIST
+ .........s ^TMP($zn,$j,"ReportType",report,epis)=ReportType
+ .......d TestList
+ ...... ; remove already printed episodes
+ ......s sort="" f  s sort=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort),-1) q:sort=""  d
+ .......s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis)) q:epis=""  d
+ ........k PLIST m PLIST=^TMP($zn,$j,"EpisodeList",report,epis)
+ ........s xx1="" f j=1:1:$g(PLIST) s xx1=xx1_$s($l(xx1):",",1:"")_PLIST(j)
+ ........s xx2="" f j=1:1:$g(PLIST) i PLIST(j)'=epis s xx2=xx2_$s($l(xx2):",",1:"")_PLIST(j)
+ ........i $l(xx2) d
+ .........s sortX="" f  s sortX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sortX)) q:sortX=""  d
+ ..........s episX="" f  s episX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sortX,episX)) q:episX=""  d
+ ...........i (","_xx2_",")[(","_episX_",") d
+ ............k PLIST m PLIST=^TMP($zn,$j,"EpisodeList",report,episX)
+ ............s xx3="" f j=1:1:PLIST s xx3=xx3_$s($l(xx3):",",1:"")_PLIST(j)
+ ............i xx1=xx3 d
+ .............f j=1:1:$l(TestList,",") s testX=$p(TestList,",",j) i $l(testX) d
+ ..............s depseqX=$p(xx(testX),"\",1),depX=$p(xx(testX),"\",2),sectseqX=$p(xx(testX),"\",3),sectX=$p(xx(testX),"\",4),tsseqX=$p(xx(testX),"\",5),groupX=$p(xx(testX),"\",6)
+ ..............k ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sortX,episX,depseqX,depX,sectseqX,sectX,tsseqX,groupX,testX)
+ ..............k ^TMP($zn,$j,"EpisodeList",report,episX),^TMP($zn,$j,"ReportType",report,episX)
+ ..............i $d(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseqX,depX,sectseqX,sectX,tsseqX,groupX,testX)) q
+ ..............s ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis,depseqX,depX,sectseqX,sectX,tsseqX,groupX,testX,0)=""
+ ....
+ ....s report="" f  s report=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report)) q:report=""  d
+ .....i '$d(^TMP($zn,$j,"EpisodeList",report)) d  q
+ ......k ^TMP($zn,$j,"LIST-NEW")
+ ......m ^TMP($zn,$j,"LIST-NEW"," ")=^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report)
+ ......k ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report)
+ ......m ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report)=^TMP($zn,$j,"LIST-NEW")
+ ......k ^TMP($zn,$j,"LIST-NEW")
+ .....i $d(^TMP($zn,$j,"EpisodeList",report)) d  q
+ ......k ^TMP($zn,$j,"LIST-NEW")
+ ......s ep="" f page=1:1 s ep=$o(^TMP($zn,$j,"EpisodeList",report,ep)) q:ep=""  d
+ .......s col="" f  s col=$o(^TMP($zn,$j,"EpisodeList",report,ep,col)) q:col=""  s epis=^(col) d
+ ........s sort="" f  s sort=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort)) q:sort=""  d
+ .........i $d(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis)) d
+ ..........m ^TMP($zn,$j,"LIST-NEW",page,sort,epis)=^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,sort,epis)
+ ......k ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report)
+ ......m ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report)=^TMP($zn,$j,"LIST-NEW")
+ ......k ^TMP($zn,$j,"LIST-NEW")
+ ....
+ ....f j="DR","IP","PP" s (list(j),list(j,"user"))=""
+ ....s report="" f  s report=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report)) q:report=""  d
+ .....k REPORT i '$$select^LVBCTRG(report,"Y") m REPORT=PLIST
+ .....i report=" "!'$d(REPORT) s REPORT(4)=0,REPORT(5)="Y"
+ .....s px="" f  s px=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px)) q:px=""  d
+ ......s ForceNewPage=1
+ ......s sort="" f  s sort=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort),-1) q:sort=""  d
+ .......s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis)) q:epis=""  d
+ ........s depseq="" f  s depseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq)) q:depseq=""  d
+ .........s dep="" f  s dep=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep)) q:dep=""  d
+ ..........s PrintDepHeader=1
+ .......... ; print department on a separate page
+ ..........i $$seldata^LVBCTDEP(dep,8)="Y" s ForceNewPage=1
+ ..........s sectseq="" f  s sectseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq)) q:sectseq=""  d
+ ...........s sect="" f  s sect=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect)) q:sect=""  d
+ ............f j="H","F" s PrintSection(j)=1
+ ............s tsseq="" f  s tsseq=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq)) q:tsseq=""  d
+ .............s group="" f  s group=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group)) q:group=""  d
+ .............. ; check if group will be printed as cumulative
+ ..............i group'=" " d
+ ...............s test="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test)) q:test=""  d
+ ................s (ok,tscnt)="" f  s tscnt=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test,tscnt)) q:tscnt=""  i $p(^(tscnt),"\",3)="Y" s ok=1 q
+ ................i 'ok d
+ .................s CumTSType=$$seldata^LVBCTTS(test,7)
+ .................s CumTSType=$p(CumTSType,$c(1))
+ .................i CumTSType="F" s ok=1
+ .................e  i dh1="D",CumTSType="D"," F L "[(" "_$p(DOC(34),$c(1))_" ") s ok=1
+ .................e  i dh1="H",CumTSType="D"," F L "[(" "_$p(HOSP(15),$c(1))_" ") s ok=1
+ ................i 'ok d
+ .................m ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq," ")=^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group)
+ .................k ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group)
+ .............s group="" f  s group=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group)) q:group=""  d
+ .............. ; cumulative test group
+ ..............i group'=" " d  q
+ ...............s (name,GroupName)="" i '$$select^LVBCTTWG(group,"Y") s GroupName=PLIST(10),name=PLIST(3)
+ ...............i GroupName="*" s GroupName=name
+ ...............s (TestList,test)="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test)) q:test=""  d
+ ................s synonym=$$seldata^LVBCTTS(test,4),TestList=TestList_$s($l(TestList):",",1:"")_test
+ ................s tscnt="" f  s tscnt=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test,tscnt)) q:tscnt=""  d
+ .................i tscnt d
+ ..................s j=$p(^(tscnt),"\",1),j=$s(j="PP":j,j="IP":j,1:"DR")
+ ..................s list(j)=list(j)_" "_$s($l(synonym):synonym,1:test)
+ ..................s list(j,"user")=$s($l(USER):USER,1:$p(^(tscnt),"\",2))
+ .................s vtsRID=epis_"||"_test_"||"_tscnt
+ ............... ;
+ ............... ; Report type - 0 - Normal layout, multiple tests per page
+ ............... ;
+ ...............i xPAR1'="D",REPORT(4)=0 d Create1(vtsRID,"C",group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ............... ;
+ ............... ; Report type - 2 - Normal layout, one test per page
+ ............... ;
+ ...............i xPAR1'="D",REPORT(4)=2 s ForceNewPage=1 d Create1(vtsRID,"C",group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ............... ;
+ ............... ; Report type - 3 - Cumulative RP layout, vertical
+ ............... ;
+ ...............i REPORT(4)=3 d Create3(vtsRID,report,group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ............... ;
+ ............... ; Report type - 1 - Cumulative RP layout, horizontal, variable
+ ............... ;
+ ...............i REPORT(4)=1 d Create2(vtsRID,report,group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ............... ;
+ ............... ; Report type - 4 - Cumulative RP layout, horizontal, fixed
+ ............... ;
+ ...............i REPORT(4)=4 d Create2(vtsRID,report,group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ............... ;
+ ............... ; Report type - 5 - First episode normal layout, subsequent cumulative vertical
+ ............... ; Report type - 7 - First episode normal layout, subsequent cumulative horizontal
+ ............... ;
+ ...............i ((REPORT(4)=5)!(REPORT(4)=7))!((xPAR1="D")&((REPORT(4)=0)!(REPORT(4)=2))) d
+ ................s visit="" i '$$select^LVBEPVIS(epis) s visit="" f j=1:1:PLIST s $p(visit,$c(28),j)=$g(PLIST(j))
+ ................s visit=$tr(visit,"""","'") d CumList($p(vtsRID,"||",2),epis,visit,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""),,group,report)
+ ................k ^TMP($zn,$j,"EpisodeList",report,epis),^TMP($zn,$j,"ReportType",report,epis)
+ ................m ^TMP($zn,$j,"EpisodeList",report,epis)=PLIST
+ ................s ^TMP($zn,$j,"ReportType",report,epis)=ReportType
+ ................s PreEpisodeList=""
+ ................s col="" f  s col=$o(^TMP($zn,$j,"EpisodeList",report,epis,col)) q:col=""   s PreEpisodeList=$s($l(PreEpisodeList):PreEpisodeList_",",1:"")_^(col)
+ ................s ok=1 i (PreEpisodeList=$p(vtsRID,"||"))!(PreEpisodeList="") s ok=0
+ ................e  i CumTSType'="D",CumTSType'="F" s ok=0
+ ................e  i dh1="D",CumTSType="D"," F L "'[(" "_$p(DOC(34),$c(1))_" ") s ok=0
+ ................e  i dh1="H",CumTSType="D"," F L "'[(" "_$p(HOSP(15),$c(1))_" ") s ok=0
+ ................i 'ok,xPAR1'="D" d
+ .................s test="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test)) q:test=""  d
+ ..................s tscnt="" f  s tscnt=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test,tscnt)) q:tscnt=""  d
+ ...................s vtsRID=epis_"||"_test_"||"_tscnt
+ ...................d Create1(vtsRID,"","",$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ................i ok!(xPAR1="D") d
+ .................i REPORT(4)=5 d Create3(vtsRID,report,group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ .................i (REPORT(4)=7)!(REPORT(4)=0)!(REPORT(4)=2) d Create1(vtsRID,"C",group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ................. ; remove already printed episodes
+ .................s (xx,col)="" f  s col=$o(^TMP($zn,$j,"EpisodeList",report,epis,col)) q:col=""   i ^(col)'=epis s xx=$s($l(xx):xx_",",1:"")_^(col)
+ .................k ^TMP($zn,$j,"EpisodeList",report,epis),^TMP($zn,$j,"ReportType",report,epis)
+ .................i $l(xx) d
+ ..................s sortX="" f  s sortX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX)) q:sortX=""  d
+ ...................s episX="" f  s episX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX)) q:episX=""  d
+ ....................i (","_xx_",")[(","_episX_",") d
+ .....................s depseqX="" f  s depseqX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX)) q:depseqX=""  d
+ ......................s depX="" f  s depX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX)) q:depX=""  d
+ .......................s sectseqX="" f  s sectseqX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX)) q:sectseqX=""  d
+ ........................s sectX="" f  s sectX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX,sectX)) q:sectX=""  d
+ .........................s tsseqX="" f  s tsseqX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX,sectX,tsseqX)) q:tsseqX=""  d
+ ..........................k ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX,sectX,tsseqX,group)
+ .............. ; no cumulative test group
+ ..............s test="" f  s test=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test)) q:test=""  d
+ ...............s synonym=$$seldata^LVBCTTS(test,4),CumTSType=$$seldata^LVBCTTS(test,7)
+ ...............s tscnt="" f  s tscnt=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test,tscnt)) q:tscnt=""  d
+ ................s j=$p(^(tscnt),"\",1),j=$s(j="PP":j,j="IP":j,1:"DR")
+ ................i tscnt d
+ .................s list(j)=list(j)_" "_$s($l(synonym):synonym,1:test)
+ .................s list(j,"user")=$s($l(USER):USER,1:$p(^(tscnt),"\",2))
+ ................s vtsRID=epis_"||"_test_"||"_tscnt
+ ................ ;
+ ................ ; Report type - 0 - Normal layout, multiple tests per page
+ ................ ;
+ ................i REPORT(4)=0 d
+ ................. ; print normal copy
+ .................d Create1(vtsRID,"",group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ................. ; print cumulative copy
+ .................i xPAR1'="D" d
+ ..................s ok=0 i $p(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test,tscnt),"\",3)="Y" s ok=1
+ ..................i 'ok d
+ ...................i CumTSType="F" s ok=1
+ ...................e  i dh1="D",CumTSType="D"," F L "[(" "_$p(DOC(34),$c(1))_" ") s ok=1
+ ...................e  i dh1="H",CumTSType="D"," F L "[(" "_$p(HOSP(15),$c(1))_" ") s ok=1
+ ..................i ok d Create1(vtsRID,"C",group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ................ ;
+ ................ ; Report type - 2 - Normal layout, one test per page
+ ................ ;
+ ................i REPORT(4)=2 s ForceNewPage=1 d
+ ................. ; print normal copy
+ .................d Create1(vtsRID,"",group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ................. ; print cummulative copy
+ .................i xPAR1'="D" d
+ ..................s ok=0 i $p(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis,depseq,dep,sectseq,sect,tsseq,group,test,tscnt),"\",3)="Y" s ok=1
+ ..................i 'ok d
+ ...................i CumTSType="F" s ok=1
+ ...................e  i dh1="D",CumTSType="D"," F L "[(" "_$p(DOC(34),$c(1))_" ") s ok=1
+ ...................e  i dh1="H",CumTSType="D"," F L "[(" "_$p(HOSP(15),$c(1))_" ") s ok=1
+ ..................i ok d Create1(vtsRID,"C",group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ................ ;
+ ................ ; Report type - 3 - Cumulative layout - Finland
+ ................ ;
+ ................i REPORT(4)=3 d Create3(vtsRID,report,group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ................ ;
+ ................ ; Report type - 1 - Cumulative layout - Variable
+ ................ ;
+ ................i REPORT(4)=1 d Create2(vtsRID,report,group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ................ ;
+ ................ ; Report type - 4 - Cumulative layout - Fixed
+ ................ ;
+ ................i REPORT(4)=4 d Create2(vtsRID,report,group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ................ ;
+ ................ ; Report type - 5 - First episode normal layout, subsequent cumulative vertical
+ ................ ; Report type - 7 - First episode normal layout, subsequent cumulative horizontal
+ ................ ;
+ ................i (REPORT(4)=5)!(REPORT(4)=7) d
+ .................s visit="" i '$$select^LVBEPVIS(epis) s visit="" f j=1:1:PLIST s $p(visit,$c(28),j)=$g(PLIST(j))
+ .................s visit=$tr(visit,"""","'") d CumList($p(vtsRID,"||",2),epis,visit,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""),,group,report)
+ .................k ^TMP($zn,$j,"EpisodeList",report,epis),^TMP($zn,$j,"ReportType",report,epis)
+ .................m ^TMP($zn,$j,"EpisodeList",report,epis)=PLIST
+ .................s ^TMP($zn,$j,"ReportType",report,epis)=ReportType
+ .................s PreEpisodeList=""
+ .................s col="" f  s col=$o(^TMP($zn,$j,"EpisodeList",report,epis,col)) q:col=""   s PreEpisodeList=$s($l(PreEpisodeList):PreEpisodeList_",",1:"")_^(col)
+ .................s ok=1 i PreEpisodeList=$p(vtsRID,"||")!(PreEpisodeList="") s ok=0
+ .................e  i CumTSType'="D",CumTSType'="F" s ok=0
+ .................e  i dh1="D",CumTSType="D"," F L "'[(" "_$p(DOC(34),$c(1))_" ") s ok=0
+ .................e  i dh1="H",CumTSType="D"," F L "'[(" "_$p(HOSP(15),$c(1))_" ") s ok=0
+ .................i 'ok d Create1(vtsRID,"",group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ .................i ok d
+ ..................i REPORT(4)=5 d Create3(vtsRID,report,group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ ..................i REPORT(4)=7 d Create1(vtsRID,"C",group,$s(dh1="D":$g(DOC(34)),dh1="H":$g(HOSP(15)),1:""))
+ .................. ; remove already printed episodes
+ ..................s (xx,col)="" f  s col=$o(^TMP($zn,$j,"EpisodeList",report,epis,col)) q:col=""   i ^(col)'=epis s xx=$s($l(xx):xx_",",1:"")_^(col)
+ ..................k ^TMP($zn,$j,"EpisodeList",report,epis),^TMP($zn,$j,"ReportType",report,epis)
+ ..................i $l(xx) d
+ ...................s sortX="" f  s sortX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX)) q:sortX=""  d
+ ....................s episX="" f  s episX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX)) q:episX=""  d
+ .....................i (","_xx_",")[(","_episX_",") d
+ ......................s depseqX="" f  s depseqX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX)) q:depseqX=""  d
+ .......................s depX="" f  s depX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX)) q:depX=""  d
+ ........................s sectseqX="" f  s sectseqX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX)) q:sectseqX=""  d
+ .........................s sectX="" f  s sectX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX,sectX)) q:sectX=""  d
+ ..........................s tsseqX="" f  s tsseqX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX,sectX,tsseqX)) q:tsseqX=""  d
+ ...........................s groupX="" f  s groupX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX,sectX,tsseqX,groupX)) q:groupX=""  d
+ ............................s testX="" f  s testX=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX,sectX,tsseqX,groupX,testX)) q:testX=""  d
+ .............................i testX=test k ^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sortX,episX,depseqX,depX,sectseqX,sectX,tsseqX,groupX,testX)
+ ............d PrintSection("F")
+ .... ; print original copy
+ ....k CopyToDoctor s copy=$$copies^LVBCOM07()
+ ....s Printed=""
+ ....f CopyNumber=1:1:copy s Printed=1 d PrintReport
+ .... ; print all copies to requesting doctor CR
+ ....i CONFIG(36)="Y",dh1="D",$p(VISIT(15),$c(1))=DOC(2) d
+ .....i $$open^LVBVISDC(Master)
+ .....f copycnt=1:1 q:$$fetch^LVBVISDC(Master)  d
+ ......s CopyToDoctor(copycnt)="" f j=1:1:PLIST s $p(CopyToDoctor(copycnt),$c(1),j)=$p(PLIST(j),$c(1))
+ .....i $$close^LVBVISDC()
+ .....s copycnt="" f  s copycnt=$o(CopyToDoctor(copycnt)) q:copycnt=""  d
+ ......k PLIST f j=1:1:$l(CopyToDoctor(copycnt),$c(1)) s PLIST(j)=$p(CopyToDoctor(copycnt),$c(1),j)
+ ......s CopyDoc=$p(PLIST(3),$c(1)),CopyLoc=$p(PLIST(17),$c(1)) d
+ .......k HOSP,DOC
+ ....... ; doctor exist in CT_Doctor
+ .......i $l(CopyDoc),'$$select^LVBCTDR(CopyDoc,"Y") m DOC=PLIST d  q
+ ........i $p(CopyToDoctor(copycnt),$c(1),14) s DOC(14)=$p(CopyToDoctor(copycnt),$c(1),14)
+ ........i PAR1="F",DOC(39)'="" s copy=DOC(39)
+ ........e  s copy=DOC(14) s:copy="" copy=1
+ ....... ; location exist in CT_Hospital
+ .......i $l(CopyLoc),'$$select^LVBCTHOS(CopyLoc,"Y") m HOSP=PLIST d  q
+ ........i $p(CopyToDoctor(copycnt),$c(1),14) s HOSP(11)=$p(CopyToDoctor(copycnt),$c(1),14)
+ ........i PAR1="F",HOSP(20)'="" s copy=HOSP(20)
+ ........e  s copy=HOSP(11) s:copy="" copy=1
+ ....... ; doctor does not exist in CT_Doctor
+ .......f j=1:1:51 s DOC(j)=""
+ .......s DOC(3)=PLIST(4),DOC(8)=PLIST(11),DOC(5)=PLIST(13),(DOC(39),DOC(14))=PLIST(14) f j=9:1:13 s DOC(j)=PLIST(j-4)
+ .......i PAR1="F",DOC(39)'="" s copy=DOC(39)
+ .......e  s copy=DOC(14) s:copy="" copy=1
+ ......f CopyNumber=1:1:copy s Printed=1 d PrintReport
+ .... ; print all copies to current location CR
+ ....i CONFIG(36)="L",dh1="H",$p(VISIT(22),$c(1))=HOSP(2) d
+ .....i $$open^LVBVISDC(Master)
+ .....f copycnt=1:1 q:$$fetch^LVBVISDC(Master)  d
+ ......s CopyToDoctor(copycnt)="" f j=1:1:PLIST s $p(CopyToDoctor(copycnt),$c(1),j)=$p(PLIST(j),$c(1))
+ .....i $$close^LVBVISDC()
+ .....s copycnt="" f  s copycnt=$o(CopyToDoctor(copycnt)) q:copycnt=""  d
+ ......k PLIST f j=1:1:$l(CopyToDoctor(copycnt),$c(1)) s PLIST(j)=$p(CopyToDoctor(copycnt),$c(1),j)
+ ......s CopyDoc=$p(PLIST(3),$c(1)),CopyLoc=$p(PLIST(17),$c(1)) d
+ .......k HOSP,DOC
+ ....... ; doctor exist in CT_Doctor
+ .......i $l(CopyDoc),'$$select^LVBCTDR(CopyDoc,"Y") m DOC=PLIST d  q
+ ........i $p(CopyToDoctor(copycnt),$c(1),14) s DOC(14)=$p(CopyToDoctor(copycnt),$c(1),14)
+ ........i PAR1="F",DOC(39)'="" s copy=DOC(39)
+ ........e  s copy=DOC(14) s:copy="" copy=1
+ ....... ; location exist in CT_Hospital
+ .......i $l(CopyLoc),'$$select^LVBCTHOS(CopyLoc,"Y") m HOSP=PLIST d  q
+ ........i $p(CopyToDoctor(copycnt),$c(1),14) s HOSP(11)=$p(CopyToDoctor(copycnt),$c(1),14)
+ ........i PAR1="F",HOSP(20)'="" s copy=HOSP(20)
+ ........e  s copy=HOSP(11) s:copy="" copy=1
+ ....... ; doctor does not exist in CT_Doctor
+ .......f j=1:1:51 s DOC(j)=""
+ .......s DOC(3)=PLIST(4),DOC(8)=PLIST(11),DOC(5)=PLIST(13),(DOC(39),DOC(14))=PLIST(14) f j=9:1:13 s DOC(j)=PLIST(j-4)
+ .......i PAR1="F",DOC(39)'="" s copy=DOC(39)
+ .......e  s copy=DOC(14) s:copy="" copy=1
+ ......f CopyNumber=1:1:copy s Printed=1 d PrintReport
+ ....i Printed d
+ .....s report="" f  s report=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report)) q:report=""  d
+ ......s px="" f  s px=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px)) q:px=""  d
+ .......s sort="" f  s sort=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort)) q:sort=""  d
+ ........s epis="" f  s epis=$o(^TMP($zn,$j,"LIST",dh1,SORT,dh2,Master,report,px,sort,epis)) q:epis=""  d
+ .........s status=$$status^LVBEPVIS(epis)
+ .........f j="DR","IP","PP" i $l(list(j)) d events^LVBCOM01(epis,$s(PAR1="F":"FAX-",PAR1="D":"Discharge Summary-",1:"")_j,$s(status="F":"Final",1:"Interim")_"-"_$g(REPID)_$s($l(eventParam):" (param:"_eventParam_") ",1:"")_"-"_list(j)_" by <"_$g(list(j,"user"))_"> to <"_dh1_"="_dh2_">") k list(j) s list(j)=""
+ .... ; set report index
+ ....s pages=$o(^TMP("REPORT",$j,""),-1)
+ ....s ^PR(REPID,"LIST")=PAR1_"\"_PAR2_"\"_$h
+ ....f j=1:1:$l(list,",") s x=$p(list,",",j) i $l(x) d
+ .....s ^PR(REPID,"LIST",Master_"||"_dh1_"||"_dh2,x)=""
+ ..... ; index for the listing report
+ .....s ^TEPIi("DR_Print",+$h,REPID)=PAR1_"\"_PAR2
+ .....s ^TEPIi("DR_Print",+$h,REPID,Master)=$h
+ .....s ^TEPIi("DR_Print",+$h,REPID,Master,dh1_"||"_dh2)=pages
+ .....s ^TEPIi("DR_Print",+$h,REPID,Master,dh1_"||"_dh2,x)=""
+ ; reset printer at end of report run
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Reset^"_%routine i $l($t(@LineRoutine)) x "d Reset^"_%routine_"("""_$p(PAR2,"||")_""")"
+ q
+combine(LIST) n (LIST)
+ k list f j=1:1:LIST d
+ .s line=LIST(j)
+ .i (line="!")!(line="#")!(line=$c(13))!($e(line)="~") s x=$o(list(""),-1)+1,list(x)=line q
+ .s oldline="",x=$o(list(""),-1) i x s oldline=list(x)
+ .i (oldline="!")!(oldline="#")!(oldline=$c(13))!($e(oldline)="~")!(oldline="") d  q
+ ..i $e(line)="?" s shift=$e(line,2,4),line=$j("",shift)_$e(line,5,$l(line))
+ ..s x=$o(list(""),-1)+1,list(x)=line
+ .i $e(line)="?" s shift=$e(line,2,4),line=$e(oldline_$j("",shift),1,shift)_$e(line,5,$l(line))
+ .e  s line=oldline_line
+ .s x=$o(list(""),-1),list(x)=line
+ s list=$o(list(""),-1)
+ m list(0)=LIST(0)
+ k LIST m LIST=list k list
+ q
+ ; print report for one patient
+PrintReport s page="" f  s page=$o(^TMP("REPORT",$j,page)) q:page=""  d
+ . ; print page Header
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Header^"_%routine_"("""_page_""","""_PAR1_""","""_$p(PAR2,"||")_""")"
+ . ; print report
+ .f j=1:1 q:'$d(^TMP("REPORT",$j,page,"TEXT",j))  s xx=^(j) d ADDLINE^PRTREP00(REPID,"PRT",xx)
+ . ; print page Footer
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ .i $l(%routine) x "d Footer^"_%routine_"("""_page_""","""_PAR1_""","""_$p(PAR2,"||")_""")"
+ q
+ ; create normal layouts
+Create1(vtsRID,cum,group,cOrder) k Breaks
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="MaxLines^"_%routine i $l($t(@LineRoutine)) x "d MaxLines^"_%routine_"("""_report_""","""_$p(PAR2,"||")_""")"
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Create1^"_%routine i $l($t(@LineRoutine)) x "d Create1^"_%routine_"("""_vtsRID_""","""_cum_""","""_group_""","""_cOrder_""")" q
+ s DH=dh1,PrintTestHeader=1
+ s type="P" i PAR1="V" s type=$p(PAR2,"-",1)
+ i '$$SINGLE(vtsRID,type,cum,,DH,group,cOrder),PLIST d
+ .s BodyLength=$g(Breaks) k cPartialHeader
+ .s TestHeader=0 f j=1:1:HEADER i HEADER(j)="!" s TestHeader=TestHeader+1
+ .s TestBody=0 f j=1:1:PLIST i PLIST(j)="!",j<PLIST s TestBody=TestBody+1
+ .s LeftLines=TestBody
+ .s test=$p(vtsRID,"||",2),StopSplit=$$seldata^LVBCTTS(test,25)
+ .s Start="Y",NewPage=ForceNewPage f jLine=1:1:PLIST d
+ ..i $o(^TMP("REPORT",$j,""))="" s NewPage=1
+ ..i 'NewPage,jLine=1,StopSplit="Y",PageLine+TestHeader+TestBody+2>MaxLine s NewPage=1
+ ..i 'NewPage,jLine=1,BodyLength,StopSplit="T",PageLine+TestHeader+BodyLength+1>MaxLine s NewPage=1
+ ..i 'NewPage,jLine=1,TestHeader,TestBody,PageLine+TestHeader+1>MaxLine s NewPage=1
+ ..i 'NewPage,$d(Breaks(jLine)),PageLine+TestHeader+Breaks(jLine)>MaxLine s NewPage=1
+ ..i 'NewPage,PageLine+LeftLines>MaxLine,PageLine+$s($g(PrintTestHeader):TestHeader,1:0)>MaxLine s NewPage=1
+ ..i (jLine=1)!NewPage d
+ ...i 'NewPage d OldPage(vtsRID)
+ ...i NewPage d NewPage(vtsRID)
+ ..i Start="Y" d  s Start="N"
+ ...i REPORT(5)="Y" d PrintDepHeader
+ ...d PrintSection("H")
+ ...d PrintTestHeader(1)
+ ..i 'PageLine,PLIST(jLine)="!",'$d(^TMP("REPORT",$j,page,"TEXT")) q
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ..i PLIST(jLine)="!" s PageLine=PageLine+1,LeftLines=LeftLines-1 i PageLine>MaxLine s NewPage=1 i jLine=PLIST q
+ ..i NewPage s x="" f  s x=$o(PartialHeader(x)) q:x=""  i jLine>$p(PartialHeader(x),",",1),jLine<$p(PartialHeader(x),",",2) k cPartialHeader m cPartialHeader=PartialHeader(x)
+ .i $d(COMMENTS) f jLine=1:1 q:'$d(COMMENTS(jLine))  d
+ ..i NewPage d NewPage(vtsRID)
+ ..i COMMENTS(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i '$d(COMMENTS(jLine+1)) q
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=COMMENTS(jLine)
+ ..i COMMENTS(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1
+ .d CheckLastPage
+ q
+ ; create cumulative layouts
+Create2(vtsRID,report,group,cOrder) k Breaks
+ s DH=dh1,(EpisodeList,ReportType)="" i $l(report) d
+ .s col="" f  s col=$o(^TMP($zn,$j,"EpisodeList",report,epis,col)) q:col=""   s EpisodeList=$s($l(EpisodeList):EpisodeList_",",1:"")_^(col)
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="MaxLines^"_%routine i $l($t(@LineRoutine)) x "d MaxLines^"_%routine_"("""_report_""","""_$p(PAR2,"||")_""")"
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Create2^"_%routine i $l($t(@LineRoutine)) x "d Create2^"_%routine_"("""_vtsRID_""","""_report_""","""_group_""","""_cOrder_""")" q
+ s type="P" i PAR1="V" s type=$p(PAR2,"-",1)
+ i '$$SINGLE(vtsRID,type,"C",EpisodeList,DH,group,cOrder),PLIST d
+ .s BodyLength=$g(Breaks) k cPartialHeader
+ .s TestHeader=0 f j=1:1:HEADER i HEADER(j)="!" s TestHeader=TestHeader+1
+ .s TestBody=0 f j=1:1:PLIST i PLIST(j)="!" s TestBody=TestBody+1
+ .s LeftLines=TestBody
+ .s test=$p(vtsRID,"||",2),StopSplit=$$seldata^LVBCTTS(test,25)
+ .s Start="Y",NewPage=ForceNewPage f jLine=1:1:PLIST d
+ ..i $o(^TMP("REPORT",$j,""))="" s NewPage=1
+ ..i 'NewPage,jLine=1,StopSplit="Y",PageLine+TestBody+2>MaxLine s NewPage=1
+ ..i 'NewPage,jLine=1,BodyLength,StopSplit="T",PageLine+BodyLength+1>MaxLine s NewPage=1
+ ..i 'NewPage,jLine=1,TestHeader,TestBody,PageLine+TestHeader+1>MaxLine s NewPage=1
+ ..i 'NewPage,$d(Breaks(jLine)),PageLine+Breaks(jLine)>MaxLine s NewPage=1
+ ..i 'NewPage,PageLine+LeftLines>MaxLine,PageLine+$s($g(PrintTestHeader):TestHeader,1:0)>MaxLine s NewPage=1
+ ..i Start="Y",$g(PrintTestHeader) d
+ ...i 'NewPage,jLine=1,StopSplit="Y",PageLine+TestHeader+TestBody+2>MaxLine s NewPage=1
+ ...i 'NewPage,jLine=1,BodyLength,StopSplit="T",PageLine+TestHeader+BodyLength+1>MaxLine s NewPage=1
+ ...i 'NewPage,$d(Breaks(jLine)),PageLine+TestHeader+Breaks(jLine)>MaxLine s NewPage=1
+ ..i (jLine=1)!NewPage d
+ ...i 'NewPage d OldPage(vtsRID)
+ ...i NewPage d NewPage(vtsRID) s Start="YC"
+ ..i Start["Y" d  s Start="N"
+ ...i Start="Y",REPORT(5)="Y" d PrintDepHeader
+ ...i Start="Y" d PrintSection("H")
+ ...d PrintTestHeader(1)
+ ..i 'PageLine,PLIST(jLine)="!",'$d(^TMP("REPORT",$j,page,"TEXT")) q
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ..i PLIST(jLine)="!" s PageLine=PageLine+1,LeftLines=LeftLines-1 i PageLine>MaxLine s NewPage=1 i jLine=PLIST q
+ ..i NewPage s x="" f  s x=$o(PartialHeader(x)) q:x=""  i jLine>$p(PartialHeader(x),",",1),jLine<$p(PartialHeader(x),",",2) k cPartialHeader m cPartialHeader=PartialHeader(x)
+ .i $d(COMMENTS) f jLine=1:1 q:'$d(COMMENTS(jLine))  d
+ ..i NewPage d NewPage(vtsRID)
+ ..i COMMENTS(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i '$d(COMMENTS(jLine+1)) q
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=COMMENTS(jLine)
+ ..i COMMENTS(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1
+ .d CheckLastPage
+ q
+ ; create Finland cumulative layouts
+Create3(vtsRID,report,group,cOrder) k Breaks
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="MaxLines^"_%routine i $l($t(@LineRoutine)) x "d MaxLines^"_%routine_"("""_report_""","""_$p(PAR2,"||")_""")"
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Create3^"_%routine i $l($t(@LineRoutine)) x "d Create3^"_%routine_"("""_vtsRID_""","""_report_""","""_group_""","""_cOrder_""")" q
+ s DH=dh1,type="P" i PAR1="V" s type=$p(PAR2,"-",1)
+ i '$$SINGLE(vtsRID,type,"FC",,DH,group,cOrder),PLIST d
+ . ; Create one line
+ .d combine(.HEADER)
+ .d combine(.PLIST)
+ .m SPLIT("HEADER")=HEADER k HEADER,cPartialHeader
+ .m SPLIT("PLIST")=PLIST k PLIST
+ .s TestHeader=0 f j=1:1:SPLIT("HEADER") i SPLIT("HEADER",j)="!" s TestHeader=TestHeader+1
+ .s NewPage=ForceNewPage f SPLIT=1:1 q:'$d(SPLIT("SPLIT",SPLIT))  d
+ ..k HEADER f j=1:1:SPLIT("HEADER") d
+ ...s x1=$p(SPLIT("SPLIT",0),"-",1),x2=$p(SPLIT("SPLIT",0),"-",2)
+ ...s x3=$p(SPLIT("SPLIT",SPLIT),"-",1),x4=$p(SPLIT("SPLIT",SPLIT),"-",2)
+ ...s HEADER(j)=$e(SPLIT("HEADER",j),x1,x2)_$e(SPLIT("HEADER",j),x3,x4)
+ ..s HEADER=$o(HEADER(""),-1)
+ ..k PLIST f j=1:1:SPLIT("PLIST") d
+ ...s x1=$p(SPLIT("SPLIT",0),"-",1),x2=$p(SPLIT("SPLIT",0),"-",2)
+ ...s x3=$p(SPLIT("SPLIT",SPLIT),"-",1),x4=$p(SPLIT("SPLIT",SPLIT),"-",2)
+ ...s PLIST(j)=$e(SPLIT("PLIST",j),x1,x2)_$e(SPLIT("PLIST",j),x3,x4)
+ ..s PLIST=$o(PLIST(""),-1)
+ ..s Start="Y",PrintTestHeader=1 f jLine=1:1:PLIST d
+ ...i $o(^TMP("REPORT",$j,""))="" s NewPage=1
+ ...i 'NewPage,$d(Breaks(jLine)),PageLine+TestHeader+Breaks(jLine)>MaxLine s NewPage=1
+ ...i (jLine=1)!NewPage d
+ ....i 'NewPage d OldPage(vtsRID)
+ ....i NewPage d NewPage(vtsRID)
+ ...i Start="Y" d  s Start="N"
+ ....i REPORT(5)="Y" d PrintDepHeader
+ ....d PrintSection("H")
+ ....i SPLIT=1,$d(BMP) f j=1:1 q:'$d(BMP(j))  d
+ .....s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=BMP(j)
+ ....d PrintTestHeader($s(SPLIT=1:1,1:SPLIT("H1")))
+ ....i $d(SPLIT("PLIST",0)) f j=1:1 q:'$d(SPLIT("PLIST",0,j))  d
+ .....s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=SPLIT("PLIST",0,j)
+ ...i 'PageLine,PLIST(jLine)="!",'$d(^TMP("REPORT",$j,page,"TEXT")) q
+ ...s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=PLIST(jLine)
+ ...i PLIST(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i jLine=PLIST q
+ ...i NewPage s x="" f  s x=$o(PartialHeader(x)) q:x=""  i jLine>$p(PartialHeader(x),",",1),jLine<$p(PartialHeader(x),",",2) k cPartialHeader m cPartialHeader=PartialHeader(x)
+ .i $d(COMMENTS) f jLine=1:1 q:'$d(COMMENTS(jLine))  d
+ ..i NewPage d NewPage(vtsRID)
+ ..i COMMENTS(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i '$d(COMMENTS(jLine+1)) q
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=COMMENTS(jLine)
+ ..i COMMENTS(jLine)="!" s PageLine=PageLine+1 i PageLine>MaxLine s NewPage=1 i '$d(COMMENTS(jLine+1)) q
+ .d CheckLastPage
+ q
+Future(jLine) s result="" f j=jLine:1:PLIST i " ! # ~ "'[(" "_$e(PLIST(j))_" "),$l($tr(PLIST(j)," ")) s result=1 q
+ q result
+PrintTestHeader(H1) i PrintTestHeader s PrintTestHeader=0 f j=H1:1:HEADER d
+ .i HEADER(j)="!" s PageLine=PageLine+1
+ .s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=HEADER(j)
+ q
+ ; check if Last page has info to print
+CheckLastPage s page=$o(^TMP("REPORT",$j,""),-1) i $l(page) d
+ .s x="" f  s x=$o(^TMP("REPORT",$j,page,"TEXT",x)) q:x=""  i $l($tr(^(x),"! "_$c(10,13))) q
+ .i '$l(x) k ^TMP("REPORT",$j,page)
+ q
+ ; request for new page
+NewPage(vtsRID) s vtsRID=$g(vtsRID),(ForceNewPage,NewPage)=0,PrintTestHeader=1
+ d CheckLastPage
+ s page=$o(^TMP("REPORT",$j,""),-1)+1,PageLine=0
+ s ^TMP($zn,$j,"Page")=$g(^TMP($zn,$j,"Page"))+1
+ s ^TMP("REPORT",$j,page,"TEST",vtsRID)=""
+ s ^TMP("REPORT",$j,page,"PageType")=report
+ i $l(report) s ^TMP("REPORT",$j,page,"ReportType")=$g(^TMP($zn,$j,"ReportType",report))
+ s ^TMP("REPORT",$j,page,"PageCounter")=^TMP($zn,$j,"Page")
+ ; print Partial header
+ i $d(cPartialHeader) d
+ .s jPH="" f  s jPH=$o(cPartialHeader(jPH)) q:jPH=""  d
+ ..i cPartialHeader(jPH)="!" s PageLine=PageLine+1
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1,^TMP("REPORT",$j,page,"TEXT",x)=cPartialHeader(jPH)
+ .k cPartialHeader
+ q
+ ; request for old page
+OldPage(vtsRID) s vtsRID=$g(vtsRID)
+ s page=$o(^TMP("REPORT",$j,""),-1)
+ i 'page s page=1,PageLine=0
+ s ^TMP("REPORT",$j,page,"TEST",vtsRID)=""
+ q
+ ; print department header
+PrintDepHeader ;
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="PrintDepHeader^"_%routine i $l($t(@LineRoutine)) x "d PrintDepHeader^"_%routine q
+ ; check for margin changes
+ s margin="",%routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Margin^"_%routine i $l($t(@LineRoutine)) x "s margin=$$Margin^"_%routine_"()"
+ i PrintDepHeader d  s PrintDepHeader=0
+ .n (dep,page,PageLine,tsLM,margin,lan,dh1,dh2) s (print,name)=""
+ .i '$$select^LVBCTDEP(dep,"Y") s print=PLIST(7),name=PLIST(3)
+ .i $p(print,$c(1))="Y" d
+ ..s lan="" i dh1="D" s lan=$$seldata^LVBCTDR(dh2,46)
+ ..s lan=$p($g(lan),$c(1)) i $l(lan) d
+ ...s rowid=dep_"||"_lan
+ ...s name=$$seldata^LVBCTDPT(rowid,3)
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ..i $d(^TMP("REPORT",$j,page,"TEST")) s ^TMP("REPORT",$j,page,"TEXT",x)="!",x=x+1,PageLine=PageLine+1
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)="~BOLD"
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+1)=$c(13)
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+2)=$j("",tsLM+margin)_name
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+3)="~NORMAL"
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+4)="!"
+ ..s PageLine=PageLine+1
+ q
+ ; print section header/footer
+ ; type : H-Header
+ ;        F-Footer
+PrintSection(SectionType) ;
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="PrintSection^"_%routine i $l($t(@LineRoutine)) x "d PrintSection^"_%routine_"("""_SectionType_""")" q
+ ; check for margin changes
+ s margin="",%routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Margin^"_%routine i $l($t(@LineRoutine)) x "s margin=$$Margin^"_%routine_"()"
+ i PrintSection(SectionType) d  s PrintSection(SectionType)=0
+ .n (sect,page,PageLine,tsLM,margin,SectionType,lan,dh1,dh2)
+ .i '$$select^LVBCTDS(sect,"Y") s name=$s(SectionType="H":PLIST(6),1:PLIST(7)) i $l(name) d
+ ..s lan="" i dh1="D" s lan=$$seldata^LVBCTDR(dh2,46)
+ ..s lan=$p($g(lan),$c(1)) i $l(lan) d
+ ...s rowid=sect_"||"_lan,(header,footer)=""
+ ...s header=$$seldata^LVBCTDSA(rowid,3),footer=$$seldata^LVBCTDSA(rowid,4)
+ ...i SectionType="H"&$l(header) s name=header
+ ...e  i SectionType="F"&$l(footer) s name=footer
+ ..s page=$o(^TMP("REPORT",$j,""),-1) i '$l(page) q
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ..i $d(^TMP("REPORT",$j,page,"TEST")) s ^TMP("REPORT",$j,page,"TEXT",x)="!",x=x+1,PageLine=PageLine+1
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)="~BOLD"
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+1)=$c(13)
+ ..f j=1:1:$l(name,"|") d
+ ...s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ...s ^TMP("REPORT",$j,page,"TEXT",x)=$j("",tsLM+margin)_$p(name,"|",j)
+ ...i $l(name,"|")>1,j<$l(name,"|") s ^TMP("REPORT",$j,page,"TEXT",x+1)="!",PageLine=PageLine+1
+ ..s x=$o(^TMP("REPORT",$j,page,"TEXT",""),-1)+1
+ ..s ^TMP("REPORT",$j,page,"TEXT",x)="~NORMAL"
+ ..s ^TMP("REPORT",$j,page,"TEXT",x+1)="!"
+ ..s PageLine=PageLine+1
+ q
+ ; print multiple reports
+CumView(type,CumType,user,pc) n (type,CumType,user,pc,PLIST) s type=$g(type),CumType=$g(CumType),user=$g(user),pc=$g(pc)
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="CumView^"_%routine i $l($t(@LineRoutine)) x "s xx=$$CumView^"_%routine_"("""_type_""","""_CumType_""","""_user_""","""_pc_""")" q xx
+ k ^TMP($zn,$j,"ViewList"),^TMP($zn,$j,"ViewList-Report") m ^TMP($zn,$j,"ViewList")=PLIST
+ s viewcnt="" f  s viewcnt=$o(^TMP($zn,$j,"ViewList",viewcnt)) q:viewcnt=""  d
+ .s test=$p(^(viewcnt),$c(1),1),EpisodeList=$p(^(viewcnt),$c(1),2),group=$p(^(viewcnt),$c(1),3)
+ .s epis=$p(EpisodeList,","),tscnt=$o(^TEPI(epis,1,test,"")),vtsRID=epis_"||"_test_"||"_tscnt
+ .s (name,GroupName)="" i '$$select^LVBCTTWG(group,"Y") s GroupName=PLIST(10),name=PLIST(3)
+ .i GroupName="*" s GroupName=name
+ .i $$SINGLE(vtsRID,type,$s(CumType="H":"FC",1:"C"),EpisodeList,,group)
+ .d clearBreaks
+ .i $$view^LVBVISEV(vtsRID,user,pc)
+ .f j=1:1:HEADER s cnt=$o(^TMP($zn,$j,"ViewList-Report",""),-1)+1 s ^TMP($zn,$j,"ViewList-Report",cnt)=HEADER(j)
+ .f j=1:1:PLIST s cnt=$o(^TMP($zn,$j,"ViewList-Report",""),-1)+1 s ^TMP($zn,$j,"ViewList-Report",cnt)=PLIST(j)
+ .f j=1:1 q:'$d(COMMENTS(j))  s cnt=$o(^TMP($zn,$j,"ViewList-Report",""),-1)+1 s ^TMP($zn,$j,"ViewList-Report",cnt)=COMMENTS(j)
+ .f j=1:1:2 s cnt=$o(^TMP($zn,$j,"ViewList-Report",""),-1)+1 s ^TMP($zn,$j,"ViewList-Report",cnt)="!"
+ k PLIST m PLIST=^TMP($zn,$j,"ViewList-Report") k ^TMP($zn,$j,"ViewList"),^TMP($zn,$j,"ViewList-Report")
+ s PLIST=$o(PLIST(""),-1)
+ s Lines=0 f j=1:1:PLIST s PLIST(j)=$tr(PLIST(j),"^",$c(28)) i PLIST(j)="!" s Lines=Lines+1
+ q Lines
+ ; same as SINGLE but to run from VB to convert all ^\| into $c(16,17,18)
+single(vtsRID,type,format,EpisodeList,DH,group,cOrder,mismpl) n (vtsRID,type,format,EpisodeList,DH,group,cOrder,mismpl,PLIST)
+ s vtsRID=$g(vtsRID),type=$g(type),format=$g(format),EpisodeList=$g(EpisodeList),DH=$g(DH),group=$g(group),cOrder=$g(cOrder),mismpl=$g(mismpl)
+ s dh1="D",epis=$p(vtsRID,"||")
+ s dh2=$p($$seldata^LVBEPVIS(epis,15),$c(1)),test=$p(vtsRID,"||",2),group=$$seldata^LVBCTTS(test,46)
+ i $$SINGLE(vtsRID,type,format,EpisodeList,DH,group,cOrder,mismpl)
+ d clearBreaks
+ s PLIST=$o(PLIST(""),-1)
+ s Lines=0 f j=1:1:PLIST s PLIST(j)=$tr(PLIST(j),"^\|",$c(16,17,18)) i PLIST(j)="!" s Lines=Lines+1
+ q Lines
+ ; type          : P - print
+ ;                 V - view from Enquiry
+ ;                 E - EDI (PIT,HL7,HL7MD)
+ ;                   - view from Entry
+ ;                 W - view from Web
+ ;                 WS- view from Web(extra small)
+ ;                 WB- view from Web(BB grid)
+ ; format        : C  - cumulative
+ ;                 FC - Horizontal cumulative
+ ;                    - normal
+ ; EpisodeList   : list of episodes
+ ; DH            : D - Doctor
+ ;                 H - Hospital
+SINGLE(vtsRID,type,format,EpisodeList,DH,group,cOrder,mismpl) n (vtsRID,type,format,EpisodeList,DH,group,cOrder,mismpl,PLIST,HEADER,tsLM,tsWD,Breaks,SPLIT,GroupName,dh1,dh2,PAR1,PAR2,BMP,COMMENTS,report,PartialHeader)
+ s vtsRID=$g(vtsRID),type=$g(type),format=$g(format),EpisodeList=$g(EpisodeList),DH=$g(DH),group=$g(group),cOrder=$g(cOrder),mismpl=$g(mismpl) k Breaks,COMMENTS
+ k ^TMP($zn,$j,"TYPE") i $e(type)="E" s ^TMP($zn,$j,"TYPE")=$p(type,"-",2),type="P"
+ k ^TMP($zn,$j,"WEB") i $e(type)="W" s ^TMP($zn,$j,"WEB")=type,type="V"
+ s test=$p(vtsRID,"||",2),dep="",(tsLM,tsWD)=0
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ i '$$select^MVBCFLAB(1) d
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ k ^TMP($zn,$j,"RESULT"),^TMP($zn,$j,"RESULT-HEADER")
+ ; print Cumulative test sets
+ i format="FC" d
+ . ; print test set
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP5")),"\",1) i $l(%routine) d
+ ..x "s error=$$print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""","""_EpisodeList_""","""_group_""","""_cOrder_""")"
+ i format="C" d
+ . ; print test set
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP3")),"\",1) i $l(%routine) d
+ ..x "s error=$$print^"_%routine_"("""_vtsRID_""","""_type_""","""_EpisodeList_""","""_DH_""","""_group_""","""_cOrder_""")"
+ ..i error=1,type="P" k ^TMP($zn,$j,"RESULT"),^TMP($zn,$j,"RESULT-HEADER") q
+ ..i error-100=0,type'="P" s MainTest=$p(vtsRID,"||",2) k ^TMP($zn,$j,"xRESULT") d
+ ...s Episodes=$p(error,$c(1),2) i $l(Episodes) f jj1=1:1:$l(Episodes,",") s epis=$p(Episodes,",",jj1) d
+ ....s Counter="" f  s Counter=$o(^TEPI(epis,1,MainTest,Counter)) q:Counter=""  d
+ .....s x=$$SINGLE(epis_"||"_MainTest_"||"_Counter,type,"","",DH,group,cOrder)
+ .....s date=$$seldata^LVBEPVIS(epis,12),time=$$seldata^LVBEPVIS(epis,13)
+ .....k xPLIST
+ .....s xPLIST(1)="~BOLD"
+ .....s xPLIST(2)="Episode        : "_epis,xPLIST(3)="!"
+ .....s xPLIST(4)="Date collected : "_$$extdate2^SSUTIL4(date),xPLIST(5)="!"
+ .....s xPLIST(6)="Time collected : "_$s(time:$$exttime^SSUTIL4(time),1:""),xPLIST(7)="!"
+ .....s xPLIST(8)="~NORMAL" f j=1:1:PLIST s xPLIST(8+j)=PLIST(j)
+ .....s x=$o(^TMP($zn,$j,"xRESULT",""),-1)+1 m ^TMP($zn,$j,"xRESULT",x)=xPLIST
+ .....k ^TMP($zn,$j,"RESULT") f j=1:1:x d
+ ......s x1="" f  s x1=$o(^TMP($zn,$j,"xRESULT",j,x1)) q:x1=""  d
+ .......s x2=$o(^TMP($zn,$j,"RESULT",""),-1)+1,^TMP($zn,$j,"RESULT",x2)=^TMP($zn,$j,"xRESULT",j,x1)
+ ......i j<x f x=1,1 s x2=$o(^TMP($zn,$j,"RESULT",""),-1)+1,^TMP($zn,$j,"RESULT",x2)="!"
+ ; check for margin changes
+ s margin="",%routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Margin^"_%routine i $l($t(@LineRoutine)) x "s margin=$$Margin^"_%routine_"()"
+ ; print Normal test sets
+ i format="" d
+ . ; print test set
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP1")),"\",1)
+ .s error="" i $l(%routine) x "s error=$$print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+ .i error'="Y" d
+ ..s Breaks=0 f j=1:1 q:'$d(^TMP($zn,$j,"RESULT",j))  i ^(j)="!" s Breaks=Breaks+1
+ ..d Comments1
+ ..d Pathogens
+ ..d Comments2
+ d Lines(1)
+ k PLIST m PLIST=^TMP($zn,$j,"RESULT")
+ s PLIST=$o(PLIST(""),-1)
+ ; remove empty lines
+ k plist m plist=PLIST k PLIST
+ s PLIST=0 f j=1:1:plist d
+ .i '$l(plist(j)) q
+ .i plist(j)=$c(13),$g(plist(j+1))="!" q
+ .s PLIST=PLIST+1,PLIST(PLIST)=plist(j)
+ k plist
+ ; delete Breaks point for Word T/S
+ i (TEST(31)="Y")!(TEST(54)="Y") k Breaks d clearBreaks
+ i '$$Future(1) k PLIST,Breaks d clearBreaks s PLIST=0
+ k HEADER m HEADER=^TMP($zn,$j,"RESULT-HEADER")
+ s HEADER=$o(HEADER(""),-1)
+ k ^TMP($zn,$j,"RESULT"),^TMP($zn,$j,"RESULT-HEADER"),^TMP($zn,$j,"TYPE")
+ ; small adjustments
+ k header m header=HEADER k HEADER
+ f j=1:1:$g(header)-1 i $e(header(j))="?",$e(header(j+1))="?",$e(header(j),2,4)=$e(header(j+1),2,4),$l(header(j))=4 k header(j)
+ s x="" f cnt=1:1 s x=$o(header(x)) q:x=""  s HEADER(cnt)=header(x)
+ s HEADER=$o(HEADER(""),-1)
+ k plist m plist=PLIST k PLIST
+ f j=1:1:$g(plist)-1 i $e(plist(j))="?",$e(plist(j+1))="?",$e(plist(j),2,4)=$e(plist(j+1),2,4),$l(plist(j))=4 k plist(j)
+ s x="" f cnt=1:1 s x=$o(plist(x)) q:x=""  s PLIST(cnt)=plist(x)
+ ; check PartialHeader
+ k xBreaks
+ k plist m plist=PLIST k PLIST
+ s (x1,x2)="" f  s x1=$o(plist(x1)) q:x1=""  d
+ .i plist(x1)["~Break",x2 s Breaks(x2+1)="" q
+ .s x2=x2+1,PLIST(x2)=plist(x1)
+ s PLIST=$o(PLIST(""),-1)
+ i $d(PartialHeader) k plist m plist=PLIST k PLIST d
+ .s (x1,x2)="" f  s x1=$o(plist(x1)) q:x1=""  d
+ ..i plist(x1)["~PartialHeaderStart" s xx=$p(plist(x1),"=",2) s $p(PartialHeader(xx),",",1)=x2 q
+ ..i plist(x1)["~PartialHeaderEnd" s xx=$p(plist(x1),"=",2) s $p(PartialHeader(xx),",",2)=x2 q
+ ..i plist(x1)["~Break",x2 s Breaks(x2+1)="" q
+ ..s x2=x2+1,PLIST(x2)=plist(x1)
+ .s x1="" f  s x1=$o(PartialHeader(x1)) q:x1=""  d
+ ..s (cnt,x2)="" f  s x2=$o(PartialHeader(x1,x2)) q:x2=""  i PartialHeader(x1,x2)="!" s cnt=cnt+1
+ ..s $p(PartialHeader(x1),",",3)=cnt i cnt>1 s xBreaks($p(PartialHeader(x1),",",1))=cnt
+ s PLIST=$o(PLIST(""),-1)
+ i $d(Breaks)>10 d
+ .s Breaks(1)="" k Breaks(PLIST)
+ .s (x1,x2)="" f  s x1=$o(Breaks(x1)) q:x1=""  d:$l(x2)  s x2=x1
+ ..s x3=0 f j=x2:1:x1 i $e($g(PLIST(j)))="!" s x3=x3+1
+ ..s Breaks(x2)=x3
+ .i $l(x2) d
+ ..s x3=0 f j=x2:1:PLIST i $e($g(PLIST(j)))="!" s x3=x3+1
+ ..s Breaks(x2)=x3
+ .m Breaks=xBreaks k xBreaks
+ i $d(^TMP($zn,$j,"WEB")) d adjustHTML^LVBCOM07
+ d adjustInvisible^LVBCOM08
+ q 0
+clearBreaks 
+ k plist m plist=PLIST k PLIST
+ s (x1,x2)="" f  s x1=$o(plist(x1)) q:x1=""  i plist(x1)'["~Break" s x2=x2+1,PLIST(x2)=plist(x1)
+ s PLIST=$o(PLIST(""),-1)
+ q
+ ; print test set comments
+Comments1 
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Comments1^"_%routine i $l($t(@LineRoutine)) x "d Comments1^"_%routine q
+ k PLIST i '$$COMMENTS^LVBCOM01(vtsRID,,type,"N",,,,,,mismpl),PLIST d ADD(,"~Break"),Lines(2) f j1=1:1:PLIST d
+ .s x1="" f j2=1:1:$l(PLIST(j1),"^") s x2=$p(PLIST(j1),"^",j2) i $l(x2) d
+ ..i type="P" s x2=$tr(x2,$c(16,17,18),"^\|")
+ ..i $e(x2)'="~" d ADD(tsLM+x1+margin,x2) s x1=x1+$l(x2)
+ ..i $e(x2)="~" d ADD(,x2)
+ .d LN()
+ q
+ ; print pathogens
+Pathogens 
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Pathogens^"_%routine i $l($t(@LineRoutine)) x "d Pathogens^"_%routine q
+ s epis=$p(vtsRID,"||",1),ts=$p(vtsRID,"||",2)
+ i '$$getit^LVBCTTSF(,vtsRID,"Y") d
+ .s (Bugs,cnt)="" f  s cnt=$o(PLIST(cnt)) q:cnt=""  i $p(PLIST(cnt),$c(2),18)="V" s Bugs="Y" q
+ .i Bugs="Y" d
+ ..d ADD(,"~Break")
+ ..s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP2")),"\",1)
+ ..i $l(%routine) x "s error=$$print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+ q
+ ; print pathogens comments
+Comments2 
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Comments2^"_%routine i $l($t(@LineRoutine)) x "d Comments2^"_%routine q
+ k PLIST i '$$COMMENTS^LVBCOM01(vtsRID,,type,"V",,,,,,mismpl),PLIST d ADD(,"~Break"),Lines(2) f j1=1:1:PLIST d
+ .s x1="" f j2=1:1:$l(PLIST(j1),"^") s x2=$p(PLIST(j1),"^",j2) i $l(x2) d
+ ..i type="P" s x2=$tr(x2,$c(16,17,18),"^\|")
+ ..i $e(x2)'="~" d ADD(tsLM+x1+margin,x2) s x1=x1+$l(x2)
+ ..i $e(x2)="~" d ADD(,x2)
+ .d LN()
+ q
+ ; check only one line space
+Lines(MaxCnt) n (MaxCnt) s x="" f cnt=0:1 s x=$o(^TMP($zn,$j,"RESULT",x),-1) q:x=""  i ^(x)'="!" q
+ i cnt>MaxCnt s x="" f j=1:1:cnt-MaxCnt s x=$o(^TMP($zn,$j,"RESULT",x),-1) q:x=""  k ^(x)
+ i cnt<MaxCnt f j=1:1:MaxCnt-cnt s x=$o(^TMP($zn,$j,"RESULT",""),-1)+1,^TMP($zn,$j,"RESULT",x)="!"
+ q
+LN(header) s header=$g(header) d ADD(,"!",header)
+ q
+ ; add new line to PR
+ADD(col0,line0,header,cr) n (col0,line0,header,cr) s col0=$g(col0),line0=$g(line0),header=$g(header),cr=$g(cr)
+ s type=$s(header="":"RESULT",header="Y":"RESULT-HEADER",1:"")
+ i $l(type) d
+ .i $e(line0)="~" d ADDLINE(,line0,type) d:cr'="N" ADDLINE(,$c(13),type) q
+ .d ADDLINE(col0,line0,type) 
+ q
+ ; add new line to PR
+ADDLINE(col,line,part) n (col,line,part) s col=$g(col),line=$g(line),part=$g(part)
+ s st=$o(^TMP($zn,$j,part,""),-1)+1,^TMP($zn,$j,part,st)=$s(col:"?"_$e(col_"   ",1,3),1:"")_line
+ Q
+IS ; Standard comments
+IX ; Free Text
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="IS^"_%routine i $l($t(@LineRoutine)) x "d IS^"_%routine q
+ d IS^LVBCOM07
+ q
+IB2 ; Blood Group
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="IB2^"_%routine i $l($t(@LineRoutine)) x "d IB2^"_%routine q
+ d IB2^LVBCOM07
+ q
+IB3 ; Antibodies
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="IB3^"_%routine i $l($t(@LineRoutine)) x "d IB3^"_%routine q
+ d IB3^LVBCOM07
+ q
+IN ; Numeric
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="IN^"_%routine i $l($t(@LineRoutine)) x "d IN^"_%routine q
+ d IN^LVBCOM07
+ q
+IA ; Audit
+ s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="IA^"_%routine i $l($t(@LineRoutine)) x "d IA^"_%routine q
+ d IA^LVBCOM07
+ q
+IV ; Micro Pathogen
+ d IV^LVBCOM07
+ q
+ID ; Date
+ d ID^LVBCOM07
+ q
+IT ; Time
+ d IT^LVBCOM07
+ q
+IY ; Yes/No
+ d IY^LVBCOM07
+ q
+IZ ; Special fields
+ d IZ^LVBCOM07
+ q
+ ; create list of episodes and results
+CumList(TestList,epis,visit,cOrder,MAX,group,report) 
+ s TestList=$g(TestList),epis=$g(epis),visit=$g(visit),cOrder=$g(cOrder),MAX=$g(MAX),group=$g(group),report=$g(report)
+ d CumList^LVBCOM07(TestList,epis,visit,cOrder,MAX,group,report)
+ q
+ ; create list of episodes and results
+CumListFixed(ReportGroup,epis,visit,cOrder,dh1,dh2,SORT) 
+ s ReportGroup=$g(ReportGroup),epis=$g(epis),visit=$g(visit),cOrder=$g(cOrder),dh1=$g(dh1),dh2=$g(dh2),SORT=$g(SORT)
+ d CumListFixed^LVBCOM07(ReportGroup,epis,visit,cOrder,dh1,dh2,SORT) 
+ q
+]]></Routine>
+</Export>

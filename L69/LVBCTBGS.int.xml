@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCTBGS" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCTBGS ; IG 29/4/98 ; LVB Control data access for CTBGS CT_BugGroupAntSensitivity
+ ;
+ ; supported calls:
+ ;
+ ; $$save^LVBCTBGS(par)
+ ; $$select^LVBCTBGS(ROWID,skip)
+ ; $$open^LVBCTBGS(par,skip,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBCTBGS(par,skip,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBCTBGS(par,skip,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBCTBGS(par,skip,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBCTBGS()
+ ; $$getall^LVBCTBGS(par)
+ ;
+ ;
+open(par,skip,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par),skip=$g(skip),par1=$p(par,"||",1),par2=$p(par,"||",2)
+ k ^TMP($zn,$j)
+ s x="",sl="" f  s x=$o(^TTAB("SENS",x)) q:x=""  s sl=sl_","_x s ^TMP($zn,$j,0,x)=""
+ ; check antibiotics
+ s sl=sl_"," s x="" f  s x=$o(^TTAB("ANT",par2,x)) q:x=""  i sl[(","_x_",") s ^TMP($zn,$j,0,x)=^(x),$p(^TMP($zn,$j,0,x),"\",9)="Y"
+ ; check group
+ s x="" f  s x=$o(^TTAB("BUG-GROUP",par1,"AB",par2,"RES",x)) q:x=""  s ^TMP($zn,$j,0,x)=^(x)
+ s x="" f j=1:1 s x=$o(^TMP($zn,$j,0,x)) q:x=""  s ^TMP($zn,$j,"list",j)=x_"\"_^(x)
+ s ^TMP($zn,$j,"list")=""
+ q 0
+ ;
+fetch(par,skip,p2,p3,p4,p5,p6,p7,p8,p9) s par=$g(par),skip=$g(skip),SQLCODE=100 k PLIST 
+ s x=^TMP($zn,$j,"list"),x=$o(^TMP($zn,$j,"list",x)) i $l(x) d
+ .s PLIST(1)=par_"||"_$p(^(x),"\",1)
+ .s PLIST(2)=$p(^(x),"\",1)
+ .s PLIST(3)=$p(^(x),"\",3)
+ .s PLIST(4)=$p(^(x),"\",4)
+ .s PLIST(5)=$p(^(x),"\",2)
+ .s PLIST(6)=$p(^(x),"\",5)
+ .s SQLCODE=0,^TMP($zn,$j,"list")=x
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(par,skip,p2,p3,p4,p5,p6,p7,p8,p9) k ^TMP($zn,$j) s par=$g(par),skip=$g(skip)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(par,skip) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(par,skip,p2,p3,p4,p5,p6,p7,p8,p9) N (par,skip,PLIST) s par=$g(par),skip=$g(skip) K ^TMP($zn,$j)
+ i $$open(par,skip)
+ f cnt=1:1 Q:$$fetch(par,skip)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+close() k ^TMP($zn,$j)
+ q 0
+ ;
+select(RowID,skip) S RowID=$G(RowID),skip=$g(skip) k PLIST
+  ;---&sql(SELECT * INTO :PLIST() FROM CT_BugGroupAntSensitivity WHERE CTBGS_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ Do %0Ao
+ i SQLCODE,'$$select^LVBCTANS($p(RowID,"||",2,3)) s PLIST(1)=RowID
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ;
+save(RowID) s RowID=$g(RowID),group=$p(RowID,"||",1),ant=$p(RowID,"||",2),sen=$p(RowID,"||",3)
+ i $l(group),$l(ant),$l(sen),$g(^TTAB("ANT",ant,sen))=(PLIST(5)_"\"_PLIST(3)_"\"_PLIST(4)_"\"_PLIST(6)) k ^TTAB("BUG-GROUP",group,"AB",ant,sen) q 0
+ ; update existing record
+ i $l(group),$l(ant),$l(sen),$d(^TTAB("BUG-GROUP",group,"AB",ant,"RES",sen)) d  q $s(SQLCODE:SQLCODE,1:$$select(%ROWID))
+ .  ;---&sql(UPDATE CT_BugGroupAntSensitivity VALUES :PLIST() WHERE CTBGS_RowID=:RowID)
+  .  ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ . Do %0Co
+ ; insert new record
+ s PLIST(0)=$p($g(RowID),"||",1,2) K PLIST(1)
+  ;---&sql(INSERT INTO CT_BugGroupAntSensitivity VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Eo
+ i 'SQLCODE q $$select(%ROWID)
+ q SQLCODE
+ ;
+ ; Adjust certain fields
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("")
+ i $g(skip)="Y" q
+ ;
+ I $G(PLIST(2))'="" D
+ .K plist M plist=PLIST K PLIST
+ .S SQLCODE=$$select^LVBCTSN(plist(2),"Y")
+ .S X="" I 'SQLCODE S X=PLIST(2)_$C(1)_PLIST(3)
+ .K PLIST M PLIST=plist S PLIST(2)=X K plist
+ q
+getall(par) N (par,PLIST) K ^TMP($ZN,$J) s par=$g(par)
+ I $$open(par,"Y")
+ F cnt=1:1 Q:$$fetch(par,"Y")  d
+ .s str="" f j=1:1:PLIST s $p(str,$c(28),j)=$p(PLIST(j),$c(1))
+ .s ^TMP($ZN,$J,"getall",cnt)=$p(PLIST(1),$c(1))_$c(2)_$p(PLIST(3),$c(1))_"="_$p(PLIST(4),$c(1))_$c(2)_$P(PLIST(2),$c(1))_$c(2)_str
+ K PLIST M PLIST=^TMP($ZN,$J,"getall")
+ S PLIST=$o(PLIST(""),-1)
+ K ^TMP($ZN,$J)
+ I $$close()
+ Q 0
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(13)=0,%mmmsqld(14)=""
+ s %mmmsqld(9)=$g(RowID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(1)=%mmmsqld(9)
+ s %mmmsqld(11)=$p(PLIST(1),"||"),%mmmsqld(12)=$p(PLIST(1),"||",2),PLIST(2)=$p(PLIST(1),"||",3)
+ i %mmmsqld(11)'="",%mmmsqld(12)'="",PLIST(2)'="",$d(^TTAB("BUG-GROUP",%mmmsqld(11),"AB",%mmmsqld(12),"RES",PLIST(2)))
+ e  g %0ABdun
+ s %mmmsqld(25)=$g(^TTAB("BUG-GROUP",%mmmsqld(11),"AB",%mmmsqld(12),"RES",PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(25),"\",2) s PLIST(4)=$p(%mmmsqld(25),"\",3) s PLIST(5)=$p(%mmmsqld(25),"\",1) s PLIST(6)=$p(%mmmsqld(25),"\",4)
+ s PLIST(0)=$p(PLIST(1),"||",1,2)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTAB("BUG-GROUP",$p(PLIST(1),"||",1),"AB",$p(PLIST(1),"||",2),"RES",$p(PLIST(1),"||",3))#"S":$zu(115,4) i $t { s %mmmsqld(13)=1,%mmmsqld(14)=$name(^TTAB("BUG-GROUP",$p(PLIST(1),"||",1),"AB",$p(PLIST(1),"||",2),"RES",$p(PLIST(1),"||",3)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.CT_BugGroupAntSensitivity for RowID value: "_PLIST(1) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(11)=$p(PLIST(1),"||"),%mmmsqld(12)=$p(PLIST(1),"||",2),PLIST(2)=$p(PLIST(1),"||",3)
+ i %mmmsqld(11)'="",%mmmsqld(12)'="",PLIST(2)'="",$d(^TTAB("BUG-GROUP",%mmmsqld(11),"AB",%mmmsqld(12),"RES",PLIST(2)))
+ e  g %0ACdun
+ s %mmmsqld(36)=$g(^TTAB("BUG-GROUP",%mmmsqld(11),"AB",%mmmsqld(12),"RES",PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(36),"\",2) s PLIST(4)=$p(%mmmsqld(36),"\",3) s PLIST(5)=$p(%mmmsqld(36),"\",1) s PLIST(6)=$p(%mmmsqld(36),"\",4)
+ s PLIST(0)=$p(PLIST(1),"||",1,2)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(13))=1 { l -@%mmmsqld(14) s %mmmsqld(13)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(13))=1 { l -@%mmmsqld(14) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(7)=0 s %mmmsqld(8)=""
+ s %mmmsqld(3)=$g(RowID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2),%mmmsqld(6)=$p(%mmmsqld(2),"||",3)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",$d(^TTAB("BUG-GROUP",%mmmsqld(4),"AB",%mmmsqld(5),"RES",%mmmsqld(6)))
+ e  g %0CBdun
+ s %mmmsqld(19)=$$%getlock^User.CTBugGroupAntSensitivity.T1(%mmmsqld(2)) i '%mmmsqld(19) s SQLCODE=-110 g %0Cc
+ ; asl MOD# 3
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2),%mmmsqld(6)=$p(%mmmsqld(2),"||",3)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",$d(^TTAB("BUG-GROUP",%mmmsqld(4),"AB",%mmmsqld(5),"RES",%mmmsqld(6)))
+ e  g %0CCdun
+ k %data
+ f icol=0:1:6 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.CTBugGroupAntSensitivity.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(7))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(19)=1 %ReleaseLock^User.CTBugGroupAntSensitivity.T1(%mmmsqld(2)) g %0Cc
+%0CCdun 
+ d:%mmmsqld(19)=1 %ReleaseLock^User.CTBugGroupAntSensitivity.T1(%mmmsqld(2)) g:SQLCODE<0 %0Cc
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(7)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(19))=1 %ReleaseLock^User.CTBugGroupAntSensitivity.T1(%mmmsqld(2)) g %0Cc
+%0Eo n %i,icol,ir
+ f icol=0:1:6 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.CTBugGroupAntSensitivity.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Eo
+]]></Routine>
+</Export>

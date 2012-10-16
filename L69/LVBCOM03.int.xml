@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBCOM03" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBCOM03 ; ML 3/7/2000 ; Common routines
+ ;
+ ; supported calls:
+ ;
+ ; $$lastTI^LVBCOM03(ti)
+ ; $$eGFR^LVBCOM03(creatinine)
+ ; $$eGFR1^LVBCOM03(creatinine) -- new version for Australia for eGFR > 90
+ ; $$NameFormat^LVBCOM03(type,title,given,surname)
+ ; $$AccNoFormat^LVBCOM03(number,NoSample)
+ ; $$AccNoTranslate^LVBCOM03(number,NoSample)
+ ; $$fAHG^LVBCOM03(first,second)
+ ; $$fControls^LVBCOM03(pos,neg)
+ ; $$fScreen^LVBCOM03(cells)
+ ; $$fAuto^LVBCOM03(auto)
+ ; $$fCompatible^LVBCOM03(phase,auto)
+ ; $$fHold^LVBCOM03(vtsRID)
+ ; $$fHoldDT^LVBCOM03(vtsRID)
+ ; $$fBBMedtrakOrders^LVBCOM03(epis)
+ ; $$fBBLastXM^LVBCOM03(mrn)
+ ; $$getDelim^LVBCOM03()
+ ; $$fEpisode^LVBCOM03(item)
+ ;
+lastTI(ti) n (ti,vtsRID) s ti=$g(ti),result=""
+ f j=1:1:3 s @("x"_j)=$p(vtsRID,"||",j)
+ i $l(x1),$l(x2),$l(x3) d
+ .s date=$$seldata^LVBEPVIS(x1,12),mrn=$$seldata^LVBEPVIS(x1,20)
+ .f  d  q:$l(result)  s date=$o(^TDEBi(mrn,"DATE",date),-1) q:date=""
+ ..s time="" f  s time=$o(^TDEBi(mrn,"DATE",date,time),-1) q:time=""  d  q:$l(result)
+ ...s epis="" f  s epis=$o(^TDEBi(mrn,"DATE",date,time,epis)) q:epis=""  d  q:$l(result)
+ ....s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d  q:$l(result)
+ .....s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d  q:$l(result)
+ ......s result=$p($g(^TEPI(epis,1,ts,tscnt,"DATA",ti)),"\")
+ q result
+eGFR(creatinine) n (creatinine,vtsRID) s creatinine=$g(creatinine),result=""
+ s (age,sex)="" i '$$select^LVBEPVIS($p(vtsRID,"||"),"Y") s age=PLIST(26),sex=PLIST(5)
+ i age'<18 d
+ .s result=186*((creatinine/88.4)**(-1.154))*(age**(-0.203))
+ .i sex="F" s result=result*0.742
+ .i result>60 s result=">60"
+ q result
+eGFR1(creatinine) n (creatinine,vtsRID) s creatinine=$g(creatinine),result=""
+ s (age,sex)="" i '$$select^LVBEPVIS($p(vtsRID,"||"),"Y") s age=PLIST(26),sex=PLIST(5)
+ i age'<18 d
+ .s result=175*((creatinine*0.0113)**(-1.154))*(age**(-0.203))
+ .i sex="F" s result=result*0.742
+ .i result>90 s result=">90"
+ q result
+fBBLastXM(mrn) n (mrn) s mrn=$g(mrn),result=""
+ i $l(mrn) s stop=0 d
+ .s dt="" f  s dt=$o(^TDEBi(mrn,"DATE",dt),-1) q:dt=""  d  i stop q
+ ..s tm="" f  s tm=$o(^TDEBi(mrn,"DATE",dt,tm),-1) q:tm=""  d  i stop q
+ ...s ep="" f  s ep=$o(^TDEBi(mrn,"DATE",dt,tm,ep)) q:ep=""  d  i stop q
+ ....s ts="" f  s ts=$o(^TEPI(ep,1,ts)) q:ts=""  d  i stop q
+ .....s tscnt="" f  s tscnt=$o(^TEPI(ep,1,ts,tscnt)) q:tscnt=""  d  i stop q
+ ......s vts=ep_"||"_ts_"||"_tscnt
+ ......i $d(^TEPI(ep,1,ts,tscnt,"BBP")),$$status^LVBVIS1(vts)="A" s stop=1 d
+ .......s date=$$seldata^LVBVISTS(vts,7),time=$$seldata^LVBVISTS(vts,8)
+ .......s result=date_","_time
+ q result
+fBBMedtrakOrders(epis) n (epis) s epis=$g(epis),result=""
+ ; find Sample Expiry date
+ s dt=$$fHoldDT(epis) i dt d
+ .s date=$$seldata^LVBEPVIS(epis,12),time=$$seldata^LVBEPVIS(epis,13)
+ .s xx=(date*24)+(time\3600)+dt,xx1=xx\24,xx2=xx#24,$p(result,$c(1),1)=xx1
+ ; find Quantity of available products
+ s mrn=$$mrn^LVBEPVIS(epis),extra="",$p(extra,$c(1),6)="IN-1"
+ i $$open^LVBBBP(,,mrn,"Y",,,,,,extra)
+ f jj1=0:1 q:$$fetch^LVBBBP(,,mrn,"Y",,,,,,extra)
+ i $$close^LVBBBP()
+ s $p(result,$c(1),2)=jj1
+ q result
+ ; check Specimen hold time
+fAHG(first,second) n (first,second) s first=$g(first),second=$g(second),res=""
+ f j=1:1:$l(first,",") i $l($p(first,",",j))!$l($p(second,",",j)) d  q:res="I"
+ .i $p(first,",",j)=0,$p(second,",",j)'>0 s res="I" q
+ .s res="V"
+ q res
+fHoldDT(vtsRID) n (vtsRID,EPVIS) s vtsRID=$g(vtsRID),dt=""
+ k CFLAB i '$$select^MVBCFLAB(1) m CFLAB=PLIST
+ k EPVIS i '$$select^LVBEPVIS($p(vtsRID,"||"),"Y") m EPVIS=PLIST
+ ; set default
+ i CFLAB(92),$d(EPVIS)\10 d
+ .s dt=CFLAB(92)
+ . ; check Pregnant
+ .i CFLAB(93),EPVIS(63)="Y",dt>CFLAB(93) s dt=CFLAB(93)
+ . ; check AB Registry
+ .i CFLAB(94),$$check^LVBBBAR(EPVIS(20))="Y",dt>CFLAB(94) s dt=CFLAB(94)
+ . ; check Transfusion history
+ .i CFLAB(95),CFLAB(96) s stop="" d  i stop=1,dt>CFLAB(96) s dt=dt_$c(1)_CFLAB(96)
+ ..s x1="" f  s x1=$o(^TBBPi("TR-Debtor",EPVIS(20),x1),-1) q:x1=""  d  q:stop
+ ...s x2="" f  s x2=$o(^TBBPi("TR-Debtor",EPVIS(20),x1,x2),-1) q:x2=""  d  q:stop
+ ....i ((x1*24)+(x2/3600)+CFLAB(95))<(($h*24)+($p($h,",",2)/3600)) s stop=2 q
+ ....s x3="" f  s x3=$o(^TBBPi("TR-Debtor",EPVIS(20),x1,x2,x3)) q:x3=""  d  q:stop
+ .....s x4="" f  s x4=$o(^TBBPi("TR-Debtor",EPVIS(20),x1,x2,x3,x4)) q:x4=""  d  q:stop
+ ......s x5="" f  s x5=$o(^TBBPi("TR-Debtor",EPVIS(20),x1,x2,x3,x4,x5)) q:x5=""  d  q:stop
+ .......i '$$select^LVBBBPT(x3_"||"_x4_"||"_x5),PLIST(13)'="Y" d
+ ........i '$$select^LVBBBTR($p(PLIST(3),$c(1)),"Y"),PLIST(5)="Y" s stop=1
+ q dt
+ ; check Transfusion history
+fPrevTransfusion(vtsRID) n (vtsRID) s vtsRID=$g(vtsRID),result="N"
+ k CFLAB i '$$select^MVBCFLAB(1) m CFLAB=PLIST
+ k EPVIS i '$$select^LVBEPVIS($p(vtsRID,"||"),"Y") m EPVIS=PLIST
+ i CFLAB(95),CFLAB(96) s stop="" d  i stop s result="Y"
+ .s x1="" f  s x1=$o(^TBBPi("TR-Debtor",EPVIS(20),x1),-1) q:x1=""  d  q:stop
+ ..s x2="" f  s x2=$o(^TBBPi("TR-Debtor",EPVIS(20),x1,x2),-1) q:x2=""  d  q:stop
+ ...s x3="" f  s x3=$o(^TBBPi("TR-Debtor",EPVIS(20),x1,x2,x3)) q:x3=""  d  q:stop
+ ....s x4="" f  s x4=$o(^TBBPi("TR-Debtor",EPVIS(20),x1,x2,x3,x4)) q:x4=""  d  q:stop
+ .....s x5="" f  s x5=$o(^TBBPi("TR-Debtor",EPVIS(20),x1,x2,x3,x4,x5)) q:x5=""  d  q:stop
+ ......i '$$select^LVBBBPT(x3_"||"_x4_"||"_x5),PLIST(13)'="Y" d
+ .......i '$$select^LVBBBTR($p(PLIST(3),$c(1)),"Y"),PLIST(5)="Y" s stop=1
+ q result
+ ; check Specimen hold date/time
+fHold(vtsRID,check) n (vtsRID,check) s vtsRID=$g(vtsRID),check=$g(check),result=""
+ s dt=$$fHoldDT(vtsRID),epis=$p(vtsRID,"||") d
+ .s tr=$$tr^LVBVIS4(vtsRID,"Y")
+ .i $l(tr) s date=$p(tr,","),time=$p(tr,",",2)
+ .e  s date=$$seldata^LVBEPVIS(epis,12),time=$$seldata^LVBEPVIS(epis,13)
+ .s dt1=$p(dt,$c(1),1),dt2=$p(dt,$c(1),2,3)
+ .s x1=((date*24)+(time/3600)+$s(dt2:dt2,1:dt1))\24
+ .s x2=(((date*24)+(time/3600)+$s(dt2:dt2,1:dt1))#24)*3600\1
+ .i $l(x1),$l(x2),((x1*24)+(x2/3600))<(($h*24)+($p($h,",",2)/3600)) s result="Y" i check'="Y",'$$notes^LVBVISTS(vtsRID) d  i $$notes^LVBVISTS(vtsRID,"Y")
+ ..s PLIST(1)=PLIST(1)_$s($l(PLIST(1)):"|",1:"")_"Specimen has expired on "_$$extdate2^SSUTIL4(x1)_" "_$$exttime^SSUTIL4(x2)
+ q result
+ ; type  : DR - Doctor
+ ;         PT - Patient
+NameFormat(type,title,given,surname,extra1,extra2,extra3) n (type,title,given,surname,extra1,extra2,extra3)
+ s type=$g(type),title=$g(title),given=$g(given),surname=$g(surname),extra1=$g(extra1),extra2=$g(extra2),extra3=$g(extra3),(result,punctx)=""
+ i type="DR",'$$fetchall^MVBCFLDN(1)
+ i type="PT",'$$fetchall^MVBCFLPN(1)
+ f i=1:1:PLIST d
+ .s field=$p(PLIST(i),$c(28),3),case=$p(PLIST(i),$c(28),4),punct=$p(PLIST(i),$c(28),5)
+ .i field="E1",extra1="" q
+ .i field="E2",extra2="" q
+ .i field="E3",extra3="" q
+ .i field="G",given="" q
+ .i field="S",surname="" q
+ .i field="T",title="" q
+ .s string=$s(field="G":given,field="S":surname,field="E1":extra1,field="E2":extra2,field="E3":extra3,1:title)
+ .i case="FU" d
+ ..s xx1="",xx2="U" f j=1:1:$l(string) d
+ ...i ($e(string,j)?1P)!($e(string,j)=" ") s xx1=xx1_$e(string,j),xx2="U" q
+ ...i xx2="U" s xx1=xx1_$zcvt($$UPPER^SSUTIL4($e(string,j)),"U"),xx2="L" q
+ ...i xx2="L" s xx1=xx1_$zcvt($$LOWER^SSUTIL4($e(string,j)),"L") q
+ ..s string=xx1
+ .i case="AU" s string=$zcvt($$UPPER^SSUTIL4(string),"U")
+ .i case="I" s string=$zcvt($e($$UPPER^SSUTIL4(string)),"U")
+ .s result=result_punctx_string,punctx=punct
+ i '$l(result) s result=title_" "_given_" "_surname
+ f  q:$e(result)'=" "  s result=$e(result,2,999)
+ f  q:$e(result,$l(result))'=" "  s result=$e(result,1,$l(result)-1)
+ f  q:result'["  "  s result=$p(result,"  ",1)_" "_$p(result,"  ",2,999)
+ q result
+getDelim() s (delim,OldDelim)=""
+ i '$$fetchall^MVBCFLDA(1) d
+ .f i=1:1:PLIST d
+ ..s NewDelim=$p(PLIST(i),$c(28),5)
+ ..i $p(PLIST(i),$c(28),3)="SP" s delim=OldDelim
+ ..s OldDelim=NewDelim
+ q delim
+ ; build accession number format (Int->Ext)
+AccNoFormat(number,NoSample) n (number,NoSample) s number=$g(number),NoSample=$g(NoSample)
+ ; get client code
+ s cc=$p($g(^CF("SM",1)),"^",28)
+ i $l(cc) s LineRoutine="AccNoFormat^"_$zn_cc i $l($t(@LineRoutine)) x "s result=$$"_LineRoutine_"("""_number_""","""_NoSample_""")" q result
+ s (result,punctx)="" i $l(number) d
+ .k CFLAB i '$$select^MVBCFLAB(1) m CFLAB=PLIST
+ .s lab=$$CT008^at193(number),site=$$CT014^at193(number),year=$$CT009^at193(number)
+ .s xx=$$CT010^at193(number),seqno=$e(xx,1,$l(xx)-1),specno=$e(xx,$l(xx)) i CFLAB(114)="Y" s specno=$a(specno)-64
+ .i '$$fetchall^MVBCFLDA(1) d
+ ..f i=1:1:PLIST d
+ ...s field=$p(PLIST(i),$c(28),3),punct=$p(PLIST(i),$c(28),5)
+ ...i field="L",lab="" s punctx=punct q
+ ...i field="S",site="" s punctx=punct q
+ ...i field="Y",year="" s punctx=punct q
+ ...i field="SQ",seqno="" s punctx=punct q
+ ...i field="SP" q:NoSample="Y"  i specno="" s punctx=punct q
+ ...s string=$$UPPER^SSUTIL4($s(field="L":lab,field="S":site,field="Y":year,field="SQ":seqno,1:specno))
+ ...s result=result_punctx_string,punctx=punct
+ ..i '$l(result) s result=lab_site_year_seqno_specno
+ ..i $l(result) f  q:$e(result)?1UN  s result=$e(result,2,999)
+ ..i $l(result) f  q:$e(result,$l(result))?1UN  s result=$e(result,1,$l(result)-1)
+ ..i $l(result) f  q:result'["  "  s result=$p(result,"  ",1)_" "_$p(result,"  ",2,999)
+ q result
+ ; translate accession number (Ext->Int)
+AccNoTranslate(number,NoSample) n (number,NoSample) s (result,number)=$g(number),NoSample=$g(NoSample)
+ ; get client code
+ s cc=$p($g(^CF("SM",1)),"^",28)
+ i $l(cc) s LineRoutine="AccNoTranslate^"_$zn_cc i $l($t(@LineRoutine)) x "s result=$$"_LineRoutine_"("""_number_""","""_NoSample_""")" q result
+ s (lab,site,year,seqno,specno)="",number=$$UPPER^SSUTIL4(number)
+ i $l(number),'$$fetchall^MVBCFLDA(1) d
+ .s stop="" f i=1:1:PLIST d  q:stop
+ ..i $l(result) f  q:'$l(number)  q:$e(number)?1UN  s number=$e(number,2,$l(number))
+ ..i '$l(number) s stop=1 q
+ ..s field=$p(PLIST(i),$c(28),3)
+ ..i field="L",'$l(lab) s lab=$e(number),number=$e(number,2,$l(number)) q
+ ..i field="S",'$l(site),$l(lab),$d(^TTAB("LA",lab,"SITE")) s site=$e(number),number=$e(number,2,$l(number)) q
+ ..i field="Y",'$l(year) s year=$e(number,1,2),number=$e(number,3,$l(number)) q
+ ..i field="SQ" s stop=1 q
+ ..i field="SP",'$l(specno),NoSample'="Y" s specno=$e(number),number=$e(number,2,$l(number)) q
+ .s stop="" f i=PLIST:-1:1 d  q:stop
+ ..i $l(result) f  q:'$l(number)  q:$e(number,$l(number))?1UN  s number=$e(number,1,$l(number)-1)
+ ..i '$l(number) s stop=1 q
+ ..s field=$p(PLIST(i),$c(28),3)
+ ..i field="L",'$l(lab) s lab=$e(number,$l(number)),number=$e(number,1,$l(number)-1) q
+ ..i field="S",'$l(site),$l(lab),$d(^TTAB("LA",lab,"SITE")) s site=$e(number,$l(number)),number=$e(number,1,$l(number)-1) q
+ ..i field="Y",'$l(year) s year=$e(number,$l(number)-1,$l(number)),number=$e(number,1,$l(number)-2) q
+ ..i field="SQ" s stop=1 q
+ ..i field="SP",'$l(specno),NoSample'="Y" s specno=$e(number,$l(number)),number=$e(number,1,$l(number)-1) q
+ .s seqno=number
+ .s result=lab_site_year_seqno_specno
+ q result
+fControls(pos,neg) n (pos,neg) s pos=$g(pos),neg=$g(neg),res=""
+ ; check Invalid control
+ i res="" f j=1:1:$l(pos,",") i $p(pos,",",j)=0 s res="I" q
+ i res="" f j=1:1:$l(neg,",") i $p(neg,",",j)>0 s res="I" q
+ ; check valid control
+ i res="" f j=1:1:$l(pos,",") i $l($p(pos,",",j)) s res="V" q
+ i res="" f j=1:1:$l(neg,",") i $l($p(neg,",",j)) s res="V" q
+ q res
+fScreen(cells) n (cells) s cells=$g(cells),res=""
+ i res="" f j=1:1:$l(cells,",") i $p(cells,",",j)>0 s res="D" q
+ i res="" f j=1:1:$l(cells,",") i $l($p(cells,",",j)) s res="N" q
+ q res
+fAuto(auto) n (auto) s auto=$g(auto),res=""
+ i res="" f j=1:1:$l(auto,",") i $p(auto,",",j)>0 s res="A" q
+ i res="" f j=1:1:$l(auto,",") i $l($p(auto,",",j)) s res="N" q
+ q res
+fCompatible(phase,auto) n (phase,auto) s phase=$g(phase),auto=$g(auto),res=""
+ ; get client code
+ s cc=$p($g(^CF("SM",1)),"^",28)
+ i $l(cc) s LineRoutine="fCompatible^"_$zn_cc i $l($t(@LineRoutine)) x "s result=$$"_LineRoutine_"("""_phase_""","""_auto_""")" q result
+ f j=1:1:$l(auto,",") s $p(auto,",",j)=+$p(auto,",",j)
+ i res="" f j=1:1:$l(phase,",") i $p(phase,",",j),$l($p(auto,",",j)),$p(phase,",",j)'<$p(auto,",",j) s res="I" q
+ i res="" f j=1:1:$l(phase,",") i $p(phase,",",j),$p(auto,",",j),$p(phase,",",j)<$p(auto,",",j) s res="A" q
+ i res="" f j=1:1:$l(phase,",") i $l($p(phase,",",j)) s res="C" q
+ q res
+fEpisode(item) n (item,vtsRID) s item=$g(item),epis=$p(vtsRID,"||")
+ q $$seldata^LVBEPVIS(epis,item)
+]]></Routine>
+</Export>

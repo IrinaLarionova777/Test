@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTMCINV05" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTMCINV05 ; ML 19/10/99 ; MEDICARE INVOICES - Westpath Services
+  q
+  ; Parameters :  1. Payment Code
+  ;               2. Batch Number
+  ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ d INIT,BODY,PRINT
+CREND i '$$select^LVBPRPR(REPID) s PLIST(12)=PAR1_"-"_PAR2 i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialize parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ s comp=$p(^TMCB(PAR1,PAR2),"\",3)
+ i '$$select^LVBCTCO(comp,"Y") k comp m comp=PLIST
+ q
+BODY ; create temporary printing file
+ s (provname,provnum)=""
+ i '$$select^LVBINVB(PAR1_"||"_PAR2) s provname=$p(PLIST(10),$c(1),2),provnum=PLIST(5)
+ ; print batch
+ i $l(PAR1),$l(PAR2) d
+ .s epis="" f  s epis=$o(^TMCB(PAR1,PAR2,epis)) q:epis=""  d
+ ..s seq=+$p(^(epis),"\",2)
+ ..i $$CT007^at345(epis,PAR1_"||"_PAR2)="Y" q
+ ..s ^TMP($zn,$j,"REPORT",epis,seq)=""
+ q
+PRINT ; print report
+ q:$$select^LVBCTCO(comp(2),"Y")
+ ; print invoice
+ s (start,last)=0
+ s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",epis)) q:epis=""  d
+ .s seq="" f  s seq=$o(^TMP($zn,$j,"REPORT",epis,seq)) q:seq=""  d
+ ..s line=99,others=^(seq)
+ ..i '$$select^LVBEPVIS(epis) k visit m visit=PLIST k PLIST
+ ..i '$$select^LVBCTDR($p(visit(15),$c(1)),"Y") k doc m doc=PLIST k PLIST
+ ..s (init,initdesc)="" i '$$select^LVBCTIC($p(visit(18),$c(1)),"Y") k init s init=PLIST(4),initdesc=PLIST(5) k PLIST
+ .. ; collection centre licence number
+ ..s cc(1)="" i $p(visit(27),$c(1))'="" d
+ ...i '$$select^LVBCTCC($p(visit(27),$c(1)),"Y") s cc(1)=PLIST(10) k PLIST
+ ..s amount=""
+ ..s item="" f  s item=$o(^TEPI(epis,7,item)) q:item=""  s xx=^(item) d
+ ...s amount=amount+^(item)
+ ...s datecoll=$$extdate2^SSUTIL4(visit(12)),dateserv=$$extdate2^SSUTIL4(visit(14))
+ ...k x s x(2)=$p(xx,"\",2),x(1)=$p(xx,"\",1)
+ ...i item=visit(54),'$l(x(2)) s x(2)=initdesc
+ ...d ITEM
+ ..d TOT
+ q
+ITEM ; print item number details
+ i line>26 d HEAD
+ s desc=x(2) d:$l(desc)>25 SPLIT
+ d ADDLINE^PRTREP00(REPID,"PRT","?4  "_desc)
+ d ADDLINE^PRTREP00(REPID,"PRT","?20 "_$e(datecoll,1,2))
+ d ADDLINE^PRTREP00(REPID,"PRT","?23 "_$e(datecoll,4,5))
+ d ADDLINE^PRTREP00(REPID,"PRT","?26 "_$e(datecoll,$l(datecoll)-1,$l(datecoll)))
+ d ADDLINE^PRTREP00(REPID,"PRT","?34 "_item) d:init="Y" ADDLINE^PRTREP00(REPID,"PRT","*")
+ d ADDLINE^PRTREP00(REPID,"PRT","?39 "_$j(x(1),10,2)) d DOC
+ q:desc=x(2)
+ f  d PRTDESC q:desc=x(2)
+ q
+DOC ; print referring/pathology doctor details
+ i line=1 d ADDLINE^PRTREP00(REPID,"PRT","?56 "_$$NameFormat^LVBCOM03("DR",doc(26),doc(4),doc(3),doc(49),doc(50),doc(51)))
+ i line=3 d ADDLINE^PRTREP00(REPID,"PRT","?61 "_doc(18))
+ i line=5 d ADDLINE^PRTREP00(REPID,"PRT","?65 "_$e(dateserv,1,2))
+ i line=5 d ADDLINE^PRTREP00(REPID,"PRT","?68 "_$e(dateserv,4,5))
+ i line=5 d ADDLINE^PRTREP00(REPID,"PRT","?72 "_$e(dateserv,$l(dateserv)-1,$l(dateserv)))
+ i line=9 D ADDLINE^PRTREP00(REPID,"PRT","?54 "_provname)
+ i line=13 d ADDLINE^PRTREP00(REPID,"PRT","?54 "_provnum)
+ d LN,ADDLINE^PRTREP00(REPID,"PRT","?4  "_$g(msg)),LN k msg
+ s line=line+2
+ q
+PRTDESC ; print remainder of description
+ s desc=x(2) i $l(desc)>25 d SPLIT
+ d:line>26 HEAD
+ d ADDLINE^PRTREP00(REPID,"PRT","?4  "_desc)
+ d DOC
+ q
+SPLIT ; split item description
+ s z=$l($e(desc,1,25)," ")-1,desc=$p(desc," ",1,z),x(2)=$p(x(2)," ",z+1,99)
+ q
+TOT ; print total for patient
+ i visit(54)'="",cc(1)'="" d ADDLINE^PRTREP00(REPID,"PRT","?39 LCC: "_cc(1))
+ s:visit(45)="Y" msg="RULE 3 EXEMPTION APPLIES"
+ d DOC
+ i visit(45)="Y",visit(46)'="" d ADDLINE^PRTREP00(REPID,"PRT","?4  "_visit(46)) d DOC
+ s desc=x(2)
+ f  q:line>25  d DOC
+ d ADDLINE^PRTREP00(REPID,"PRT","?39 "_$j(amount,10,2))
+ f i=1:1:2 d LN
+ q
+HEAD ; print patient details
+ s line=1
+ d ADDLINE^PRTREP00(REPID,"HDR",$c(27,67,3)),ADDLINE^PRTREP00(REPID,"PRT","#")
+ f i=1:1:13 d LN
+ i visit(9)'="V" d ADDLINE^PRTREP00(REPID,"PRT","?8  "_visit(8))
+ i visit(9)="V" d ADDLINE^PRTREP00(REPID,"PRT","?8  "_visit(23))
+ d ADDLINE^PRTREP00(REPID,"PRT","?28 "_visit(4)),ADDLINE^PRTREP00(REPID,"PRT","?45 "_visit(3))
+ d:visit(6) ADDLINE^PRTREP00(REPID,"PRT","?65 "_$$extdate2^SSUTIL4(visit(6)))
+ f i=1:1:2 d LN
+ d ADDLINE^PRTREP00(REPID,"PRT","?18 "_visit(32)_" "_visit(33)_" "_visit(34)_" "_visit(35)_" "_visit(36)),LN
+ d ADDLINE^PRTREP00(REPID,"PRT","!"),ADDLINE^PRTREP00(REPID,"PRT","?51 No. : "_epis)
+ d:others'="" ADDLINE^PRTREP00(REPID,"PRT",",OTHERS")
+ f i=1:1:4 d LN
+ q
+LN ; add line to report
+ d ADDLINE^PRTREP00(REPID,"PRT","!")
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDRLSPB03" type="INT" languagemode="0"><![CDATA[
+PRTDRLSPB03 ;SPARM; Ñïèñîê ðàñïå÷àòàííûõ îò÷åòîâ âðà÷åé ;Êàëèíèãðàäñêàÿ ÎÑÏÊ;@gol;
+ Q
+ ; Parameters :  1.Date from
+ ;               2.Date to
+ ;               3.Courier
+ ;               4.User
+ ;               5.Sort order : T-Printing Time
+ ;                              P-Patient Location
+ ;                              S-Patient Name
+ ;                              M-Patient MRN
+ ;               6.RepID
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+ K xHEADER D INIT
+ ;çàãîëîâîê ÏÔ
+ s line=1,xHEADER(line)="ÑÏÈÑÎÊ ÐÀÑÏÅ×ÀÒÀÍÍÛÕ ÎÒ×ÅÒÎÂ ÂÐÀ×ÅÉ"
+ s line=2,xHEADER(line)="___________________________________"
+ s line=line+1,xHEADER(line)=""          
+ s line=line+1,xHEADER(line)="Çà ïåðèîä ñ "_$$extdate2^SSUTIL4(PAR1)_" ïî "_$$extdate2^SSUTIL4(PAR2)
+ s line=line+1,xHEADER(line)=""          
+ i $l(PAR3) s line=line+1,xHEADER(line)=" äëÿ êóðüåðà : [ "_CTCR(2)_" ] - "_CTCR(3)
+ i $l(PAR4) s line=line+1,xHEADER(line)=" äëÿ ïîëüçîâàòåëÿ : [ "_SSUSR(2)_" ] - "_SSUSR(3)
+ i $l(PAR6) s line=line+1,xHEADER(line)=" äëÿ îò÷åòà(îâ) ¹ : "_PAR6
+ D HEADER^PRTREP00(.xHEADER,,,,,PAR5),BODY,PRINT
+CREND K ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$zn)
+ s xSORT("T")="Âðåìÿ ïå÷àòè"             ;Printing Time"
+ s xSORT("P")="Ìåñòîïîëîæåíèå ïàöèåíòà"  ;Patient Location"
+ s xSORT("S")="ÔÈÎ ïàöèåíòà"             ;Patient Name"
+ s xSORT("M")="Íîìåð ÌÊ ïàöèåíòï"        ;Patient MRN"
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)="",xLINE(5)=SPACE,$E(xLINE(5),1)="|",$E(xLINE(5),MAX)="|"
+ i $l(PAR3),'$$select^LVBCTCR(PAR3,"Y") k CTCR m CTCR=PLIST
+ i $l(PAR4),'$$selrow^MVBSSUSR(PAR4,"Y") k SSUSR m SSUSR=PLIST
+ Q
+ ; create temporary printing file
+BODY s date=PAR1-1 f  s date=$o(^TEPIi("DR_Print",date)) q:date=""  q:date>PAR2  d
+ .i $l(PAR6) d  q
+ ..f j=1:1:$l(PAR6,",") s x1=$p(PAR6,",",j) d BODY1
+ .s x1="" f  s x1=$o(^TEPIi("DR_Print",date,x1)) q:x1=""  s xx=^(x1) d
+ ..; PAR3 - êóðüåð
+ ..i $l(PAR3) s stop=1 d  q:stop
+ ...i $p(xx,"\",1)="C",PAR3=$p(xx,"\",2) s stop=0
+ ...i $p(xx,"\",1)="CU",PAR3=$p($p(xx,"\",2),"||") s stop=0
+ ..; PAR4 - ïîëüçîâàòåëü
+ ..i $l(PAR4) s stop=1 d  q:stop
+ ...i $p(xx,"\",1)="U",PAR4=$p(xx,"\",2) s stop=0
+ ...i $p(xx,"\",1)="CU",PAR4=$p($p(xx,"\",2),"||",2) s stop=0
+ ..D BODY1
+ q
+BODY1 s x2="" f  s x2=$o(^TEPIi("DR_Print",date,x1,x2)) q:x2=""  s xx1=^(x2) d
+ .s sort="" i $l(PAR5) d
+ .. d %0Ao
+ ..f j=3,20,22 s EPVIS(j)=$p(EPVIS(j),$c(1))
+ ..i PAR5="T" s sort=$p(xx1,",",2)
+ ..i PAR5="P" s sort=EPVIS(22)
+ ..i PAR5="S" s sort=EPVIS(3)
+ ..i PAR5="M" s sort=EPVIS(20)
+ .i '$l(sort) s sort=" "
+ .s (x3,xx2)="" f  s x3=$o(^TEPIi("DR_Print",date,x1,x2,x3)) q:x3=""  d
+ ..s x4=$p(x3,"||",2),syn="" i '$$selskip^LVBCTTS(x4) s syn=PLIST(4)
+ ..i $l(syn) s xx2=xx2_$s($l(xx2):",",1:"")_syn
+ ..else  s xx2=xx2_$s($l(xx2):",",1:"")_x4
+ ..;s xx2=xx2_$s($l(xx2):",",1:"")_x4  ;ñïèñîê êîäîâ íàáîðîâ
+ .s ^TMP($zn,$j,"REPORT",date,sort,x2)=xx1_"\"_xx2
+ q
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ . s date="" f  s date=$o(^TMP($zn,$j,"REPORT",date)) q:date=""  d
+ .. i PAR1'=PAR2 d
+ ... d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ... s str="",$P(str," ",MAX)="",$E(str,1)="|",$E(str,5)="Äàòà : "_$$extdate2^SSUTIL4(date),$E(str,MAX)="|"
+ ... d ADDLINE^PRTREP00(REPID,"PRT",str)
+ ... d ADDLINE^PRTREP00(REPID,"PRT","!"),ADDLINE^PRTREP00(REPID,"PRT",xLINE(5))
+ .. s (total,sort)="" f  s sort=$o(^TMP($zn,$j,"REPORT",date,sort)) q:sort=""  d
+ ... s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",date,sort,epis)) q:epis=""  d
+ .... s xx=^(epis)
+ .... i $$select^LVBEPVIS(epis) q
+ .... ;âðåìÿ ïå÷àòè xxx(1)
+ .... s xxx(1)=$$exttime^SSUTIL4($p($p(xx,"\",1),",",2))  
+ .... ;ñïèñîê ðàñïå÷àòàííûõ íàáîðîâ òåñòîâ xxx(2)
+ .... i $G(N(5,1))="xxx"&($G(N(5,2))=2) s LenTS=+$G(N(5,"L"))
+ .... s:+$G(LenTS)=0 LenTS=15 
+ .... s ST1=$p(xx,"\",2) D RSMas(ST1,LenTS,"Mtest") k ST1  ;#LenTS-äëèíà ñòðîêè ñïèñêà íàáîðîâ
+ .... For j=1:1:$O(Mtest(""),-1) S ST1=$G(Mtest(j)) do
+ ..... s xxx(2)=ST1 d PRINT^PRTREP00(.PLIST,.N) k PLIST,xxx
+ .... ;ñ÷åò÷èê ïàöèåíòîâ
+ .... s total=total+1
+ .. d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .. d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4)),ADDLINE^PRTREP00(REPID,"PRT","!")
+ .. s str="",$P(str," ",MAX)="",$E(str,1)="|",$E(str,5)="Âñåãî : "_total_" ïàöèåíòîâ",$E(str,MAX)="|"
+ .. d ADDLINE^PRTREP00(REPID,"PRT",str),ADDLINE^PRTREP00(REPID,"PRT","!")
+ .. d ADDLINE^PRTREP00(REPID,"PRT",xLINE(4))
+ . d ADDLINE^PRTREP00(REPID,"PRT","!")
+ . d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1)),ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="DRL",EndLine=""
+ d %0Bo
+ i $p(EndLine,$c(1))="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+RSMas(Str,Rz,Mas) ;Ðàçáèòü ñòðîêó Str íà îòäåëüíûå ïîäñòðîêè ñ îãðàíè÷åíîé äëèíîé Rz è çàïèñàòü â ìàññèâ RSMas
+ S Str=$G(Str) q:Str=""                      ;èñõîäíàÿ ñòðîê
+ S Rz=+$G(Rz) q:Rz=0                         ;äëèíà
+ S Mas=$G(Mas,"RSMas")   Kill @Mas           ;ìàññèâ äëÿ ôîðìèðîâàíèÿ ïîäñòðîê
+ New test,cnt,i,ddd,fl,mas
+ s Str=$TR(Str,","," ")
+ S cnt=1,fl=0 For i=1:1 Do  q:fl  q:cnt>100
+ . i $l(Str)<Rz s @Mas@(cnt)=Str s fl=1 q
+ . s mas=$E(Str,1,Rz),ddd=$L(mas," ")-1
+ . i ddd>0 s mas=$P(mas," ",1,ddd),@Mas@(cnt)=mas,cnt=cnt+1 s Str=$P(Str," ",ddd+1,$L(Str," ")) 
+ . i ddd=0 s mas=$E(mas,1,Rz),@Mas@(cnt)=mas,cnt=cnt+1 s Str=$E(Str,Rz+1,$L(Str))
+ q 
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(x2,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$e(x2,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ s %mmmsqld(8)=$p($g(%mmmsqld(5)),"||",1,1)
+ i %mmmsqld(8)'="",$d(^TEPI(%mmmsqld(8)))
+ e  g %0ABdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(8)))
+ s EPVIS(3)=$p(%mmmsqln,"\",1) s EPVIS(22)=$p(%mmmsqln,"\",20) s EPVIS(20)=$p(%mmmsqln,"\",18)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0BBs1 s %val=$s("Yy"[$e(%val):"Yes","Nn"[$e(%val):"No",1:"") q
+%0Bo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Berr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(report,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$e(report,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p($g(%mmmsqld(3)),"||",1,1)
+ i %mmmsqld(6)'="",$d(^TTAB("REPORT-GENERIC",%mmmsqld(6)))
+ e  g %0BBdun
+ s %mmmsqln=$g(^TTAB("REPORT-GENERIC",%mmmsqld(6)))
+ s EndLine=$p(%mmmsqln,"\",6)
+ 
+ s %val=$P(EndLine,$C(1)) d %0BBs1:%val'="" s $P(EndLine,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Bc
+%0BBdun 
+%0BAdun 
+%0Bc q
+%0Berr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0BAdun
+]]></Routine>
+</Export>

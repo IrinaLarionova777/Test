@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MVBSSVBM" type="INT" languagemode="0" generated="1"><![CDATA[
+MVBSSVBM ; SP 18/12/95 ; MVB Control data access for Code Tables
+ ;
+ ; $$insert^MVBSSVBM()
+ ; $$update^MVBSSVBM(par)
+ ; $$delete^MVBSSVBM(ROWID)
+ ; $$select^MVBSSVBM(ROWID,skip)
+ ; $$selcode^MVBSSVBM(code,skip)
+ ; $$open^MVBSSVBM(code,desc,skip,lan,type)
+ ; $$fetch^MVBSSVBM(code,desc,skip,lan,type)
+ ; $$close^MVBSSVBM()
+ ; $$getall^MVBSSVBM(lan,type)
+ ; $$getmess^MVBSSVBM(lan,code,YN)
+ ; $$getpart^MVBSSVBM(lan,code)
+ ; $$getsome^MVBSSVBM(lan)
+ ;
+  ;---&SQL(DECLARE SSVBM CURSOR FOR SELECT * FROM SS_VBMessages
+   ;---         WHERE ((%ALPHAUP(SSVBM_Code) %STARTSWITH %ALPHAUP(:code)) OR (:code IS NULL))
+   ;---         AND ((%ALPHAUP(SSVBM_Description) %STARTSWITH %ALPHAUP(:desc)) OR (:desc IS NULL)))
+   ;--- ** SQL PUBLIC Variables: SQLCODE, code, desc
+FIX k ^SS("VBM"),^SSLAN("VBM")
+ s x="" f  s x=$o(^SS("VBMESS",x)) q:x=""  i x s x1=$p(^(x),"^",1),x2=$p(^(x),"^",2) i $l(x1),$l(x2) s ^SS("VBM",0,x1)=x2
+ d ##class(User.SSVBMessages).%BuildIndices()
+ ; fix translation
+ s x="" f  s x=$o(^SSLAN("TRANS",x)) q:x=""  i x s x1=$p(^(x),"^",1),x2=$p(^(x),"^",2),x3=$p(^(x),"^",3) d
+ .i $l(x1),$d(^SS("LAN",x1)) d
+ ..i $l(x2),$d(^SS("VBM",0,x2)),$l(x3) s ^SSLAN("VBM",0,x2,x1)=x3
+ d ##class(User.SSVBMessageTranslation).%BuildIndices()
+ q
+ ; type : Y-translated
+ ;        N-not translated
+getall(lan,type) n (lan,type,PLIST) s lan=$g(lan),type=$g(type) k ^TMP($zn,$j)
+ i $$open(,,"Y",lan,type)
+ f cnt=1:1 q:$$fetch(,,"Y",lan,type)  S ^TMP($zn,$j,cnt)=$p(PLIST(1),$c(1))_$c(2)_$p(PLIST(3),$c(1))_$c(2)_$p(PLIST(2),$c(1))
+ i $$close()
+ k PLIST m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ;
+select(ROWID,skip)  k PLIST
+  ;---&sql(SELECT * INTO :PLIST() FROM SS_VBMessages WHERE SSVBM_RowId=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Co
+ s PLIST=$O(PLIST(""),-1)
+ q SQLCODE
+ ;
+selcode(code,skip)  k PLIST
+  ;---&sql(SELECT * INTO :PLIST() FROM SS_VBMessages WHERE SSVBM_Code=:code)
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE, code
+ Do %0Eo
+ s PLIST=$O(PLIST(""),-1)
+ q SQLCODE
+ ;
+open(code,desc,skip,lan,type) s code=$g(code),desc=$g(desc),skip=$g(skip),lan=$g(lan),type=$g(type)
+  ;---&SQL(OPEN SSVBM)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %SSVBM0o
+ q 0
+ ;
+fetch(code,desc,skip,lan,type) s code=$g(code),desc=$g(desc),skip=$g(skip),lan=$g(lan),type=$g(type) k PLIST
+  ;---&SQL(FETCH SSVBM INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Ho
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE,$l(lan),type="Y",'$d(^SSLAN("VBM",0,PLIST(2),lan)) g fetch+1
+ i 'SQLCODE,$l(lan),type="N",$d(^SSLAN("VBM",0,PLIST(2),lan)) g fetch+1
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ;
+close()  ;---&SQL(CLOSE SSVBM)
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %SSVBM0c
+ q 0
+ ;
+insert() d pre("N") K PLIST(1)
+  ;---&sql(INSERT INTO SS_VBMessages VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Jo
+ I 'SQLCODE q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+update(RowID) d pre("Y") k PLIST(1)
+  ;---&sql(UPDATE SS_VBMessages VALUES :PLIST() WHERE SSVBM_RowId=:RowID)
+   ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ Do %0Lo
+ i 'SQLCODE q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+delete(RowId) s RowId=$g(RowId)
+  ;---&sql(DELETE FROM SS_VBMessages WHERE SSVBM_RowId = :RowId)
+   ;--- ** SQL PUBLIC Variables: RowId, SQLCODE
+ Do %0No
+ q SQLCODE
+ ;
+pre(xUpdate) d PreSQL^SSUTIL4()
+ q
+ ; Adjust certain fields
+adjust d PostSQL^SSUTIL4()
+ q
+ ; get message translation
+getmess(lan,code,YN) s lan=$g(lan),code=$g(code),YN=$g(YN) n (lan,code,YN,PLIST) 
+ k PLIST s PLIST(1)="" i $l(code) d
+ .s PLIST(1)=$p($g(^SS("VBM",0,code)),"\",1)
+ .i $l(lan) s x=$p($g(^SSLAN("VBM",0,code,lan)),"\",1) i $l(x) s PLIST(1)=x
+ .i YN="Y" s PLIST(1)=PLIST(1)_$c(1)_code
+ s PLIST=$o(PLIST(""),-1)
+ q $s($l(PLIST(1)):0,1:100)
+ ; get list of messages translation
+getsome(lan) s lan=$g(lan) n (lan,PLIST) k ^TMP($zn,$j) m ^TMP($zn,$j,1)=PLIST
+ s x="" f  s x=$o(^TMP($zn,$j,1,x)) q:x=""  d
+ .s code=^(x) i '$$getmess(lan,code) s ^TMP($zn,$j,2,x)=PLIST(1)
+ k PLIST m PLIST=^TMP($zn,$j,2) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+ ; get list of messages translation
+getpart(lan,code) s lan=$g(lan) n (lan,code,PLIST) k ^TMP($zn,$j)
+ s code=$$ALPHAUP^SSUTIL4(code),cnt=0
+ s cc=code f  s cc=$o(^SS("VBM","Code",cc)) q:cc=""  q:$e(cc,1,$l(code))'=code  d
+ .s rid="" f  s rid=$o(^SS("VBM","Code",cc,rid)) q:rid=""  s cnt=cnt+1,^TMP($zn,$j,1,cnt)=rid
+ s x="" f  s x=$o(^TMP($zn,$j,1,x)) q:x=""  d
+ .s code=^(x) i '$$getmess(lan,code,"Y") s ^TMP($zn,$j,2,x)=PLIST(1)
+ k PLIST m PLIST=^TMP($zn,$j,2) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+%SSVBM0o s $zt="%SSVBM0E" s SQLCODE=$s($g(%SSVBM0c):-101,1:0) q:SQLCODE'=0  s %SSVBM0d(14)=0 s %SSVBM0d(15)=0,%SSVBM0d(16)=""
+ s %SSVBM0d(4)=$g(code),%SSVBM0d(6)=$g(code),%SSVBM0d(8)=$g(desc),%SSVBM0d(10)=$g(desc)
+ s %SSVBM0d(9)=$zu(28,%SSVBM0d(8),6)
+ s %SSVBM0d(5)=$zu(28,%SSVBM0d(4),6)
+ s %SSVBM0c=1 q
+%SSVBM0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %SSVBM0c,%SSVBM0d,%SSVBM0E,%SSVBM0l,%SSVBM0n,%SSVBM0R,%SSVBM0Z q
+%0Afirst 
+ ; asl MOD# 2
+ s %SSVBM0d(1)=""
+%0ABk1 s %SSVBM0d(1)=$o(^SS("VBM",0,%SSVBM0d(1)))
+ i %SSVBM0d(1)="" g %0ABdun
+ s %SSVBM0d(23)=$g(^SS("VBM",0,%SSVBM0d(1)))
+ s %SSVBM0d(2)=$p(%SSVBM0d(23),"\",1)
+ s %SSVBM0d(7)=$zu(28,%SSVBM0d(2),6) s %SSVBM0d(3)=$zu(28,%SSVBM0d(1),6)
+ g:'((($c(0)[%SSVBM0d(5))||(%SSVBM0d(5)=$c(32,0)&&($e(%SSVBM0d(3))=$c(32)))||(%SSVBM0d(5)=$e(%SSVBM0d(3),1,$l(%SSVBM0d(5)))))||(%SSVBM0d(6)="")) %0ABk1
+ g:'(((%SSVBM0d(7)'="")&&(($c(0)[%SSVBM0d(9))||(%SSVBM0d(9)=$c(32,0)&&($e(%SSVBM0d(7))=$c(32)))||(%SSVBM0d(9)=$e(%SSVBM0d(7),1,$l(%SSVBM0d(9))))))||(%SSVBM0d(10)="")) %0ABk1
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^SS("VBM",0,$p(%SSVBM0d(1),"||",1))#"S":$zu(115,4) i $t { s %SSVBM0d(15)=1,%SSVBM0d(16)=$name(^SS("VBM",0,$p(%SSVBM0d(1),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.SS_VBMessages for RowID value: "_%SSVBM0d(1) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %SSVBM0d(12)=$lb(""_%SSVBM0d(3),""_%SSVBM0d(7))
+ i %SSVBM0d(1)'="",$d(^SS("VBM",0,%SSVBM0d(1)))
+ e  g %0ACdun
+ s %SSVBM0d(30)=$g(^SS("VBM",0,%SSVBM0d(1)))
+ s %SSVBM0d(2)=$p(%SSVBM0d(30),"\",1)
+ s %SSVBM0d(7)=$zu(28,%SSVBM0d(2),6) s %SSVBM0d(3)=$zu(28,%SSVBM0d(1),6)
+ s %SSVBM0d(13)=$lb(""_%SSVBM0d(3),""_%SSVBM0d(7))
+ g:%SSVBM0d(12)'=%SSVBM0d(13) %0ACdun
+%0ABuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %SSVBM0d(14)=%SSVBM0d(14)+1,%ROWCOUNT=%SSVBM0d(14),%ROWID=%SSVBM0d(1),%SSVBM0c=10 q
+%SSVBM0f i '$g(%SSVBM0c) { s SQLCODE=-102 q  } i %SSVBM0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%SSVBM0d(14))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%SSVBM0d(14),%SSVBM0c=100 q  } g %0Afirst:%SSVBM0c=1
+%0ACdun i $zu(115,2)=1,$g(%SSVBM0d(15))=1 { l -@%SSVBM0d(16) s %SSVBM0d(15)=0 }
+ g %0ABk1
+%0ABdun 
+%0AAdun 
+ s %ROWCOUNT=%SSVBM0d(14),SQLCODE=100,%SSVBM0c=100 q
+%SSVBM0c i '$g(%SSVBM0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%SSVBM0d(14)),1:0)
+ i $zu(115,2)=1,$g(%SSVBM0d(15))=1 { l -@%SSVBM0d(16) } k %SSVBM0c,%SSVBM0d,%SSVBM0E,%SSVBM0l,%SSVBM0n,%SSVBM0R,%SSVBM0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %SSVBM0c=100 q
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(ROWID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(2)=%mmmsqld(4)
+ i PLIST(2)'="",$d(^SS("VBM",0,PLIST(2)))
+ e  g %0CBdun
+ s %mmmsqld(14)=$g(^SS("VBM",0,PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(14),"\",1)
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^SS("VBM",0,$p(PLIST(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^SS("VBM",0,$p(PLIST(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.SS_VBMessages for RowID value: "_PLIST(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i PLIST(2)'="",$d(^SS("VBM",0,PLIST(2)))
+ e  g %0CCdun
+ s %mmmsqld(21)=$g(^SS("VBM",0,PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(21),"\",1)
+%0CBuncommitted ;
+ s PLIST(1)=PLIST(2)
+ s SQLCODE=0 g %0Cc
+%0CCdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Cc
+%0Eo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Eerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(code)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(2)=%mmmsqld(4)
+ i PLIST(2)'="",$d(^SS("VBM",0,PLIST(2)))
+ e  g %0EBdun
+ s %mmmsqld(14)=$g(^SS("VBM",0,PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(14),"\",1)
+ g:$zu(115,2)=0 %0EBuncommitted i $zu(115,2)=1 l +^SS("VBM",0,$p(PLIST(2),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^SS("VBM",0,$p(PLIST(2),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.SS_VBMessages for RowID value: "_PLIST(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i PLIST(2)'="",$d(^SS("VBM",0,PLIST(2)))
+ e  g %0ECdun
+ s %mmmsqld(21)=$g(^SS("VBM",0,PLIST(2)))
+ s PLIST(3)=$p(%mmmsqld(21),"\",1)
+%0EBuncommitted ;
+ s PLIST(1)=PLIST(2)
+ s SQLCODE=0 g %0Ec
+%0ECdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0EBdun 
+%0EAdun 
+%0Ec s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Eerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ec
+%0Ho d %SSVBM0f q:SQLCODE'=0
+ s PLIST(1)=%SSVBM0d(1),PLIST(2)=%SSVBM0d(1),PLIST(3)=%SSVBM0d(2)
+ q
+%0Jo n %i,icol,ir
+ f icol=0:1:3 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.SSVBMessages.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Jo
+%0Lo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Lerr" s %mmmsqld(4)=0 s %mmmsqld(5)=""
+ s %mmmsqld(3)=$g(RowID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ i %mmmsqld(2)'="",$d(^SS("VBM",0,%mmmsqld(2)))
+ e  g %0LBdun
+ s %mmmsqld(12)=$$%getlock^User.SSVBMessages.T1(%mmmsqld(2)) i '%mmmsqld(12) s SQLCODE=-110 g %0Lc
+ ; asl MOD# 3
+ i %mmmsqld(2)'="",$d(^SS("VBM",0,%mmmsqld(2)))
+ e  g %0LCdun
+ k %data
+ f icol=0:1:3 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.SSVBMessages.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(4))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(12)=1 %ReleaseLock^User.SSVBMessages.T1(%mmmsqld(2)) g %0Lc
+%0LCdun 
+ d:%mmmsqld(12)=1 %ReleaseLock^User.SSVBMessages.T1(%mmmsqld(2)) g:SQLCODE<0 %0Lc
+%0LBdun 
+%0LAdun 
+%0Lc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(4)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Lerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(12))=1 %ReleaseLock^User.SSVBMessages.T1(%mmmsqld(2)) g %0Lc
+%0No n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Nerr" s %mmmsqld(3)=0 s %mmmsqld(4)=""
+ s %mmmsqld(2)=$g(RowId)
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(1)=%mmmsqld(2)
+ i %mmmsqld(1)'="",$d(^SS("VBM",0,%mmmsqld(1)))
+ e  g %0NBdun
+ s %mmmsqld(11)=$$%getlock^User.SSVBMessages.T1(%mmmsqld(1)) i '%mmmsqld(11) s SQLCODE=-110 g %0Nc
+ ; asl MOD# 3
+ i %mmmsqld(1)'="",$d(^SS("VBM",0,%mmmsqld(1)))
+ e  g %0NCdun
+ d %delete^User.SSVBMessages.T1(%mmmsqld(1),$c(0,2,0,0),'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(3))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(11)=1 %ReleaseLock^User.SSVBMessages.T1(%mmmsqld(1)) g %0Nc
+%0NCdun 
+ d:%mmmsqld(11)=1 %ReleaseLock^User.SSVBMessages.T1(%mmmsqld(1)) g:SQLCODE<0 %0Nc
+%0NBdun 
+%0NAdun 
+%0Nc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(3)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Nerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(11))=1 %ReleaseLock^User.SSVBMessages.T1(%mmmsqld(1)) g %0Nc
+]]></Routine>
+</Export>

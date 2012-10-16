@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LHOSPINTTHAI02" type="INT" languagemode="0" generated="1"><![CDATA[
+LHOSPINTTHAI02 ; IG 12/07/98 ; Hospital Interface - Thailand BGH
+ Q
+RESULT(HOSP) N (HOSP) k ^TMP($zn,$j)
+ i $$select^LVBCTRL(HOSP) q
+ s dir=PLIST(7),x=$s(dir["\":"\",1:"/") i $e(dir,$l(dir))'=x s dir=dir_x
+ s xCurrent=$p($g(^CF("SM",1,"SITE")),"^",2),dir=dir_xCurrent_"*.hl7"
+ ; MS-DOS based system
+ i $zf(-1,"DIR "_dir_" /B > ""results.txt""")
+ ; UNIX based system
+ ;i $zf(-1,"ls "_dir_" > ""results.txt""")
+ s $zt="Error1^"_$zn
+ s FILE="results.txt"
+ o FILE:("RS"::$c(10,13))
+ f  u FILE r x s xFILE=$p(x," ",$l(x," ")) i xFILE[".",$l(xFILE) s ^TMP($zn,$j," ",xFILE)=""
+END1 c FILE
+END2 s $zt="Error2^"_$zn
+ s xxFILE=$o(^TMP($zn,$j," ","")) i $l(xxFILE) d
+ .s x=$s(dir["\":"\",1:"/"),xFILE=$p(dir,x,1,$l(dir,x)-1)_x_xxFILE
+ .o xFILE:("RS"::$c(10,13)):1 e  q
+ .s Error="" f  u xFILE r MESS s seq=$o(^TMP($zn,$j,xxFILE,"IN",""),-1)+1,^TMP($zn,$j,xxFILE,"IN",seq)=MESS
+ s $zt=""
+ s xFile="" f  s xFile=$o(^TMP($zn,$j,xFile)) q:xFile=""  d
+ .s cnt=0
+ .s seq="" f  s seq=$o(^TMP($zn,$j,xFile,"IN",seq)) q:seq=""  s xx=^(seq) d
+ ..i $p(xx,"|")="OBR" s cnt=cnt+1,^TMP($zn,$j,xFile,"IN-1",cnt,0)=xx
+ ..i $p(xx,"|")="OBX",$d(^TMP($zn,$j,xFile,"IN-1",cnt)) s x=$o(^TMP($zn,$j,xFile,"IN-1",cnt,""),-1)+1,^TMP($zn,$j,xFile,"IN-1",cnt,x)=xx
+ s xFile="" f  s xFile=$o(^TMP($zn,$j,xFile)) q:xFile=""  d
+ .k ^TMPimport(xFile)
+ .s seq1="" f  s seq1=$o(^TMP($zn,$j,xFile,"IN-1",seq1)) q:seq1=""  d
+ ..s (epis,ts,tscnt,vts)="",done="bad"
+ ..s seq2="" f  s seq2=$o(^TMP($zn,$j,xFile,"IN-1",seq1,seq2)) q:seq2=""  s xx=^(seq2) d
+ ...i $p(xx,"|")="OBR" d
+ ....s epis=$p($p($p(xx,"|",4),"^"),"  ") i $l(epis) s ts=$p($p($p(xx,"|",4),"^"),"  ",2) i $l(ts) s tscnt=$p($p($p(xx,"|",4),"^"),"  ",3)
+ ....i $l(epis),$l(ts),$l(tscnt) s vts=epis_"||"_ts_"||"_tscnt
+ ....i '$l($$seldata^LVBVISTS(vts,1)) s vts=""
+ .... ; only file results in RTF test set
+ ....i $$seldata^LVBCTTS(ts,31)'="Y" s vts=""
+ ....i $l(vts) s reason=$p(xx,"|",12) i $l(reason) s ^TMP($zn,$j,xFile,"OUT",vts,"R")=reason
+ ...i $l(vts),$p(xx,"|")="OBX",$p(xx,"|",3)="FT" s result=$p(xx,"|",6) d
+ ....f j1=1:1:$l(result,"\.br\") d
+ .....s x1=$p(result,"\.br\",j1)
+ .....f  q:x1'["\S\"  s x1=$p(x1,"\S\")_$c(16)_$p(x1,"\S\",2,$l(x1,"\S\"))
+ .....s result(j1)=x1
+ ....s ^TMPimport(xFile,"index",vts)=seq1
+ .... ; find TS left margin
+ ....s tsLM=""
+ ....i 'tsLM s tsLM=$$seldata^LVBCTTS(ts,41),dep=$$seldata^LVBCTTS(ts,26)
+ ....i 'tsLM s tsLM=$$seldata^LVBCTDEP(dep,13)
+ ....i 'tsLM s tsLM=$$seldata^MVBCFLAB(1,43)
+ .... ; strip left margin
+ ....i tsLM d
+ .....s (stop,j)="" f  s j=$o(result(j)) q:j=""  i $tr($e(result(j),1,tsLM)," ")'="" s stop=1 q
+ .....i 'stop s j="" f  s j=$o(result(j)) q:j=""  s result(j)=$e(result(j),tsLM+1,$l(result(j)))
+ ....m ^TMP($zn,$j,xFile,"OUT",vts,"T")=result
+ ....k result s done="process"
+ ..m ^TMPimport(xFile,done,seq1)=^TMP($zn,$j,xFile,"IN-1",seq1)
+ ..k ^TMP($zn,$j,xFile,"IN-1",seq1)
+ s xFile="" f  s xFile=$o(^TMP($zn,$j,xFile)) q:xFile=""  d
+ .s vts="" f  s vts=$o(^TMP($zn,$j,xFile,"OUT",vts)) q:vts=""  d
+ ..s reason="" i $d(^TMP($zn,$j,xFile,"OUT",vts,"R")) s reason=^("R") k ^TMP($zn,$j,xFile,"OUT",vts,"T")
+ ..s (text,cnt)="" f  s cnt=$o(^TMP($zn,$j,xFile,"OUT",vts,"T",cnt)) q:cnt=""  s text=text_$s($l(text):"|",1:"")_^(cnt)
+ ..s epis=$p(vts,"||",1),ts=$p(vts,"||",2),tscnt=$p(vts,"||",3)
+ ..i $$vtsLock^SSLOCK("IM",epis,vts,"trak")=-1 d
+ ...i $$status^LVBVIS1(vts)="A",$l(text) d  q
+ ....k xx m xx=^TEPI(epis,1,ts,tscnt,"DATA","T","REM")
+ ....k ^TEPI(epis,1,ts,tscnt,"DATA","T","REM")
+ ....s max=0
+ ....f j=1:1 q:'$d(xx(j))  i max<$l(xx(j)) s max=$l(xx(j))
+ ....f j=1:1:$l(text,"|") i max<$l($p(text,"|",j)) s max=$l($p(text,"|",j))
+ ....s line="",$p(line,"-",max+1)=""
+ ....s text=$j("",max-22\2)_"--- Amended Result ---"_"||"_text_"||"_line
+ ....f j=1:1:$l(text,"|") s x=$o(^TEPI(epis,1,ts,tscnt,"DATA","T","REM",""),-1)+1,^TEPI(epis,1,ts,tscnt,"DATA","T","REM",x)=$p(text,"|",j)
+ ....f j=1:1 q:'$d(xx(j))  s x=$o(^TEPI(epis,1,ts,tscnt,"DATA","T","REM",""),-1)+1,^TEPI(epis,1,ts,tscnt,"DATA","T","REM",x)=xx(j)
+ ....s x=$o(^TEPI(epis,1,ts,tscnt,"DATA","T","REM",""),-1),^TEPI(epis,1,ts,tscnt,"DATA","T","REM",0)=x
+ ...i $$status^LVBVIS1(vts)'="A" d  q
+ ....i $l(reason) d  q
+ .....i '$$select^LVBVISTS(vts,"Y") s PLIST(58)=reason i $$update^LVBVISTS(vts)
+ ....k PLIST
+ ....s PLIST(1)="DATA"_$c(1)_"T"_$c(1)_text
+ ....s PLIST=$o(PLIST(""),-1)
+ ....i $$TScheck^LVBVIS7(vts,"A","","B")
+ ....s (VQ,ok)="" f j=1:1:PLIST d  i ok="N" q
+ .....i $e($p(PLIST(j),$c(1)))="E" s ok="N" q
+ .....i $e($p(PLIST(j),$c(1)),1,2)="VQ" s VQ=$p(PLIST(j),$c(1),2)
+ ....k PLIST s PLIST(1)="T\"_text
+ ....s PLIST=$o(PLIST(""),-1)
+ ....s err=$$save^LVBVIS4(vts,"A","trak","N")
+ ....s ^TMPimport(xFile,"index",vts)=$g(^TMPimport(xFile,"index",vts))_" err"
+ ....i 'err d
+ .....i '$$select^LVBVISTS(vts,"Y") s PLIST(29)=$$seldata^LVBEPVIS(epis,66) i $$update^LVBVISTS(vts)
+ .....k PLIST
+ .....s PLIST=$o(PLIST(""),-1)
+ .....i $$TScheck^LVBVIS7(vts,"A","","A")
+ .....f j=1:1:PLIST d
+ ......s val=$p($p(PLIST(j),$c(1),2),$c(2))
+ ......i $e($p(PLIST(j),$c(1)),1,2)="VQ",$$VQ^LVBCOM13(vts,val)
+ ......i $e($p(PLIST(j),$c(1)),1,2)="TA",$$TAR^LVBCOM13($p(vts,"||"),,val)
+ ......i $e($p(PLIST(j),$c(1)),1,2)="SA",$$SA^LVBCOM13($p(vts,"||"),val)
+ ......i $e($p(PLIST(j),$c(1)),1,2)="SF",$$SF^LVBCOM13(vts,$p(PLIST(j),$c(1),6),val)
+ ......i $e($p(PLIST(j),$c(1)),1,3)="ACT",$$ACT^LVBCOM13($p(vts,"||"),$p(val,"-",1),$p(val,"-",2))
+ ..i $$vtsLockClr^SSLOCK("IM",epis,vts)
+ s (param,xFile)="" f  s xFile=$o(^TMP($zn,$j,xFile)) q:xFile=""  s param=param_$s($l(param):",",1:"")_xFile
+ i $l(param),$$START^PRTREP00("","",HOSP_"\"_param,"RLI")
+ k ^TMP($zn,$j)
+ q
+ ; Error log
+Error1 i $ze["ENDOFFILE" g END1
+ d BACK^%ETN
+ q
+ ; Error log
+Error2 i $ze'["ENDOFFILE" d BACK^%ETN q
+ c xFILE k ^TMP($zn,$j," ",xxFILE)
+ ; Move the file
+ s x=$s(dir["\":"\",1:"/"),xFILEN=x_$p(xFILE,x,$l(xFILE,x))
+ ; MS-DOS based system
+ i '$zf(-1,"copy "_xFILE_" "_$p(dir,x,1,$l(dir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN),$zf(-1,"del "_xFILE)
+ ; UNIX based system
+ ;i $zf(-1,"mv "_xFILE_" "_$p(dir,x,1,$l(dir,x)-1)_x_$s(Error:"bad",1:"process")_xFILEN)
+ g END2
+ ; import episodes
+EPISODE() N  k ^TMP($zn,$j) s delim=","
+ k CFSM i '$$select^MVBCFSM(1) m CFSM=PLIST
+ s dir=$tr(CFSM(12),$c(16,17,18),"^\|") f j="/","\" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ i $zf(-1,"DIR "_dir_"*.txt /B > ""import.txt""")
+ s file="import.txt" o file:"WAS" u file w "End_Of_File",! c file
+ o file:("RS"::$c(10,13))
+ f  u file r x q:x="End_Of_File"  s xfile=$p(x," ",$l(x," ")) i xfile[".",$l(xfile) s ^TMP($zn,$j,"FileName",xfile)=""
+ c file
+ i $zf(-1,"DIR "_dir_"*.hl7 /B > ""import.hl7""")
+ s file="import.hl7" o file:"WAS" u file w "End_Of_File",! c file
+ o file:("RS"::$c(10,13))
+ f  u file r x q:x="End_Of_File"  s xfile=$p(x," ",$l(x," ")) i xfile[".",$l(xfile) s ^TMP($zn,$j,"FileName",xfile)=""
+ c file
+ ; extract file content
+Read s $zt="Error^"_$zn,xCurrent=$p($g(^CF("SM",1,"SITE")),"^",2)
+ s file=$o(^TMP($zn,$j,"FileName","")) i $l(file) d
+ .s dir=$tr(CFSM(12),$c(16,17,18),"^\|") f j="/","\" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ .s fullname=dir_file
+ .o fullname:("RS"::$c(10,13)):1 e  q
+ .k ^TMP($zn,$j,file)
+ .u fullname s line="" f  r line:10 s cnt=$o(^TMP($zn,$j,file,""),-1)+1,^TMP($zn,$j,file,cnt)=line
+ k ^TMP($zn,$j,"FileName")
+ s file="" f  s file=$o(^TMP($zn,$j,file)) q:file=""  d
+ .
+ . ; Trak generic file
+ .
+ .i $$UPPER^SSUTIL4($p(file,".",2))="TXT" d
+ ..s cnt="" f  s cnt=$o(^TMP($zn,$j,file,cnt)) q:cnt=""  d
+ ...k xx f j=1:1:200 s xx(j)=$p(^(cnt),$c(28),j)
+ ...s epis=xx(2),tests=xx(200)
+ ...i $l(epis),'$d(^TEPI(epis)) d
+ ....k PLIST m PLIST=xx
+ ....s PLIST(86)=0
+ .... ; BGH specific
+ ....s PLIST(15)=$e(epis,1,2),PLIST(22)=$e(epis,1,2),PLIST(66)=xCurrent
+ ....s PLIST=$o(PLIST(""),-1)
+ ....s err=$$save^LVBEPVIS(epis) i err s ^TMPlog("import-txt",file,epis)=err q
+ ....f jx=1:1:$l(tests,",") d
+ .....s vts=$p(tests,",",jx) i $l(vts) d
+ ......k PLIST s PLIST(3)=$p(vts,"||",2)
+ ......s PLIST(29)=xCurrent
+ ......s PLIST=$o(PLIST(""),-1)
+ ......s err=$$insert^LVBVISTS(epis) i err s ^TMPlog("import-txt",file,epis,vts)=err q
+ .
+ . ; HL7 file
+ .
+ .i $$UPPER^SSUTIL4($p(file,".",2))="HL7" d
+ ..s (from,cnt)="" f  s cnt=$o(^TMP($zn,$j,file,cnt)) q:cnt=""  d  q:$l(from)
+ ...k xx f j=1:1:$l(^(cnt),"|") s xx(j)=$p(^(cnt),"|",j)
+ ...i xx(1)="MSH",xx(5)="PATH_ORDER",xx(9)="ORM",xx(6)=CFSM(43) s from=xx(4)
+ ..i '$l(from) s ^TMPlog("import-hl7",file)="Has not been processed" q
+ ..i $l(from) d
+ ...s (epis,cnt)="" f  s cnt=$o(^TMP($zn,$j,file,cnt)) q:cnt=""  d
+ ....k xx f j=1:1:$l(^(cnt),"|") s xx(j)=$p(^(cnt),"|",j)
+ ....i xx(1)="PID" d  q
+ .....k VISIT
+ .....f j=1:1:$l(xx(3),"~") s xx=$p(xx(3),"~",j) d
+ ......i $p(xx,"^",5)="MREXT" s $p(VISIT(65),",",2)=$p(xx,"^",1)
+ ......i $p(xx,"^",5)="EPEXT" s $p(VISIT(65),",",1)=$p(xx,"^",1)
+ ......i $p(xx,"^",5)="MRLT" s VISIT(20)=$p(xx,"^",1)
+ ......i $p(xx,"^",5)="MC" s VISIT(8)=$p(xx,"^",1),VISIT(108)=$p(xx,"^",2)
+ ......i $p(xx,"^",5)="DVA" s VISIT(89)=$p(xx,"^",1)
+ ......i $p(xx,"^",5)="PEN" s VISIT(88)=$p(xx,"^",1)
+ ......i $p(xx,"^",5)="EPLT" s (epis,VISIT(2))=$p(xx,"^",1)
+ ......i $e($p(xx,"^",5),1,3)="NI-" s VISIT(126)=$p(xx,"^",1),VISIT(127)=$p($p(xx,"^",5),"-",2)
+ .....s VISIT(20)=xx(4),VISIT(5)=xx(9),VISIT(60)=xx(11),VISIT(43)=$p(xx(14),"^",7),VISIT(44)=$p(xx(15),"^",7),VISIT(161)=$p(xx(16),"^",1)
+ .....s VISIT(3)=$p(xx(6),"^",1),VISIT(4)=$p(xx(6),"^",2),VISIT(7)=$p(xx(6),"^",5),VISIT(105)=xx(30),VISIT(86)=0
+ .....i $l(xx(8)) s VISIT(6)=$$intdate^SSUTIL4($e(xx(8),5,6)_"/"_$e(xx(8),7,8)_"/"_$e(xx(8),1,4))
+ .....f j=1:1:5 s VISIT(31+j)=$p(xx(12),"^",j)
+ .....i $l(epis) d
+ ......i '$$select^LVBEPVIS(epis,"Y") s ^TMPlog("import-hl7",file,epis)="PID message: Already exist" q
+ ......k PLIST m PLIST=VISIT
+ ......s PLIST=$o(PLIST(""),-1)
+ ......s err=$$save^LVBEPVIS(epis) i err s ^TMPlog("import-hl7",file,epis)="PID message: Error - "_err q
+ ....i xx(1)="PV1" d  q
+ .....k VISIT
+ .....s VISIT(22)=$p(xx(3),"^",1),VISIT(112)=$p(xx(3),"^",2),VISIT(113)=$p(xx(3),"^",3)
+ .....s VISIT(123)=xx(6),VISIT(93)=xx(18)
+ .....s VISIT(9)=$p(xx(20),"^",1),VISIT(23)=$p(xx(20),"^",2)
+ .....i $l(xx(44)) s VISIT(47)=$$intdate^SSUTIL4($e(xx(44),5,6)_"/"_$e(xx(44),7,8)_"/"_$e(xx(44),1,4))
+ .....i $l(xx(45)) s VISIT(165)=$$intdate^SSUTIL4($e(xx(45),5,6)_"/"_$e(xx(45),7,8)_"/"_$e(xx(45),1,4))
+ .....s (epis,VISIT(2))=xx(19) i $p(xx(8),"^",7)="DR" s VISIT(15)=$p(xx(8),"^",8)
+ .....i $l(epis) d
+ ...... ; BGH specific
+ ......s VISIT(15)=$e(epis,1,2),VISIT(22)=$e(epis,1,2),VISIT(66)=xCurrent
+ ......i $$select^LVBEPVIS(epis,"Y") s ^TMPlog("import-hl7",file,epis)="PV1 message: Does not exist" q
+ ......f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1)) i $l($g(VISIT(j))) s PLIST(j)=VISIT(j)
+ ......s err=$$save^LVBEPVIS(epis) i err s ^TMPlog("import-hl7",file,epis)="PV1 message: Error - "_err q
+ ....i xx(1)="OBR" d  q
+ .....k VISIT,VISTS
+ .....s VISTS(13)=xx(5),VISTS(3)=$p(xx(4),"^"),VISTS(2)=$p(xx(3),"^",5),vts=$tr(xx(3),"^","|")
+ .....i $l(xx(6)) s VISIT(14)=$$intdate^SSUTIL4($e(xx(6),5,6)_"/"_$e(xx(6),7,8)_"/"_$e(xx(6),1,4)),VISIT(111)=$$inttime^SSUTIL4($e(xx(6),9,10)_":"_$e(xx(6),11,12))
+ .....i $l(xx(14)) s VISIT(61)=$$intdate^SSUTIL4($e(xx(14),5,6)_"/"_$e(xx(14),7,8)_"/"_$e(xx(14),1,4)),VISIT(62)=$$inttime^SSUTIL4($e(xx(14),9,10)_":"_$e(xx(14),11,12))
+ .....i $l(xx(7)) s VISIT(12)=$$intdate^SSUTIL4($e(xx(7),5,6)_"/"_$e(xx(7),7,8)_"/"_$e(xx(7),1,4)),VISIT(13)=$$inttime^SSUTIL4($e(xx(7),9,10)_":"_$e(xx(7),11,12))
+ .....s VISIT(53)=$tr(xx(13),"~","|")
+ .....s VISTS(48)=$p(xx(15),"^",2),VISTS(47)=$p(xx(15),"^",1),VISTS(65)=$p(xx(15),"^",3)
+ .....i $l(vts) d
+ ......s epis=$p(vts,"||")
+ ......i $l(epis) d
+ .......i $$select^LVBEPVIS(epis,"Y") s ^TMPlog("import-hl7",file,epis)="OBR message: Does not exist" q
+ .......f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1)) i $l($g(VISIT(j))) s PLIST(j)=VISIT(j)
+ .......s err=$$save^LVBEPVIS(epis) i err s ^TMPlog("import-hl7",file,epis)="OBR message: Error - "_err q
+ ......i '$$select^LVBVISTS(vts,"Y") s ^TMPlog("import-hl7",file,epis,vts)="OBR message: Test already exist" q
+ ......k PLIST m PLIST=VISTS
+ ......s PLIST(29)=xCurrent
+ ......s PLIST=$o(PLIST(""),-1)
+ ......s err=$$insert^LVBVISTS(epis) i err s ^TMPlog("import-hl7",file,epis,vts)="OBR message: Error - "_err q
+ k ^TMP($zn,$j)
+ q
+ ; error log
+Error i $ze'["ENDOFFILE" d BACK^%ETN q
+ c fullname
+ ; del the file
+ k ^TMP($zn,$j,"FileName",file)
+ i '$zf(-1,"del "_fullname)
+ g Read
+]]></Routine>
+</Export>

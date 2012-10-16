@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTTAT101" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTTAT101       ; ML 07/11/2002 ; TURN AROUND TIME
+ q
+ ; Parameters :  1. Patient Locations
+ ;               2. Patient Type
+ ;               3. Date From
+ ;               4. Date To
+ ;               5. Test Set
+ ;               6. Test Group
+ ;               7. Patient Location type
+ ;
+CREATE(REPID,PAR,USER,%msql)    ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Turn Around Time Report"
+ s line=2,xHEADER(line)=""
+ s line=line+1,xHEADER(line)="Patient Location : "_loc
+ s line=line+1,xHEADER(line)=""
+ i $l(PAR2) d
+ .s line=line+1,xHEADER(line)="Patient Type : "_$s(PAR2="I":"Inpatient",PAR2="Y":"Outpatient",1:"GP Practice")
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR7) d
+ .s line=line+1,xHEADER(line)="Patient Location Type : "_$s(PAR7="I":"Inpatient",PAR7="Y":"Outpatient",1:"GP Practice")
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR5) d
+ .s line=line+1,xHEADER(line)="Test Set : "_$p(^TTAB("TS",PAR5),"\")_"("_PAR5_")"
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR6) d
+ .s line=line+1,xHEADER(line)="Test Group : "_$p(^TTAB("GR",PAR6),"\")_"("_PAR6_")"
+ .s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,PAR3,PAR4),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ i $l(PAR1) s loc="" f i=1:1:$l(PAR1,",") s xx=$p(PAR1,","),loc=loc_$s($l(loc):", ",1:"")_$p(^TTAB("RH",xx),"\")
+ i '$l(PAR1) s loc="All Locations"
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+BODY ; create temporary printing file
+ ; check dates - 1. collection
+ ;               6. received
+ f index=1,6 d
+ .s date=PAR3-1 f  s date=$o(^TDAY(index,date)) q:date=""  q:date>PAR4  d
+ ..s status="" f  s status=$o(^TDAY(index,date,status)) q:status=""  d
+ ...s epis="" f  s epis=$o(^TDAY(index,date,status,epis)) q:epis=""  d
+ ....q:$$select^LVBEPVIS(epis,"Y")  m VISIT=PLIST k PLIST
+ ....i $l(PAR1),(","_PAR1_",")'[(","_VISIT(22)_",") q
+ ....i $l(PAR2),(","_PAR2_",")'[(","_VISIT(93)_",") q
+ ....i $l(PAR7),'$$select^LVBCTHOS(VISIT(22),"Y"),PLIST(19)'=PAR7 q
+ ....s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ .....i $l(PAR5),PAR5'=ts q
+ .....i $l(PAR6),'$d(^TTAB("GR",PAR6,"TS",ts)) q
+ .....s seq="" f  s seq=$o(^TEPI(epis,1,ts,seq)) q:seq=""  d
+ ......s collected=VISIT(12)_","_VISIT(13),received=VISIT(61)_","_VISIT(62)
+ ......s authorised=$p(^TEPI(epis,1,ts,seq),"\",4)_","_($p(^TEPI(epis,1,ts,seq),"\",5)*60) s:authorised=",0" authorised=""
+ ......s ^TMP($zn,$j,"Process",$s(VISIT(22)="":" ",1:VISIT(22)),date,$s(VISIT(93)="":" ",1:VISIT(93)),epis,ts,seq)=collected_"\"_received_"\"_authorised
+ ; check authorised date
+ s date=PAR3-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR4  d
+ .s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ ..q:$$select^LVBEPVIS(epis,"Y")  m VISIT=PLIST k PLIST
+ ..i $l(PAR1),(","_PAR1_",")'[(","_VISIT(22)_",") q
+ ..i $l(PAR2),(","_PAR2_",")'[(","_VISIT(93)_",") q
+ ..s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  d
+ ...i $l(PAR5),PAR5'=ts q
+ ...i $l(PAR6),'$d(^TTAB("GR",PAR6,"TS",ts)) q
+ ...s seq="" f  s seq=$o(^TEPIi("AUTHORISED",date,epis,ts,seq)) q:seq=""  d
+ ....q:$d(^TMP($zn,$j,"Process",$s(VISIT(22)="":" ",1:VISIT(22)),date,$s(VISIT(93)="":" ",1:VISIT(93)),epis,ts,seq))
+ ....s collected=VISIT(12)_","_VISIT(13),received=VISIT(61)_","_VISIT(62)
+ ....s authorised=$p(^TEPI(epis,1,ts,seq),"\",4)_","_($p(^TEPI(epis,1,ts,seq),"\",5)*60)
+ ....s ^TMP($zn,$j,"Process",$s(VISIT(22)="":" ",1:VISIT(22)),date,$s(VISIT(93)="":" ",1:VISIT(93)),epis,ts,seq)=collected_"\"_received_"\"_authorised
+ ; check delta's - received & collected
+ ;               - authorised & received
+ s loc="" f  s loc=$o(^TMP($zn,$j,"Process",loc)) q:loc=""  d
+ .s date="" f  s date=$o(^TMP($zn,$j,"Process",loc,date)) q:date=""  d
+ ..s ptype="" f  s ptype=$o(^TMP($zn,$j,"Process",loc,date,ptype)) q:ptype=""  d
+ ...s epis="" f  s epis=$o(^TMP($zn,$j,"Process",loc,date,ptype,epis)) q:epis=""  d
+ ....s ts="" f  s ts=$o(^TMP($zn,$j,"Process",loc,date,ptype,epis,ts)) q:ts=""  d
+ .....s seq="" f  s seq=$o(^TMP($zn,$j,"Process",loc,date,ptype,epis,ts,seq)) q:seq=""  d
+ ......s detail=^TMP($zn,$j,"Process",loc,date,ptype,epis,ts,seq)
+ ......s coll=$p(detail,"\",1),recd=$p(detail,"\",2),auth=$p(detail,"\",3)
+ ......s collected=($p(coll,",")*86400)+$p(coll,",",2),received=($p(recd,",")*86400)+$p(recd,",",2)
+ ......s:auth="" auth=$h
+ ......s authorised=($p(auth,",")*86400)+$p(auth,",",2)
+ ......s cnt=$i(^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count"))
+ ......s ^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",cnt,"AR")=(authorised-received)
+ ......s ^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",cnt,"RC")=(received-collected)
+ ; calculate totals
+ s loc="" f  s loc=$o(^TMP($zn,$j,"Delta",loc)) q:loc=""  d
+ .s date="" f  s date=$o(^TMP($zn,$j,"Process",loc,date)) q:date=""  d
+ ..s ptype="" f  s ptype=$o(^TMP($zn,$j,"Delta",loc,date,ptype)) q:ptype=""  d
+ ...s ts="" f  s ts=$o(^TMP($zn,$j,"Delta",loc,date,ptype,ts)) q:ts=""  d
+ ....s (totalRC,totalAR,tot,cnt)="" f  s cnt=$o(^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",cnt)) q:cnt=""  d
+ .....s RC=^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",cnt,"RC")
+ .....s AR=^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",cnt,"AR")
+ .....s totalRC=totalRC+RC,totalAR=totalAR+AR,tot=tot+1
+ .....s ^TMP($zn,$j,"Sort",loc,date,ptype,ts,"RC",RC,cnt)=""
+ .....s ^TMP($zn,$j,"Sort",loc,date,ptype,ts,"AR",AR,cnt)=""
+ .... ; calculate mean
+ ....s (meanRC,meanAR,medianRC,medianAR,percentileRC,percentileAR)=""
+ ....i tot s meanRC=totalRC/tot,meanAR=totalAR/tot
+ .... ; calculate median
+ ....s (cnt,stop,x1)="" f  s x1=$o(^TMP($zn,$j,"Sort",loc,date,ptype,ts,"RC",x1)) q:x1=""  d  q:stop
+ .....s x2="" f  s x2=$o(^TMP($zn,$j,"Sort",loc,date,ptype,ts,"RC",x1,x2)) q:x2=""  d  q:stop
+ ......s cnt=cnt+1
+ ......i tot#2'=0,(tot+1)\2=cnt s stop=1,medianRC=^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",x2,"RC")
+ ......i tot#2=0,tot\2=cnt s medianRC=^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",x2,"RC")
+ ......i tot#2=0,(tot+2)\2=cnt s stop=1,medianRC=(medianRC+^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",x2,"RC"))/2
+ ....s (cnt,stop,x1)="" f  s x1=$o(^TMP($zn,$j,"Sort",loc,date,ptype,ts,"AR",x1)) q:x1=""  d  q:stop
+ .....s x2="" f  s x2=$o(^TMP($zn,$j,"Sort",loc,date,ptype,ts,"AR",x1,x2)) q:x2=""  d  q:stop
+ ......s cnt=cnt+1
+ ......i tot#2'=0,(tot+1)\2=cnt s stop=1,medianAR=^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",x2,"AR")
+ ......i tot#2=0,tot\2=cnt s medianAR=^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",x2,"AR")
+ ......i tot#2=0,(tot+2)\2=cnt s stop=1,medianAR=(medianAR+^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",x2,"AR"))/2
+ .... ; calculate 90th percentile
+ ....s (cnt,stop,x1)="" f  s x1=$o(^TMP($zn,$j,"Sort",loc,date,ptype,ts,"RC",x1),-1) q:x1=""  d  q:stop
+ .....s x2="" f  s x2=$o(^TMP($zn,$j,"Sort",loc,date,ptype,ts,"RC",x1,x2),-1) q:x2=""  d  q:stop
+ ......s cnt=cnt+1
+ ......i ($j(tot/10,0,0)+1)=cnt s stop=1,percentileRC=^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",x2,"RC")
+ ....s (cnt,stop,x1)="" f  s x1=$o(^TMP($zn,$j,"Sort",loc,date,ptype,ts,"AR",x1),-1) q:x1=""  d  q:stop
+ .....s x2="" f  s x2=$o(^TMP($zn,$j,"Sort",loc,date,ptype,ts,"AR",x1,x2),-1) q:x2=""  d  q:stop
+ ......s cnt=cnt+1
+ ......i ($j(tot/10,0,0)+1)=cnt s stop=1,percentileAR=^TMP($zn,$j,"Delta",loc,date,ptype,ts,"Count",x2,"AR")
+ ....s ^TMP($zn,$j,"Report",loc,date,ptype,ts)=tot_"\"_medianRC_"\"_meanRC_"\"_percentileRC_"\"_medianAR_"\"_meanAR_"\"_percentileAR
+ q
+PRINT ; print report
+ k xxx,PLIST
+ s loc="" f  s loc=$o(^TMP($zn,$j,"Report",loc)) q:loc=""  d
+ .s location="" i '$$select^LVBHOSP(loc) s location=PLIST(3) k PLIST
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","~BOLD")
+ .d ADDLINE^PRTREP00(REPID,"PRT","~ITALIC")
+ .d ADDLINE^PRTREP00(REPID,"PRT","?1  "_$s(loc'=" ":loc_" "_location,1:"No Location"))
+ .d ADDLINE^PRTREP00(REPID,"PRT","~NORMAL")
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .s date="" f  s date=$o(^TMP($zn,$j,"Report",loc,date)) q:date=""  d
+ ..s xxx(1)=$$extdate2^SSUTIL4(date)
+ ..s ptype="" f  s ptype=$o(^TMP($zn,$j,"Report",loc,date,ptype)) q:ptype=""  d
+ ...s xxx(2)=ptype
+ ...s ts="" f  s ts=$o(^TMP($zn,$j,"Report",loc,date,ptype,ts))  q:ts=""  d
+ ....s detail=^TMP($zn,$j,"Report",loc,date,ptype,ts)
+ ....s xxx(3)=ts f i=1:1:7 s xxx(i+3)=$p(detail,"\",i)
+ ....f i=5:1:10 s xxx(i)=xxx(i)\60
+ ....d PRINT^PRTREP00(.PLIST,.N) k xxx,PLIST
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="TAT1"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

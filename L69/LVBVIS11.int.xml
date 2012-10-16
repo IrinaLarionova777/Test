@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBVIS11" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBVIS11 ; ML 14/06/01 ; Down Syndrome Calculations
+ ;
+ ; supported calls:
+ ;
+ ; $$MoM^LVBVIS11(tc,value,DateType,DateWeek,DateDay,ScanWeek,ScanDay)
+ ; $$Multi^LVBVIS11(MoMAFP,MoMHCG,MaternalAge,tcAFP,tcHCG,tcMoMAFP,tcMoMHCG)
+ ; $$Single^LVBVIS11(MoM,MaternalAge,tc,tcMoM)
+ ;
+ q
+ ; calculate MoM (multiple of median)
+MoM(tc,value,DateType,DateWeek,DateDay,ScanWeek,ScanDay)
+ n (tc,value,DateType,DateWeek,DateDay,ScanWeek,ScanDay) s tc=$g(tc),tc=$tr(tc,"x"),value=$g(value)
+ s DateType=$g(DateType),DateWeek=$g(DateWeek),DateDay=$g(DateDay),ScanWeek=$g(ScanWeek),ScanDay=$g(ScanDay)
+ ; datetype: 'D'ate Estimate
+ ;           'S'can Date
+ s week=$s(DateType="D":DateWeek,1:ScanWeek),day=$s(DateType="D":DateDay,1:ScanDay)
+ i $$select^LVBCTDSM(tc_"||H||"_week) q ""
+ s result=$p($g(PLIST(day+4)),$c(1)) i result'="" s result=value/result
+ q result
+ ; calculate Multivariate test odds
+Multi(MoMAFP,MoMHCG,MaternalAge,tcAFP,tcHCG,tcMoMAFP,tcMoMHCG) n (MoMAFP,MoMHCG,MaternalAge,tcAFP,tcHCG,tcMoMAFP,tcMoMHCG)
+ s MoMAFP=$g(MoMAFP),MoMHCG=$g(MoMHCG),MaternalAge=$g(MaternalAge),tcAFP=$g(tcAFP),tcHCG=$g(tcHCG),tcMoMAFP=$g(tcMoMAFP),tcMoMHCG=$g(tcMoMHCG)
+ s tcAFP=$tr(tcAFP,"x"),tcHCG=$tr(tcHCG,"x"),tcMoMAFP=$tr(tcMoMAFP,"x"),tcMoMHCG=$tr(tcMoMHCG,"x")
+ ; extract correlation values
+ q:$$select^MVBCFLAB(1) ""
+ s downCorr=$g(PLIST(87)),healthCorr=$g(PLIST(88))
+ ; extract AFP and HCG mean/sd values
+ q:$$select^LVBCTTC(tcAFP) ""
+ s meanAFP("health")=$g(PLIST(56)),sdAFP("health")=$g(PLIST(57)),meanAFP("down")=$g(PLIST(58)),sdAFP("down")=$g(PLIST(59))
+ q:$$select^LVBCTTC(tcHCG) ""
+ s meanHCG("health")=$g(PLIST(56)),sdHCG("health")=$g(PLIST(57)),meanHCG("down")=$g(PLIST(58)),sdHCG("down")=$g(PLIST(59))
+ ; round MoM values to correct decimal places
+ q:$$select^LVBCTTC(tcMoMAFP) ""  s MoMAFP=$j(MoMAFP,0,$e(PLIST(5),2))
+ q:$$select^LVBCTTC(tcMoMHCG) ""  s MoMHCG=$j(MoMHCG,0,$e(PLIST(5),2))
+ ; calculate log values
+ s logAFP=$zlog(MoMAFP),logHCG=$zlog(MoMHCG)
+ ; calculate AFP and HCG healthy
+ s (healthyAFP,downAFP,healthyHCG,downHCG)=""
+ s healthyAFP=(logAFP-meanAFP("health"))/sdAFP("health"),downAFP=(logAFP-meanAFP("down"))/sdAFP("down")
+ s healthyHCG=(logHCG-meanHCG("health"))/sdHCG("health"),downHCG=(logHCG-meanHCG("down"))/sdHCG("down")
+ ; calculate distribution functions for healthy and downs
+ s (healthyDF,downDF)=""
+ s healthyDF=1/(6.28318*sdAFP("health")*sdHCG("health")*$zsqr(1-$zpower(healthCorr,2)))
+ s downDF=1/(6.28318*sdAFP("down")*sdHCG("down")*$zsqr(1-$zpower(downCorr,2)))
+ ; calculate population density functions for healthy and downs
+ s (healthyPDF,downPDF)=""
+ s healthyPDF=$zexp(-($zpower(healthyAFP,2)+$zpower(healthyHCG,2)-(2*healthyAFP*healthyHCG*healthCorr))/(2*(1-$zpower(healthCorr,2))))*healthyDF
+ s downPDF=$zexp(-($zpower(downHCG,2)+$zpower(downAFP,2)-(2*downHCG*downAFP*downCorr))/(2*(1-$zpower(downCorr,2))))*downDF
+ ; calculate likelihood risk
+ s likelihood=healthyPDF/downPDF
+ ; calculate prior odds (maternal age risk)
+ s agerisk=0.000627+$zexp(-16.2395+(0.286*MaternalAge)),prior=(1-agerisk)/agerisk
+ ; calculate posterior odds
+ s odds=likelihood*prior
+ q odds
+ ; calculate single test odds
+Single(MoM,MaternalAge,tc,tcMoM) n (MoM,MaternalAge,tc,tcMoM)
+ s MoM=$g(MoM),MaternalAge=$g(MaternalAge),tc=$g(tc),tcMoM=$g(tcMoM)
+ s tc=$tr(tc,"x"),tcMoM=$tr(tcMoM,"x")
+ ; extract correlation values
+ q:$$select^MVBCFLAB(1) ""
+ s downCorr=$g(PLIST(87)),healthCorr=$g(PLIST(88))
+ ; extract AFP or HCG mean/sd values
+ q:$$select^LVBCTTC(tc) ""
+ s mean("health")=$g(PLIST(56)),sd("health")=$g(PLIST(57)),mean("down")=$g(PLIST(58)),sd("down")=$g(PLIST(59))
+ ; round MoM values to correct decimal places
+ q:$$select^LVBCTTC(tcMoM) ""  s MoM=$j(MoM,0,$e(PLIST(5),2))
+ ; calculate log values
+ s logMoM=$zlog(MoM)
+ ; calculate likelihood risk
+ s likelihood=$zexp(0.79-(5.234*logMoM))
+ ; calculate prior odds (maternal age risk)
+ s agerisk=0.000627+$zexp(-16.2395+(0.286*MaternalAge)),prior=(1-agerisk)/agerisk
+ ; calculate posterior odds
+ s odds=likelihood*prior
+ q odds
+]]></Routine>
+</Export>

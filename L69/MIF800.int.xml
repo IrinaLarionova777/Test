@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF800" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF800(mi) ; ML 23/6/98 ; HITACHI 911 (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,etx) i '$l(record) q
+ d trace^MIF000(mi,record,"H<--M")
+ s frame=$e(record)
+ ; polling reply
+ i frame=">" d SEND(">") q
+ ; split record - too long?
+ i frame=1 d
+ .d SEND(">") s rec=$$read^MIF000(stx,etx) s record=record_rec
+ .d trace^MIF000(mi,rec,"H<--M")
+ ; check for host query
+ i frame=";" d ORDER q
+ d SEND(">")
+ s tfunction=$tr($e(record,2),"abcdefghijklmnopqr","ABCDEFGHIJKLMNOPQR")
+ i "KLM"[tfunction q
+ s (sample,epis,surname,result,date,time,QC)=""
+ s epis=$tr($e(record,10,22)," ") q:epis=""
+ s rec=$e(record,38,999),NumTest=+$tr($e(rec,1,2)," "),rec=$e(rec,3,999)
+ ; process results record
+ f i=1:1:NumTest d
+ .n data,tst,tres,flag s data=$e(rec,1,9),rec=$e(rec,10,999)
+ .s tst=$tr($e(data,1,2)," ","0"),res=$tr($e(data,3,8)," "),flag=$e(data,9) s:flag=" " flag=""
+ .s result=result_tst_$c(par10)_res_$c(par10)_flag_$c(par11)
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+ORDER ; compile string to send to instrument
+ s data=$e(record,1,37),epis=$tr($e(data,10,22)," ") i epis="" d SEND(ack) q
+ d scanone^MIF000(mi,epis)
+ d PATDET(epis)
+ k tc,test s (tc,test)=""
+ f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ .s tcch=$e(tc,1,3) f  q:$e(tcch,1)'="0"  s tcch=$e(tcch,2,$l(tcch))
+ .i tcch'?." " s test(tcch)=""
+ f i=1:1:48 s test=test_$d(test(i))
+ s $e(data,23,26)=$j(age,4),sex=$s(sex="M":1,sex="F":2,1:0),$e(data,27)=sex
+ s str=data_48_test_"00000"
+ d SEND(str)
+ q
+PATDET(epis) ; extract patient data
+ i $$select^LVBEPVIS(epis,"Y") m VISIT=PLIST k PLIST
+ s sex=$g(VISIT(5)),age=$g(VISIT(26))
+ q
+SEND(str) ; send string to instrument
+ w stx,str,etx,*-3
+ d trace^MIF000(mi,str,"H-->M")
+ q
+]]></Routine>
+</Export>

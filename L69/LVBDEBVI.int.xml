@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBDEBVI" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBDEBVI ; IG 30/6/98 ; LVB Control data access for DEBVI DEB_DebtorVisits
+ ;
+ ; supported calls:
+ ;
+ ; $$insert^LVBDEBVI(par)
+ ; $$update^LVBDEBVI(ROWID)
+ ; $$select^LVBDEBVI(ROWID)
+ ; $$delete^LVBDEBVI(ROWID)
+ ; $$open^LVBDEBVI(par)
+ ; $$fetch^LVBDEBVI(par)
+ ; $$close^LVBDEBVI()
+ ; $$seldata^LVBDEBVI(ROWID,data)
+ ; post^LVBDEBVI(debtor,epis)
+ ;
+  ;---&sql(DECLARE DEBVI CURSOR FOR SELECT * FROM DEB_DebtorVisits
+   ;---         WHERE DEBVI_ParRef = :par)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, par
+ ;
+open(par) s par=$g(par)
+  ;---&SQL(OPEN DEBVI)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %DEBVI0o
+ q 0
+ ;
+fetch(par) k PLIST s par=$g(par)
+  ;---&SQL(FETCH DEBVI INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Do
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ;
+close()  ;---&SQL(CLOSE DEBVI)
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %DEBVI0c
+ q 0
+ ;
+select(RowID) k PLIST s RowID=$g(RowID)
+  ;---&sql( SELECT * INTO :PLIST() FROM DEB_DebtorVisits WHERE DEBVI_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ Do %0Fo
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ;
+seldata(ROWID,data) n (ROWID,data) s ROWID=$g(ROWID),data=$g(data),result=""
+ i $l(ROWID) d  q result
+ .f j=1:1:3 s x(j)=$p(ROWID,"||",j)
+ .i $l(x(1)),$l(x(2)),$l(x(3)),data=4 s result=$p($g(^TDEB(x(1),x(2),0,x(3))),"\",1) q
+ .i $l(x(1)),$l(x(2)),$l(x(3)),data=6 s result=$p($g(^TDEB(x(1),x(2),0,x(3))),"\",3) q
+ .i $l(x(1)),$l(x(2)),$l(x(3)),data=8 s result=$p($g(^TDEB(x(1),x(2),0,x(3))),"\",5) q
+ .i $l(x(1)),$l(x(2)),$l(x(3)),data=11 s result=$p($g(^TDEB(x(1),x(2),0,x(3))),"\",6) q
+ .i '$$select(ROWID,"Y") s result=$g(PLIST(data))
+ q result
+ ;
+insert(par) d pre("N") s PLIST(0)=$g(par) K PLIST(1)
+  ;---&sql(INSERT INTO DEB_DebtorVisits VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Ho
+ i 'SQLCODE d post($p(%ROWID,"||",1),$p(%ROWID,"||",3))
+ I 'SQLCODE q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+update(RowID) d pre("Y") s RowID=$g(RowID)
+  ;---&sql(UPDATE DEB_DebtorVisits VALUES :PLIST() WHERE DEBVI_RowID=:RowID)
+   ;--- ** SQL PUBLIC Variables: PLIST, RowID, SQLCODE
+ Do %0Jo
+ i 'SQLCODE d post($p(%ROWID,"||",1),$p(%ROWID,"||",3))
+ i 'SQLCODE q $$select(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ;
+delete(RowID) s RowID=$g(RowID)
+ ; &sql(DELETE FROM DEB_DebtorVisits WHERE DEBVI_RowID = :RowID)
+ f j=1:1:3 s @("x"_j)=$p(RowID,"||",j)
+ i $l(x1),$l(x2),$l(x3) d
+ .k ^TDEB(x1,x2,0,x3)
+ .s da="" f  s da=$o(^TIND("DA",da)) q:da=""  k ^TIND("DA",da,x3)
+ d post($p(RowID,"||",1),$p(RowID,"||",3)) d
+ .s deb=$p(RowID,"||",1)
+ .s (stop,date)="" f  s date=$o(^TDEB(deb,date)) q:date=""  d  q:stop
+ ..s ep="" f  s ep=$o(^TDEB(deb,date,0,ep)) q:ep=""  s stop=1 q
+ .i 'stop,$$delete^LVBDEB(deb)
+ q SQLCODE
+ ;
+pre(xUpdate) d PreSQL^SSUTIL4("","")
+ i $l($g(PLIST(6))),'$l($g(PLIST(11))) s PLIST(11)=+$h
+ q
+ ; Adjust certain fields
+adjust d PostSQL^SSUTIL4("")
+ q
+ ; check visit in debtor
+check(epis) n (epis) s epis=$g(epis)
+ f j=12,20 s VISIT(j)=$$seldata^LVBEPVIS(epis,j)
+ s rowid=VISIT(20)_"||"_(+VISIT(12))_"||"_epis
+ i '$$select(rowid),$$update(rowid)
+ q
+ ; update recent visit in debtor
+post(deb,epis) n (deb,epis) s deb=$g(deb),epis=$g(epis)
+ i $l(epis),'$l(deb) s deb=$$seldata^LVBEPVIS(epis,20)
+ i $l(deb) d
+ . ; check latest episode number
+ .s epx="",date=$o(^TDEBi(deb,"DATE",""),-1) i $l(date) s time=$o(^TDEBi(deb,"DATE",date,""),-1) i $l(time) s epx=$o(^TDEBi(deb,"DATE",date,time,""),-1)
+ . ; check outstanding amount
+ .s (amount,date)="" f  s date=$o(^TDEB(deb,date),-1) q:date=""  d
+ ..s ep="" f  s ep=$o(^TDEB(deb,date,0,ep)) q:ep=""  s amount=amount+^(ep)
+ .i 'amount s amount=""
+ .  ;---&sql(UPDATE DEB_Debtor SET DEB_RecentVisit_DR = :epx , DEB_OutstandingBalance = :amount WHERE DEB_RowID = :deb)
+  .  ;--- ** SQL PUBLIC Variables: SQLCODE, amount, deb, epx
+ . Do %0Lo
+ q
+%DEBVI0o s $zt="%DEBVI0E" s SQLCODE=$s($g(%DEBVI0c):-101,1:0) q:SQLCODE'=0  s %DEBVI0d(16)=0 s %DEBVI0d(17)=0,%DEBVI0d(18)=""
+ s %DEBVI0d(13)=$g(par)
+ s %DEBVI0c=1 q
+%DEBVI0E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %DEBVI0c,%DEBVI0d,%DEBVI0E,%DEBVI0l,%DEBVI0n,%DEBVI0R,%DEBVI0Z q
+%0Afirst 
+ ; asl MOD# 2
+ s %DEBVI0d(1)=%DEBVI0d(13)
+ i %DEBVI0d(1)="" g %0ABdun
+ s %DEBVI0d(3)=""
+%0ABk1 s %DEBVI0d(3)=$o(^TDEB(%DEBVI0d(1),%DEBVI0d(3)))
+ i %DEBVI0d(3)="" g %0ABdun
+ s %DEBVI0d(4)=""
+%0ABk2 s %DEBVI0d(4)=$o(^TDEB(%DEBVI0d(1),%DEBVI0d(3),0,%DEBVI0d(4)))
+ i %DEBVI0d(4)="" g %0ABk1
+ s %DEBVI0d(25)=$g(^TDEB(%DEBVI0d(1),%DEBVI0d(3),0,%DEBVI0d(4)))
+ s %DEBVI0d(7)=$p(%DEBVI0d(25),"\",3) s %DEBVI0d(8)=$p(%DEBVI0d(25),"\",4) s %DEBVI0d(9)=$p(%DEBVI0d(25),"\",5) s %DEBVI0d(12)=$p(%DEBVI0d(25),"\",6)
+ s %DEBVI0d(2)=(%DEBVI0d(1))_"||"_(%DEBVI0d(3))_"||"_(%DEBVI0d(4))
+ s %DEBVI0d(6)=$$CT005^at54($g(%DEBVI0d(4))) s %DEBVI0d(5)=$$CT004^at54($g(%DEBVI0d(4))) s %DEBVI0d(11)=$$CT010^at54($g(%DEBVI0d(4))) s %DEBVI0d(10)=$$CT009^at54($g(%DEBVI0d(4)))
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TDEB($p(%DEBVI0d(2),"||",1),$p(%DEBVI0d(2),"||",2),0,$p(%DEBVI0d(2),"||",3))#"S":$zu(115,4) i $t { s %DEBVI0d(17)=1,%DEBVI0d(18)=$name(^TDEB($p(%DEBVI0d(2),"||",1),$p(%DEBVI0d(2),"||",2),0,$p(%DEBVI0d(2),"||",3)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.DEB_DebtorVisits for RowID value: "_%DEBVI0d(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %DEBVI0d(15)=$p(%DEBVI0d(2),"||"),%DEBVI0d(3)=$p(%DEBVI0d(2),"||",2),%DEBVI0d(4)=$p(%DEBVI0d(2),"||",3)
+ i %DEBVI0d(15)'="",%DEBVI0d(3)'="",%DEBVI0d(4)'="",$d(^TDEB(%DEBVI0d(15),%DEBVI0d(3),0,%DEBVI0d(4)))
+ e  g %0ACdun
+ s %DEBVI0d(32)=$g(^TDEB(%DEBVI0d(15),%DEBVI0d(3),0,%DEBVI0d(4)))
+ s %DEBVI0d(3)=$p(%DEBVI0d(32),"\",7) s %DEBVI0d(7)=$p(%DEBVI0d(32),"\",3) s %DEBVI0d(8)=$p(%DEBVI0d(32),"\",4) s %DEBVI0d(9)=$p(%DEBVI0d(32),"\",5) s %DEBVI0d(12)=$p(%DEBVI0d(32),"\",6)
+ s %DEBVI0d(1)=$p(%DEBVI0d(2),"||")
+ s %DEBVI0d(6)=$$CT005^at54($g(%DEBVI0d(4))) s %DEBVI0d(5)=$$CT004^at54($g(%DEBVI0d(4))) s %DEBVI0d(11)=$$CT010^at54($g(%DEBVI0d(4))) s %DEBVI0d(10)=$$CT009^at54($g(%DEBVI0d(4)))
+%0ABuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %DEBVI0d(16)=%DEBVI0d(16)+1,%ROWCOUNT=%DEBVI0d(16),%ROWID=%DEBVI0d(2),%DEBVI0c=10 q
+%DEBVI0f i '$g(%DEBVI0c) { s SQLCODE=-102 q  } i %DEBVI0c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%DEBVI0d(16))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%DEBVI0d(16),%DEBVI0c=100 q  } g %0Afirst:%DEBVI0c=1
+%0ACdun i $zu(115,2)=1,$g(%DEBVI0d(17))=1 { l -@%DEBVI0d(18) s %DEBVI0d(17)=0 }
+ g %0ABk2
+%0ABdun 
+%0AAdun 
+ s %ROWCOUNT=%DEBVI0d(16),SQLCODE=100,%DEBVI0c=100 q
+%DEBVI0c i '$g(%DEBVI0c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%DEBVI0d(16)),1:0)
+ i $zu(115,2)=1,$g(%DEBVI0d(17))=1 { l -@%DEBVI0d(18) } k %DEBVI0c,%DEBVI0d,%DEBVI0E,%DEBVI0l,%DEBVI0n,%DEBVI0R,%DEBVI0Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %DEBVI0c=100 q
+%0Do d %DEBVI0f q:SQLCODE'=0
+ s PLIST(0)=%DEBVI0d(1),PLIST(1)=%DEBVI0d(2),PLIST(2)=%DEBVI0d(3),PLIST(3)=%DEBVI0d(4),PLIST(4)=%DEBVI0d(5),PLIST(5)=%DEBVI0d(6),PLIST(6)=%DEBVI0d(7),PLIST(7)=%DEBVI0d(8),PLIST(8)=%DEBVI0d(9),PLIST(9)=%DEBVI0d(10),PLIST(10)=%DEBVI0d(11),PLIST(11)=%DEBVI0d(12)
+ q
+%0Fo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Ferr" s %mmmsqld(17)=0,%mmmsqld(18)=""
+ s %mmmsqld(14)=$g(RowID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(1)=%mmmsqld(14)
+ s %mmmsqld(16)=$p(PLIST(1),"||"),PLIST(2)=$p(PLIST(1),"||",2),PLIST(3)=$p(PLIST(1),"||",3)
+ i %mmmsqld(16)'="",PLIST(2)'="",PLIST(3)'="",$d(^TDEB(%mmmsqld(16),PLIST(2),0,PLIST(3)))
+ e  g %0FBdun
+ s %mmmsqld(25)=$g(^TDEB(%mmmsqld(16),PLIST(2),0,PLIST(3)))
+ s PLIST(2)=$p(%mmmsqld(25),"\",7) s PLIST(6)=$p(%mmmsqld(25),"\",3) s PLIST(7)=$p(%mmmsqld(25),"\",4) s PLIST(8)=$p(%mmmsqld(25),"\",5) s PLIST(11)=$p(%mmmsqld(25),"\",6)
+ s PLIST(0)=$p(PLIST(1),"||")
+ s PLIST(5)=$$CT005^at54($g(PLIST(3))) s PLIST(4)=$$CT004^at54($g(PLIST(3))) s PLIST(10)=$$CT010^at54($g(PLIST(3))) s PLIST(9)=$$CT009^at54($g(PLIST(3)))
+ g:$zu(115,2)=0 %0FBuncommitted i $zu(115,2)=1 l +^TDEB($p(PLIST(1),"||",1),$p(PLIST(1),"||",2),0,$p(PLIST(1),"||",3))#"S":$zu(115,4) i $t { s %mmmsqld(17)=1,%mmmsqld(18)=$name(^TDEB($p(PLIST(1),"||",1),$p(PLIST(1),"||",2),0,$p(PLIST(1),"||",3)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.DEB_DebtorVisits for RowID value: "_PLIST(1) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(16)=$p(PLIST(1),"||"),PLIST(2)=$p(PLIST(1),"||",2),PLIST(3)=$p(PLIST(1),"||",3)
+ i %mmmsqld(16)'="",PLIST(2)'="",PLIST(3)'="",$d(^TDEB(%mmmsqld(16),PLIST(2),0,PLIST(3)))
+ e  g %0FCdun
+ s %mmmsqld(32)=$g(^TDEB(%mmmsqld(16),PLIST(2),0,PLIST(3)))
+ s PLIST(2)=$p(%mmmsqld(32),"\",7) s PLIST(6)=$p(%mmmsqld(32),"\",3) s PLIST(7)=$p(%mmmsqld(32),"\",4) s PLIST(8)=$p(%mmmsqld(32),"\",5) s PLIST(11)=$p(%mmmsqld(32),"\",6)
+ s PLIST(0)=$p(PLIST(1),"||")
+ s PLIST(5)=$$CT005^at54($g(PLIST(3))) s PLIST(4)=$$CT004^at54($g(PLIST(3))) s PLIST(10)=$$CT010^at54($g(PLIST(3))) s PLIST(9)=$$CT009^at54($g(PLIST(3)))
+%0FBuncommitted ;
+ s SQLCODE=0 g %0Fc
+%0FCdun i $zu(115,2)=1,$g(%mmmsqld(17))=1 { l -@%mmmsqld(18) s %mmmsqld(17)=0 }
+%0FBdun 
+%0FAdun 
+%0Fc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(17))=1 { l -@%mmmsqld(18) } q
+%0Ferr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Fc
+%0Ho n %i,icol,ir
+ f icol=0:1:11 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.DEBDebtorVisits.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Ho
+%0Jo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Jerr" s %mmmsqld(7)=0 s %mmmsqld(8)=""
+ s %mmmsqld(3)=$g(RowID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2),%mmmsqld(6)=$p(%mmmsqld(2),"||",3)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",$d(^TDEB(%mmmsqld(4),%mmmsqld(5),0,%mmmsqld(6)))
+ e  g %0JBdun
+ s %mmmsqld(15)=$$%getlock^User.DEBDebtorVisits.T1(%mmmsqld(2)) i '%mmmsqld(15) s SQLCODE=-110 g %0Jc
+ ; asl MOD# 3
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2),%mmmsqld(6)=$p(%mmmsqld(2),"||",3)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",$d(^TDEB(%mmmsqld(4),%mmmsqld(5),0,%mmmsqld(6)))
+ e  g %0JCdun
+ k %data
+ f icol=0:1:11 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.DEBDebtorVisits.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(7))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(15)=1 %ReleaseLock^User.DEBDebtorVisits.T1(%mmmsqld(2)) g %0Jc
+%0JCdun 
+ d:%mmmsqld(15)=1 %ReleaseLock^User.DEBDebtorVisits.T1(%mmmsqld(2)) g:SQLCODE<0 %0Jc
+%0JBdun 
+%0JAdun 
+%0Jc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(7)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Jerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(15))=1 %ReleaseLock^User.DEBDebtorVisits.T1(%mmmsqld(2)) g %0Jc
+%0Lo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Lerr" s %mmmsqld(7)=0 s %mmmsqld(8)=""
+ s %mmmsqld(2)=$g(epx),%mmmsqld(4)=$g(amount),%mmmsqld(6)=$g(deb)
+ n %data
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ i %mmmsqld(5)'="",$d(^TDEB(%mmmsqld(5)))
+ e  g %0LBdun
+ s %mmmsqld(11)=$$%getlock^User.DEBDebtor.T1(%mmmsqld(5)) i '%mmmsqld(11) s SQLCODE=-110 g %0Lc
+ ; asl MOD# 3
+ i %mmmsqld(5)'="",$d(^TDEB(%mmmsqld(5)))
+ e  g %0LCdun
+ k %data
+ s %data(4)=$g(%mmmsqld(2)),%data(3)=$g(%mmmsqld(4))
+ d %update^User.DEBDebtor.T1(%mmmsqld(5),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(7))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(11)=1 %ReleaseLock^User.DEBDebtor.T1(%mmmsqld(5)) g %0Lc
+%0LCdun 
+ d:%mmmsqld(11)=1 %ReleaseLock^User.DEBDebtor.T1(%mmmsqld(5)) g:SQLCODE<0 %0Lc
+%0LBdun 
+%0LAdun 
+%0Lc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(7)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Lerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(11))=1 %ReleaseLock^User.DEBDebtor.T1(%mmmsqld(5)) g %0Lc
+]]></Routine>
+</Export>

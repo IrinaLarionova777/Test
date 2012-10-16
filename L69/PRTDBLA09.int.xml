@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDBLA09" type="INT" languagemode="0"><![CDATA[
+PRTDBLA09 ; ML 18/10/99 ; Day Book Labels - Quinn Pathology
+ q
+ ; Parameters :  1.Laboratory
+ ;               2.Site
+ ;               3.Date from
+ ;               4.Date to
+ ;               5.List episodes/accesion numbers
+ ;               6.Order RowID
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ d INIT,BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=$g(TYPE),PLIST(9)="M" I $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+ ; initialize parameters
+INIT f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ q
+ ; check if visit/accession should print labels
+CHECK(XX99) n (XX99,PAR3,PAR4) s XX99=$g(XX99)
+ ; check all blocks
+ i $$open^LVBHIVAB(XX99)
+ f  q:$$fetch^LVBHIVAB(XX99)  d
+ .f j=1:1:PLIST s PLIST(j)=$p($g(PLIST(j)),$c(1))
+ .k BLOCK m BLOCK=PLIST
+ . ; check all records
+ .i $$open^LVBHIVAO(BLOCK(1))
+ .f  q:$$fetch^LVBHIVAO(BLOCK(1))  d
+ ..f j=1:1:PLIST s PLIST(j)=$p($g(PLIST(j)),$c(1))
+ ..i $l(PAR3),PLIST(8)<PAR3 q
+ ..i $l(PAR4),PLIST(8)>PAR4 q
+ ..i PLIST(7)'="Y" s ^TMP($zn,$j,"LIST",PLIST(1))=""
+ .i $$close^LVBHIVAO()
+ i $$close^LVBHIVAB()
+ q
+ ; create list of labels to print
+BODY k ^TMP($zn,$j)
+ ; create list of labels for a laboratory
+ i '$l(PAR5) d
+ .s x1="" f  s x1=$o(^THIRi("PRINT-LABEL",x1)) q:x1=""  d
+ ..i $$select^LVBEPVIS(x1,"Y") q
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k VISIT m VISIT=PLIST
+ ..s x2="" f  s x2=$o(^THIRi("PRINT-LABEL",x1,x2)) q:x2=""  d
+ ... ; check laboratory
+ ...i $l(PAR1),$e(x2,1)'=PAR1 q
+ ... ; check site
+ ...i $l(PAR2),$e(x2,2)'=PAR2 q
+ ...D CHECK(x1_"||"_x2)
+ ; create list of labels for an episodes
+ i $l(PAR5) d
+ .i '$l(PAR6) d
+ ..f j=1:1:$l(PAR5,"|") s x1=$p($p(PAR5,"|",j),"~",1),x2=$p($p(PAR5,"|",j),"~",2) i $l(x1),$l(x2) d
+ ...i x2'="*",$d(^THIRi("PRINT-LABEL",x1,x2)) D CHECK(x1_"||"_x2)
+ ...i x2="*" s x2="" f  s x2=$o(^THIRi("PRINT-LABEL",x1,x2)) q:x2=""  d
+ .... ; check laboratory
+ ....i $l(PAR1),$e(x2,1)'=PAR1 q
+ .... ; check site
+ ....i $l(PAR2),$e(x2,2)'=PAR2 q
+ ....D CHECK(x1_"||"_x2)
+ .i $l(PAR6) f j=1:1:$l(PAR6,",") i $l($p(PAR6,",",j)) s ^TMP($zn,$j,"LIST",$p(PAR6,",",j))=""
+ ; create labels
+ s row=1,xROWID="" f  s xROWID=$o(^TMP($zn,$j,"LIST",xROWID)) q:xROWID=""  d
+ . ; order information
+ .i $$select^LVBHIVAO(xROWID) q
+ .f j=1:1:4,6:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ .k ORDER m ORDER=PLIST
+ . ; update record that it had been printed already
+ .f j=1:1:9 i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ .s PLIST(7)="Y" i $$update^LVBHIVAO(xROWID)
+ . ; visit information
+ .i $$select^LVBEPVIS($p(xROWID,"||"),"Y") q
+ .s col=$g(^TMP($zn,$j,"REPORT",row))+1 i col>5 s row=row+1,col=1
+ .s ^TMP($zn,$j,"REPORT",row)=col
+ .f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ .k VISIT m VISIT=PLIST
+ . ; start build lines
+ .s ^TMP($zn,$j,"REPORT",row,1,col)="ACCORD "_$p($$extdate2^SSUTIL4(+$h),"/",1,2)
+ .s ^TMP($zn,$j,"REPORT",row,2,col)=$p(xROWID,"||",1)
+ .i $l(VISIT(3)_","_$e(VISIT(4)))<16 s ^TMP($zn,$j,"REPORT",row,3,col)=VISIT(3)_","_$e(VISIT(4))
+ .e  i $l(VISIT(3))<16 s ^TMP($zn,$j,"REPORT",row,3,col)=VISIT(3)
+ .e  s ^TMP($zn,$j,"REPORT",row,3,col)=$e(VISIT(3),1,14)_"."
+ .s ^TMP($zn,$j,"REPORT",row,4,col)=$p(xROWID,"||",2)
+ .s ^TMP($zn,$j,"REPORT",row,5,col)=$p($p(ORDER(1),"||",3),$c(1))_" "_"L"_ORDER(10)_" "_$p(ORDER(5),$c(1),1)
+ q
+ ; print labels
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .d ADD^PRTREP00(REPID,"PRT","~RESET")
+ .d ADD^PRTREP00(REPID,"PRT","~ORIENTATION=0")
+ .d ADD^PRTREP00(REPID,"PRT","~FONT-COURIER")
+ .d ADD^PRTREP00(REPID,"PRT","~NORMAL")
+ .d ADD^PRTREP00(REPID,"PRT","~FONTSIZE=8")
+ .d ADD^PRTREP00(REPID,"PRT","!")
+ .s row="" f  s row=$o(^TMP($zn,$j,"REPORT",row)) q:row=""  d
+ ..s line="" f  s line=$o(^TMP($zn,$j,"REPORT",row,line)) q:line=""  d
+ ...s col="" f  s col=$o(^TMP($zn,$j,"REPORT",row,line,col)) q:col=""  d
+ ....s shift=col#6-1*16
+ ....s shift=shift+$s(col=2:1,col=3:2,col=4:3,col=5:5,1:0),shift=$e(shift_"   ",1,3)
+ ....d ADDLINE^PRTREP00(REPID,"PRT","?"_shift_^(col))
+ ...d ADD^PRTREP00(REPID,"PRT","!")
+ ..d ADD^PRTREP00(REPID,"PRT","!")
+ q
+]]></Routine>
+</Export>

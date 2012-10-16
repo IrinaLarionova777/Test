@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTREP00" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTREP00 ; Common printing routines
+ Q
+SET(REPORT)
+	i $l(REPORT) m ^TTAB("REPORT",REPORT)=PLIST
+	q 0
+GET(REPORT) k PLIST
+	i $l(REPORT) m PLIST=^TTAB("REPORT",REPORT) s PLIST=$o(PLIST(""),-1)
+	q 0
+START(USER,LOC,PAR,REPORT,EMPTY,STAT,p6,p7,p8,p9) N (USER,LOC,PAR,REPORT,EMPTY,STAT,%msql)
+ ; Ensure at least one SSPRINQ is running
+ s rowid=1,wd="" d LOW^%PRIO
+ s wd=$$seldata^MVBCFLAB(rowid,52)
+ i wd'="Y" d
+ .i $p($g(^CF("SM",1)),"^",12)="Y",$g(^|"%SYS"|NET(0,"EnableServer"))'=1 q
+ .l +^PR("SSPRINQ"):0 i  j START^SSPRINQ
+ .l -^PR("SSPRINQ")
+ S PRINT=0,USER=$G(USER),LOC=$G(LOC),(PAR,GENPAR)=$G(PAR),REPORT=$G(REPORT),EMPTY=$G(EMPTY),STAT=$g(STAT),REPID="ERROR",LF=""
+ I $L(REPORT),'$$select^LVBCTCLR(REPORT,"Y") D
+ .S ROUTINE=PLIST(3),REPGRP=PLIST(11) i '$l(STAT),$l(PLIST(10)) s STAT=$P(PLIST(10),$C(1))
+ .I $E(ROUTINE,1,3)="PRT",$E(ROUTINE,1,6)'="PRTTBL" S PAR=$TR(PAR,"\",$C(1)),$P(PAR,$C(1),50)="" I $$HEADPRT(ROUTINE,.PAR)
+ .S DAYS="" I '$$select^LVBCTPG(REPGRP,"Y") S DAYS=PLIST(4)
+ .I '$D(%msql) S %msql=$O(^CF("MSQL",""),-1) I $L(%msql) S %msql=^CF("MSQL",%msql)
+ .K PLIST
+ .S PLIST(2)=+$H,PLIST(3)=$P($H,",",2),PLIST(6)="C",PLIST(7)=REPORT,PLIST(8)=STAT
+ .S PLIST(9)="I",PLIST(10)=GENPAR,PLIST(11)=USER,PLIST(13)=DAYS
+ .S PLIST=$O(PLIST(""),-1)
+ .I '$$insert^LVBPRPR() S REPID=PLIST(1) D
+ .. ; print all PRT* routines
+ ..I $L(ROUTINE),$E(ROUTINE,1,3)="PRT" D
+ ...D STAT(REPID,STAT)
+ ...B  ;
+ ...S $ZT="ERROR^"_$ZN
+ ...X "D CREATE^"_ROUTINE_"("""_REPID_""","""_PAR_""","""_USER_""","""_%msql_""")"
+ .. ; print all not PRT* routines
+ ..I $L(ROUTINE),$E(ROUTINE,1,3)'="PRT" D
+ ...S $ZT="ERROR^"_$ZN
+ ...X "D print^"_ROUTINE_"("""_REPID_""","""_USER_""","""_GENPAR_""")"
+ ..I REPID="ERROR" Q
+ ..I $$select^LVBPRPR(REPID,"Y") Q
+ ..S REPPAR=$P(PLIST(12),$C(1)),USER=$P(PLIST(11),$C(1))
+ .. ; set all destinations
+ ..i REPPAR["-FAX-" D FAX(REPID,REPORT,REPPAR,USER,LOC)
+ ..i '$D(^PR(REPID,1,"DEST"))!(REPPAR'["-FAX-") D DEST(REPID,REPORT,REPPAR,USER,LOC)
+ .. ; set report to ready
+ ..i $$SETREP("R",REPID)
+ i $l(LF) k PLIST s PLIST(1)=REPID,REPID=LF
+END s PLIST=$o(PLIST(""),-1)
+ ; check if report has anything in a "PRT"
+ i 'EMPTY,'$$select^LVBPRPR(REPID,"Y"),PLIST(6)="R" d
+ .i '$d(^PR(REPID,"PRT")),$$delete^LVBPRPR(REPID)
+ d NORMAL^%PRIO
+ q $g(REPID)
+ERROR D BACK^%ETN
+ I $$SETREP("E",REPID)
+ S PLIST(1)=REPID,REPID="ERROR"
+ Q
+ ; set destination
+SETDEST(DEST,COPY,STATUS,REPID,FAX1,FAX2) N (DEST,COPY,STATUS,REPID,FAX1,FAX2,LF) S OK=0
+ S DEST=$G(DEST),COPY=$G(COPY),STATUS=$G(STATUS),REPID=$G(REPID),FAX1=$G(FAX1),FAX2=$G(FAX2)
+ I $L(DEST),$L(COPY) D
+ .K PLIST S PLIST(3)=DEST,PLIST(4)=COPY,PLIST(5)=STATUS,PLIST(8)=FAX1,PLIST(9)=FAX2
+ .I '$$insert^LVBPRPRD(REPID) S OK=1 I '$$select^LVBCTPD(DEST,"Y") I PLIST(6)="L" S LF="LOCAL"
+ Q OK
+ ; set report status
+SETREP(STATUS,REPID) N (STATUS,REPID)
+ S STATUS=$G(STATUS),REPID=$G(REPID)
+ I '$$select^LVBPRPR(REPID,"Y") S PLIST(6)=STATUS I '$$update^LVBPRPR(REPID)
+ Q 0
+ ; insert fax report destinations
+FAX(REPID,REPORT,REPPAR,USER,LOC) N (REPID,REPORT,REPPAR,USER,LOC)
+ S REPID=$G(REPID),REPORT=$G(REPORT),REPPAR=$G(REPPAR),USER=$G(USER),LOC=$G(LOC),OK=0
+ S (REPORTG,SUSPEND)="" I '$$select^LVBCTCLR(REPORT) S REPORTG=$P(PLIST(11),$C(1)),SUSPEND=$P(PLIST(8),$C(1))
+ ; find fax destination
+ I $$open^LVBCTPD("Y")
+ F  Q:$$fetch^LVBCTPD("Y")  i $p(PLIST(6),$c(1))="F" D  Q:OK
+ .S OK=$$SETDEST(PLIST(1),1,$s(SUSPEND="Y":"S",1:"R"),REPID,$p($p(REPPAR,"-FAX-",2),"-",1),$p($p(REPPAR,"-FAX-",2),"-",2))
+ I $$close^LVBCTPD()
+ Q
+ ; insert all report destinations
+DEST(REPID,REPORT,REPPAR,USER,LOC,xType) N (REPID,REPORT,REPPAR,USER,LOC,xType,LF)
+ S REPID=$G(REPID),REPORT=$G(REPORT),REPPAR=$G(REPPAR),USER=$G(USER),LOC=$G(LOC),xType=$g(xType),OK=0
+ S (REPORTG,SUSPEND)="" I '$$select^LVBCTCLR(REPORT,"Y") S REPORTG=$P(PLIST(11),$C(1)),SUSPEND=$P(PLIST(8),$C(1))
+ ; find destination against user/report_group
+ I $L(USER),$L(REPORTG) D  I OK G DESTend
+ .I $$open^MVBSURP(USER)
+ .F  Q:$$fetch^MVBSURP(USER)  D  Q:OK
+ ..k plist m plist=PLIST f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+ ..I REPORTG=$P(plist(3),$C(1)),$L(plist(4)) D
+ ...i xType="Y",'OK s OK=1_$c(1)_plist(4)
+ ...i xType'="Y" S OK=$$SETDEST(plist(4),1,$s(SUSPEND="Y":"S",1:"R"),REPID)
+ .I $$close^MVBSURP()
+ ; find destination against user
+ I $L(USER),'$$selrow^MVBSSUSR(USER,"Y") D  I OK G DESTend
+ .k plist m plist=PLIST f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+ .i xType="Y",'OK s OK=1_$c(1)_plist(13)
+ .i xType'="Y" S OK=$$SETDEST(plist(13),1,$s(SUSPEND="Y":"S",1:"R"),REPID)
+ ; find destinations against report parameters (exact)
+ I $L(REPORT) D  I OK G DESTend
+ .I $$open^LVBCTCLD(REPORT,"Y")
+ .F  Q:$$fetch^LVBCTCLD(REPORT,"Y")  D  Q:OK
+ ..k plist m plist=PLIST f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+ ..s ok=0 i '$l(plist(3))!(plist(3)="*")
+ ..e  i plist(3)=REPPAR s ok=1
+ ..i ok D
+ ...i xType="Y",'OK s OK=plist(5)_$c(1)_plist(4)
+ ...i xType'="Y" S OK=$$SETDEST(plist(4),plist(5),$s(SUSPEND="Y":"S",plist(6)="Y":"S",1:"R"),REPID)
+ .I $$close^LVBCTCLD()
+ ; find destinations against report parameters
+ I $L(REPORT) D  I OK G DESTend
+ .I $$open^LVBCTCLD(REPORT,"Y")
+ .F  Q:$$fetch^LVBCTCLD(REPORT,"Y")  D  Q:OK
+ ..k plist m plist=PLIST f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+ ..s ok=0 i '$l(plist(3))!(plist(3)="*")
+ ..e  i $e(plist(3),$l(plist(3)))="*" s:$e(plist(3),1,$l(plist(3))-1)=$e(REPPAR,1,$l(plist(3))-1) ok=1
+ ..i ok D
+ ...i xType="Y",'OK s OK=plist(5)_$c(1)_plist(4)
+ ...i xType'="Y" S OK=$$SETDEST(plist(4),plist(5),$s(SUSPEND="Y":"S",plist(6)="Y":"S",1:"R"),REPID)
+ .I $$close^LVBCTCLD()
+ ; find destinations against report parameters (defaults)
+ I $L(REPORT) D  I OK G DESTend
+ .I $$open^LVBCTCLD(REPORT,"Y")
+ .F  Q:$$fetch^LVBCTCLD(REPORT,"Y")  D  Q:OK
+ ..k plist m plist=PLIST f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+ ..s ok=0 i '$l(plist(3))!(plist(3)="*") s ok=1
+ ..i ok D
+ ...i xType="Y",'OK s OK=plist(5)_$c(1)_plist(4)
+ ...i xType'="Y" S OK=$$SETDEST(plist(4),plist(5),$s(SUSPEND="Y":"S",plist(6)="Y":"S",1:"R"),REPID)
+ .I $$close^LVBCTCLD()
+ ; find destination against site
+ I $L(LOC) D  I OK G DESTend
+ .i '$$select^LVBCTUSL(LOC,"Y") D
+ ..k plist m plist=PLIST f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+ ..i xType="Y",'OK s OK=1_$c(1)_plist(4)
+ ..i xType'="Y" S OK=$$SETDEST(plist(4),1,$s(SUSPEND="Y":"S",1:"R"),REPID)
+ ; find default configuration
+ i xType="Y",'OK s OK=1_$c(1)_$p($g(^CF("SM",1)),"^",25)
+ i xType'="Y" S OK=$$SETDEST($p($g(^CF("SM",1)),"^",25),1,$s(SUSPEND="Y":"S",1:"R"),REPID)
+DESTend i xType="Y",OK s xType=OK
+ Q
+PART(NAME,LEN) N (NAME,LEN) S RESULT=$J("",LEN)
+ I $L(NAME)'>LEN S RESULT=$E($J("",LEN-$L(NAME)\2)_NAME_$J("",LEN),1,LEN),NAME=""
+ E  D
+ .F J=1:1:$L(NAME," ") Q:$L($P(NAME," ",1,J+1))>LEN
+ .S NAME1=$P(NAME," ",1,J),NAME2=$P(NAME," ",J+1,999)
+ .S RESULT=$E($J("",LEN-$L(NAME1)\2)_NAME1_$J("",LEN),1,LEN),NAME=NAME2
+ Q RESULT
+HEADPRT(ROUTINE,PAR) N (ROUTINE,PAR,PLIST) K ^TMP($ZN,$J)
+ I $L(ROUTINE),$P(PAR,$C(1),10)="" d
+ .i $$getall^LVBCTCLS(ROUTINE)
+ .i 'PLIST,'$$getall^MVBSSRP(ROUTINE)
+ .s (data,cnt)="" f  s cnt=$o(PLIST(cnt)) q:cnt=""  d  s $p(data,",",cnt)=data1
+ ..i $p(PLIST(cnt),$c(2),2)="xxx" s data1=$p(PLIST(cnt),$c(2),2)_$c(2)_$p(PLIST(cnt),$c(2),8),$p(data1,$c(2),3,6)=$P(PLIST(cnt),$C(2),3,6)
+ ..i $p(PLIST(cnt),$c(2),2)'="xxx" s data1=$p(PLIST(cnt),$c(2),2)_$c(2)_$p(PLIST(cnt),$c(2),2),$p(data1,$c(2),3,6)=$P(PLIST(cnt),$C(2),3,6)
+ .s $p(PAR,$C(1),10)=data
+ ;
+ F xxJ=1:1:$L($P(PAR,$C(1),10),",") S ^TMP($ZN,$J,xxJ)=$P($P(PAR,$C(1),10),",",xxJ) D
+ .S X1=$P(^TMP($ZN,$J,xxJ),$C(2),1)
+ .S X2=$P(^TMP($ZN,$J,xxJ),$C(2),2)
+ .I X1="xxx",'$$select^MVBSSRN(ROUTINE_"||"_X2,"Y") F JJ=1:1:6 S $P(^TMP($ZN,$J,xxJ),$C(2),JJ)=$P(PLIST(JJ),$C(1))
+ .I X1'="xxx",'$$select^MVBSSRH(X1,"Y") F JJ=1:1:6 S $P(^TMP($ZN,$J,xxJ),$C(2),JJ)=$P(PLIST(JJ),$C(1))
+ K PLIST M PLIST=^TMP($ZN,$J) K ^TMP($ZN,$J)
+ Q $S($P(PAR,$C(1),10)="":100,1:0)
+H(FIELDS,ROUTINE) ; Common Header
+ N (FIELDS,ROUTINE,xLINE,N) K xLINE,N S ROUTINE=$G(ROUTINE)
+ S xLINE(1)=" "
+ S xLINE(2)="|"
+ S xLINE(3)="|"
+ S xLINE(4)="|"
+ F J=1:1:$L(FIELDS,",") D
+ .S OK=0,DATA=$P(FIELDS,",",J),ROWID=$P(DATA,$C(2),1)
+ .I 'OK,$P(DATA,$C(2),1)="xxx" D
+ ..I 'OK,'$$select^MVBSSRN(ROUTINE_"||"_$P(DATA,$C(2),2),"Y") S OK=1,PLIST(7)="" M xFIELD(J)=PLIST
+ ..I 'OK S OK=1 F JJ=1:1:6 S xFIELD(J,JJ)=$P(DATA,$C(2),JJ)
+ .I 'OK,'$$select^MVBSSRH(ROWID,"Y") S OK=1 M xFIELD(J)=PLIST
+ .I OK F JJ=1:1:6 I '$L($G(xFIELD(J,JJ)))!$L($P(DATA,$C(2),JJ)) S xFIELD(J,JJ)=$P(DATA,$C(2),JJ)
+ S JJ=0 F J=1:1:$L(FIELDS,",") I $D(xFIELD(J)) D
+ .S JJ=JJ+1 M N(JJ)=xFIELD(J)
+ .S NAME=N(JJ,3),LEN=N(JJ,4)
+ .S x="",$P(x,"-",LEN+1)=""
+ .S xLINE(1)=xLINE(1)_x_"-"
+ .S xLINE(2)=xLINE(2)_$$PART(.NAME,LEN)_"|"
+ .S xLINE(3)=xLINE(3)_$$PART(.NAME,LEN)_"|"
+ .S xLINE(4)=xLINE(4)_x_"-"
+ S xLINE(1)=$E(xLINE(1),1,$L(xLINE(1))-1)_" "
+ S xLINE(4)=$E(xLINE(4),1,$L(xLINE(4))-1)_"|"
+ S X=xLINE(2)
+ S N(1,"Z")=1 F J=2:1 Q:'$F(X,"|",N(J-1,"Z")+1)  S N(J,"Z")=$F(X,"|",N(J-1,"Z")+1)-1
+ F J=1:1 Q:'$D(N(J+1,"Z"))  S N(J,"L")=N(J+1,"Z")-N(J,"Z")-1
+ Q
+ ; param : 1-Do not print Page No        
+HEADER(xHEADER,d1,d2,t1,t2,SORT,param) ; SetUp Header parameters
+ S d1=$G(d1),d2=$G(d2),t1=$G(t1),t2=$G(t2),SORT=$G(SORT),param=$g(param)
+ s client=$p(^CF("SM",1),"^",28)
+ i $l(client) s LineRoutine="HEADER^PRTREP00"_client i $l($t(@LineRoutine)) x "d HEADER^PRTREP00"_client q
+ K ^TMP($ZN,$J) S xDATE=$$extdate2^SSUTIL4(+$H)
+ I $L(SORT) S x=SORT,SORT="" D
+ .F J=1:1:$L(x,"^") S x1=$P(x,"^",J) I $L(x1),$D(xSORT(x1)) D
+ ..I $L(SORT) S SORT=SORT_" and "_xSORT(x1)
+ ..E  S SORT="Sorted by "_xSORT(x1)
+ S xTIME=$$exttime^SSUTIL4($P($H,",",2))
+ ; SetUp Header
+ i $p(param,"\",1)="" d
+ .D ADDLINE(REPID,"HDR"," Page : ")
+ .D ADDLINE(REPID,"HDR","~PAGE")
+ .D ADDLINE(REPID,"HDR","!")
+ I $D(xHEADER) D
+ .D ADDLINE(REPID,"HDR","~BOLD")
+ .F J=1:1 Q:'$D(xHEADER(J))  D
+ ..I $E(xHEADER(J))="~" D ADDLINE(REPID,"HDR",xHEADER(J))
+ ..I $E(xHEADER(J))'="~" D ADDLINE(REPID,"HDR","?"_$E(MAX-$L(xHEADER(J))\2_SPACE,1,3)_xHEADER(J))
+ ..D ADDLINE(REPID,"HDR","!")
+ .D ADDLINE(REPID,"HDR","~NORMAL")
+ I $L(SORT) D
+ .D ADDLINE(REPID,"HDR","?"_$E(MAX-$L(SORT)\2_SPACE,1,3)_SORT)
+ .D ADDLINE(REPID,"HDR","!")
+ I $L(d1),$L(d2) D
+ .S X="From "_$$extdate2^SSUTIL4(d1)_" to "_$$extdate2^SSUTIL4(d2)
+ .I $L(t1),$L(t2) S X=X_"  from "_$$exttime^SSUTIL4(t1)_" to "_$$exttime^SSUTIL4(t2)
+ .I $L(t1),'$L(t2) S X=X_"  until "_$$exttime^SSUTIL4(t1)
+ .D ADDLINE(REPID,"HDR","?"_$E(MAX-$L(X)\2_SPACE,1,3)_X)
+ .D ADDLINE(REPID,"HDR","!")
+ I $L(d1),'$L(d2) D
+ .S X="For "_$$extdate2^SSUTIL4(d1)
+ .I $L(t1),$L(t2) S X=X_"  from "_$$exttime^SSUTIL4(t1)_" to "_$$exttime^SSUTIL4(t2)
+ .I $L(t1),'$L(t2) S X=X_"  until "_$$exttime^SSUTIL4(t1)
+ .D ADDLINE(REPID,"HDR","?"_$E(MAX-$L(X)\2_SPACE,1,3)_X)
+ .D ADDLINE(REPID,"HDR","!")
+ D
+ .N (USER,nUSER)
+ .S nUSER="" I '$$selrow^MVBSSUSR(USER,"Y") S nUSER=PLIST(3)
+ D ADDLINE(REPID,"HDR"," Date : "_xDATE_"   Time : "_xTIME_"   User : "_nUSER)
+ i $d(xLINE) F J=1:1 q:'$d(xLINE(J))  D ADDLINE(REPID,"HDR","!"),ADDLINE(REPID,"HDR",xLINE(J))
+ K ^TMP($ZN,$J)
+ Q
+ ; print single line
+PRINTEND(LINE) N (REPID,LINE) s max=$l(LINE)
+ D ADDLINE^PRTREP00(REPID,"PRT","!")
+ D ADDLINE^PRTREP00(REPID,"PRT",$e(LINE,1,max-15\2)_" End of report "_$e(LINE,max-15\2+15,max))
+ D ADDLINE^PRTREP00(REPID,"PRT","!")
+ q
+ ; print single line
+PRINT(PLIST,N,BAR,SECTION) N (PLIST,N,BAR,SECTION,ST,REPID,SPACE,xxx,%msql) I '$L($G(SECTION)) S SECTION="PRT"
+ S ORDER=$G(^TMP($ZN,$J,"ORDER"))+1,^TMP($ZN,$J,"ORDER")=ORDER
+ D ADDLINE(REPID,SECTION,"!")
+ F nCOL=1:1 Q:'$D(N(nCOL,1))  D
+ .D ADDLINE(REPID,SECTION,"?"_$E(N(nCOL,"Z")-1_SPACE,1,3)_$S($G(BAR)="N":" ",1:"|"))
+ .I $G(N(nCOL,7))'="" S DATA="" D
+ ..F JJ=1:1:$L(N(nCOL,7),",") S PART=$P(N(nCOL,7),",",JJ) D
+ ...I $P(PART,"-",1)="F" d
+ ....s x1=$P(PART,"-",2) f j=1:1:$l(x1,";") s x2=$p(x1,";",j) i $l(x2),$l($g(PLIST(x2))) d
+ .....s DATA=DATA_$s($l(DATA):" ",1:"")_$g(PLIST(x2))
+ ...I $P(PART,"-",1)="F1" S DATA=$P($G(PLIST($P(PART,"-",2))),",",1)
+ ...I $P(PART,"-",1)="F2" S DATA=$P($G(PLIST($P(PART,"-",2))),",",2)
+ ...I $P(PART,"-",1)="B" D
+ ....N PLIST
+ ....X "S SQLCODE=$$select^"_$P(PART,"-",2)_"("""_$p(DATA,$c(1))_""")"
+ ....I 'SQLCODE S DATA=$G(PLIST($P(PART,"-",3)))
+ ....E  S DATA=""
+ ...I $P(PART,"-",1)="DT" D
+ ....S xDT=$P($P(PART,"-",2),";",1)
+ ....S xTM=$P($P(PART,"-",2),";",2)
+ ....I $L($P($G(PLIST(xDT)),$C(1))) S DATA=$$extdate2^SSUTIL4($P($G(PLIST(xDT)),$C(1)))
+ ....I DATA'="",$L($P($G(PLIST(xTM)),$C(1))) S DATA=DATA_"  "_$$exttime^SSUTIL4($P($G(PLIST(xTM)),$C(1)))
+ ...I $P(PART,"-",1)="D" D
+ ....S xDT=$P(PART,"-",2) I $L($P($G(PLIST(xDT)),$C(1))) S DATA=$$extdate2^SSUTIL4($P($G(PLIST(xDT)),$C(1)))
+ ...I $P(PART,"-",1)="T" D
+ ....S xTM=$P(PART,"-",2) I $L($P($G(PLIST(xTM)),$C(1))) S DATA=$$exttime^SSUTIL4($P($G(PLIST(xTM)),$C(1)))
+ .I $G(N(nCOL,7))="" S DATA="" D
+ ..I N(nCOL,1)="AMOUNT1" D
+ ...i $d(xxx("AMOUNT1")) s DATA=xxx("AMOUNT1") q
+ ...I $L($G(PLIST(2))) D
+ ....S EP=$P(PLIST(2),$C(1)) I $L(EP) S MRN=$P($G(^TEPI(EP)),"\",18),DC=$P($G(^TEPI(EP)),"\",10) D
+ .....I $L(MRN),$L(DC) S DATA=$P($G(^TDEB(MRN,DC,0,EP)),"\",1)
+ ..I N(nCOL,1)="AMOUNT2" D
+ ...i $d(xxx("AMOUNT2")) s DATA=xxx("AMOUNT2") q
+ ...I $L($G(PLIST(2))) D
+ ....S EP=$P(PLIST(2),$C(1)) I $L(EP) S MRN=$P($G(^TEPI(EP)),"\",18),DC=$P($G(^TEPI(EP)),"\",10) D
+ .....I $L(MRN),$L(DC) S DATA=$P($G(^TDEB(MRN,DC,0,EP)),"\",2)
+ ..I N(nCOL,1)="NAME" D
+ ...i $d(xxx("NAME")) s DATA=xxx("NAME") q
+ ...S DATA=$$NameFormat^LVBCOM03("PT",$P($G(PLIST(7)),$C(1),2),$G(PLIST(4)),$G(PLIST(3)),$G(PLIST(99)),$G(PLIST(100)),$G(PLIST(101)))
+ ..I N(nCOL,1)="COLLBY" D
+ ...i $d(xxx("COLLBY")) s DATA=xxx("COLLBY") q
+ ...s fn=$$seldata^LVBCTPER($p($g(PLIST(28)),$c(1),1),4)
+ ...S DATA=fn_$s($l(fn):" ",1:"")_$$seldata^LVBCTPER($p($g(PLIST(28)),$c(1),1),3)
+ ..I N(nCOL,1)="ORDER" S DATA=ORDER
+ ..I N(nCOL,1)="xxx",N(nCOL,2) S DATA=$G(xxx(N(nCOL,2)))
+ .S xD=$G(N(nCOL,5)) I 'xD S xD=1
+ .S DATA=$$TRANS(N(nCOL,1),DATA,xD)
+ .I $L(DATA),$L(N(nCOL,6)) d
+ ..s prefix="" i " < > + - "[(" "_$e(DATA)_" ") s prefix=$e(DATA),DATA=$e(DATA,2,$l(DATA))
+ ..s DATA=prefix_$j(DATA,0,N(nCOL,6)),DATA=$j(DATA,N(nCOL,"L"))
+ .i $l($g(N(nCOL,"FONT"))) D ADDLINE(REPID,SECTION,N(nCOL,"FONT"))
+ .S XIG=N(nCOL,"Z")
+ .f jx=1:1:$l(DATA,$c(13)) d
+ ..s x=$p(DATA,$c(13),jx)
+ ..i $e(x)="~" D
+ ...D ADDLINE(REPID,SECTION,$E(x,1,N(nCOL,"L")))
+ ...D ADDLINE(REPID,SECTION,$C(13))
+ ...D ADDLINE(REPID,SECTION,"?"_$E(XIG_SPACE,1,3))
+ ..i $e(x)'="~" D ADDLINE(REPID,SECTION,x) S XIG=XIG+$L(x)
+ .i $l($g(N(nCOL,"FONT"))) D ADDLINE(REPID,SECTION,"~NORMAL")
+ D ADDLINE(REPID,SECTION,"?"_$E(N(nCOL,"Z")-1_SPACE,1,3)_$S($G(BAR)="N":" ",1:"|"))
+ Q
+ ; add new line to PR
+ADDLINE(REPID,SECTION,LINE) N (REPID,SECTION,LINE)
+ I SECTION[$C(1) D  Q
+ .F J=1:1:3 S @("X"_J)=$P(SECTION,$C(1),J)
+ .S STOLD=$O(^PR(REPID,X1,X2,X3,""),-1)
+ .I LINE="!" S ST=STOLD+1,^PR(REPID,X1,X2,X3,ST)="<BR>" Q
+ .I LINE="#" S ST=STOLD+1,^PR(REPID,X1,X2,X3,ST)="<tkPageBreak>" Q
+ .I $E(LINE)="~" S ST=STOLD+1,^PR(REPID,X1,X2,X3,ST)=LINE Q
+ .S (LINEOLD,SHIFT)=""
+ .I $L(STOLD) S LINEOLD=$G(^PR(REPID,X1,X2,X3,STOLD)),ST=STOLD
+ .I (LINEOLD="<tkPageBreak>")!(LINEOLD="<BR>")!(STOLD="")!($E(LINEOLD)="~") S LINEOLD="",ST=STOLD+1
+ .I $E(LINE)="?",$TR($E(LINE,2,4)," ")?1N.3N S SHIFT=+$E(LINE,2,4),LINE=$E(LINE,5,$L(LINE)),LINE=$E(LINEOLD_$J("",SHIFT),1,SHIFT)_LINE
+ .E  S LINE=LINEOLD_LINE
+ .S ^PR(REPID,X1,X2,X3,ST)=LINE
+ S STOLD=$O(^PR(REPID,SECTION,""),-1)
+ I (LINE="!")!(LINE="#")!($E(LINE)="~")!($E(LINE)=$C(27))!(LINE=$C(13)) S ST=STOLD+1,^PR(REPID,SECTION,ST)=LINE Q
+ I $E(LINE)="~" S ST=STOLD+1,^PR(REPID,SECTION,ST)=LINE Q
+ S (LINEOLD,SHIFT)=""
+ I $L(STOLD) S LINEOLD=$G(^PR(REPID,SECTION,STOLD)),ST=STOLD
+ I (LINEOLD="#")!(LINEOLD=$c(13))!(LINEOLD="!")!(STOLD="")!($E(LINEOLD)="~")!($E(LINEOLD)=$c(27)) S LINEOLD="",ST=STOLD+1
+ I $E(LINE)="?",$TR($E(LINE,2,4)," ")?1N.3N S SHIFT=+$E(LINE,2,4),LINE=$E(LINE,5,$L(LINE)),LINE=$E(LINEOLD_$J("",SHIFT),1,SHIFT)_LINE
+ E  S LINE=LINEOLD_LINE
+ S ^PR(REPID,SECTION,ST)=LINE
+ Q
+ ; add new line to PR
+ADD(REPID,SECTION,LINE) N (REPID,SECTION,LINE) 
+ I SECTION[$C(1) D  Q
+ .F J=1:1:3 S @("X"_J)=$P(SECTION,$C(1),J)
+ .S ST=$O(^PR(REPID,X1,X2,X3,""),-1)+1,^PR(REPID,X1,X2,X3,ST)=LINE
+ S ST=$O(^PR(REPID,SECTION,""),-1)+1,^PR(REPID,SECTION,ST)=LINE
+ Q
+ADDHEADER(REPID,SECTION,Header) N (REPID,SECTION,Header) 
+ F J=1:1:3 S @("X"_J)=$P(SECTION,$C(1),J)
+ s x="" f  s x=$o(Header(x)) q:x=""  s ^PR(REPID,X1,X2,X3,x)=Header(x)
+ Q
+ ; translation
+TRANS(NAME,DATA,xD) S TIN=$P($G(PLIST(32)),$C(1)),TOUT=$P($G(PLIST(35)),$C(1))
+ N (NAME,DATA,xD,%msql,TIN,TOUT)
+ I xD=1 S DATA=$P(DATA,$C(1),xD) G TRANEND
+ S DATA=$P(DATA,$C(1),xD)
+TRANEND Q DATA
+ ; set stationary specific commands
+STAT(REPID,STAT) N (REPID,STAT) S REPID=$G(REPID),STAT=$G(STAT)
+ I $L(STAT) D
+ .D ADDLINE(REPID,"HDR","~RESET")
+ .D ADDLINE(REPID,"HDR","~ORIENTATION="_$TR($P(STAT,"||",2),"PL","01"))
+ .D ADDLINE(REPID,"HDR","~FONT-COURIER")
+ .D ADDLINE(REPID,"HDR","~FONT-FIXED")
+ .D ADDLINE(REPID,"HDR","~NORMAL")
+ .D ADDLINE(REPID,"HDR","~FONTSIZE="_$P(STAT,"||",3))
+ i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@("STAT^"_$zn_$p(^CF("SM",1),"^",28)))) d @("STAT^"_$zn_$p(^CF("SM",1),"^",28))
+ Q
+]]></Routine>
+</Export>

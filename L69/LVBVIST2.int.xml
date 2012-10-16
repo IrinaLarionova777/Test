@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBVIST2" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBVIST2 ; IG 6/5/98 ; MVB Control data access for EP_Visit Test Set
+ ;
+ ; supported calls:
+ ;
+ ; $$open^LVBVIST2(epis,dep,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^LVBVIST2(epis,dep,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^LVBVIST2(epis,dep,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^LVBVIST2(epis,dep,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^LVBVIST2()
+ ; $$getall^LVBVIST2(ur,dep)
+ ; $$stat^LVBVIST2(vis,tset)
+ ;
+SuppressBilling 
+  ;---s lan="" &sql(SELECT SSUSR_Language_DR INTO :lan FROM SS_User WHERE SSUSR_RowID=:user)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, lan, user
+ s lan="" Do %0Ao
+ d
+ .n PLIST
+ .s mess="" i '$$getmess^MVBSSVBM(lan,"AddOnTest") s mess=PLIST(1)
+ s PLIST(37)="Y",PLIST(54)=user,PLIST(55)=+$h i $l(mess) s PLIST(53)=mess
+ q
+ ; get list of testsets for range of visits
+open(epis,dep,p2,p3,p4,p5,p6,p7,p8,p9) 
+ s ur=$p(epis,"|",2)
+ s epis=$p(epis,"|")
+ d init
+ s tset=0
+ q 0
+ ;
+fetch(epis,dep,p2,p3,p4,p5,p6,p7,p8,p9) 
+ s ur=$p(epis,"|",2)
+ s epis=$p(epis,"|")
+ i ur'="" s epis=$$epis(ur)
+ s tset=$g(tset)
+ q:tset="" 100
+ s tset=$o(testsets(tset)) q:tset="" 100
+ s str="" f j=1:1:$l(epis,"^") s vis=$p(epis,"^",j) d
+ .s str1=$$stat(vis,tset)
+ .s $p(str,"^",j)=str1
+ k PLIST s PLIST=2,PLIST(1)=tset_"||"_$p($g(^TTAB("TS",tset)),"\"),PLIST(2)=str
+ q 0
+ ; Fetch all data
+fetchbuffer(epis,dep,p2,p3,p4,p5,p6,p7,p8,p9) s epis=$g(epis),dep=$g(dep) k ^TMP($zn,$j)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100) i max>100 s max=100
+ f xxx=1:1:max s SQLCODE=$$fetch(epis,dep) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$tr($g(PLIST(j)),"^",$c(28))
+ k PLIST m PLIST=^TMP($zn,$j) k ^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(epis,dep,p2,p3,p4,p5,p6,p7,p8,p9) N (epis,dep,PLIST) s epis=$g(epis),dep=$g(dep) K ^TMP($zn,$j)
+ i $$open(epis,dep)
+ f cnt=1:1 Q:$$fetch(epis,dep)  s ^TMP($zn,$j,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,cnt),$c(28),j)=$tr($g(PLIST(j)),"^",$c(28))
+ i $$close()
+ k PLIST M PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+stat(vis,tset) ;status of visit test set : N-doesn't exist, A-author,E-entered
+ n (vis,tset)
+ s exist=0,auth=0
+ s cn="" f  s cn=$o(^TEPI(vis,1,tset,cn)) q:'cn  s s=$g(^(cn)) d
+ .s exist=1
+ .i $p(s,"\",4) s auth=1
+ i auth q "Y"
+ i exist q "E"
+ q "N"
+ ;
+ ;
+close() k testsets
+ q 0
+ ;
+ ;
+init ;create list of test sets for visits
+ k testsets
+ i ur'="" s epis=$$epis(ur)
+ f j=1:1:$l(epis,"^") s vis=$p(epis,"^",j) i $l(vis) d
+ .s ts="" f  s ts=$o(^TEPI(vis,1,ts)) q:ts=""  d
+ ..i (dep[$e(ts))!(dep="") s testsets(ts)=""
+ q
+ ; get list of visits
+getall(ur,dep) n (ur,dep,PLIST)
+ k PLIST s cnt=0 i $l(ur) d
+ .s date="" f  s date=$o(^TDEB(ur,date),-1) q:date=""  d
+ ..s epis="" f  s epis=$o(^TDEB(ur,date,0,epis),-1) q:epis=""  d
+ ...s found=0,ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  q:found  d
+ ....s found=1,colldate=$p($g(^TEPI(epis)),"\",10)
+ ...i found s cnt=cnt+1,PLIST(cnt)=epis_$c(2)_epis_$C(2)_colldate
+ s PLIST=$o(PLIST(""),-1)
+ q 0
+epis(ur) ;create list of episodes
+ n (ur)
+ s err=$$getall(ur,""),epis="" f j=1:1 q:'$d(PLIST(j))  s epis=epis_$p(PLIST(j),$c(2))_"^"
+ q $e(epis,1,$l(epis)-1)
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(6)=0,%mmmsqld(7)=""
+ s %mmmsqld(4)=$g(user)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^SSU("SSUSR",1,%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(14)=$g(^SSU("SSUSR",1,%mmmsqld(3)))
+ s lan=$p(%mmmsqld(14),"^",6)
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^SSU("SSUSR",1,$p(%mmmsqld(3),"||",1))#"S":$zu(115,4) i $t { s %mmmsqld(6)=1,%mmmsqld(7)=$name(^SSU("SSUSR",1,$p(%mmmsqld(3),"||",1)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.SS_User for RowID value: "_%mmmsqld(3) ztrap "LOCK"  }
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^SSU("SSUSR",1,%mmmsqld(3)))
+ e  g %0ACdun
+ s %mmmsqld(21)=$g(^SSU("SSUSR",1,%mmmsqld(3)))
+ s lan=$p(%mmmsqld(21),"^",6)
+%0ABuncommitted ;
+ s SQLCODE=0 g %0Ac
+%0ACdun i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) s %mmmsqld(6)=0 }
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(6))=1 { l -@%mmmsqld(7) } q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Ac
+]]></Routine>
+</Export>

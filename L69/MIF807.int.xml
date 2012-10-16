@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF807" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF807(mi) ; ML 03/11/00 ; HITACHI 902 (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),cr=$c(13),lf=$c(10),ack=">",nak="?"
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,cr) q:'$l(record)
+ d trace^MIF000(mi,$p(record,etx,1)_" "_$p(record,etx,2),"H<--M")
+ ; check record validity
+ s chsum=$p(record,etx,2) i $$CHSUM($p(record,etx,1))'=chsum d SEND(nak) q
+ s frame=$e(record)
+ ; polling reply
+ i frame=">" d SEND(ack) q
+ s function=$e(record,2),tfunction=$tr($e(record,2),"abcdefghijklmnopqr","ABCDEFGHIJKLMNOPQR")
+ ; check for host query
+ i frame=";" d ORDER q
+ d SEND(ack)
+ ; extract details and result string
+ s (sample,epis,surname,result,date,time,QC)=""
+ s data=$e(record,1,40)
+ s epis=$tr($e(data,13,25)," ") q:epis=""
+ s rec=$e(record,41,999),NumTest=+$tr($e(rec,1,3)," "),rec=$e(rec,4,999)
+ ; process qc record
+ i tfunction="F" d file^MIF000(mi,sample,epis,surname,res,date,time,1) q
+ ; process results record
+ f i=1:1:NumTest d
+ .n data,tst,tres,flag s data=$e(rec,1,10),rec=$e(rec,11,999)
+ .s tst=$tr($e(data,1,3)," ","0"),res=$tr($e(data,4,9)," "),flag=$e(data,10) s:flag=" " flag=""
+ .s result=result_tst_$c(par10)_res_$c(par10)_flag_$c(par11)
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+ORDER ; process inquiry record
+ s data=$e(record,1,40),epis=$tr($e(data,13,25)," ") i epis="" d SEND(ack) q
+ d scanone^MIF000(mi,epis)
+ d PATDET(epis)
+ k tc,test s (tc,test)=""
+ f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ .s tcch=$e(tc,1,3) f  q:$e(tcch,1)'="0"  s tcch=$e(tcch,2,$l(tcch))
+ .i tcch'?." " s test(tcch)=""
+ f i=1:1:37 s test=test_$d(test(i))
+ s str=data_" 37"_test_"00000"
+ d SEND(str)
+ q
+PATDET(epis) ; extract patient data
+ i $$select^LVBEPVIS(epis,"Y") m VISIT=PLIST k PLIST
+ s sex=$g(VISIT(5)),age=$g(VISIT(26))
+ q
+CHSUM(x) ; calculate check sum
+ s z="" f j=1:1:$l(x) s z=z+$a(x,j)
+ s z=z#256,z=$$HH(z\16)_$$HH(z#16)
+ q z
+HH(y) q $s(y:$e("123456789ABCDEF",y),1:0)
+SEND(str) ; send string to instrument
+ s chsum=$$CHSUM(str) w stx,str,etx,chsum,cr,*-3
+ d trace^MIF000(mi,str_" "_chsum,"H-->M")
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR701" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDR701 ; IG 08/02/02 ; Doctors Reports printing DFT - TRAK
+ ;
+ ; supported calls :
+ ;
+ ; $$print^PRTDR701(vtsRID,type,DH)
+ ;
+ ; type  : P - print
+ ;         V - view from Enquiry
+ ;           - view from Entry
+ ; DH    : D - Doctor
+ ;         H - Hospital
+print(vtsRID,type,DH) n (vtsRID,type,DH,dh1,dh2,tsLM,tsWD) s vtsRID=$g(vtsRID),type=$g(type),DH=$g(DH),dh1=$g(dh1),dh2=$g(dh2) k ^TMP($zn,$j)
+ s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tsLM=$g(tsLM),tsWD=$g(tsWD)
+ s (range1,range2,flaglow,flaghigh,Alternate)=""
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ i '$$select^MVBCFLAB(1) d
+ .i $l(PLIST(18)) s flaglow=PLIST(18)
+ .i $l(PLIST(19)) s flaghigh=PLIST(19)
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ .i $l(PLIST(69)) s Alternate=PLIST(69)
+ s lan=""
+ i dh1="D" s lan=$$seldata^LVBCTDR(dh2,46)
+ i dh1="H" s lan=$$seldata^LVBCTHOS(dh2,35)
+ i '$l(lan) s lan=$$seldata^LVBEPVIS(epis,161)
+ s lan=$p($g(lan),$c(1))
+ i '$$select^LVBVISTS(vtsRID,"Y") d
+ .m ^TMP($zn,$j,"VISTS",vtsRID)=PLIST
+ .m VISTS=PLIST
+ i '$$getall^LVBCTDFL(VISTS(42)) f j=1:1:PLIST s CTDFL(j)=$p(PLIST(j),$c(2),4)
+ s rowid=$$mrn^LVBEPVIS($p(vtsRID,"||",1))_"||"_VISTS(42)_"||"_VISTS(44)_"||"_VISTS(34)
+ k DFRP i '$$getall^LVBDFRP(rowid) m DFRP=PLIST d
+ .f j1=1:1:DFRP s xRID=$p($p(DFRP(j1),$c(28),3),$c(1)),xSeq=$p($p(DFRP(j1),$c(28),2),$c(1)) i $l(xRID) d
+ ..s slot=0 i '$$select^LVBCTDFP(VISTS(42)_"||"_xSeq) s slot=+PLIST(3)
+ ..s ^TMP($zn,$j,"results",slot,xSeq)=xRID_$c(1)_$p($p(DFRP(j1),$c(28),4),$c(1))
+ ..s ep=$p(xRID,"||",1)
+ ..i '$d(^TMP($zn,$j,"EPVIS",ep)),'$$select^LVBEPVIS(ep,"Y") m ^TMP($zn,$j,"EPVIS",ep)=PLIST
+ ..i $d(^TMP($zn,$j,"EPVIS",ep)) k PLIST m PLIST=^TMP($zn,$j,"EPVIS",ep)
+ ..i '$d(^TMP($zn,$j,"FORMAT",xRID)),'$$getit^LVBCTTSF(,xRID,"Y",,,,,lan) m ^TMP($zn,$j,"FORMAT",xRID)=PLIST
+ ..i '$$results^LVBVISTS(xRID) d
+ ...f j2=1:1:PLIST s x1=$p(PLIST(j2),$c(1),2),x2=$p(PLIST(j2),$c(1),3) i $l(x1),$l(x2) d
+ ....s ^TMP($zn,$j,"results",slot,xSeq,x1)=x2_$c(1)_$p(PLIST(j2),$c(1),5)
+ ... ; compile test set comments
+ ...k PLIST i '$$COMMENTS^LVBCOM01(xRID,,type,"N",,"N","Y",.ExcludeList) i PLIST d
+ ....s epis=$p(xRID,"||"),date=$$seldata^LVBEPVIS(epis,12),time=$$seldata^LVBEPVIS(epis,13)
+ ....s time=$tr(time," "),time=$s($l(time):$$exttime^SSUTIL4(time),1:"")
+ ....s ^TMP($zn,$j,"COMMENTS",xSeq,1)="Date : "_$$extdate2^SSUTIL4(date)
+ ....s ^TMP($zn,$j,"COMMENTS",xSeq,1)=^TMP($zn,$j,"COMMENTS",xSeq,1)_"  Time : "_time
+ ....s ^TMP($zn,$j,"COMMENTS",xSeq,1)=^TMP($zn,$j,"COMMENTS",xSeq,1)_"  Episode : "_epis
+ ....f j3=1:1:PLIST d
+ .....f j4=1:1:$l(PLIST(j3),"^") s x2=$p(PLIST(j3),"^",j4) i $l(x2) d
+ ......s x1=$o(^TMP($zn,$j,"COMMENTS",xSeq,""),-1)+1,^TMP($zn,$j,"COMMENTS",xSeq,x1)=x2
+ i $d(DFRP)\10=0 g prend
+ ; print Authorised by
+ s x=$o(DFRP(""),-1),xRID=$p(DFRP(x),$c(28),3)
+ i $l(x),$$status^LVBVIS1(xRID)="A",type'="P" d
+ .i '$d(^TMP($zn,$j,"VISTS",xRID)),'$$select^LVBVISTS(xRID,"Y") m ^TMP($zn,$j,"VISTS",xRID)=PLIST
+ .i $d(^TMP($zn,$j,"VISTS",xRID)) k PLIST m PLIST=^TMP($zn,$j,"VISTS",xRID) d
+ ..d ADD^PRTDR00(,"~RES-AUTHORISEDBY")
+ ..d LN^PRTDR00(),ADD^PRTDR00(tsLM,"Authorised by "_$p(PLIST(9),$c(1),2)_"  on "_$$extdate2^SSUTIL4(PLIST(7))_"  at "_$$exttime^SSUTIL4(PLIST(8))),LN^PRTDR00()
+ ..d ADD^PRTDR00(,"~NORMAL")
+ ; print test set header
+ i $l(TEST(17)) d
+ .s tsName=""
+ .i '$l(tsName),$l(lan) d
+ ..s rowid=TEST(2)_"||"_lan
+ ..s tsName=$$seldata^LVBCTTSZ(rowid,3)
+ ..s tsName=$p(tsName,$c(1))
+ .i '$l(tsName) s tsName=$s(TEST(17)="*":TEST(3),1:TEST(17))
+ .d ADD^PRTDR00(,"~RES-TSHEADER")
+ .d LN^PRTDR00(),ADD^PRTDR00(tsLM,tsName),LN^PRTDR00()
+ .d ADD^PRTDR00(,"~NORMAL")
+ ; printing labes before the grid
+ s (grid,x1,Start)="" f  s x1=$o(CTDFL(x1)) q:x1=""  d
+ .k x f j=1:1:$l(CTDFL(x1),$c(28)) s x(j)=$p($p(CTDFL(x1),$c(28),j),$c(1))
+ .i 'grid,x(4)="LB" d
+ ..i x(8)>Start f Start=Start+1:1:x(8) d LN^PRTDR00()
+ ..i x(9),$l(x(11)) d
+ ...d ADD^PRTDR00(x(9),)
+ ...i $l(x(10)) f j=1:1:$l(x(10)) s x=$e(x(10),j) i $l(x) d
+ ....i x="B" d ADD^PRTDR00(,"~BOLD",,"N")
+ ....i x="I" d ADD^PRTDR00(,"~ITALIC",,"N")
+ ....i x="U" d ADD^PRTDR00(,"~UNDERLINE",,"N")
+ ...d ADD^PRTDR00(,x(11))
+ ...i $l(x(10)) d ADD^PRTDR00(,"~NORMAL")
+ .i 'grid,x(4)'="LB" s grid=1
+ ; printing the grid header
+ f j=1:1:5 s xxx(j)=""
+ s (x1,LM)="" f  s x1=$o(CTDFL(x1)) q:x1=""  d
+ .k x f j=1:1:$l(CTDFL(x1),$c(28)) s x(j)=$p($p(CTDFL(x1),$c(28),j),$c(1))
+ .i x(4)'="LB" s:LM="" LM=x(9) d
+ ..i x(8)>Start f Start=Start+1:1:x(8) d LN^PRTDR00()
+ ..s col=(''x(5))+(''x(6))+(''x(7))
+ ..i x(5)+x(6)+x(7) d
+ ...s line="",$p(line,"-",x(5)+x(6)+x(7)+col)="",xxx(1)=xxx(1)_$s($l(xxx(1)):"",1:"-")_line_"-"
+ ...i " EP CD CT SN ST "[(" "_x(4)_" ") d
+ ....s line="",$p(line," ",x(5)+x(6)+x(7)+col)="",xxx(2)=xxx(2)_$s($l(xxx(2)):"",1:"|")_line_"|"
+ ....s xxx(3)=xxx(3)_$s($l(xxx(3)):"",1:"|")_$e($e($j("",x(5)),1,x(5)-$l(x(11))\2)_x(11)_$j("",x(5)),1,x(5))_"|"
+ ....s line="",$p(line," ",x(5)+x(6)+x(7)+col)="",xxx(4)=xxx(4)_$s($l(xxx(4)):"",1:"|")_line_"|"
+ ...i x(4)="TI" d
+ ....s xxx(2)=xxx(2)_$s($l(xxx(2)):"",1:"|")_$e($e($j("",x(5)+x(6)+x(7)+col-1),1,x(5)+x(6)+x(7)+col-$l(x(11))-1\2)_x(11)_$j("",x(5)+x(6)+x(7)+col-1),1,x(5)+x(6)+x(7)+col-1)_"|"
+ ....s line="",$p(line,"-",x(5)+x(6)+x(7)+col)="",xxx(3)=xxx(3)_$s($l(xxx(3)):"",1:"|")_line_"|"
+ ....i x(5) s xxx(4)=xxx(4)_$s($l(xxx(4)):"",1:"|")_$e($e($j("",x(5)),1,x(5)-$l(x(12))\2)_x(12)_$j("",x(5)),1,x(5))_"|"
+ ....i x(6) s xxx(4)=xxx(4)_$s($l(xxx(4)):"",1:"|")_$e($e($j("",x(6)),1,x(6)-$l(x(13))\2)_x(13)_$j("",x(6)),1,x(6))_"|"
+ ....i x(7) s xxx(4)=xxx(4)_$s($l(xxx(4)):"",1:"|")_$e($e($j("",x(7)),1,x(7)-$l(x(14))\2)_x(14)_$j("",x(7)),1,x(7))_"|"
+ ...s line="",$p(line,"-",x(5)+x(6)+x(7)+col)="",xxx(5)=xxx(5)_$s($l(xxx(5)):"",1:"-")_line_"-"
+ s xxx(1)=" "_$e(xxx(1),2,$l(xxx(1))-1)_" "
+ s xxx(5)="|"_$e(xxx(5),2,$l(xxx(5))-1)_"|"
+ d ADD^PRTDR00(,"~RES-TSHEADER")
+ f j=1:1:5 d ADD^PRTDR00(LM,xxx(j)),LN^PRTDR00()
+ d ADD^PRTDR00(,"~NORMAL")
+ ; printing grid info
+ s slot="" f  s slot=$o(^TMP($zn,$j,"results",slot)) q:slot=""  d
+ .s vc=$o(^TMP($zn,$j,"results",slot,"")) i $l(vc) s xx=^(vc) d
+ ..d ADD^PRTDR00(LM,"|")
+ ..s xRID=$p(xx,$c(1),1),sn=$p(xx,$c(1),2),ep=$p(xRID,"||"),vts=$p(xRID,"||",1,3)
+ ..s cd=$$seldata^LVBVISTS(vts,49) s:'$l(cd) cd=$$seldata^LVBEPVIS(ep,12) i $l(cd) s cd=$$extdate2^SSUTIL4(cd)
+ ..s ct=$$seldata^LVBVISTS(vts,50) s:'$l(ct) ct=$$seldata^LVBEPVIS(ep,13) i $l(ct) s ct=$$exttime^SSUTIL4(ct)
+ ..s x1="" f  s x1=$o(CTDFL(x1)) q:x1=""  d
+ ...k x f j=1:1:$l(CTDFL(x1),$c(28)) s x(j)=$p($p(CTDFL(x1),$c(28),j),$c(1))
+ ...i x(4)="EP" s line=$e(ep_$j("",x(5)),1,x(5))_"|" d ADD^PRTDR00(,line)
+ ...i x(4)="CD" s line=$e(cd_$j("",x(5)),1,x(5))_"|" d ADD^PRTDR00(,line)
+ ...i x(4)="CT" s line=$e(ct_$j("",x(5)),1,x(5))_"|" d ADD^PRTDR00(,line)
+ ...i x(4)="SN" s line=$e(sn_$j("",x(5)),1,x(5))_"|" d ADD^PRTDR00(,line)
+ ...i x(4)="ST" s line=$e($s(slot:slot,1:"")_$j("",x(5)),1,x(5))_"|" d ADD^PRTDR00(,line)
+ ...i x(4)="TI" d
+ ....s ti=x(3),(result,units,rr,flag)=""
+ ....s seq="" f  s seq=$o(^TMP($zn,$j,"results",slot,seq)) q:seq=""  s xxSeq=^(seq) d
+ .....i '$d(^TMP($zn,$j,"results",slot,seq,ti)) q
+ .....s xx=$g(^TMP($zn,$j,"results",slot,seq,ti)),result=$p(xx,$c(1)),flag=$p(xx,$c(1),2)
+ .....s xRID=$p(xxSeq,$c(1),1),sn=$p(xxSeq,$c(1),2)
+ .....k FORMAT m FORMAT=^TMP($zn,$j,"FORMAT",xRID)
+ .....s cnt="" f  s cnt=$o(FORMAT(cnt)) q:cnt=""  i ti=$p(FORMAT(cnt),$c(2),10) d  q
+ ......s units=$p(FORMAT(cnt),$c(2),17)
+ ......i $l($p(FORMAT(cnt),$c(2),22)),$l($p(FORMAT(cnt),$c(2),23)) d
+ .......i $e($p(FORMAT(cnt),$c(2),22))?1N s $p(FORMAT(cnt),$c(2),22)=$j($p(FORMAT(cnt),$c(2),22),0,$e($p(FORMAT(cnt),$c(2),18),2,4))
+ .......i $e($p(FORMAT(cnt),$c(2),23))?1N s $p(FORMAT(cnt),$c(2),23)=$j($p(FORMAT(cnt),$c(2),23),0,$e($p(FORMAT(cnt),$c(2),18),2,4))
+ .......s rr=$j(range1_$p(FORMAT(cnt),$c(2),22),$p(FORMAT(cnt),$c(2),19)+$l(range1))_"-"_$p(FORMAT(cnt),$c(2),23)_range2
+ ......i $l($p(FORMAT(cnt),$c(2),22)),'$l($p(FORMAT(cnt),$c(2),23)) d
+ .......i $e($p(FORMAT(cnt),$c(2),22))?1N s $p(FORMAT(cnt),$c(2),22)=$j($j($p(FORMAT(cnt),$c(2),22),0,$e($p(FORMAT(cnt),$c(2),18),2,4)),$p(FORMAT(cnt),$c(2),19)+$l(range1))
+ .......s rr=range1_$p(FORMAT(cnt),$c(2),22)_range2
+ ....i x(5) d
+ .....i $l(result),cnt d
+ ......i $e($p(FORMAT(cnt),$c(2),18))="N" s r=result d IN^PRTDR00 i $d(result(1)) s result=r k result(1)
+ ......i $e($p(FORMAT(cnt),$c(2),18))="D" d ID^PRTDR00
+ ......i $p(FORMAT(cnt),$c(2),8)="M",result="" s result="TF"
+ ......i flag="L" d
+ .......i "MN"[$e($p(FORMAT(cnt),$c(2),18)),$l(flaglow) s result=result_" "_flaglow
+ .......d ADD^PRTDR00(,"~RES-ABNORMAL",,"N")
+ ......i flag="H" d
+ .......i "MN"[$e($p(FORMAT(cnt),$c(2),18)),$l(flaghigh) s result=result_" "_flaghigh
+ .......d ADD^PRTDR00(,"~RES-ABNORMAL",,"N")
+ .....s line=$e(result_$j("",x(5)),1,x(5))
+ .....d ADD^PRTDR00(,line)
+ .....i (flag="L")!(flag="H") d ADD^PRTDR00(,"~NORMAL",,"N")
+ .....d ADD^PRTDR00(,"|")
+ ....i x(6) d
+ .....s line=$e(units_$j("",x(6)),1,x(6))
+ .....i $l(units) d ADD^PRTDR00(,"~RES-UNITS",,"N")
+ .....d ADD^PRTDR00(,line)
+ .....i $l(units) d ADD^PRTDR00(,"~NORMAL",,"N")
+ .....d ADD^PRTDR00(,"|")
+ ....i x(7) d
+ .....s line=$e(rr_$j("",x(7)),1,x(7))
+ .....i $l(units) d ADD^PRTDR00(,"~RES-RR",,"N")
+ .....d ADD^PRTDR00(,line)
+ .....i $l(units) d ADD^PRTDR00(,"~NORMAL",,"N")
+ .....d ADD^PRTDR00(,"|")
+ ..d LN^PRTDR00()
+ f j=1 d ADD^PRTDR00(LM,xxx(j)),LN^PRTDR00()
+ ; printing labes after the grid
+ s (grid,x1,Start)="" f  s x1=$o(CTDFL(x1)) q:x1=""  d
+ .k x f j=1:1:$l(CTDFL(x1),$c(28)) s x(j)=$p($p(CTDFL(x1),$c(28),j),$c(1))
+ .i grid,x(4)="LB" s x(8)=x(8)-6 d
+ ..i x(8)>Start f Start=Start+1:1:x(8) d LN^PRTDR00()
+ ..i x(9),$l(x(11)) d
+ ...d ADD^PRTDR00(x(9),)
+ ...i $l(x(10)) f j=1:1:$l(x(10)) s x=$e(x(10),j) i $l(x) d
+ ....i x="B" d ADD^PRTDR00(,"~BOLD",,"N")
+ ....i x="I" d ADD^PRTDR00(,"~ITALIC",,"N")
+ ....i x="U" d ADD^PRTDR00(,"~UNDERLINE",,"N")
+ ...d ADD^PRTDR00(,x(11))
+ ...i $l(x(10)) d ADD^PRTDR00(,"~NORMAL")
+ .i 'grid,x(4)'="LB" s grid=1
+ ; printing antibiotic panel
+ s xRID="" f ss=0:1 s xRID=$o(^TMP($zn,$j,"FORMAT",xRID)) q:xRID=""  d
+ .s (Bugs,cnt)="" f  s cnt=$o(^TMP($zn,$j,"FORMAT",xRID,cnt)) q:cnt=""  i $p(^(cnt),$c(2),18)="V" s Bugs="Y" q
+ .i Bugs="Y" d
+ ..d:ss LN^PRTDR00() d ADD^PRTDR00(tsLM,"Episode : "_$p(xRID,"||")),LN^PRTDR00()
+ ..s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP2")),"\",1)
+ ..i $l(%routine) x "s error=$$print^"_%routine_"("""_xRID_""","""_type_""","""_DH_""")"
+ ; printing comments
+ i $d(^TMP($zn,$j,"COMMENTS")) d
+ .d ADD^PRTDR00(,"~BOLD"),LN^PRTDR00(),ADD^PRTDR00(tsLM,"Comments :"),ADD^PRTDR00(,"~NORMAL"),LN^PRTDR00()
+ .s col="" f  s col=$o(^TMP($zn,$j,"COMMENTS",col),-1) q:col=""  d
+ ..d ADD^PRTDR00(tsLM,^TMP($zn,$j,"COMMENTS",col,1)),LN^PRTDR00()
+ ..f j=2:1 q:'$d(^TMP($zn,$j,"COMMENTS",col,j))  d ADD^PRTDR00(tsLM,^TMP($zn,$j,"COMMENTS",col,j)),LN^PRTDR00()
+ .f j=1,2 d LN^PRTDR00()
+prend k ^TMP($zn,$j)
+]]></Routine>
+</Export>

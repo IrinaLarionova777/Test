@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLN10ESP03" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTCLN10ESP03 ; SAP Activity report - Sant Pau
+ q
+ ; Parameters :  1.ToDate
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ ; TODO: Remove after test
+ ; Clear
+ s i="" f  s i=$o(^TEPI(i)) q:i=""  k ^TEPI(i,"AR")
+ k ^SAPAR
+ ; ------------------------------------------------
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ d ADDLINE^PRTREP00(REPID,"PRT","~FONT-TIMES")
+ d ADDLINE^PRTREP00(REPID,"PRT","~FONTSIZE=10")
+ d ADDLINE^PRTREP00(REPID,"PRT","Càlcul de l'activitat de SAP")
+ d ADDLINE^PRTREP00(REPID,"PRT","!")
+ d ADDLINE^PRTREP00(REPID,"PRT","Inici de l'execució el dia "_$zd($h,4)_" a les "_$zt($p($h,",",2)))
+ s todate=PAR1
+ s (dat,epis)=""
+ f  s dat=$o(^TDAY(1,dat)) q:dat=""  q:dat>todate  d
+ . ; 0 - Status- Fully entered
+ . f  s epis=$o(^TDAY(1,dat,0,epis)) q:epis=""  d
+ .. s i=$o(^TEPI(epis,"AR",""))
+ .. i $l(i),$l($p(^TEPI(epis,"AR",i),"\",7)) q  ; Sent before
+ .. 
+ .. s (ts,cnt)="",swautho=1
+ .. f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d  q:'swautho
+ ... s status=$p($g(^(cnt)),"\",31) i status'="A" s swautho=0 q
+ .. i 'swautho q  ; Not full authorized
+ .. ; New
+ .. i '$d(^TEPI(epis,"AR")) d calculate^LVBVISA(epis,USER) d scan q
+ .. d scan
+ s today=$p($h,",",1)
+ s d=$zd(today,4)
+ s d=$p(d,"/",3)_$p(d,"/",2)_$p(d,"/",1)
+ s t=$p($h,",",2)
+ s t=$tr($zt(t),":")
+ i $$select^MVBCFSM(1) q
+ s dir=PLIST(35)
+ f j="\","/" i dir[j,$e(dir,$l(dir))'=j s dir=dir_j
+ i $d(^TMP($zn,$j,1)) d
+ . s file=dir_"IHLM_A_"_d_t_".txt"
+ . d ADDLINE^PRTREP00(REPID,"PRT","!")
+ . d ADDLINE^PRTREP00(REPID,"PRT","Generat el fitxer d'altes "_file)
+ . o file:"WNS" u file
+ . s i="" f n=0:1 s i=$o(^TMP($zn,$j,1,i)) q:i=""  d save
+ . c file
+ i $d(^TMP($zn,$j,2)) d
+ . s file=dir_"IHLM_BM_"_d_t_".txt"
+ . d ADDLINE^PRTREP00(REPID,"PRT","!")
+ . d ADDLINE^PRTREP00(REPID,"PRT","Generat el fitxer de modificacions i baixes "_file)
+ . o file:"WNS" u file
+ . s i="" f n=0:1 s i=$o(^TMP($zn,$j,2,i)) q:i=""  d save
+ . c file
+ ; If all is ok, mark episodes
+ s epis="" f  s epis=$o(^TMP($zn,$j,0,epis)) q:epis=""  d
+ . s i="" f  s i=$o(^TEPI(epis,"AR",i)) q:i=""  d
+ .. s $p(^TEPI(epis,"AR",i),"\",7)=today
+ .. k ^SAPAR(epis) m ^SAPAR(epis)=^TEPI(epis,"AR")
+ d ADDLINE^PRTREP00(REPID,"PRT","!")
+ d ADDLINE^PRTREP00(REPID,"PRT","Final de l'execució el dia "_$zd($h,4)_" a les "_$zt($p($h,",",2)))
+ k ^TMP($zn,$j)
+ q
+save 
+ s r=^(i)
+ s type=$p(r,"\",1)
+ s act=$p(r,"\",2)
+ s ori=$p(r,"\",3)
+ s bil=$p(r,"\",4)
+ s epis=$p(r,"\",5)
+ s qua=$p(r,"\",6)
+ s repis=$g(^TEPI(epis))
+ s repis8=$g(^TEPI(epis,8))
+ s mrn=$p(repis,"\",18)
+ s sapepis=$p($p(repis,"\",37),",",1)
+ s dateofcoll=$p(repis,"\",10)
+ s timeofcoll=$p(repis,"\",11)
+ s dateofrece=$p(repis,"\",32)
+ s timeofrece=$p(repis,"\",33)
+ s hosplocation=$p(repis,"\",54)
+ s service=$p(repis8,"\",1)
+ i service="" s service=hosplocation
+ s from="L2120"
+ i n w !
+ w $$left(type,1) ; ACTV: Tipo de actividad sobre la prestacion
+ w $$left(mrn,10) ; PATNR: Codigo SAP de paciente (historia clinica)
+ w $$left(sapepis,10) ; FALNR: Episodio
+ w $$left("",5) ; LFDBW: Movimiento
+ w $$left(act,10) ; LEIST: Codigo prestacion
+ w $$left(epis_"\"_act_"\"_ori,20) ; REFKY: Id Externo prestacion
+ w $$date(dateofcoll) ; FMOV: Fecha de solicitud de la prestacion
+ w $$time(timeofcoll) ; HMOV: Hora de solicitud de la prestacion
+ i type="B" s (dateofrece,timeofrece,hosplocation,service,from,qua,bil)=""
+ w $$date(dateofrece) ; IBGDT: Fecha real de inicio de prestacion
+ w $$time(timeofrece) ; IBZT: Hora real de inicio de prestacion
+ w $$left(hosplocation,8) ; ANFOE: Servicio Solicitante
+ w $$left(service,8) ; ANPOE: Unidad enfermeria solicitante
+ w $$left(from,8) ; ERBOE: Servicio gestor
+ w $$right(qua,4) ; IMENG: Cantidad de prestaciones realizadas
+ w $$left($tr(bil,"Y","S"),1) ; ABRKZ: Facturable Si/No
+ w $$left("",80) ; USERTEXT1: Campo libre documentacion
+ w $$left("",10) ; EXTKH: Unidad productiva Solicitante
+ q       
+left(txt,len) 
+ q $e(txt_$j("",len),1,len)      
+right(txt,len) 
+ i $l(txt)>len q $e(txt,1,len)
+ q $j(txt,len)
+date(txt) 
+ i txt="" q $j("",10)
+ q $tr($zd(txt,4),"/",".")
+time(txt) 
+ i txt="" q $j("",5)
+ q $p($zt(txt),":",1,2)
+scan 
+ ; 1 Activity DR
+ ; 2 Billable
+ ; 3 Origin
+ ; 4 Date corrected
+ ; 5 Time corrected 
+ ; 6 User corrected
+ ; 7 Date sent
+ ; 8 Quantity    
+ k old,new
+ s i="" f  s i=$o(^SAPAR(epis,i)) q:i=""  s r=$g(^(i)) d
+ . s act=$p(r,"\",1),bil=$p(r,"\",2),ori=$p(r,"\",3),qua=$p(r,"\",8)
+ . i bil="" s bil="N"
+ . i ori="" s ori=" "
+ . i $l(act) s old(act,ori,bil)=$g(old(act,ori,bil))+qua
+ s i="" f  s i=$o(^TEPI(epis,"AR",i)) q:i=""  s r=$g(^(i)) d
+ . s act=$p(r,"\",1),bil=$p(r,"\",2),ori=$p(r,"\",3),qua=$p(r,"\",8)
+ . i bil="" s bil="N"
+ . i ori="" s ori=" "
+ . i $l(act) s new(act,ori,bil)=$g(new(act,ori,bil))+qua
+ s (act,ori,bil)=""
+ f  s act=$o(new(act)) q:act=""  d
+ . f  s ori=$o(new(act,ori)) q:ori=""  d
+ .. f  s bil=$o(new(act,ori,bil)) q:bil=""  d
+ ... i $d(old(act,ori,bil)),old(act,ori,bil)=new(act,ori,bil) q  ; No change
+ ... i $d(old(act,ori,bil)) d send("M",new(act,ori,bil)) q  ; Sent another quantity
+ ... d send("A",new(act,ori,bil)) ; New
+ s (act,ori,bil)=""
+ f  s act=$o(old(act)) q:act=""  d
+ . f  s ori=$o(old(act,ori)) q:ori=""  d
+ .. f  s bil=$o(old(act,ori,bil)) q:bil=""  d
+ ... i $d(new(act,ori,bil)) q
+ ... d send("B",old(act,ori,bil))
+ q
+send(type,qua) 
+ s ^TMP($zn,$j,0,epis)=""
+ i type="A" s ^TMP($zn,$j,1,$i(^TMP($zn,$j,1)))=type_"\"_act_"\"_ori_"\"_bil_"\"_epis_"\"_qua q
+ s ^TMP($zn,$j,2,$i(^TMP($zn,$j,2)))=type_"\"_act_"\"_ori_"\"_bil_"\"_epis_"\"_qua q
+ q
+]]></Routine>
+</Export>

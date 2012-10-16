@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBMIRH5" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBMIRH5 ; ig 6/5/98 ; MVB Control data access for LoadLists
+ ;
+ ;
+ ; supported calls:
+ ; $$open^LVBMIRH5(machine,sample,maxvisit)
+ ; $$fetch^LVBMIRH5(machine,sample,maxvisit)
+ ; $$close^LVBMIRH5()
+ ; $$newsampl^LVBMIRH5()
+ ; $$savell1^LVBMIRH5(ll,specimen,tray)
+ ; $$savell2^LVBMIRH5(ll)
+ ;
+ ; create new sample
+newsampl() n (PLIST) k ^TMP($zn,$j) m ^TMP($zn,$j)=PLIST
+ s (machine,LL,PO)=""
+ s l=$o(PLIST("")) i l'="" s machine=$p(PLIST(l),"||",1),LL=$p(PLIST(l),"||",2),PO=$p(PLIST(l),"||",3)
+ i $l(machine),$l(LL),$l(PO) d
+ .s pROWID=machine_"||"_LL_"||"_PO
+ .s j="" f  s j=$o(^TMP($zn,$j,j)) q:j=""  s tsROWID=^(j) d
+ ..i '$$select^LVBMILLT(tsROWID) f jj=3,4 s $p(^TMP($zn,$j,j),"^",jj)=PLIST(jj)
+ .. ;i $$delete^LVBMILLT(tsROWID)
+ .i '$$select^LVBMILLP(pROWID),'$$insert^LVBMILLP($p(pROWID,"||",1,2)) d
+ ..s patrow=$g(%ROWID)
+ ..s j="" f  s j=$o(^TMP($zn,$j,j)) q:j=""  d
+ ...k PLIST f jj=3,4 s PLIST(jj)=$p(^TMP($zn,$j,j),"^",jj)
+ ...i $l(PLIST(3)) s err=$$insert^LVBMILLT(patrow)
+ q 0
+open(machine,tsgroup,max) s machine=$g(machine),tsgroup=$g(tsgroup),max=$g(max) k ^TMP($zn,$j)
+ s (SITE,UrgentFirst,MachineGroup)=""
+ i '$$select^LVBMIMP(machine) s SITE=$p(PLIST(21),$c(1)),UrgentFirst=$p($g(PLIST(8)),$c(1)),MachineGroup=$p($g(PLIST(36)),$c(1)) k PLIST
+ f j=1:1:$l(tsgroup,"^") d
+ .s tsg1=$p(tsgroup,"^",j) q:tsg1=""  s code=$p(tsg1,"||",2) q:code=""
+ .s ts="" f  s ts=$o(^TMIF(machine,"TG",code,"TS",ts)) q:ts=""  s ^TMP($zn,$j,"TS",ts)=""
+ s total=0
+ s ts="" f  s ts=$o(^TMP($zn,$j,"TS",ts)) q:ts=""  d
+ .s epis="" f  s epis=$o(^TTRQ(ts,epis)) q:epis=""  d
+ ..i max,max=total,'$d(^TMP($zn,$j,1,epis)) q
+ ..s cnt="" f  s cnt=$o(^TTRQ(ts,epis,cnt)) q:cnt=""  d
+ ...i $l(SITE),SITE'=$$site^LVBVISTS(epis_"||"_ts_"||"_cnt) q
+ ...i $$val(machine,ts,epis,cnt,MachineGroup) q
+ ... ; extract episode priority
+ ...s urgent=0,prio="" i UrgentFirst="Y" d
+ ....i '$$select^LVBEPVIS(epis,"Y") s prio=$p($g(PLIST(17)),$c(1)) k PLIST
+ ....i prio'="",'$$select^LVBCTPR(prio,"Y"),$p(PLIST(4),$c(1))="Y" s urgent=1 k PLIST
+ ...s total=total+'$d(^TMP($zn,$j,1,epis))
+ ...s ^TMP($zn,$j,0,urgent,epis,ts,cnt)="",^TMP($zn,$j,1,epis)=""
+ s line="" f urgent=1,0 d
+ .s epis="" f  s epis=$o(^TMP($zn,$j,0,urgent,epis)) q:epis=""  d
+ ..s line=line+1,^TMP($zn,$j,2,line)=epis
+ ..s ts="" f  s ts=$o(^TMP($zn,$j,0,urgent,epis,ts)) q:ts=""  d
+ ...s cnt="" f  s cnt=$o(^TMP($zn,$j,0,urgent,epis,ts,cnt)) q:cnt=""  d
+ ....s ^TMP($zn,$j,2,line,ts,cnt)=""
+ s line=""
+ q 0
+ ;
+fetch(machine,tsgroup,max) k PLIST s line=$o(^TMP($zn,$j,2,line)),SQLCODE=100
+ i $l(line) s SQLCODE=0 d
+ .s epis=^(line),(test,testRID)=""
+ .s ts="" f  s ts=$o(^TMP($zn,$j,2,line,ts)) q:ts=""  d
+ ..s TS=ts i $l($p($g(^TTAB("TS",ts)),"\",2)) s TS=$p($g(^TTAB("TS",ts)),"\",2)
+ ..s test=test_","_TS
+ ..s cnt="" f  s cnt=$o(^TMP($zn,$j,2,line,ts,cnt)) q:cnt=""  d
+ ...s testRID=testRID_","_ts_"||"_cnt
+ .s PLIST(1)=epis,PLIST(2)=$e(test,2,999)
+ .s (surname,name,title,datecoll,timecoll)=""
+ .i $d(^TEPI(epis)) d
+ ..s s=^(epis),surname=$p(s,"\"),name=$p(s,"\",2),title=$p(s,"\",5)
+ ..s datecoll=$p(s,"\",10),timecoll=$p(s,"\",11)*60
+ .s PLIST(3)=$g(surname),PLIST(4)=$g(name),PLIST(5)=$g(title)
+ .s PLIST(6)=$g(datecoll),PLIST(7)=$g(timecoll)
+ .s PLIST(8)=$e(testRID,2,999)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+ ;
+close() k ^TMP($zn,$j)
+ q 0
+ ; check if episode is in load list already
+val(machine,testset,epis,cnt,MachineGroup) n (machine,testset,epis,cnt,MachineGroup)
+ s found=0 i $l(MachineGroup) s machine=machine_","_MachineGroup
+ f i=1:1:$l(machine,",") s mi=$p(machine,",",i) i $l(mi) d  q:found
+ .s ll="" f  s ll=$o(^TMIF(mi,"LL1",epis,ll)) q:ll=""  d  q:found
+ ..s ord="" f  s ord=$o(^TMIF(mi,"LL1",epis,ll,ord)) q:ord=""  d  q:found
+ ...s chl="" f  s chl=$o(^TMIF(mi,"LL",ll,"PAT",ord,"TS",0,"TestSet",testset,chl)) q:chl=""  d  q:found
+ ....s s=$g(^TMIF(mi,"LL",ll,"PAT",ord,"TS",chl)),cnt1=$p(s,"\",2)
+ ....i cnt=cnt1 s found=1
+ q found
+ ; save loadlist patients
+savell1(llRID,specimen,tray) s llRID=$g(llRID) k ^TMP($zn,$j) m ^TMP($zn,$j)=PLIST
+ i $l(llRID,"||")=1 d
+ .s machine=llRID
+ .k PLIST s PLIST(2)=+$h,PLIST(4)=$p($h,",",2),PLIST(11)=$g(specimen),PLIST(12)=$g(tray)
+ .i '$$insert^LVBMILL(machine) s llRID=PLIST(1)
+ i $l(llRID,"||")=2 d
+ .s cnt="" f  s cnt=$o(^TMP($zn,$j,cnt)) q:cnt=""  d
+ ..k PLIST f j=2:1:7 s PLIST(j)=$p(^TMP($zn,$j,cnt),$c(1),j)
+ ..i '$$insert^LVBMILLP(llRID) s patrow=$g(%ROWID) d
+ ...s tests=$p(^TMP($zn,$j,cnt),$c(1),11) f j=1:1:$l(tests,",") d
+ ....k PLIST s PLIST(3)=$p($p(tests,",",j),"||",1),PLIST(4)=$p($p(tests,",",j),"||",2)
+ ....i $$insert^LVBMILLT(patrow)
+ q llRID
+ ; save loadlist test group
+savell2(llRID) s llRID=$g(llRID) k ^TMP($zn,$j) m ^TMP($zn,$j)=PLIST
+ i $l(llRID) d
+ .s cnt="" f  s cnt=$o(^TMP($zn,$j,cnt)) q:cnt=""  s code=$p(^(cnt),"||",2) d
+ ..i $l(code) k PLIST s PLIST(2)=code i $$insert^LVBMILLG(llRID)
+ q 0
+loadlist(machine,tsgroup,max,specimen,tray) ;create loadlist
+ n (machine,tsgroup,max,specimen,tray) s par=""     
+ i $$open(machine,tsgroup,max)
+ f  q:$$fetch(machine,tsgroup,max)  d
+ .k issaak m issaak=PLIST
+ .i par="" d
+ ..k PLIST s PLIST(2)=+$h,PLIST(4)=$p($h,",",2),PLIST(11)=$g(specimen),PLIST(12)=$g(tray)
+ ..s err=$$insert^LVBMILL(machine)
+ ..s par=$g(PLIST(1))
+ .k PLIST s PLIST(3)=issaak(1),PLIST(5)=$g(specimen)
+ .s err=$$insert^LVBMILLP(par),patrow=$g(%ROWID)
+ .f j=1:1:$l(issaak(8),",") d
+ ..k PLIST s PLIST(3)=$p($p(issaak(8),",",j),"||",1),PLIST(4)=$p($p(issaak(8),",",j),"||",2)
+ ..s err=$$insert^LVBMILLT(patrow)
+ i $$close()
+ s tsgroup=$g(tsgroup) f j=1:1:$l(tsgroup,"^") d
+ .s tsg1=$p(tsgroup,"^",j) q:tsg1=""  s code=$p(tsg1,"||",2) q:code=""
+ .k PLIST s PLIST(2)=code,err=$$insert^LVBMILLG(par)
+ q 0
+count(machine,tsgroup,max) 
+ n (PLIST,machine,tsgroup,max)
+ s count=0
+ s err=$$open(machine,tsgroup,max)
+ f  s err=$$fetch(machine,tsgroup,max) q:err  s count=count+1
+ s err=$$close()
+ k PLIST s PLIST=1,PLIST(1)=count
+ q 0
+]]></Routine>
+</Export>

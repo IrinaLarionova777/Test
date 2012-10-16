@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTWRD01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTWRD01 ;IG 27/05/98 ;Interim Ward Report
+ Q
+ ; Parameters :  1.Ward
+ ;
+ ; Fields :      1-Tests Results
+ ;               2-Test set
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ N (REPID,PAR,USER,%msql) K ^TMP($zn,$j)
+ K xHEADER D INIT S line=1,xHEADER(line)="Interim Ward Report"
+ I $L(WARD1) S line=line+1,xHEADER(line)="Ward : "_WARD1_" - "_WARD2
+ D HEADER^PRTREP00(.xHEADER),BODY,PRINT
+CREND I '$$select^LVBPRPR(REPID) S PLIST(12)=PAR1 I $$update^LVBPRPR(REPID)
+ K ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$zn)
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+ ; additional parameters
+ S (WARD1,WARD2)=""
+ ; find site
+ I $L(PAR1),'$$select^LVBCTHOS(PAR1,"Y") S WARD1=$P(PLIST(2),"\"),WARD2=$P(PLIST(3),"\")
+ Q
+ ; create temporary printing file
+BODY l +^TRPT("WARD",PAR1)
+ k ^TMP("WARD",$j) m ^TMP("WARD",$j)=^TRPT("WARD",PAR1) k ^TRPT("WARD",PAR1)
+ l -^TRPT("WARD",PAR1)
+ s epis="" f  s epis=$o(^TMP("WARD",$j,epis)) q:epis=""  d
+ .i '$$select^LVBEPVIS(epis,"Y") d
+ ..k VISIT m VISIT=PLIST
+ ..i '$l(VISIT(20)) q
+ ..s ts="" f  s ts=$o(^TMP("WARD",$j,epis,ts)) q:ts=""  d
+ ... ; do not print interim ward report for department
+ ...s dep=$e(ts) i '$$select^LVBCTDEP(dep,"Y") d
+ ....s nn="" f  s nn=$o(^TMP("WARD",$j,epis,ts,nn)) q:nn=""  d
+ .....i '$$results^LVBVISTS(epis_"||"_ts_"||"_nn,,,,"Y") d
+ ......s (max1,max2)=0 f j=1:1:PLIST s res1=$p(PLIST(j),$c(1),3),res2=$p(PLIST(j),$c(1),4) d
+ .......i $l(res1),max1<$l(res1) s max1=$l(res1)
+ .......i $l(res2),max2<$l(res2) s max2=$l(res2)
+ ......s ^TMP($zn,$j,"REPORT",VISIT(20),epis,ts,nn)=max1_"\"_max2
+ ......i $p($g(^TMP($zn,$j,"REPORT",VISIT(20))),"\",1)<max1 s $p(^TMP($zn,$j,"REPORT",VISIT(20)),"\",1)=max1
+ ......i $p($g(^TMP($zn,$j,"REPORT",VISIT(20))),"\",2)<max2 s $p(^TMP($zn,$j,"REPORT",VISIT(20)),"\",2)=max2
+ k ^TMP("WARD",$j)
+ q
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s urno="" f  s urno=$o(^TMP($zn,$j,"REPORT",urno)) q:urno=""  d
+ ..s max1=$p($g(^TMP($zn,$j,"REPORT",urno)),"\",1)+10
+ ..s max2=$p($g(^TMP($zn,$j,"REPORT",urno)),"\",2)
+ ..s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",urno,epis)) q:epis=""  d
+ ...k VISIT i '$$select^LVBEPVIS(epis) m VISIT=PLIST
+ ...s ts="" f  s ts=$o(^TMP($zn,$j,"REPORT",urno,epis,ts)) q:ts=""  d
+ ....s nn="" f  s nn=$o(^TMP($zn,$j,"REPORT",urno,epis,ts,nn)) q:nn=""  d
+ .....k xxx i $$select^LVBCTTS(ts,"Y") q
+ .....s xxx(2)=$s($l(PLIST(4)):PLIST(4),$l(PLIST(5)):PLIST(5),1:PLIST(3))
+ .....i nn>1 s xxx(2)=xxx(2)_"-"_nn
+ .....i '$$results^LVBVISTS(epis_"||"_ts_"||"_nn,,,,"Y") d
+ ......k RESULT m RESULT=PLIST s col=0
+ ...... ; print result
+ ......s col=0 f j1=1:1:RESULT s tc=$p(RESULT(j1),$c(1),2),result=$p(RESULT(j1),$c(1),3) i $l(tc),$l(result) d
+ .......s (tcname,format)=""
+ .......i '$$select^LVBCTTC(tc,"Y") s tcname=$s($l(PLIST(14)):PLIST(14),1:PLIST(3)),format=PLIST(5)
+ .......i format="S" q
+ .......s tcname=$e(tcname_$j("",max1),1,6)
+ .......i $d(xxx(1)),max1*(col+1)>70 d PRINT^PRTREP00(.VISIT,.N) k VISIT,xxx
+ .......i $d(xxx(1)) s xxx(1)=$e(xxx(1)_$j("",max1),1,max1*col)_"; "_tcname_" "_result,col=col+1 q
+ .......i '$d(xxx(1)) s xxx(1)=tcname_" "_result,col=1 q
+ ......i $l($g(xxx(1))) d PRINT^PRTREP00(.VISIT,.N) k VISIT,xxx
+ ...d PRINT^PRTREP00(,.N)
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="WRD"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LHOSPINTESP03" type="INT" languagemode="0" generated="1"><![CDATA[
+LHOSPINTESP03 ; Hospital Interface - Sant Pau
+ q
+START(HOSP) 
+ n (HOSP) k ^TMP($zn,$j)
+ s msgn="" f jRecord=1:1:50 s msgn=$o(^RCV(msgn)) q:msgn=""  d
+ . s reg=^(msgn)
+ . s ^RCVold(msgn)=^RCV(msgn) k ^RCV(msgn)
+ . k msg f n=1:1:$l(reg,$c(13)) s line=$p(reg,$c(13),n),type=$p(line,"|",1) i $l(type) s msg(type)=line
+ . s msgtype=$p(msg("SH"),"|",9)
+ . i $p(msgtype,"^",1)'="ADT" d log("ERROR: No ADT message ("_msgn_") type "_msgtype) q
+ . s msgtype=$p(msgtype,"^",2)
+ . i msgtype="A01" d A01 q
+ . i msgtype="A02" d A02 q
+ . i msgtype="A03" d A03 q
+ . i msgtype="A04" d A04 q
+ . i msgtype="A06" d A06 q
+ . i msgtype="A07" d A07 q
+ . i msgtype="A08" d A08 q
+ . i msgtype="A11" d A11 q
+ . i msgtype="A12" d A12 q
+ . i msgtype="A13" d A13 q
+ . i msgtype="A18" d A18 q
+ . d log("ERROR: Unknow message ("_msgn_") type "_msgtype)
+ q
+A01 ; Admision de paciente
+A02 ; Traslado de paciente
+A06 ; Cambio Ambulante/Hospitalización
+A07 ; Cambio Hospitalizado/Ambulante
+A12 ; Anulación de traslado
+A13 ; Anulación de Alta
+ n (msg,msgtype,msgn,HOSP)
+ d log("Processing message "_msgn_" "_msgtype)
+ k PLISTPID,PLISTPV1 d getpid,getpv1
+ d log("mrn="_PLISTPID(2)_" epi="_PLISTPV1(3))
+ i '$$select^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3)) d  q
+ . d update,dummy
+ . d tepi(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ d insert,dummy
+ q
+A03 ; Alta paciente
+ n (msg,msgtype,msgn,HOSP)
+ d log("Processing message "_msgn_" "_msgtype)
+ k PLISTPID,PLISTPV1 d getpid,getpv1
+ d log("mrn="_PLISTPID(2)_" epi="_PLISTPV1(3))
+ i $$select^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3)) q
+ d log("Delete "_HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ s err=$$delete^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ i err d log("ERROR: Return "_err)
+ d dummy
+ q
+A04 ; Registro de paciente / Notificación de Visita
+ n (msg,msgtype,msgn,HOSP)
+ d log("Processing message "_msgn_" "_msgtype)
+ k PLISTPID,PLISTPV1 d getpid,getpv1 ; getpv1 can be empty !
+ d log("mrn="_PLISTPID(2)_" epi="_PLISTPV1(3))
+ i '$$select^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3)) d  q
+ . d update,dummy
+ . d tepi(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ d insert,dummy
+ q
+A08 ; Modificación de Datos de Paciente
+ n (msg,msgtype,msgn,HOSP)
+ d log("Processing message "_msgn_" "_msgtype)
+ k PLISTPID,PLISTPV1 d getpid,getpv1 ; getpv1 can be empty !
+ s epis="" f  s epis=$o(^THOS(HOSP,"PATIENT",PLISTPID(2),epis)) q:epis=""  d
+ . d log("Select "_HOSP_"||"_PLISTPID(2)_"||"_epis)
+ . k PLIST
+ . s err=$$select^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_epis)
+ . i err d log("ERROR: Return "_err) q
+ . m PLIST=PLISTPID
+ . i PLISTPV1(3)=epis d
+ .. m PLIST=PLISTPV1
+ .. f j=1:1:$l(PLISTPID(23),"|") i $l($p(PLISTPID(23),"|",j)) s $p(PLIST(23),"|",j)=$p(PLISTPID(23),"|",j)
+ . s PLIST=$o(PLIST(""),-1)
+ . d log("Update A08 "_HOSP_"||"_PLISTPID(2)_"||"_epis)
+ . s err=$$update^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_epis)
+ . i err d log("ERROR: Return "_err)
+ . d tepi(HOSP_"||"_PLISTPID(2)_"||"_epis)
+ i $l(PLISTPV1(3)),$$select^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3)) d insert,dummy
+ q
+A11 ; Anulación de Admisión
+ n (msg,msgtype,msgn,HOSP)
+ d log("Processing message "_msgn_" "_msgtype)
+ k PLISTPID,PLISTPV1 d getpid,getpv1
+ i $$select^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3)) q
+ d log("Delete "_HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ s err=$$delete^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ i err d log("ERROR: Return "_err)
+ q
+A18 ; Fusión de Historias Clínicas
+ n (msg,msgtype,msgn,HOSP)
+ d log("Processing message "_msgn_" "_msgtype)
+ k PLISTPID,PLISTPV1 d getpid,getpv1
+ s oldmrn=$p($p(msg("MRG"),"|",2),"^",1)
+ i $e(oldmrn)="0" s oldmrn=+oldmrn
+ s oldmrn=HOSP_oldmrn
+ s epis="" f  s epis=$o(^THOS(HOSP,"PATIENT",oldmrn,epis)) q:epis=""
+ . s PLISTPV1(3)=epis
+ . d log("Select "_HOSP_"||"_oldmrn_"||"_PLISTPV1(3))
+ . s err=$$select^LVBHOSP(HOSP_"||"_oldmrn_"||"_PLISTPV1(3))
+ . i err d log("ERROR: Return "_err) q
+ . 
+ . s exist=$d(^THOS(HOSP,"PATIENT",PLISTPID(2),epis))
+ . 
+ . i exist d update,dummy,tepi(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3),oldmrn)
+ . i 'exist d insert,dummy
+ . 
+ . d log("Delete "_HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ . s err=$$delete^LVBHOSP(HOSP_"||"_oldmrn_"||"_PLISTPV1(3))
+ . i err d log("ERROR: Return "_err)
+ q
+insert 
+ k PLIST m PLIST=PLISTPID,PLIST=PLISTPV1
+ f j=1:1:$l(PLISTPID(23),"|") i $l($p(PLISTPID(23),"|",j)) s $p(PLIST(23),"|",j)=$p(PLISTPID(23),"|",j)
+ s PLIST=$o(PLIST(""),-1)
+ i $l(PLISTPV1(3))=0 q
+ i PLISTPV1(19)="L2000C" q
+ d log("Insert "_HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ s err=$$insert^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ i err d log("ERROR: Return "_err)
+ q
+update 
+ m PLIST=PLISTPID,PLIST=PLISTPV1
+ f j=1:1:$l(PLISTPID(23),"|") i $l($p(PLISTPID(23),"|",j)) s $p(PLIST(23),"|",j)=$p(PLISTPID(23),"|",j)
+ s PLIST=$o(PLIST(""),-1)
+ i $l(PLISTPV1(3))=0 q
+ i PLISTPV1(19)="L2000C" q
+ d log("Update "_HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ s err=$$update^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ i err d log("ERROR: Return "_err)
+ q
+dummy 
+ ; create dummy episode
+ s swupdate=0 i '$$select^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3)) s swupdate=1
+ s PLISTPV1(3)="SENSE"
+ f j=15,16,19,21 s PLISTPV1(j)=""
+ f j=48,92,112,113,123,124 s $p(PLISTPV1(23),"|",j)=""
+ k PLIST m PLIST=PLISTPID,PLIST=PLISTPV1
+ f j=1:1:$l(PLISTPID(23),"|") i $l($p(PLISTPID(23),"|",j)) s $p(PLIST(23),"|",j)=$p(PLISTPID(23),"|",j)
+ s PLIST=$o(PLIST(""),-1)
+ i swupdate d dummyupdate q
+ d dummyinsert
+ q
+dummyinsert 
+ d log("Insert "_HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ s err=$$insert^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ i err d log("ERROR: Return "_err)
+ q
+dummyupdate 
+ d log("Update "_HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ s err=$$update^LVBHOSP(HOSP_"||"_PLISTPID(2)_"||"_PLISTPV1(3))
+ i err d log("ERROR: Return "_err)
+ q
+log(txt) n (txt)
+ s d=$p($h,",",1),n=$i(^RCVlog(d))
+ s ^RCVlog(d,n)=$zt($p($h,",",2))_" "_txt
+ q
+getpid s r=msg("PID")
+ s x=$p($p(r,"|",4),"^",1) s:$e(x)="0" x=+x s x=HOSP_x
+ s PLISTPID(2)=x                                         ; hospital MRN
+ s PLISTPID(42)=$e(x,2,$l(x))                            ; labtrak MRN
+ s PLISTPID(4)=$p($p(r,"|",6),"^",2)                     ; given name
+ s PLISTPID(5)=$p($p(r,"|",6),"^",1)                     ; surname
+ s x=$p(r,"|",8) i $l(x) s x=$zdh(x,8)
+ s PLISTPID(7)=x                                         ; dob
+ s PLISTPID(8)=$p(r,"|",9)                               ; sex
+ s PLISTPID(9)=$p($p(r,"|",12),"^",1)                    ; address 1
+ s PLISTPID(11)=$p($p(r,"|",12),"^",3)                   ; suburb
+ s PLISTPID(12)=$p($p(r,"|",12),"^",5)                   ; post code
+ s PLISTPID(13)=$p(r,"|",14)                             ; home phone
+ s PLISTPID(24)=$p(r,"|",3)                              ; medicare
+ s PLISTPID(32)=$p(r,"|",15)                             ; work phone
+ s PLISTPID(39)=$p(r,"|",7)                              ; extra name 1
+ s $p(PLISTPID(23),"|",105)=$p(r,"|",31)                 ; dead
+ q
+getpv1 s r=$g(msg("PV1"))
+ s x=$p(r,"|",6) i $e(x)="0" s x=+x
+ s PLISTPV1(3)=x                                         ; hospital episode
+ s x=$p($p(r,"|",4),"^",1) i $l(x),'$d(^TTAB("RH",x)) s x=""
+ s PLISTPV1(15)=x                                        ; ward
+ s PLISTPV1(16)=$p(r,"|",3)                              ; epistype
+ s x=$p($p(r,"|",18),"^",4) i $l(x),'$d(^TTAB("DR",x)) s x=""
+ s PLISTPV1(17)=x                                        ; doctor
+ s PLISTPV1(19)=$p(r,"|",11)                             ; service
+ s x=$e($p(r,"|",45),1,8) i $l(x) s x=$zdh(x,8)
+ s PLISTPV1(21)=x                                        ; admission date
+ s $p(PLISTPV1(23),"|",48)=$p(r,"|",11)                  ; service
+ s x=$p(r,"|",11) i $l(x),'$d(^TTAB("SPC",x)) s x=""
+ s $p(PLISTPV1(23),"|",92)=x                             ; service
+ s $p(PLISTPV1(23),"|",112)=$p($p(r,"|",4),"^",3)        ; bed
+ s $p(PLISTPV1(23),"|",113)=$p($p(r,"|",4),"^",3)        ; bed
+ s x=$p($p(r,"|",4),"^",1) i $l(x),'$d(^TTAB("RH",x)) s x=""
+ s $p(PLISTPV1(23),"|",123)=x                            ; ward
+ s x=$e($p(r,"|",45),9,12) i $l(x) s x=$zth($e(x,1,2)_":"_$e(x,3,4),8)
+ s $p(PLISTPV1(23),"|",124)=x                            ; admission time
+ q
+tepi(hROWID,oldMRN) n (hROWID,oldMRN) s hROWID=$g(hROWID),oldMRN=$g(oldMRN)
+ i '$$select^LVBHOSP(hROWID) d
+ .k HOSP m HOSP=PLIST
+ .i '$l(oldMRN) d
+ ..s hospMRN=$p(hROWID,"||",2),deb=$e(hospMRN,2,$l(hospMRN))
+ ..s epis="" f  s epis=$o(^TDEBi(deb,"HOSPITAL",hospMRN,epis)) q:epis=""  d
+ ...i '$$select^LVBEPVIS(epis,"Y") d  i $$update^LVBEPVIS(epis)
+ ....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .... ; i $l($g(HOSP(5))) s PLIST(3)=HOSP(5)
+ .... ; i $l($g(HOSP(4))) s PLIST(4)=HOSP(4)
+ .... ; i $l($g(HOSP(8))) s PLIST(5)=HOSP(8)
+ .... ; i $l($g(HOSP(7))) s PLIST(6)=HOSP(7)
+ .... ; i $l($g(HOSP(6))) s PLIST(7)=HOSP(6)
+ .... ; i $l($g(HOSP(24))) s PLIST(8)=HOSP(24)
+ .... ; i $l($g(HOSP(38))) s PLIST(9)=HOSP(38)
+ .... ; i $l($g(HOSP(17))) s PLIST(15)=HOSP(17)
+ .... ; i $l($g(HOSP(15))) s PLIST(22)=HOSP(15)
+ .... ; i $l($g(HOSP(9))) s PLIST(32)=HOSP(9)
+ .... ; i $l($g(HOSP(10))) s PLIST(33)=HOSP(10)
+ .... ; i $l($g(HOSP(11))) s PLIST(34)=HOSP(11)
+ .... ; i $l($g(HOSP(31))) s PLIST(35)=HOSP(31)
+ .... ; i $l($g(HOSP(12))) s PLIST(36)=HOSP(12)
+ .... ; i $l($g(HOSP(13))) s PLIST(43)=HOSP(13)
+ .... ; i $l($g(HOSP(32))) s PLIST(44)=HOSP(32)
+ .... ; i $l($g(HOSP(21))) s PLIST(47)=HOSP(21)
+ .... ; i $l($g(HOSP(34))) s PLIST(51)=HOSP(34)
+ .... ; i $l($g(HOSP(33))) s PLIST(60)=HOSP(33)
+ .... ; i $l($g(HOSP(28))) s PLIST(66)=HOSP(28)
+ .... ; i $l($g(HOSP(35))) s PLIST(73)=HOSP(35)
+ .... ; i $l($g(HOSP(37))) s PLIST(88)=HOSP(37)
+ .... ; i $l($g(HOSP(36))) s PLIST(89)=HOSP(36)
+ .... ; i $l($g(HOSP(39))) s PLIST(99)=HOSP(39)
+ .... ; i $l($g(HOSP(40))) s PLIST(100)=HOSP(40)
+ .... ; i $l($g(HOSP(41))) s PLIST(101)=HOSP(41)
+ .... ; add All Extra info
+ .... ; i $l($g(HOSP(23))) f j=3:1:$l(HOSP(23),"|") i $l($p(HOSP(23),"|",j)) s PLIST(j)=$p(HOSP(23),"|",j)
+ .i $l(oldMRN) d
+ ..s deb=$e(oldMRN,2,$l(oldMRN)),newMRN=$p(hROWID,"||",2)
+ ..s epis="" f  s epis=$o(^TDEBi(deb,"HOSPITAL",oldMRN,epis)) q:epis=""  d
+ ...i '$$select^LVBEPVIS(epis,"Y") d  i $$update^LVBEPVIS(epis)
+ ....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s PLIST(20)=newMRN
+ ....s PLIST(65)=$g(HOSP(3))_","_newMRN
+ .... ; i $l($g(HOSP(5))) s PLIST(3)=HOSP(5)
+ .... ; i $l($g(HOSP(4))) s PLIST(4)=HOSP(4)
+ .... ; i $l($g(HOSP(8))) s PLIST(5)=HOSP(8)
+ .... ; i $l($g(HOSP(7))) s PLIST(6)=HOSP(7)
+ .... ; i $l($g(HOSP(6))) s PLIST(7)=HOSP(6)
+ .... ; i $l($g(HOSP(24))) s PLIST(8)=HOSP(24)
+ .... ; i $l($g(HOSP(38))) s PLIST(9)=HOSP(38)
+ .... ; i $l($g(HOSP(17))) s PLIST(15)=HOSP(17)
+ .... ; i $l($g(HOSP(15))) s PLIST(22)=HOSP(15)
+ .... ; i $l($g(HOSP(9))) s PLIST(32)=HOSP(9)
+ .... ; i $l($g(HOSP(10))) s PLIST(33)=HOSP(10)
+ .... ; i $l($g(HOSP(11))) s PLIST(34)=HOSP(11)
+ .... ; i $l($g(HOSP(31))) s PLIST(35)=HOSP(31)
+ .... ; i $l($g(HOSP(12))) s PLIST(36)=HOSP(12)
+ .... ; i $l($g(HOSP(13))) s PLIST(43)=HOSP(13)
+ .... ; i $l($g(HOSP(32))) s PLIST(44)=HOSP(32)
+ .... ; i $l($g(HOSP(21))) s PLIST(47)=HOSP(21)
+ .... ; i $l($g(HOSP(34))) s PLIST(51)=HOSP(34)
+ .... ; i $l($g(HOSP(33))) s PLIST(60)=HOSP(33)
+ .... ; i $l($g(HOSP(28))) s PLIST(66)=HOSP(28)
+ .... ; i $l($g(HOSP(35))) s PLIST(73)=HOSP(35)
+ .... ; i $l($g(HOSP(37))) s PLIST(88)=HOSP(37)
+ .... ; i $l($g(HOSP(36))) s PLIST(89)=HOSP(36)
+ .... ; i $l($g(HOSP(39))) s PLIST(99)=HOSP(39)
+ .... ; i $l($g(HOSP(40))) s PLIST(100)=HOSP(40)
+ .... ; i $l($g(HOSP(41))) s PLIST(101)=HOSP(41)
+ .... ; add All Extra info
+ .... ; i $l($g(HOSP(23))) f j=3:1:$l(HOSP(23),"|") i $l($p(HOSP(23),"|",j)) s PLIST(j)=$p(HOSP(23),"|",j)
+ q
+]]></Routine>
+</Export>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF805old" type="INT" languagemode="0"><![CDATA[
+MIF805old(mi) ; ML 21/9/99 ; HITACHI 704 (Bi-Directional)  ; Compiled June 8, 2001 11:30:30 for Cache for Windows
+ s mi=$g(mi) i '$l(mi) q
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s soh=$c(1),stx=$c(2),etx=$c(3),eot=$c(4),ack=$c(6),lf=$c(10),cr=$c(13),nak=$c(21),etb=$c(23)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main f  r *R:10 d  q:$c(R)=eot
+ .i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q
+ .i $c(R)'=stx q
+ .s record=$$read^MIF000("",lf) q:'$l(record)
+ .s record=$e(record,1,$l(record)-2)
+ .d trace^MIF000(mi,record,"H<--M")
+ .s type=$e(record)
+ .i func="N"!(func="E") d RES
+ .i func="K" d ORDER
+ . ; transmit orders to instrument
+ .s (ord,str)="" f  s ord=$o(^TMIF(mi,10,ord)) q:ord=""  d
+ ..s str=^(ord) d trace^MIF000(mi,str,"H-->M")
+ ..w str,*-3
+ ..k ^TMIF(mi,10,ord) h 1
+ q
+RES ; process result record
+ w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ s (sample,epis,surname,result,date,time,QC)=""
+ s sample=$e(record,2,4),epis=$e(record,10,19)
+ s sample=$tr(sample," "),epis=$tr(epis," ")
+ s:epis'="" sample=""
+ s data=$e(record,20,999) f  d  q:$tr(data," ","")=""
+ .s res=$e(data,1,10),data=$e(res,11,999)
+ .s code=$tr($e(res,1,2)," "),flag=$tr($e(res,3)," "),resx=$tr($e(res,4,9)," ")
+ .s result=result_code_$c(par10)_resx_$c(par10)_flag_$c(par11)
+ i $l(result),$l(epis) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+ORDER ; process request record
+ f n=2:1:5 d
+ .s rec=$e($p(record,"K",n),1,21),(name,test)=""
+ .s epis=$tr($e(rec,10,20)," ") i $l(epis) d
+ ..s tray=$e(rec,6)
+ ..d scanone^MIF000(mi,epis,tray)
+ ..i $$select^LVBEPVIS(epis,"Y")
+ ..s name=$$UPPER^SSUTIL4($g(PLIST(3))_", "_$g(PLIST(4)))
+ ..s:name=", " name="UNKNOWN PATIENT"
+ ..k tc,test s (tc,test)=""
+ ..f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d
+ ...s test(tc)=""
+ ..f i=1:1:20 s test=test_$d(test(i))
+ .. ; no orders for sodium, potassium and chloride
+ ..i '$d(test(41)),'$d(test(42)),'$d(test(43)) s test=test_"00 "
+ .. ; order sodium and potassium
+ ..i $d(test(41)),$d(test(42)),'$d(test(43)) s test=test_"01 "
+ .. ; order sodium, potassium and chloride
+ ..i $d(test(41)),$d(test(42)),$d(test(43)) s test=test_"10 "
+ ..s xstr(n,1)=""
+ .s xstr(n)=$e(rec_$j("",21),1,21)_$e(name_$j("",40),1,40)_" "_$e(test_$j("",35),1,35)
+ f  q:'$d(xstr)  s (str,cnt,x)="" f cnt=1:1:2 s x=$o(xstr(x)) q:x=""  d
+ .i cnt=1 s str=stx_func_$s($d(xstr(x,1)):"K",1:" ")
+ .i cnt=2 s str=str_$s($d(xstr(x,1)):"K",1:" ")
+ .s str=str_xstr(x) k xstr(x)
+ . ; further data to be sent
+ .i cnt=2,$o(xstr(x))'="" s str=str_etb_cr_lf
+ . ; last string
+ .i cnt=2,$o(xstr(x))="" s str=str_etx_cr_lf
+ .i cnt=2 s ord=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,ord)=str
+ q
+]]></Routine>
+</Export>

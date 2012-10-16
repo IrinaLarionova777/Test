@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTWKSP02" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTWKSP02 ; IG 25/06/99 ; WorkSheets printing - SJOG
+ q
+ ; Parameters :  1. Worksheet code
+ ;               2. Worksheet number
+ ;               4. Y - Encrypted
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="WorkSheet : "_WKS(3)_" ("_PAR1_") - "_PAR2
+ s line=2,xHEADER(line)=""
+ s line=3,xHEADER(line)="Legend : * - Authorised Results, @ - Previous Results"
+ s line=4,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER),BODY,PRINT
+ i '$$select^LVBPRPR(REPID) s PLIST(12)=PAR1_"-"_PAR2 i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k WKS i '$$select^LVBWKS(PAR1) m WKS=PLIST
+ s SortType="" i '$$select^MVBCFLAB(1) s SortType=PLIST(41)
+ i $l(WKS(10)) s SortType=WKS(10)
+ ; get list of TestItems
+ k Cap,Caption i '$$caption^LVBWKS(PAR1) m Cap=PLIST
+ f j1=1:1:Cap f j2=1:1:$l($p(Cap(j1),$c(2),2),$c(28)) d
+ .s ts=$p($p(Cap(j1),$c(2),1),$c(1),1),ti=$p($p($p(Cap(j1),$c(2),2),$c(28),j2),$c(1),1)
+ .i WKS(14)'="Y",$d(^TTAB("TC",ti,3,ts)) q
+ .s $p(^TMP($zn,$j,"Caption",j1),$c(2),1)=$p(Cap(j1),$c(2),1)
+ .s x=$p(^TMP($zn,$j,"Caption",j1),$c(2),2),x=x_$s($l(x):$c(28),1:"")_$p($p(Cap(j1),$c(2),2),$c(28),j2)
+ .s $p(^TMP($zn,$j,"Caption",j1),$c(2),2)=x
+ s j1="" f cnt=1:1 s j1=$o(^TMP($zn,$j,"Caption",j1)) q:j1=""  s Caption(cnt)=^(j1)
+ s Caption=$o(Caption(""),-1)
+ k xSORT d H1:WKS(20)'="V",H2:WKS(20)="V"
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ q
+H1 ; create Header - Horizontal
+ s width=$s(PAR1="AUTO":30,1:50) k xLINE s:'WKS(6) WKS(6)=5 d H1^PRTWKSP00
+ q
+H2 ; create Header - Vertical
+ s width=$s(PAR1="AUTO":30,1:50) k xLINE s WKS(6)=30 d H2^PRTWKSP00
+ q
+BODY ; create temporary printing file
+ ; retrieve QC
+ i $$open^LVBWKSRW(PAR1)
+ f  q:$$fetch^LVBWKSRW(PAR1)  m ^TMP($zn,$j,"REPORT",PLIST(2))=PLIST s ^TMP($zn,$j,"REPORT",PLIST(2))="QC"
+ i $$close^LVBWKSRW()
+ ; --- rearrange patients ---
+ ; clear sequences
+ i WKS(15)="Y" d
+ .i $$open^LVBWKSRE(PAR1_"||"_PAR2)
+ .f  q:$$fetch^LVBWKSRE(PAR1_"||"_PAR2)  i $l(PLIST(3)) s PLIST(3)="" i $$update^LVBWKSRE(PLIST(1))
+ .i $$close^LVBWKSRE()
+ ; retrieve already sequenced patients
+ i WKS(15)'="Y" d
+ .i $$open^LVBWKSRE(PAR1_"||"_PAR2)
+ .f  q:$$fetch^LVBWKSRE(PAR1_"||"_PAR2)  i $l(PLIST(3)) d
+ ..s ^TMP($zn,$j,"REPORT",PLIST(3))=$p(PLIST(2),$c(1)) d set(PAR1,PAR2,$p(PLIST(2),$c(1)),PLIST(3))
+ .i $$close^LVBWKSRE()
+ ; retrieve urgent first
+ i WKS(8)="Y" d
+ .i $$open^LVBWKSRE(PAR1_"||"_PAR2)
+ .f  q:$$fetch^LVBWKSRE(PAR1_"||"_PAR2)  i '$l(PLIST(3)) d
+ ..s urgent="",priority=$p(PLIST(2),$c(1),7)
+ ..s urgent=$$seldata^LVBCTPR(priority,4)
+ ..i $p(urgent,$c(1))="Y" d
+ ...s PLIST(3)=$$new(),^TMP($zn,$j,"REPORT",PLIST(3))=$p(PLIST(2),$c(1)) d set(PAR1,PAR2,$p(PLIST(2),$c(1)),PLIST(3))
+ ...i $$update^LVBWKSRE(PLIST(1))
+ .i $$close^LVBWKSRE()
+ ; retrieve other patients
+ ; sort other patients
+ i $$open^LVBWKSRE(PAR1_"||"_PAR2)
+ f  q:$$fetch^LVBWKSRE(PAR1_"||"_PAR2)  i '$l(PLIST(3)) d
+ . ; sort by collection date/time
+ .i SortType="DT" s epis=$p(PLIST(2),$c(1)) d
+ ..s date=$$seldata^LVBEPVIS(epis,12),time=$$seldata^LVBEPVIS(epis,13) i $l(time) s time=time\60
+ ..s xx=$p(date,$c(1))_","_$e(100000+$p(time,$c(1)),2,6)
+ . ; sort by episode
+ .i SortType'="DT" s xx=$p(PLIST(2),$c(1))
+ .s ^TMP($zn,$j,"SORT",xx,$p(PLIST(2),$c(1)))=""
+ i $$close^LVBWKSRE()
+ s xx="" f  s xx=$o(^TMP($zn,$j,"SORT",xx)) q:xx=""  d
+ .s ep="" f  s ep=$o(^TMP($zn,$j,"SORT",xx,ep)) q:ep=""  d
+ ..i '$$select^LVBWKSRE(PAR1_"||"_PAR2_"||"_ep) d
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...s PLIST(3)=$$new(),^TMP($zn,$j,"REPORT",PLIST(3))=$p(PLIST(2),$c(1)) d set(PAR1,PAR2,$p(PLIST(2),$c(1)),PLIST(3))
+ ...i $$update^LVBWKSRE(PLIST(1))
+ ; delete fully authorised patients
+ i WKS(19)="N" d
+ .s cnt="" f  s cnt=$o(^TMP($zn,$j,"REPORT",cnt)) q:cnt=""  d
+ ..s ok=1,ep=^(cnt) i ep="QC" q
+ ..i $$open^LVBWKSRT(PAR1_"||"_PAR2_"||"_ep)
+ ..f  q:$$fetch^LVBWKSRT(PAR1_"||"_PAR2_"||"_ep)  d  i 'ok q
+ ...f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ...s ok=$$status^LVBVIS1(ep_"||"_PLIST(2)_"||"_PLIST(3))="A"
+ ..i $$close^LVBWKSRT()
+ ..i ok k ^TMP($zn,$j,"REPORT",cnt)
+ q
+ ; get new sequence number
+new() f new=1:1 q:'$d(^TMP($zn,$j,"REPORT",new))
+ q new
+ ; set patients tests
+set(PAR1,PAR2,epis,seq) n (PAR1,PAR2,epis,seq) s PAR1=$g(PAR1),PAR2=$g(PAR2),epis=$g(epis),seq=$g(seq)
+ s ts="" f  s ts=$o(^TWKS(PAR1,2,PAR2,"EP",epis,"TEST",ts)) q:ts=""  d
+ .s tscnt="" f x=1:1 s tscnt=$o(^TWKS(PAR1,2,PAR2,"EP",epis,"TEST",ts,tscnt)) q:tscnt=""  d
+ ..s ^TMP($zn,$j,"REPORT",seq,x,ts_"||"_tscnt)=""
+ q
+getAntiBiotics(rowid) n (rowid) s rowid=$g(rowid) k ^TMP($zn,$j,"ANT")
+ i $$open^LVBVISTA(rowid)
+ f  q:$$fetch^LVBVISTA(rowid)  i $l(PLIST(2)) d
+ .f j=2:1:6 s $p(^TMP($zn,$j,"ANT",0,$p(PLIST(2),$c(1))),$c(2),j)=PLIST(j)
+ i $$close^LVBVISTA()
+ ; sort antibiotics
+ s ant="" f  s ant=$o(^TMP($zn,$j,"ANT",0,ant)) q:ant=""  d
+ .s seq=$$seldata^LVBCTANT(ant,4)
+ .s ^TMP($zn,$j,"ANT",1,+seq,ant)=""
+ q
+TT(ts,ti) n (ts,ti,Cap) s ts=$g(ts),ti=$g(ti),result="N"
+ f j1=1:1:Cap f j2=1:1:$l($p(Cap(j1),$c(2),2),$c(28)) d  q:result="Y"
+ .i ts=$p($p(Cap(j1),$c(2),1),$c(1),1),ti=$p($p($p(Cap(j1),$c(2),2),$c(28),j2),$c(1),1) s result="Y"
+ q result
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s cnt1="" f  s cnt1=$o(^TMP($zn,$j,"REPORT",cnt1)) q:cnt1=""  s xx=^(cnt1) d
+ .. ; print QC
+ ..i xx="QC" d  q
+ ...k xxx s xxx(1)=$j(cnt1,3),xxx(2)=$g(^TMP($zn,$j,"REPORT",cnt1,3)) f col=3:1 q:'$d(N(col+1,"Z"))  q:'$d(N(col,"TestItem"))  d
+ .... ; get results
+ ....s ti=N(col,"TestItem") s wkQCrowid=PAR1_"||"_PAR2_"||"_cnt1_"||"_ti q:$$select^LVBWKSRQ(wkQCrowid)  s xxx(col)=$p(PLIST(4),$c(1))
+ ....s QCrowid=PLIST(9) i '$$select^LVBQCMTD(PLIST(9)) s ^TMP($zn,$j,"REPORT-QC",cnt1,col)=PLIST(7)
+ ...d PRINT^PRTREP00(,.N)
+ ...k xxx s xxx(2)=$g(^TMP($zn,$j,"REPORT",cnt1,4)) s col="" f  s col=$o(^TMP($zn,$j,"REPORT-QC",cnt1,col)) q:col=""  d
+ .... ; rules broken
+ ....s message="" i '$$select^LVBCTQCR($p(^TMP($zn,$j,"REPORT-QC",cnt1,col),$c(1),1)) s message=$p(PLIST(5),$c(1))
+ ....s xxx(col)=$p(^TMP($zn,$j,"REPORT-QC",cnt1,col),$c(1),2)_" "_$s(message="D":"Disable",message="R":"Reject",message="W":"Warning",1:"")
+ ...d PRINT^PRTREP00(,.N)
+ ...d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ...d ADDLINE^PRTREP00(REPID,"PRT",xLINE($s(WKS(20)="V":3,1:5)))
+ .. ; print patients
+ ..k VISIT i '$$select^LVBEPVIS(xx) m VISIT=PLIST
+ ..s cnt2="" f  s cnt2=$o(^TMP($zn,$j,"REPORT",cnt1,cnt2)) q:cnt2=""  d
+ ... ; print patients - line 1
+ ...k xxx s xxx(1)=$j(cnt1,3),xxx(2)=VISIT(2)_" MRN# "_$p(VISIT(20),$c(1))_$s(cnt2>1:"("_cnt2_")",1:"")
+ ...k TestSets,PrevResult,Dots
+ ...f col=3:1 q:'$d(N(col+1,"Z"))  s xxx(col)="",$p(xxx(col),".",(WKS(6)+1))="",Dots(col)=xxx(col)
+ ...s xx="" f  s xx=$o(^TMP($zn,$j,"REPORT",cnt1,cnt2,xx)) q:xx=""  d
+ ....s ts=$p(xx,"||",1),tscnt=$p(xx,"||",2)
+ ....f col=3:1 q:'$d(N(col+1,"Z"))  i N(col,"TestSet")=ts s (xxx(col),TestSets(VISIT(2)_"||"_ts_"||"_tscnt))="" k Dots(col)
+ ...i WKS(20)'="V" s vtsRID="" f  s vtsRID=$o(TestSets(vtsRID)) q:vtsRID=""  d
+ ....s status=$$status^LVBVIS1(vtsRID) k RESULT i '$$results^LVBVISTS(vtsRID,,,,"Y") m RESULT=PLIST
+ ....i '$$getit^LVBCTTSF(,vtsRID) d
+ .....f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .....k FORMAT m FORMAT=PLIST
+ ....s ts=$p(vtsRID,"||",2)
+ ....k FORMATti i '$$getall1^LVBCTTC(ts) f j=1:1:PLIST s ti=$p(PLIST(j),$c(2),1) s FORMATti(ti)=$p($p(PLIST(j),$c(2),4),$c(28),5)
+ ....f col=3:1 q:'$d(N(col+1,"Z"))  i N(col,"TestSet")=ts d
+ .....s prev="",ti=N(col,"TestItem") i WKS(16)="Y" d
+ ......s prev=$$previous^LVBVIS1($p(VISIT(20),$c(1)),$p(VISIT(12),$c(1)),$p(VISIT(13),$c(1)),$p(VISIT(2),$c(1)),ti)
+ ......i $p(prev,$c(1))="Y" s PrevResult($p($p(prev,$c(1),2),"||",1),$p($p(prev,$c(1),2),"||",1,3))="",prev="@" q
+ ......i $p(prev,$c(1))'="Y" s prev=" " q
+ .....f j=1:1:RESULT s ti=$p(RESULT(j),$c(1),2) i $d(FORMATti(ti)),N(col,"TestItem")=ti d  q
+ ......s result=$p(RESULT(j),$c(1),3)
+ ......f cnt=1:1:FORMAT i $p(FORMAT(cnt),$c(2),10)=ti q
+ ......s tc=ti,old=result
+ ......i $l(result),$e(FORMATti(ti))="N" d IN^PRTDR00 i '$l(result) s result=old
+ ......i $l(result),$e(FORMATti(ti))="D" d ID^PRTDR00
+ ......i $l(result),$e(FORMATti(ti))="V" d IV^PRTDR00 d
+ .......d getAntiBiotics(vtsRID_"||"_ti)
+ .......s seq="" f  s seq=$o(^TMP($zn,$j,"ANT",1,seq)) q:seq=""  d
+ ........s ant="" f  s ant=$o(^TMP($zn,$j,"ANT",1,seq,ant)) q:ant=""  d
+ .........s ^TMP($zn,$j,"REPORT-ANT",cnt1,cnt2,seq,ant,col)=^TMP($zn,$j,"ANT",0,ant)
+ ......i $l(result),$e(FORMATti(ti))="Y" d IY^PRTDR00
+ ......s xxx(col)=$s(status="A":"*",1:" ")_prev_" "_result
+ ...d PRINT^PRTREP00(,.N)
+ ... ; print patients - line 2
+ ...k xxx m xxx=Dots
+ ...s xxx(2)=$$NameFormat^LVBCOM03("PT",$p(VISIT(7),$c(1),2),$s(PAR4="Y":$e(VISIT(4),1,2),1:VISIT(4)),$s(PAR4="Y":$e(VISIT(3),1,2),1:VISIT(3)),VISIT(99),VISIT(100),VISIT(101))_"  "_$$extdate2^SSUTIL4(VISIT(12))_"  "_$$exttime^SSUTIL4(VISIT(13))
+ ...d PRINT^PRTREP00(,.N)
+ ... ; print doctor info - line 3
+ ...i WKS(9)="Y" k xxx m xxx=Dots s xxx(2)=$p(VISIT(15),$c(1),2)_"  ph: "_$p(VISIT(15),$c(1),3) d PRINT^PRTREP00(,.N)
+ ... ; print clinical notes - line 4
+ ...i WKS(12)="Y" d
+ ....f jj=1:1:$l($p(VISIT(53),$c(1)),"|") k xxx m xxx=Dots s xxx(2)=$s(jj=1:"CH:",1:"   ")_$p($p(VISIT(53),$c(1)),"|",jj) d PRINT^PRTREP00(,.N)
+ ... ; print previous results
+ ...i WKS(20)'="V",WKS(16)="Y" d
+ ....s ep="" f  s ep=$o(PrevResult(ep)) q:ep=""  d
+ .....k visit i '$$select^LVBEPVIS(ep,"Y") m visit=PLIST
+ .....k xxx m xxx=Dots
+ .....s xxx(2)="Prev.Results : "_$p(visit(2),$c(1))_"  "_$$extdate2^SSUTIL4(visit(12))_"  "_$$exttime^SSUTIL4(visit(13))
+ .....s vtsRID="" f  s vtsRID=$o(PrevResult(ep,vtsRID)) q:vtsRID=""  d
+ ......i '$$getit^LVBCTTSF(,vtsRID) d
+ .......f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .......k FORMAT m FORMAT=PLIST
+ ......s ts=$p(vtsRID,"||",2) k FORMATti i '$$getall1^LVBCTTC(ts) f j=1:1:PLIST s ti=$p(PLIST(j),$c(2),1) s FORMATti(ti)=$p($p(PLIST(j),$c(2),4),$c(28),5)
+ ......s status=$$status^LVBVIS1(vtsRID) k RESULT i '$$results^LVBVISTS(vtsRID,,,,"Y") m RESULT=PLIST
+ ......f col=3:1 q:'$d(N(col+1,"Z"))  i N(col,"TestSet")=ts d
+ .......f j=1:1:RESULT s ti=$p(RESULT(j),$c(1),2) i $d(FORMATti(ti)),N(col,"TestItem")=ti d
+ ........s result=$p(RESULT(j),$c(1),3)
+ ........f cnt=1:1:FORMAT i $p(FORMAT(cnt),$c(2),10)=ti q
+ ........s tc=ti,old=result
+ ........i $l(result),$e(FORMATti(ti))="N" d IN^PRTDR00 i '$l(result) s result=old
+ ........i $l(result),$e(FORMATti(ti))="D" d ID^PRTDR00
+ ........i $l(result),$e(FORMATti(ti))="V" d IV^PRTDR00
+ ........i $l(result),$e(FORMATti(ti))="Y" d IY^PRTDR00
+ ........s xxx(col)=$s(status="A":"*",1:" ")_" "_result
+ .....d PRINT^PRTREP00(,.N) k xxx
+ ... ; print TestItems for Vertical layout
+ ...i WKS(20)="V" d
+ ....s vtsRID="" f  s vtsRID=$o(TestSets(vtsRID)) q:vtsRID=""  d
+ .....i '$$getit^LVBCTTSF(,vtsRID) d
+ ......f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ......k FORMAT m FORMAT=PLIST
+ .....s ts=$p(vtsRID,"||",2)
+ ....f j=3,4 s PLIST(j)=$$seldata^LVBCTTS(ts,j)
+ .....k xxx s xxx(2)=$tr($$PART^PRTREP00(PLIST(3)_"( "_PLIST(4)_" )",width)," ","=")
+ .....f col=3:1 q:'$d(N(col+1,"Z"))  s xxx(col)="",$p(xxx(col),"-",WKS(6))=""
+ .....d PRINT^PRTREP00(,.N) k xxx
+ .....s status=$$status^LVBVIS1(vtsRID)
+ .....k RESULT i '$$results^LVBVISTS(vtsRID,,,,"Y") f j=1:1:PLIST s ti=$p(PLIST(j),$c(1),2) s RESULT(ti)=$p(PLIST(j),$c(1),3)
+ .....k FORMATti i '$$getall1^LVBCTTC(ts) f j=1:1:PLIST s ti=$p(PLIST(j),$c(2),1) s FORMATti(ti)=$p($p(PLIST(j),$c(2),4),$c(28),5)
+ .....f col=3:1 q:'$d(N(col+1,"Z"))  i N(col,"TestSet")=ts d
+ ......s ti="" f  s ti=$o(FORMATti(ti)) q:ti=""  s result=$g(RESULT(ti)) d
+ .......i $$TT(ts,ti)="N" q
+ .......k xxx m xxx=Dots d PRINT^PRTREP00(,.N) k xxx
+ .......s name=$$seldata^LVBCTTC(ti,3)
+ .......f  q:$e(name)'=" "  s name=$e(name,2,$l(name))
+ .......m xxx=Dots s xxx(2)=name
+ .......f cnt=1:1:FORMAT i $p(FORMAT(cnt),$c(2),10)=ti q
+ .......s tc=ti,old=result
+ .......i $l(result),$e(FORMATti(ti))="N" d IN^PRTDR00 i '$l(result) s result=old
+ .......i $l(result),$e(FORMATti(ti))="D" d ID^PRTDR00
+ .......i $l(result),$e(FORMATti(ti))="V" d IV^PRTDR00 d
+ ........d getAntiBiotics(vtsRID_"||"_ti)
+ ........s seq="" f  s seq=$o(^TMP($zn,$j,"ANT",1,seq)) q:seq=""  d
+ .........s ant="" f  s ant=$o(^TMP($zn,$j,"ANT",1,seq,ant)) q:ant=""  d
+ ..........s ^TMP($zn,$j,"REPORT-ANT",cnt1,cnt2,seq,ant,col)=^TMP($zn,$j,"ANT",0,ant)
+ .......i $l(result),$e(FORMATti(ti))="Y" d IY^PRTDR00
+ .......s xxx(col)=$s(status="A":"*",1:" ")_" "_result
+ .......d PRINT^PRTREP00(,.N) k xxx
+ ... ; print Antibiotics results
+ ...i $d(^TMP($zn,$j,"REPORT-ANT",cnt1,cnt2)) d
+ ....i WKS(20)="V" d
+ .....k xxx s xxx(2)="",$p(xxx(2),"-",width)=""
+ .....f col=3:1 q:'$d(N(col+1,"Z"))  s xxx(col)="",$p(xxx(col),"-",WKS(6))=""
+ .....d PRINT^PRTREP00(,.N) k xxx
+ ....s seq="" f  s seq=$o(^TMP($zn,$j,"REPORT-ANT",cnt1,cnt2,seq)) q:seq=""  d
+ .....s ant="" f  s ant=$o(^TMP($zn,$j,"REPORT-ANT",cnt1,cnt2,seq,ant)) q:ant=""  d
+ ......k xxx m xxx=Dots
+ ......s col="" f  s col=$o(^TMP($zn,$j,"REPORT-ANT",cnt1,cnt2,seq,ant,col)) q:col=""  d
+ .......s xxx(2)=$p($p(^(col),$c(2),2),$c(1),2),xxx(col)=$p($p(^(col),$c(2),3),$c(1))
+ ......d PRINT^PRTREP00(,.N) k xxx
+ ..D ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..D ADDLINE^PRTREP00(REPID,"PRT",xLINE($s(WKS(20)="V":3,1:5)))
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ .D ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .D ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="WKSP"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

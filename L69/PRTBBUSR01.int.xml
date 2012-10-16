@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTBBUSR01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTBBUSR01 ; IG 22/09/99 ; Units Status Report
+ q
+ ; Parameters :  1. Site
+ ;               2. Stock Status
+ ;               3. Status
+ ;               4. Sorting order : M-MRN
+ ;                                  E-Expiry Date
+ ;                                  B-Blood Product/Blood Group
+ ;               5. Display Expired Units
+ ;               6. Product
+ ;               7. Product group
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Units Status Report "_$s(PAR2="OUT":"( Out of stock )",PAR2="IN-0":"In Stock - NotAvailable",PAR2="IN-1":"In Stock - Available",1:"")
+ s line=2,xHEADER(line)=""
+ i $l(PAR3) d
+ .s line=line+1,xHEADER(line)="Status : "_"("_BBST(3)_")"
+ .s line=line+1,xHEADER(line)=""
+ s line=line+1,xHEADER(line)="Site : "_$s('$l(PAR1):"All Sites",1:CTUSL(3))
+ s line=line+1,xHEADER(line)=""
+ i PAR5="Y" d
+ .s line=line+1,xHEADER(line)="Showing Expired Units"
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR6) d
+ .s line=line+1,xHEADER(line)="for product < "_BBBP(2)_" > "_BBBP(3)
+ .s line=line+1,xHEADER(line)=""
+ i $l(PAR7) d
+ .s line=line+1,xHEADER(line)="for product group < "_BBPG(2)_" > "_BBPG(3)
+ .s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER,+$h,,,,PAR4),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ s xSORT("M")="MRN"
+ s xSORT("B")="Blood Product/Blood Group"
+ s xSORT("E")="Expiry Date"
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ i $l(PAR1),'$$select^LVBCTUSL(PAR1,"Y") m CTUSL=PLIST
+ i $l(PAR3),'$$select^LVBBBST(PAR3,"Y") m BBST=PLIST
+ i $l(PAR6),'$$select^LVBBBBP(PAR6,"Y") m BBBP=PLIST
+ i $l(PAR7),'$$select^LVBBBPG(PAR7,"Y") m BBPG=PLIST
+ q
+BODY ; create temporary printing file
+ s stat1="" f  s stat1=$o(^TBBPi("STATUS",stat1)) q:stat1=""  d
+ .i $l(PAR3),PAR3'=stat1 q
+ .s stat2="" f  s stat2=$o(^TBBPi("STATUS",stat1,stat2)) q:stat2=""  d
+ ..i $l(PAR2),PAR2'=stat2 q
+ ..s xx1="" f  s xx1=$o(^TBBPi("STATUS",stat1,stat2,xx1)) q:xx1=""  d
+ ...s xx2="" f  s xx2=$o(^TBBPi("STATUS",stat1,stat2,xx1,xx2)) q:xx2=""  d
+ ....k PACK i '$$select^LVBBBP(xx1_"||"_xx2) m PACK=PLIST
+ .... ; check product
+ ....i $l(PAR6),PAR6'=$p(PACK(8),$c(1)) q
+ ....i $l(PAR7),PAR7'=$p(PACK(8),$c(1),4) q
+ .... ; check expiry date
+ ....i $l(PAR5),PAR5'="Y",$p(PACK(13),$c(1))<$h q
+ .... ; check current location
+ ....i $l(PAR1),PAR1'=$p(PACK(11),$c(1),4) q
+ ....s sort="" i $l(PAR4) d
+ .....i PAR4="B" s sort=$p(PACK(8),$c(1))_" "_$p(PACK(9),$c(1))
+ .....i PAR4="M" s sort=$p(PACK(6),$c(1))
+ .....i PAR4="E" s sort=$p(PACK(13),$c(1))
+ ....s site=$p(PACK(11),$c(1),4) s:site="" site=" " s:sort="" sort=" "
+ ....s ^TMP($zn,$j,"REPORT",site,sort,xx1_"||"_xx2)=""
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .s site="" f  s site=$o(^TMP($zn,$j,"REPORT",site)) q:site=""  d
+ ..s xxx(1)=site i '$$select^LVBCTUSL(site,"Y") s xxx(1)=PLIST(2)_$c(1)_PLIST(3)
+ ..s sort="" f  s sort=$o(^TMP($zn,$j,"REPORT",site,sort)) q:sort=""  d
+ ...s pack="" f  s pack=$o(^TMP($zn,$j,"REPORT",site,sort,pack)) q:pack=""  d
+ ....s epis="" i '$$select^LVBBBP(pack) d
+ .....s xxx(2)=PLIST(11)
+ .....s xxx(3)=PLIST(8)
+ .....s xxx(4)=PLIST(9)
+ .....s xxx(5)=PLIST(2)
+ .....s xxx(6)=$$extdate2^SSUTIL4(PLIST(4))
+ .....s xxx(7)=$$extdate2^SSUTIL4(PLIST(13))
+ .....s xxx(8)=PLIST(29)
+ .....s epis=$p(PLIST(12),"||",1) i '$l(epis) s epis=$$seldata^LVBDEB(PLIST(6),4)
+ ....k PLIST i $$select^LVBEPVIS(epis)
+ ....d PRINT^PRTREP00(.PLIST,.N) k PLIST,xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="BBUSR"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+]]></Routine>
+</Export>

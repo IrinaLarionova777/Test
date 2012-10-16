@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDBLA24" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTDBLA24 ; ML 04/05/2004 ; Day Book Labels - ARL
+ q
+ ; Parameters :  1.Laboratory
+ ;               2.Site
+ ;               3.Date from
+ ;               4.Date to
+ ;               5.List episodes/accesion numbers
+ ;
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ d INIT,BODY,PRINT
+CREND i '$$select^LVBPRPR(REPID) s PLIST(12)=$g(TYPE),PLIST(9)="M" i $$update^LVBPRPR(REPID)
+ k ^TMP($zn,$j),^TMP("PRTREP00",$J)
+ q
+ ; initialize parameters
+INIT f J=1:1:$l(PAR,$c(1)) s @("PAR"_J)=$p(PAR,$c(1),J)
+ q
+ ; check if visit/accession should print labels
+CHECK(XX) n (XX,PAR3,PAR4) s XX=$g(XX)
+ ; check all blocks
+ i $$open^LVBHIVAB(XX)
+ f  q:$$fetch^LVBHIVAB(XX)  d
+ .f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ .k BLOCK m BLOCK=PLIST
+ . ; check all records
+ .i $$open^LVBHIVAO(BLOCK(1))
+ .f  q:$$fetch^LVBHIVAO(BLOCK(1))  d
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..i $l(PAR3),PLIST(8)<PAR3 q
+ ..i $l(PAR4),PLIST(8)>PAR4 q
+ ..i PLIST(7)'="Y" s ^TMP($zn,$j,"LIST",PLIST(1))=""
+ .i $$close^LVBHIVAO()
+ i $$close^LVBHIVAB()
+ q
+ ; create list of labels to print
+BODY k ^TMP($zn,$j)
+ ; create list of labels for a laboratory
+ i '$l(PAR5) d
+ .s x1="" f  s x1=$o(^THIRi("PRINT-LABEL",x1)) q:x1=""  d
+ ..i $$select^LVBEPVIS(x1,"Y") q
+ ..f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ..k VISIT m VISIT=PLIST
+ ..s x2="" f  s x2=$o(^THIRi("PRINT-LABEL",x1,x2)) q:x2=""  d
+ ... ; check laboratory
+ ...i $l(PAR1),$e(x2,1)'=PAR1 q
+ ... ; check site
+ ...i $l(PAR2),$e(x2,2)'=PAR2 q
+ ...d CHECK(x1_"||"_x2)
+ ; create list of labels for an episodes
+ i $l(PAR5) d
+ .f j=1:1:$l(PAR5,"|") s x1=$p($p(PAR5,"|",j),"~",1),x2=$p($p(PAR5,"|",j),"~",2) i $l(x1),$l(x2) d
+ ..i x2'="*",$d(^THIRi("PRINT-LABEL",x1,x2)) d CHECK(x1_"||"_x2)
+ ..i x2="*" s x2="" f  s x2=$o(^THIRi("PRINT-LABEL",x1,x2)) q:x2=""  d
+ ... ; check laboratory
+ ...i $l(PAR1),$e(x2,1)'=PAR1 q
+ ... ; check site
+ ...i $l(PAR2),$e(x2,2)'=PAR2 q
+ ...d CHECK(x1_"||"_x2)
+ ; Sort
+ s xROWID="" f  s xROWID=$o(^TMP($zn,$j,"LIST",xROWID)) q:xROWID=""  d
+ .i $e($p(xROWID,"||",2))="M" s SORT=xROWID
+ .e  s SORT=$p(xROWID,"||",2)
+ .s ^TMP($zn,$j,"REPORT",SORT,xROWID)=""
+ q
+ ; print all labels
+PRINT i $d(^TMP($zn,$j,"REPORT")) s Position=0 d
+ .s SORT="" f  s SORT=$o(^TMP($zn,$j,"REPORT",SORT)) q:SORT=""  d
+ ..s xROWID="" f  s xROWID=$o(^TMP($zn,$j,"REPORT",SORT,xROWID)) q:xROWID=""  d
+ ...s TYPE=$e($p(xROWID,"||",2))_"-"_PAR2 d
+ .... ; order information
+ ....i $$select^LVBHIVAO(xROWID) q
+ ....f j=1:1:4,6:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ORDER m ORDER=PLIST
+ .... ; update record that it had been printed already
+ ....f j=1:1:9 i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....s PLIST(7)="Y" i $$update^LVBHIVAO(xROWID)
+ .... ; visit information
+ ....i $$select^LVBEPVIS($p(xROWID,"||"),"Y") q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k VISIT m VISIT=PLIST
+ .... ; accession number information
+ ....i $$select^LVBHIVAC($p(xROWID,"||",1,2)) q
+ ....f j=1:1:PLIST i $d(PLIST(j)) s PLIST(j)=$p(PLIST(j),$c(1))
+ ....k ACCESS m ACCESS=PLIST
+ .... ; start build lines
+ ....i " H A "[(" "_$e($p(xROWID,"||",2))_" ") d
+ .....s LINE(1)=$p(xROWID,"||",2)
+ .....s LINE(2)=$p(xROWID,"||",1)
+ .....i $l(VISIT(3)_","_$e(VISIT(4)))<16 s LINE(3)=VISIT(3)_","_$e(VISIT(4))
+ .....e  i $l(VISIT(3))<16 s LINE(3)=VISIT(3)
+ .....e  s LINE(3)=$e(VISIT(3),1,14)_"."
+ .....s LINE(4)=$p($p(ORDER(1),"||",3),$c(1))_$s($l(ORDER(10)):" L"_ORDER(10),1:"")
+ .....s LINE(5)=$p(ORDER(5),$c(1),1)
+ .....i $p($p(^CF("SM",1),"^",6),"-")="PPL" s LINE(6)="Path.Partners"
+ .....i $p($p(^CF("SM",1),"^",6),"-")="BP" s LINE(6)="Bayside Path."
+ .....i $p($p(^CF("SM",1),"^",6),"-")="YRP" s LINE(6)="YR PATHOLOGY"
+ .....i $p($p(^CF("SM",1),"^",6),"-")="ARL" s LINE(6)="ARL PATHOLOGY"
+ .....i $p($p(^CF("SM",1),"^",6),"-")="SP" s LINE(6)="Solaris Path."
+ ....i " C "[(" "_$e($p(xROWID,"||",2))_" ") d
+ .....s LINE(1)=$p(xROWID,"||",2)
+ .....s LINE(2)=$p(xROWID,"||",1)
+ .....i $l(VISIT(3)_","_$e(VISIT(4)))<16 s LINE(3)=VISIT(3)_","_$e(VISIT(4))
+ .....e  i $l(VISIT(3))<16 s LINE(3)=VISIT(3)
+ .....e  s LINE(3)=$e(VISIT(3),1,14)_"."
+ .....s LINE(4)=$p(ACCESS(3),$c(1),1)
+ .....s LINE(5)=$p(ORDER(5),$c(1),1)
+ .....i $p($p(^CF("SM",1),"^",6),"-")="BP" s LINE(6)="Bayside Path."
+ .....i $p($p(^CF("SM",1),"^",6),"-")="YRP" s LINE(6)="YR PATHOLOGY"
+ .....i $p($p(^CF("SM",1),"^",6),"-")="ARL" s LINE(6)="ARL PATHOLOGY"
+ .....i $p($p(^CF("SM",1),"^",6),"-")="SP" s LINE(6)="Solaris Path."
+ ....d print
+ q
+print ; print created lines
+ s stx=$c(2),cr=$c(13)
+ i $d(LINE) d
+ .d ADD^SSPRINT(REPID,"PRT",stx_"L"_cr)
+ .d ADD^SSPRINT(REPID,"PRT","H14"_cr)
+ .d ADD^SSPRINT(REPID,"PRT","m"_cr)
+ .d ADD^SSPRINT(REPID,"PRT","O0000"_cr)
+ .i $l($g(LINE(1))) d ADD^SSPRINT(REPID,"PRT","101100001500020"_LINE(1)_cr)
+ .i $l($g(LINE(2))) d ADD^SSPRINT(REPID,"PRT","101100001200020"_LINE(2)_cr)
+ .i $l($g(LINE(3))) d ADD^SSPRINT(REPID,"PRT","101100000900020"_LINE(3)_cr)
+ .i $l($g(LINE(4))) d ADD^SSPRINT(REPID,"PRT","101100000600020"_LINE(4)_cr)
+ .i $l($g(LINE(5))) d ADD^SSPRINT(REPID,"PRT","101100000300020"_LINE(5)_cr)
+ .i $l($g(LINE(6))) d ADD^SSPRINT(REPID,"PRT","101100000000020"_LINE(6)_cr)
+ .d ADD^SSPRINT(REPID,"PRT","E"_cr)
+ .d ADD^SSPRINT(REPID,"PRT",stx_"e"_cr)
+ .d ADD^SSPRINT(REPID,"PRT",stx_"f290"_cr)
+ k LINE
+ q
+]]></Routine>
+</Export>

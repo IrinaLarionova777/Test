@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="zMIF603" type="INT" languagemode="0"><![CDATA[
+MIF603(mi) ; ML 26/8/98 ; COULTER INTERFACE - WITH HANDSHAKE  ; Compiled March 12, 2001 14:13:10 for Cache for Windows
+ s mi=$g(mi) i '$l(mi) q
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),crlf=$c(13,10),dc1=$c(17),nak=$c(21),syn=$c(22)
+ s hex="0123456789ABCDEF"
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main r *R:20 e  q
+ q:R'=22  d trace^MIF000(mi,"SYN","H<--M")
+ w syn,*-3 d trace^MIF000(mi,"SYN","H-->M")
+ r *x1:10 e  w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+ i x1<32 w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+ r *x2:10 e  w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+ i x2<32 w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+ s nbl=$$HEX($c(x1)_$c(x2)) d trace^MIF000(mi,nbl_":"_x1_x2,"H<--M")
+ i 'nbl w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+ w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ k ^TMP($zn,$j) s er=0
+M1 f i=1:1:nbl d  i er q
+ .s R=$$read^MIF000(stx,etx) i '$l(R) e  s er=er+1 q
+ .s record=$tr($e(R,4,$l(R)-4),crlf,"\"),record=$tr(record,$c(0)," "),record=$tr(record,dc1,""),^TMP($zn,$j,i)=record,er=0
+ .d trace^MIF000(mi,record,"H<--M")
+ .w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ i er=1 w syn,*-3 d trace^MIF000(mi,"SYN","H-->M") k ^TMP($zn,$j) g M1
+ i er q
+ r *R:2
+ i R'=22 w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+ s record=^TMP($zn,$j,1) k data
+ s grp=2,f=1,ii=1
+ s record=$p($g(^TMP($zn,$j,1)),"\",7,999),nfld=$$HEX($p(record,"\"))+1
+ s data(1)=$p(record,"\",1,nfld),record=$p(record,"\",nfld+1,99)
+ s nfld=$$HEX($p(record,"\"))+1
+ ; extract results
+ f  d  i grp>5!'$d(^TMP($zn,$j,ii)) q
+ .s z=$l(record,"\")-1
+ .f j=1:1:z d:f>nfld A21 q:grp>5  s data(grp,f)=$p(record,"\",j),f=f+1
+ .i grp>5 s record=$p(record,"\",j+1,99) q
+ .s ii=ii+1
+ .s xrecord=$g(^TMP($zn,$j,ii)) i $e(xrecord)'=" " s xrecord=" "_xrecord
+ .s record=$p(record,"\",z+1)_xrecord
+ s (sample,epis,result,res,surname,date,time,QC)=""
+ s id=$p($p(data(1),"ID1 ",2),"\"),id=$tr(id," "),res="",epis=+id,prevchan=""
+ f k=2:1:grp-(grp>5) d
+ .s nfld=$$HEX($g(data(k,1)))+1
+ .f j=2:1:nfld s z=$g(data(k,j)) d
+ ..s z=$tr(z," ")
+ .. ; extract channel id
+ ..q:prevchan="BA%"
+ ..s chan="" f i=1:1 q:$e(z,i)?1N  q:$e(z,i)=":"  s chan=chan_$e(z,i)
+ ..s next=i,prevchan=chan
+ .. ; ignore voted out results
+ ..q:z["::"
+ .. ; extract result
+ ..s (res,flag)="" f i=next:1 q:$e(z,i)=""  s res=res_$e(z,i) i $e(z,i)'?1N,($e(z,i)'?1P)!($e(z,i)="*")!($e(z,i)="+") s flag=1 q
+ ..i flag s res=$e(res,1,$l(res)-1)
+ .. ; extract flag
+ ..s flag=$e(z,i,99)
+ ..q:$e(chan,1,2)=".."
+ ..q:$e(res,1,2)=".."
+ ..s z=chan_$c(par10)_res_$c(par10)_flag i chan=""!(chan?1.C.E) q
+ ..s result=result_z_$c(par11)
+ w ack,*-3 d trace^MIF000(mi,"ACK","H-->M")
+ i grp>5 d A40
+ i $l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ k ^TMP($zn,$j)
+ q
+A21 s f=1,grp=grp+1
+ s nfld=$$HEX($p(record,"\",j))+1
+ q
+A40 s tag=$p($p(record,"\")," ")
+ i $e(tag,1,3)="VAL" s ^TSCT(id,tag)=+$e(record,6,11)
+ i $e(tag,1,3)="DIF" s record=$e(record,6,999),N=1 d A45 i '$d(^TMP($zn,$j,ii)) q
+ i tag="V"!(tag="S")!(tag="C") s record=$e(record,3,999),N=1 d A45 i '$d(^TMP($zn,$j,ii)) q
+ i tag="RBCH"!(tag="PLTH")!(tag="PLTF") s record=$e(record,6,999),N=1 d A45 i '$d(^TMP($zn,$j,ii)) q
+ s record=$p(record,"\",2,99)
+ i $l(record,"\")=1 s ii=ii+1 q:'$d(^TMP($zn,$j,ii))  s record=record_^TMP($zn,$j,ii)
+ g A40
+A45 i $l($p(record,"\"))<64,$l(record,"\")>1 q
+ i $l(record)<64 s ii=ii+1 q:'$d(^TMP($zn,$j,ii))  s record=record_^TMP($zn,$j,ii)
+ s ^TSCT(id,tag,N)=$e(record,1,64),record=$e(record,65,999)
+ s N=N+1
+ g A45
+HEX(X) q $f(hex,$e(X))-2*16+$f(hex,$e(X,2))-2
+]]></Routine>
+</Export>

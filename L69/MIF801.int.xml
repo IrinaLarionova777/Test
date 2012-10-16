@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF801" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF801(mi) ; ML 7/7/98 ; HITACHI 912 (Bi-Directional)
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),cr=$c(13),lf=$c(10),framex=">"
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main s record=$$read^MIF000(stx,etx) q:'$l(record)
+ d trace^MIF000(mi,record,"H<--M")
+ s frame=$e(record)
+ i frame=">" d SEND(framex) q
+ s function=$e(record,2)
+ s tfunction=$tr($e(record,2),"abcdefghijklmnopqr","ABCDEFGHIJKLMNOPQR")
+ ; check for host query
+ i frame=";" d BUILD q
+ d SEND(framex)
+ s (sample,epis,surname,result,date,time,QC)=""
+ s sptype=$tr($e(record,3)," ")       ; specimen type
+ s spdata=$e(record,4,46)             ; specimen data
+ d SPDATA
+ s res=$e(record,47,999)              ; result data (includes comments)
+ s num=+$tr($e(res,1,2)," ")          ; number of tests
+ s res=$e(res,3,999)                  ; the test bit
+ ; process qc record
+ s epis=spid i tfunction="F" s QC="\"_epis
+ ; process results record
+ s sptype=$tr(sptype,"2345","UCSO")
+ f i=1:1:num d
+ .n data,tst,tres,flag
+ .s data=$e(res,1,9),res=$e(res,10,999)
+ .s tst=$tr($e(data,1,2)," ","0")
+ .i sptype'=1 s tst=tst_sptype
+ .s resx=$tr($e(data,3,8)," ")
+ .s flag=$e(data,9) i flag=" " s flag=""
+ .s result=result_tst_$c(par10)_resx_$c(par10)_flag_$c(par11)
+ i $l(epis),$l(result) d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ q
+BUILD ; process inquiry record
+ s sptype=$e(record,3)                     ; Specimen Type
+ s spdata=$e(record,4,46)                  ; Specimen Data
+ d SPDATA                                  ; Split the Specimen data
+ i epis="" d SEND(framex) q
+ s rest=$e(record,47,999),epis=spid
+ d scanone^MIF000(mi,epis)
+ d DETpat
+ k tc,test s (tc,test)=""
+ f  s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  s test(tc)=""
+ f i=1:1:46 s test=test_$d(test($e(100+i,2,3)))
+ s test=test_$s($d(test(47)):1,$d(test(48)):1,$d(test(49)):1,1:0)_0
+ i age>1 s $e(spdata,23,25)=$j(age,3)
+ s sx=0 s:sex="M" sx=1  s:sex="F" sx=2
+ s $e(spdata,27)=sx
+ s str=frame_function_sptype_spdata_48_test_"000000"
+ d SEND(str)
+ q
+DETpat ; extract patient data
+ i $$select^LVBEPVIS(epis,"Y")
+ s c1="",$p(c1," ",31)=""
+ s c2=$e($g(PLIST(4))_c1,1,25)
+ s c3=$s($g(PLIST(15))'="":$p($g(^TTAB("DR",PLIST(15))),"\"),1:"")
+ s c3=$e(c3_c1,1,20)
+ s c4=$e(c1,1,25)
+ q
+SPDATA ; extract specimen details from both inquiry and result strings
+ s (spnum,disc,pos,cup,spid,age,sex,spdate,sptime,user)=""
+ s spnum=$tr($e(spdata,1,5)," ")      ; Specimen number ????
+ s disc=$e(spdata,6)                  ; Disc number
+ s pos=$tr($e(spdata,7,8)," ")        ; Disc Pos
+ s cup=$e(spdata,9)                   ; Sample Cup number
+ s spid=$tr($e(spdata,10,22)," ")     ; Specimen ID  (bar code)
+ S epis=spid
+ s age=$e(spdata,23,26)
+ s sex=$e(spdata,27)
+ s spdate=$e(spdata,28,33),spdate=$e(spdate,1,2)_"/"_$e(spdate,3,4)_"/"_$e(spdate,5,6)
+ s sptime=$e(spdata,34,37),sptime=$e(sptime,1,2)_":"_$e(sptime,3,4)
+ s user=$e(spdata,38,43)              ; Operator ID
+ s date=$$intdate^SSUTIL4(spdate),time=$$inttime^SSUTIL4(sptime)
+ q
+SEND(str) ; send string to instrument
+ w stx,str,etx,*-3
+ d trace^MIF000(mi,str,"H-->M")
+ q
+]]></Routine>
+</Export>

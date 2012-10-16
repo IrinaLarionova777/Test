@@ -1,0 +1,489 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBQCMTD" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBQCMTD ; ML 16/6/2000 ; MVB Control code access for QC_MLTTestCodeLevelData
+ ;
+ ; supported calls:
+ ;
+ ; $$calculate^LVBQCMTD(rowid)
+ ; $$insert^LVBQCMTD(par,calc)
+ ; $$update^LVBQCMTD(ROWID,calc)
+ ; $$delete^LVBQCMTD(ROWID)
+ ; $$open^LVBQCMTD(par,from,to,active)
+ ; $$fetch^LVBQCMTD(par,from,to,active)
+ ; $$close^LVBQCMTD()
+ ; $$open1^LVBQCMTD(par,inst,lev)
+ ; $$fetch1^LVBQCMTD(par,inst,lev)
+ ; $$close1^LVBQCMTD()
+ ; $$select^LVBQCMTD(ROWID)
+ ; $$getall^LVBQCMTD(par)
+ ; $$getdata^LVBQCMTD(lROWID,from,to,type,Continue)
+ ; $$getsome^LVBQCMTD(par,date,time,number)
+ ; $$fetchall^LVBQCMTD(par,inst,lev)
+ ; $$data^LVBQCMTD(rowid)
+ ; $$review^LVBQCMTD(par,from,to,user)
+ ;
+  ;---&SQL(DECLARE QCMTD1 CURSOR FOR SELECT * FROM QC_MLTTestCodeLevelData
+   ;---         WHERE QCMTD_ParRef->QCMTL_ParRef = :par
+   ;---         AND ((QCMTD_Active = :active) OR (:active IS NULL))
+   ;---         ORDER BY QCMTD_Date DESC, QCMTD_QCRun DESC)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, active, par
+  ;---&SQL(DECLARE QCMTD2 CURSOR FOR SELECT * FROM QC_MLTTestCodeLevelData
+   ;---         WHERE QCMTD_ParRef = :par
+   ;---         AND ((QCMTD_Date NOT< :from) OR (:from IS NULL))
+   ;---         AND ((QCMTD_Date NOT> :to) OR (:to IS NULL))
+   ;---         AND ((QCMTD_Active = :active) OR (:active IS NULL))
+   ;---         ORDER BY QCMTD_Date DESC, QCMTD_QCRun DESC)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, active, from, par, to
+review(par,from,to,user) n (par,from,to,user)
+ s par=$g(par),from=$g(from),to=$g(to),user=$g(user)
+ i $$open(par,from,to,"Y")
+ f  q:$$fetch(par,from,to,"Y")  d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .i '$l(PLIST(12)) s PLIST(12)=+$h,PLIST(13)=$p($h,",",2),PLIST(14)=user i $$update(PLIST(1))
+ i $$close()
+ q 0
+ ; PLIST : 1.Material
+ ;         2.Lot
+ ;         3.Machine/Worksheet
+ ;         4.Test Item
+ ;         5.Level
+ ;         6.Units
+data(rowid) s rowid=$g(rowid) k ^TMP($zn,$j)
+ s x=$p(rowid,"||",1) i '$$select^LVBQCM(x) s ^TMP($zn,$j,1)=PLIST(3)
+ s x=$p(rowid,"||",1,2) i '$$select^LVBQCML(x) s ^TMP($zn,$j,2)=PLIST(3)
+ i $p(rowid,"||",3)="W" s x=$p(rowid,"||",4) i '$$select^LVBWKS(x) s ^TMP($zn,$j,3)="W"_$c(1)_PLIST(3)
+ i $p(rowid,"||",3)="M" s x=$p(rowid,"||",4) i '$$select^LVBMIMP(x) s ^TMP($zn,$j,3)="M"_$c(1)_PLIST(3)
+ s x=$p(rowid,"||",5) i '$$select^LVBCTTC(x) s ^TMP($zn,$j,4)=PLIST(3),^TMP($zn,$j,6)=PLIST(4)
+ s x=$p(rowid,"||",6),^TMP($zn,$j,5)=x
+ k PLIST m PLIST=^TMP($zn,$j)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ; recalculate QC rules
+calculate(par,start,finish) n (par,start,finish) s par=$g(par),start=$g(start),finish=$g(finish)
+ f j=1:1:5 s @("x"_j)=$p(par,"||",j)
+ s x6="" f  s x6=$o(^TTQC(x1,"LOT",x2,"TYPE",x3,x4,"TEST",x5,"DATA",x6)) q:x6=""  d
+ .s x7="" f  s x7=$o(^TTQC(x1,"LOT",x2,"TYPE",x3,x4,"TEST",x5,"DATA",x6,x7)) q:x7=""  d
+ ..i $l(start),x7<start q
+ ..i $l(finish),x7>finish q
+ ..s x8="" f  s x8=$o(^TTQC(x1,"LOT",x2,"TYPE",x3,x4,"TEST",x5,"DATA",x6,x7,x8)) q:x8=""  d
+ ...s rowid=par_"||"_x6_"||"_x7_"||"_x8
+ ...i '$$select(rowid),$$update(rowid,"Y")
+ q 0
+ ; insert the data
+insert(par,calc) s parx=$g(par)_"||"_$g(PLIST(2))_"||"_$g(PLIST(8)) d pre("N") s PLIST(0)=$g(par) k PLIST(1)
+  ;---&SQL(insert INTO QC_MLTTestCodeLevelData VALUES :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ Do %0Eo
+ i 'SQLCODE d:$g(calc)="Y"  d calc^at487(%ROWID) q $$select(%ROWID)
+ . ; calculate rule
+ .i '$$select(%ROWID) s PLIST(7)=$s($l(PLIST(4)):$$rules^at487(parx),1:"") i $$update(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; update the data
+update(ROWID,calc) s parx=$g(ROWID) d pre("Y") s ROWID=$g(ROWID)
+  ;---&SQL(UPDATE QC_MLTTestCodeLevelData VALUES :PLIST() WHERE QCMTD_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Go
+ i 'SQLCODE d:$g(calc)="Y"  d calc^at487(%ROWID) q $$select(%ROWID)
+ . ; calculate rule
+ .i '$$select(%ROWID) s PLIST(7)=$s($l(PLIST(4)):$$rules^at487(parx),1:"") i $$update(%ROWID)
+ q SQLCODE_$s('SQLCODE:"",SQLCODE'=100:" "_$g(%msg)_" "_$g(%mdiag(1)),1:"")
+ ; delete the data
+delete(ROWID) s ROWID=$g(ROWID)
+  ;---&SQL(DELETE FROM QC_MLTTestCodeLevelData WHERE QCMTD_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: ROWID, SQLCODE
+ Do %0Io
+ q SQLCODE
+ ; open the cursor
+open(par,from,to,active) s par=$g(par),from=$g(from),to=$g(to),active=$g(active)
+ i $l(par,"||")>6 s par=$p(par,"||",1,6)
+  ;---i $l(par,"||")=5 &SQL(OPEN QCMTD1)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ i $l(par,"||")=5 Do %QCMTD10o
+  ;---i $l(par,"||")=6 &SQL(OPEN QCMTD2)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ i $l(par,"||")=6 Do %QCMTD20o
+ q 0
+ ; fetch the data
+fetch(par,from,to,active) k PLIST s par=$g(par),from=$g(from),to=$g(to),active=$g(active)
+ i $l(par,"||")>6 s par=$p(par,"||",1,6)
+  ;---i $l(par,"||")=5 &SQL(FETCH QCMTD1 INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ i $l(par,"||")=5 Do %0Mo
+  ;---i $l(par,"||")=6 &SQL(FETCH QCMTD2 INTO :PLIST())
+   ;--- ** SQL PUBLIC Variables: PLIST, SQLCODE
+ i $l(par,"||")=6 Do %0No
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE g:'$l(PLIST(4)) fetch+1 d adjust
+ q SQLCODE
+ ; close the cursor 
+close()  ;---&SQL(CLOSE QCMTD1)
+  ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %QCMTD10c
+  ;---&SQL(CLOSE QCMTD2)
+   ;--- ** SQL PUBLIC Variables: SQLCODE
+ Do %QCMTD20c
+ q 0
+ ; select data by code
+select(ROWID,skip) k PLIST s ROWID=$g(ROWID),skip=$g(skip)
+  ;---&SQL(SELECT * INTO :PLIST() FROM QC_MLTTestCodeLevelData WHERE QCMTD_RowID=:ROWID)
+   ;--- ** SQL PUBLIC Variables: PLIST, ROWID, SQLCODE
+ Do %0Qo
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE d adjust
+ q SQLCODE
+ ; pre-filing adjustments
+pre(xUpdate) d PreSQL^SSUTIL4("10","")
+ q
+ ; post-filing adjustments
+adjust N plist,I,J,SQLCODE,X d PostSQL^SSUTIL4("10")
+ i $g(skip)="Y" q
+ i $g(PLIST(7))'="" d
+ .k plist m plist=PLIST k PLIST
+ .s SQLCODE=$$select^LVBCTQCR(plist(7),"Y")
+ .s X="" i 'SQLCODE s X=PLIST(2)_$c(1)_PLIST(3)
+ .k PLIST m PLIST=plist s PLIST(7)=X k plist
+ q
+getall(par) n (PLIST,par) k ^TMP($zn,$j,"getall") s par=$g(par)
+ i $$open(par)
+ f cnt=1:1 q:$$fetch(par)  s ^TMP($zn,$j,"getall",cnt)=$p(PLIST(1),$c(1))_$c(2)_$p(PLIST(8),$c(1))_$c(2)_$p(PLIST(2),$c(1))
+ i $$close()
+ k PLIST m PLIST=^TMP($zn,$j,"getall")
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j,"getall")
+ q 0
+ ; type : GRAPH
+ ;        DATA
+getdata(lROWID,from,to,type,Continue) n (lROWID,from,to,type,Continue,PLIST)
+ s lROWID=$g(lROWID),from=$g(from),to=$g(to),type=$g(type),Continue=$g(Continue) k ^TMP($zn,$j,"getdata")
+ i Continue'="Y" d
+ .i type="GRAPH" d
+ ..i $$open(lROWID,from,to)
+ ..f  q:$$fetch(lROWID,from,to)  i PLIST(5)'="Y",$l(PLIST(4)),PLIST(4)?.N.1".".N s ^TMP($zn,$j,"getdata",1)=$g(^TMP($zn,$j,"getdata",1))+1
+ ..i '$$select^LVBQCMTL(lROWID) d
+ ... ; floating MEAN and SD
+ ...s ^TMP($zn,$j,"getdata",2)=PLIST(5),^TMP($zn,$j,"getdata",3)=PLIST(6)
+ ... ; fixed MEAN and SD
+ ...s ^TMP($zn,$j,"getdata",6)=PLIST(3),^TMP($zn,$j,"getdata",7)=PLIST(4)
+ ...s ^TMP($zn,$j,"getdata",8)=PLIST(8),^TMP($zn,$j,"getdata",9)=PLIST(9)
+ ...s $p(^TMP($zn,$j,"getdata",10),$c(2),$p(lROWID,"||",6))=$p(PLIST(7),$c(1))
+ ... ; lot number
+ ...s xROWID=$p(lROWID,"||",1)_"||"_$p(lROWID,"||",5) i '$$select^LVBQCML(xROWID) d
+ ....s $p(^TMP($zn,$j,"getdata",11),$c(2),$p(lROWID,"||",6))=$p(PLIST(4),$c(1))
+ ..s ^TMP($zn,$j,"getdata",4)=3
+ ..i $$close()
+ .i type="DATA" d
+ ..i $$open(lROWID,from,to)
+ ..s cnt=0 f  q:$$fetch(lROWID,from,to)  i $l(PLIST(4)) s cnt=cnt+1 d
+ ...f j=1:1:PLIST s $p(^TMP($zn,$j,"getdata",cnt),$c(1),j)=$p(PLIST(j),$c(1))
+ ...s PLIST=PLIST+1,$p(^TMP($zn,$j,"getdata",cnt),$c(1),PLIST)=(PLIST(2)-from)*24+(PLIST(3)\3600)
+ ..i $$close()
+ .s last=$o(^TMP($zn,$j,"getdata",""),-1)
+ .f x=1:1:last s ^TMP($zn,$j,"getdata",x)=$g(^TMP($zn,$j,"getdata",x))
+ k PLIST s (sum,x)="" f j=1:1 s x=$o(^TMP($zn,$j,"getdata",x)) q:x=""  q:(sum+$l(^(x)))>15000  s PLIST(j)=^(x),sum=sum+$l(^(x)) k ^TMP($zn,$j,"getdata",x)
+ s PLIST=$o(PLIST(""),-1)
+ q $s($d(^TMP($zn,$j,"getdata")):0,1:100)
+ ; get some data for the level
+getsome(par,date,qcrun,number) n (PLIST,par,date,qcrun,number) k ^TMP($zn,$j,"getsome")
+ s par=$g(par),date=$g(date),qcrun=$g(qcrun),number=$g(number),active=""
+ f j=1:1:6 s @("x"_j)=$p(par,"||",j)
+ s datex=date,qc=qcrun,cnt=0
+ f  d:$l(datex)  q:cnt=number  s datex=$o(^TTQC(x1,"LOT",x2,"TYPE",x3,x4,"TEST",x5,"DATA",x6,datex),-1) q:datex=""
+ .f  d:$l(qc)  q:cnt=number  s qc=$o(^TTQC(x1,"LOT",x2,"TYPE",x3,x4,"TEST",x5,"DATA",x6,datex,qc),-1) q:qc=""
+ ..i '$d(^TTQC(x1,"LOT",x2,"TYPE",x3,x4,"TEST",x5,"DATA",x6,datex,qc)) q
+ ..s z=$g(^TTQC(x1,"LOT",x2,"TYPE",x3,x4,"TEST",x5,"DATA",x6,datex,qc))
+ ..i '$l($p(z,"\",1)) q
+ ..i cnt,$p(z,"\",2)="Y" q
+ ..i cnt,$p(z,"\",1)'?.N.1".".N q
+ ..s cnt=cnt+1 s ^TMP($zn,$j,"getsome",cnt)=par_"||"_datex_"||"_qc_$c(2)_datex_$c(2)_qc_$c(2)_$p(z,"\",1)_$c(2)_$p(z,"\",2)
+ k PLIST m PLIST=^TMP($zn,$j,"getsome")
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j,"getsome")
+ q PLIST
+ ; fetch all data for one or all levels
+fetchall(par,inst,lev) n (par,inst,lev,PLIST) s par=$g(par),inst=$g(inst),lev=$g(lev),max=30 k ^TMP($zn,$j)
+ s material=$p($p(par,"^"),"||") i '$$select^LVBQCM(material) s max=PLIST(7)
+ f i=1:1:$l(par,"^") d
+ .s parx="",parx=$p(par,"^",i),lev=$p(parx,"||",6)
+ .i '$$getall^LVBQCMTL(parx) f j=1:1:PLIST s level=$p(PLIST(j),$c(2),3)
+ .i $$open(parx,,,"Y")
+ .f  s SQLCODE=$$fetch(parx,,,"Y") q:SQLCODE  d
+ ..s dt=PLIST(2)_"."_$e(1000+PLIST(8),2,4),dt=+dt,^TMP($zn,$j,"QC-Run",dt)=""
+ ..f j=1:1:PLIST s $p(^TMP($zn,$j,"Data",dt,lev),$c(28),j)=PLIST(j)
+ .i $$close()
+ k PLIST
+ s (cnt,cntx,dt)="" f  s dt=$o(^TMP($zn,$j,"Data",dt),-1) q:dt=""  q:cntx=max  d
+ .s cntx=cntx+1
+ .s lev="" f  s lev=$o(^TMP($zn,$j,"Data",dt,lev)) q:lev=""  s cnt=cnt+1,PLIST(cnt)=^(lev)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j)
+ q 0
+ ; get all data for one or all levels
+open1(par,inst,lev) n (par,inst,lev) s par=$g(par),inst=$g(inst),lev=$g(lev),max=30 k ^TMP($zn,$j,"open1")
+ s parx=$p(par,"^") i '$$select^LVBQCM($p(parx,"||")) s max=PLIST(7)
+ f i=1:1:$l(par,"^") d
+ .s parx="",parx=$p(par,"^",i),lev=$p(parx,"||",6)
+ .i '$$getall^LVBQCMTL(parx) f j=1:1:PLIST s level=$p(PLIST(j),$c(2),3),$p(^TMP($zn,$j,"open1",0,level),$c(2),9)=""
+ .i $$open(parx,,,"Y")
+ .s cnt="" f  q:$$fetch(parx,,,"Y")  s dt=PLIST(2)_","_PLIST(8) d
+ ..s cnt=cnt+1
+ ..i '$d(^TMP($zn,$j,"open1",1,dt)) m ^TMP($zn,$j,"open1",1,dt)=^TMP($zn,$j,"open1",0)
+ ..i '$l(lev) f j=1:1:PLIST s $p(^TMP($zn,$j,"open1",1,dt,$p(PLIST(1),"||",6)),$c(2),j)=PLIST(j)
+ ..i $l(lev) f j=1:1:PLIST s $p(^TMP($zn,$j,"open1",1,dt,i),$c(2),j)=PLIST(j)
+ .i $$close()
+ q 0
+fetch1(par,inst,lev) s par=$g(par),inst=$g(inst),lev=$g(lev),SQLCODE=100 k PLIST
+ s line=$o(^TMP($zn,$j,"open1",1,$g(^TMP($zn,$j,"open1"))),-1)
+ i $l(line) s ^TMP($zn,$j,"open1")=line,SQLCODE=0 m PLIST=^TMP($zn,$j,"open1",1,line)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+close1() k ^TMP($zn,$j,"open1")
+ q 0
+%QCMTD10o s $zt="%QCMTD10E" s SQLCODE=$s($g(%QCMTD10c):-101,1:0) q:SQLCODE'=0  s %QCMTD10d(39)=0 s %QCMTD10d(40)=0,%QCMTD10d(41)="",%QCMTD10d(42)=0,%QCMTD10d(43)=""
+ s %QCMTD10d(18)=$g(par),%QCMTD10d(19)=$g(active),%QCMTD10d(20)=$g(active)
+ s %QCMTD10t(1)=$i(^||%sql.temp)
+ s %QCMTD10d(23)=$zu(28,%QCMTD10d(19),7)
+ s %QCMTD10c=1 q
+%QCMTD10E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %QCMTD10c,%QCMTD10d,%QCMTD10E,%QCMTD10l,%QCMTD10n,%QCMTD10R,%QCMTD10s,%QCMTD10t,%QCMTD10Z q
+%0Afirst s %QCMTD10d(38)=""
+ k ^||%sql.temp(%QCMTD10t(1),0) s ^||%sql.temp(%QCMTD10t(1),0)=$H_"^"_$J_"^"_$zu(67,11,$j)_"^"_$zu(67,12,$j)_"^"_$zu(67,15,$j)_"^"_$ZN_"^"_$zu(67,6,$j)
+ i $sortbegin(^||%sql.temp(%QCMTD10t(1),0))
+ d %0ABMod
+ ; asl MOD# 6
+ i $sortend(^||%sql.temp(%QCMTD10t(1),0))
+ s %QCMTD10s(3)=""
+%0AFk1 s %QCMTD10s(3)=$zp(^||%sql.temp(%QCMTD10t(1),0,%QCMTD10s(3)))
+ i %QCMTD10s(3)="" g %0AFdun
+ s %QCMTD10d(3)=$s(%QCMTD10s(3)=-1E14:"",1:%QCMTD10s(3))
+ s %QCMTD10s(9)=""
+%0AFk2 s %QCMTD10s(9)=$zp(^||%sql.temp(%QCMTD10t(1),0,%QCMTD10s(3),%QCMTD10s(9)))
+ i %QCMTD10s(9)="" g %0AFk1
+ s %QCMTD10d(9)=$s(%QCMTD10s(9)=-1E14:"",1:%QCMTD10s(9))
+ s %QCMTD10s(38)=""
+%0AFk3 s %QCMTD10s(38)=$o(^||%sql.temp(%QCMTD10t(1),0,%QCMTD10s(3),%QCMTD10s(9),%QCMTD10s(38)))
+ i %QCMTD10s(38)="" g %0AFk2
+ s %QCMTD10d(38)=$s(%QCMTD10s(38)=-1E14:"",1:%QCMTD10s(38))
+ s %QCMTD10d(112)=$g(^||%sql.temp(%QCMTD10t(1),0,%QCMTD10s(3),%QCMTD10s(9),%QCMTD10d(38)))
+ s %QCMTD10d(1)=$lg(%QCMTD10d(112),5) s %QCMTD10d(2)=$lg(%QCMTD10d(112),9) s %QCMTD10d(4)=$lg(%QCMTD10d(112),11) s %QCMTD10d(5)=$lg(%QCMTD10d(112),13) s %QCMTD10d(6)=$lg(%QCMTD10d(112),4) s %QCMTD10d(7)=$lg(%QCMTD10d(112),12) s %QCMTD10d(8)=$lg(%QCMTD10d(112),10) s %QCMTD10d(10)=$lg(%QCMTD10d(112),1) s %QCMTD10d(11)=$lg(%QCMTD10d(112),2) s %QCMTD10d(12)=$lg(%QCMTD10d(112),3) s %QCMTD10d(13)=$lg(%QCMTD10d(112),6) s %QCMTD10d(14)=$lg(%QCMTD10d(112),7) s %QCMTD10d(15)=$lg(%QCMTD10d(112),8)
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %QCMTD10d(39)=%QCMTD10d(39)+1,%ROWCOUNT=%QCMTD10d(39),%ROWID=%QCMTD10d(2),%QCMTD10c=10 q
+%QCMTD10f i '$g(%QCMTD10c) { s SQLCODE=-102 q  } i %QCMTD10c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Aerr" i $d(%0CacheRowLimit)#2,$g(%QCMTD10d(39))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%QCMTD10d(39),%QCMTD10c=100 q  } g %0Afirst:%QCMTD10c=1
+ g %0AFk3
+%0AFdun 
+%0AAdun 
+ s %ROWCOUNT=%QCMTD10d(39),SQLCODE=100,%QCMTD10c=100 q
+%QCMTD10c i '$g(%QCMTD10c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%QCMTD10d(39)),1:0) f %QCMTD10d(44)=1 { i $sortend(^||%sql.temp(%QCMTD10t(%QCMTD10d(44)),0),0) } k ^||%sql.temp(%QCMTD10t(1))
+ i $zu(115,2)=1,$g(%QCMTD10d(40))=1 { l -@%QCMTD10d(41) } i $zu(115,2)=1,$g(%QCMTD10d(42))=1 { l -@%QCMTD10d(43) } k %QCMTD10c,%QCMTD10d,%QCMTD10E,%QCMTD10l,%QCMTD10n,%QCMTD10R,%QCMTD10s,%QCMTD10t,%QCMTD10Z s SQLCODE=0 q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %QCMTD10c=100
+ f %QCMTD10d(44)=1 i $sortend(^||%sql.temp(%QCMTD10t(%QCMTD10d(44)),0),0)
+ q
+%0ABMod ; asl MOD# 2
+ s %QCMTD10d(17)=%QCMTD10d(18)
+ s %QCMTD10d(25)=$p(%QCMTD10d(17),"||"),%QCMTD10d(26)=$p(%QCMTD10d(17),"||",2),%QCMTD10d(27)=$p(%QCMTD10d(17),"||",3),%QCMTD10d(28)=$p(%QCMTD10d(17),"||",4),%QCMTD10d(29)=$p(%QCMTD10d(17),"||",5)
+ i %QCMTD10d(25)="" g %0ABdun
+ i %QCMTD10d(26)="" g %0ABdun
+ i %QCMTD10d(27)="" g %0ABdun
+ i %QCMTD10d(28)="" g %0ABdun
+ i %QCMTD10d(29)="" g %0ABdun
+ s %QCMTD10d(24)=""
+%0ABk1 s %QCMTD10d(24)=$o(^TTQC(%QCMTD10d(25),"LOT",%QCMTD10d(26),"TYPE",%QCMTD10d(27),%QCMTD10d(28),"TEST",%QCMTD10d(29),"DATA",%QCMTD10d(24)))
+ i %QCMTD10d(24)="" g %0ABdun
+ s %QCMTD10d(16)=(%QCMTD10d(25))_"||"_(%QCMTD10d(26))_"||"_(%QCMTD10d(27))_"||"_(%QCMTD10d(28))_"||"_(%QCMTD10d(29))_"||"_(%QCMTD10d(24))
+ g:$zu(115,2)=0 %0ABuncommitted i $zu(115,2)=1 l +^TTQC($p(%QCMTD10d(16),"||",1),"LOT",$p(%QCMTD10d(16),"||",2),"TYPE",$p(%QCMTD10d(16),"||",3),$p(%QCMTD10d(16),"||",4),"TEST",$p(%QCMTD10d(16),"||",5),"DATA",$p(%QCMTD10d(16),"||",6))#"S":$zu(115,4) i $t { s %QCMTD10d(42)=1,%QCMTD10d(43)=$name(^TTQC($p(%QCMTD10d(16),"||",1),"LOT",$p(%QCMTD10d(16),"||",2),"TYPE",$p(%QCMTD10d(16),"||",3),$p(%QCMTD10d(16),"||",4),"TEST",$p(%QCMTD10d(16),"||",5),"DATA",$p(%QCMTD10d(16),"||",6)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.QC_MLTTestCodeLevel for RowID value: "_%QCMTD10d(16) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %QCMTD10d(25)=$p(%QCMTD10d(16),"||"),%QCMTD10d(26)=$p(%QCMTD10d(16),"||",2),%QCMTD10d(27)=$p(%QCMTD10d(16),"||",3),%QCMTD10d(28)=$p(%QCMTD10d(16),"||",4),%QCMTD10d(29)=$p(%QCMTD10d(16),"||",5),%QCMTD10d(24)=$p(%QCMTD10d(16),"||",6)
+ i %QCMTD10d(25)'="",%QCMTD10d(26)'="",%QCMTD10d(27)'="",%QCMTD10d(28)'="",%QCMTD10d(29)'="",%QCMTD10d(24)'="",$d(^TTQC(%QCMTD10d(25),"LOT",%QCMTD10d(26),"TYPE",%QCMTD10d(27),%QCMTD10d(28),"TEST",%QCMTD10d(29),"DATA",%QCMTD10d(24)))
+ e  g %0ACdun
+ s %QCMTD10d(17)=$p(%QCMTD10d(16),"||",1,5)
+%0ABuncommitted ;
+ ; asl MOD# 4
+ s %QCMTD10d(1)=%QCMTD10d(16)
+ s %QCMTD10d(31)=$p(%QCMTD10d(1),"||"),%QCMTD10d(32)=$p(%QCMTD10d(1),"||",2),%QCMTD10d(33)=$p(%QCMTD10d(1),"||",3),%QCMTD10d(34)=$p(%QCMTD10d(1),"||",4),%QCMTD10d(35)=$p(%QCMTD10d(1),"||",5),%QCMTD10d(36)=$p(%QCMTD10d(1),"||",6)
+ i %QCMTD10d(31)="" g %0ADdun
+ i %QCMTD10d(32)="" g %0ADdun
+ i %QCMTD10d(33)="" g %0ADdun
+ i %QCMTD10d(34)="" g %0ADdun
+ i %QCMTD10d(35)="" g %0ADdun
+ i %QCMTD10d(36)="" g %0ADdun
+ s %QCMTD10d(3)=""
+%0ADk1 s %QCMTD10d(3)=$o(^TTQC(%QCMTD10d(31),"LOT",%QCMTD10d(32),"TYPE",%QCMTD10d(33),%QCMTD10d(34),"TEST",%QCMTD10d(35),"DATA",%QCMTD10d(36),%QCMTD10d(3)))
+ i %QCMTD10d(3)="" g %0ADdun
+ s %QCMTD10d(9)=""
+%0ADk2 s %QCMTD10d(9)=$o(^TTQC(%QCMTD10d(31),"LOT",%QCMTD10d(32),"TYPE",%QCMTD10d(33),%QCMTD10d(34),"TEST",%QCMTD10d(35),"DATA",%QCMTD10d(36),%QCMTD10d(3),%QCMTD10d(9)))
+ i %QCMTD10d(9)="" g %0ADk1
+ s %QCMTD10d(92)=$g(^TTQC(%QCMTD10d(31),"LOT",%QCMTD10d(32),"TYPE",%QCMTD10d(33),%QCMTD10d(34),"TEST",%QCMTD10d(35),"DATA",%QCMTD10d(36),%QCMTD10d(3),%QCMTD10d(9)))
+ s %QCMTD10d(4)=$p(%QCMTD10d(92),"\",4) s %QCMTD10d(5)=$p(%QCMTD10d(92),"\",1) s %QCMTD10d(6)=$p(%QCMTD10d(92),"\",2) s %QCMTD10d(7)=$p(%QCMTD10d(92),"\",3) s %QCMTD10d(8)=$p(%QCMTD10d(92),"\",5) s %QCMTD10d(12)=$p(%QCMTD10d(92),"\",6) s %QCMTD10d(13)=$p(%QCMTD10d(92),"\",7) s %QCMTD10d(14)=$p(%QCMTD10d(92),"\",8) s %QCMTD10d(15)=$p(%QCMTD10d(92),"\",9)
+ s %QCMTD10d(11)="" f %irep=1:1:$g(^TTQC(%QCMTD10d(31),"LOT",%QCMTD10d(32),"TYPE",%QCMTD10d(33),%QCMTD10d(34),"TEST",%QCMTD10d(35),"DATA",%QCMTD10d(36),%QCMTD10d(3),%QCMTD10d(9),"REM",0)) s $li(%QCMTD10d(11),%irep)=$g(^(%irep))
+ s %QCMTD10d(2)=(%QCMTD10d(31))_"||"_(%QCMTD10d(32))_"||"_(%QCMTD10d(33))_"||"_(%QCMTD10d(34))_"||"_(%QCMTD10d(35))_"||"_(%QCMTD10d(36))_"||"_(%QCMTD10d(3))_"||"_(%QCMTD10d(9))
+ s %QCMTD10d(1)=$p(%QCMTD10d(2),"||",1,6)
+ s %QCMTD10d(10)=$$CT009^at487($g(%QCMTD10d(1)),$g(%QCMTD10d(3))) s %QCMTD10d(22)=$zu(28,%QCMTD10d(10),7)
+ g:'(((%QCMTD10d(22)'=" ")&&(%QCMTD10d(22)=%QCMTD10d(23)))||(%QCMTD10d(20)="")) %0ADk2
+ g:$zu(115,2)=0 %0ADuncommitted i $zu(115,2)=1 l +^TTQC($p(%QCMTD10d(2),"||",1),"LOT",$p(%QCMTD10d(2),"||",2),"TYPE",$p(%QCMTD10d(2),"||",3),$p(%QCMTD10d(2),"||",4),"TEST",$p(%QCMTD10d(2),"||",5),"DATA",$p(%QCMTD10d(2),"||",6),$p(%QCMTD10d(2),"||",7),$p(%QCMTD10d(2),"||",8))#"S":$zu(115,4) i $t { s %QCMTD10d(40)=1,%QCMTD10d(41)=$name(^TTQC($p(%QCMTD10d(2),"||",1),"LOT",$p(%QCMTD10d(2),"||",2),"TYPE",$p(%QCMTD10d(2),"||",3),$p(%QCMTD10d(2),"||",4),"TEST",$p(%QCMTD10d(2),"||",5),"DATA",$p(%QCMTD10d(2),"||",6),$p(%QCMTD10d(2),"||",7),$p(%QCMTD10d(2),"||",8)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.QC_MLTTestCodeLevelData for RowID value: "_%QCMTD10d(2) ztrap "LOCK"  }
+ ; asl MOD# 5
+ s %QCMTD10d(30)=$lb(""_%QCMTD10d(22))
+ s %QCMTD10d(31)=$p(%QCMTD10d(2),"||"),%QCMTD10d(32)=$p(%QCMTD10d(2),"||",2),%QCMTD10d(33)=$p(%QCMTD10d(2),"||",3),%QCMTD10d(34)=$p(%QCMTD10d(2),"||",4),%QCMTD10d(35)=$p(%QCMTD10d(2),"||",5),%QCMTD10d(36)=$p(%QCMTD10d(2),"||",6),%QCMTD10d(3)=$p(%QCMTD10d(2),"||",7),%QCMTD10d(9)=$p(%QCMTD10d(2),"||",8)
+ i %QCMTD10d(31)'="",%QCMTD10d(32)'="",%QCMTD10d(33)'="",%QCMTD10d(34)'="",%QCMTD10d(35)'="",%QCMTD10d(36)'="",%QCMTD10d(3)'="",%QCMTD10d(9)'="",$d(^TTQC(%QCMTD10d(31),"LOT",%QCMTD10d(32),"TYPE",%QCMTD10d(33),%QCMTD10d(34),"TEST",%QCMTD10d(35),"DATA",%QCMTD10d(36),%QCMTD10d(3),%QCMTD10d(9)))
+ e  g %0AEdun
+ s %QCMTD10d(110)=$g(^TTQC(%QCMTD10d(31),"LOT",%QCMTD10d(32),"TYPE",%QCMTD10d(33),%QCMTD10d(34),"TEST",%QCMTD10d(35),"DATA",%QCMTD10d(36),%QCMTD10d(3),%QCMTD10d(9)))
+ s %QCMTD10d(4)=$p(%QCMTD10d(110),"\",4) s %QCMTD10d(5)=$p(%QCMTD10d(110),"\",1) s %QCMTD10d(6)=$p(%QCMTD10d(110),"\",2) s %QCMTD10d(7)=$p(%QCMTD10d(110),"\",3) s %QCMTD10d(8)=$p(%QCMTD10d(110),"\",5) s %QCMTD10d(12)=$p(%QCMTD10d(110),"\",6) s %QCMTD10d(13)=$p(%QCMTD10d(110),"\",7) s %QCMTD10d(14)=$p(%QCMTD10d(110),"\",8) s %QCMTD10d(15)=$p(%QCMTD10d(110),"\",9)
+ s %QCMTD10d(11)="" f %irep=1:1:$g(^TTQC(%QCMTD10d(31),"LOT",%QCMTD10d(32),"TYPE",%QCMTD10d(33),%QCMTD10d(34),"TEST",%QCMTD10d(35),"DATA",%QCMTD10d(36),%QCMTD10d(3),%QCMTD10d(9),"REM",0)) s $li(%QCMTD10d(11),%irep)=$g(^(%irep))
+ s %QCMTD10d(1)=$p(%QCMTD10d(2),"||",1,6)
+ s %QCMTD10d(10)=$$CT009^at487($g(%QCMTD10d(1)),$g(%QCMTD10d(3))) s %QCMTD10d(22)=$zu(28,%QCMTD10d(10),7)
+ s %QCMTD10d(37)=$lb(""_%QCMTD10d(22))
+ g:%QCMTD10d(30)'=%QCMTD10d(37) %0AEdun
+%0ADuncommitted ;
+ s %QCMTD10s(3)=$s(%QCMTD10d(3)'="":%QCMTD10d(3),1:-1E14),%QCMTD10s(9)=$s(%QCMTD10d(9)'="":%QCMTD10d(9),1:-1E14),%QCMTD10d(38)=%QCMTD10d(38)+1,%QCMTD10d(111)="",$li(%QCMTD10d(111),5)=%QCMTD10d(1),$li(%QCMTD10d(111),9)=%QCMTD10d(2),$li(%QCMTD10d(111),11)=%QCMTD10d(4),$li(%QCMTD10d(111),13)=%QCMTD10d(5),$li(%QCMTD10d(111),4)=%QCMTD10d(6),$li(%QCMTD10d(111),12)=%QCMTD10d(7),$li(%QCMTD10d(111),10)=%QCMTD10d(8),$li(%QCMTD10d(111),1)=%QCMTD10d(10),$li(%QCMTD10d(111),2)=%QCMTD10d(11),$li(%QCMTD10d(111),3)=%QCMTD10d(12),$li(%QCMTD10d(111),6)=%QCMTD10d(13),$li(%QCMTD10d(111),7)=%QCMTD10d(14),$li(%QCMTD10d(111),8)=%QCMTD10d(15),^||%sql.temp(%QCMTD10t(1),0,%QCMTD10s(3),%QCMTD10s(9),%QCMTD10d(38))=%QCMTD10d(111)
+%0AEdun i $zu(115,2)=1,$g(%QCMTD10d(40))=1 { l -@%QCMTD10d(41) s %QCMTD10d(40)=0 }
+ g %0ADk2
+%0ADdun 
+%0ACdun i $zu(115,2)=1,$g(%QCMTD10d(42))=1 { l -@%QCMTD10d(43) s %QCMTD10d(42)=0 }
+ g %0ABk1
+%0ABdun 
+ q
+%QCMTD20o s $zt="%QCMTD20E" s SQLCODE=$s($g(%QCMTD20c):-101,1:0) q:SQLCODE'=0  s %QCMTD20d(34)=0 s %QCMTD20d(35)=0,%QCMTD20d(36)=""
+ s %QCMTD20d(16)=$g(par),%QCMTD20d(17)=$g(from),%QCMTD20d(18)=$g(from),%QCMTD20d(19)=$g(to),%QCMTD20d(20)=$g(to),%QCMTD20d(21)=$g(active),%QCMTD20d(22)=$g(active)
+ s %QCMTD20d(25)=$zu(28,%QCMTD20d(21),7)
+ s %QCMTD20c=1 q
+%QCMTD20E s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) k %QCMTD20c,%QCMTD20d,%QCMTD20E,%QCMTD20l,%QCMTD20n,%QCMTD20R,%QCMTD20Z q
+%0Cfirst 
+ ; asl MOD# 2
+ s %QCMTD20d(1)=%QCMTD20d(16)
+ s %QCMTD20d(27)=$p(%QCMTD20d(1),"||"),%QCMTD20d(28)=$p(%QCMTD20d(1),"||",2),%QCMTD20d(29)=$p(%QCMTD20d(1),"||",3),%QCMTD20d(30)=$p(%QCMTD20d(1),"||",4),%QCMTD20d(31)=$p(%QCMTD20d(1),"||",5),%QCMTD20d(32)=$p(%QCMTD20d(1),"||",6)
+ i %QCMTD20d(27)="" g %0CBdun
+ i %QCMTD20d(28)="" g %0CBdun
+ i %QCMTD20d(29)="" g %0CBdun
+ i %QCMTD20d(30)="" g %0CBdun
+ i %QCMTD20d(31)="" g %0CBdun
+ i %QCMTD20d(32)="" g %0CBdun
+ s %QCMTD20d(3)=" "
+%0CBk1 s %QCMTD20d(3)=$zp(^TTQC(%QCMTD20d(27),"LOT",%QCMTD20d(28),"TYPE",%QCMTD20d(29),%QCMTD20d(30),"TEST",%QCMTD20d(31),"DATA",%QCMTD20d(32),%QCMTD20d(3)))
+ i %QCMTD20d(3)="" g %0CBdun
+ i '(((%QCMTD20d(17)'="")&&(%QCMTD20d(17)']]%QCMTD20d(3)))||(%QCMTD20d(18)="")) g %0CBk1
+ i '((%QCMTD20d(3)']]%QCMTD20d(19))||(%QCMTD20d(20)="")) g %0CBk1
+ s %QCMTD20d(9)=" "
+%0CBk2 s %QCMTD20d(9)=$zp(^TTQC(%QCMTD20d(27),"LOT",%QCMTD20d(28),"TYPE",%QCMTD20d(29),%QCMTD20d(30),"TEST",%QCMTD20d(31),"DATA",%QCMTD20d(32),%QCMTD20d(3),%QCMTD20d(9)))
+ i %QCMTD20d(9)="" g %0CBk1
+ s %QCMTD20d(54)=$g(^TTQC(%QCMTD20d(27),"LOT",%QCMTD20d(28),"TYPE",%QCMTD20d(29),%QCMTD20d(30),"TEST",%QCMTD20d(31),"DATA",%QCMTD20d(32),%QCMTD20d(3),%QCMTD20d(9)))
+ s %QCMTD20d(4)=$p(%QCMTD20d(54),"\",4) s %QCMTD20d(5)=$p(%QCMTD20d(54),"\",1) s %QCMTD20d(6)=$p(%QCMTD20d(54),"\",2) s %QCMTD20d(7)=$p(%QCMTD20d(54),"\",3) s %QCMTD20d(8)=$p(%QCMTD20d(54),"\",5) s %QCMTD20d(12)=$p(%QCMTD20d(54),"\",6) s %QCMTD20d(13)=$p(%QCMTD20d(54),"\",7) s %QCMTD20d(14)=$p(%QCMTD20d(54),"\",8) s %QCMTD20d(15)=$p(%QCMTD20d(54),"\",9)
+ s %QCMTD20d(11)="" f %irep=1:1:$g(^TTQC(%QCMTD20d(27),"LOT",%QCMTD20d(28),"TYPE",%QCMTD20d(29),%QCMTD20d(30),"TEST",%QCMTD20d(31),"DATA",%QCMTD20d(32),%QCMTD20d(3),%QCMTD20d(9),"REM",0)) s $li(%QCMTD20d(11),%irep)=$g(^(%irep))
+ s %QCMTD20d(2)=(%QCMTD20d(27))_"||"_(%QCMTD20d(28))_"||"_(%QCMTD20d(29))_"||"_(%QCMTD20d(30))_"||"_(%QCMTD20d(31))_"||"_(%QCMTD20d(32))_"||"_(%QCMTD20d(3))_"||"_(%QCMTD20d(9))
+ s %QCMTD20d(1)=$p(%QCMTD20d(2),"||",1,6)
+ s %QCMTD20d(10)=$$CT009^at487($g(%QCMTD20d(1)),$g(%QCMTD20d(3))) s %QCMTD20d(24)=$zu(28,%QCMTD20d(10),7)
+ g:'(((%QCMTD20d(24)'=" ")&&(%QCMTD20d(24)=%QCMTD20d(25)))||(%QCMTD20d(22)="")) %0CBk2
+ g:$zu(115,2)=0 %0CBuncommitted i $zu(115,2)=1 l +^TTQC($p(%QCMTD20d(2),"||",1),"LOT",$p(%QCMTD20d(2),"||",2),"TYPE",$p(%QCMTD20d(2),"||",3),$p(%QCMTD20d(2),"||",4),"TEST",$p(%QCMTD20d(2),"||",5),"DATA",$p(%QCMTD20d(2),"||",6),$p(%QCMTD20d(2),"||",7),$p(%QCMTD20d(2),"||",8))#"S":$zu(115,4) i $t { s %QCMTD20d(35)=1,%QCMTD20d(36)=$name(^TTQC($p(%QCMTD20d(2),"||",1),"LOT",$p(%QCMTD20d(2),"||",2),"TYPE",$p(%QCMTD20d(2),"||",3),$p(%QCMTD20d(2),"||",4),"TEST",$p(%QCMTD20d(2),"||",5),"DATA",$p(%QCMTD20d(2),"||",6),$p(%QCMTD20d(2),"||",7),$p(%QCMTD20d(2),"||",8)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.QC_MLTTestCodeLevelData for RowID value: "_%QCMTD20d(2) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %QCMTD20d(26)=$lb(""_%QCMTD20d(24))
+ s %QCMTD20d(27)=$p(%QCMTD20d(2),"||"),%QCMTD20d(28)=$p(%QCMTD20d(2),"||",2),%QCMTD20d(29)=$p(%QCMTD20d(2),"||",3),%QCMTD20d(30)=$p(%QCMTD20d(2),"||",4),%QCMTD20d(31)=$p(%QCMTD20d(2),"||",5),%QCMTD20d(32)=$p(%QCMTD20d(2),"||",6),%QCMTD20d(3)=$p(%QCMTD20d(2),"||",7),%QCMTD20d(9)=$p(%QCMTD20d(2),"||",8)
+ i %QCMTD20d(27)'="",%QCMTD20d(28)'="",%QCMTD20d(29)'="",%QCMTD20d(30)'="",%QCMTD20d(31)'="",%QCMTD20d(32)'="",%QCMTD20d(3)'="",%QCMTD20d(9)'="",$d(^TTQC(%QCMTD20d(27),"LOT",%QCMTD20d(28),"TYPE",%QCMTD20d(29),%QCMTD20d(30),"TEST",%QCMTD20d(31),"DATA",%QCMTD20d(32),%QCMTD20d(3),%QCMTD20d(9)))
+ e  g %0CCdun
+ s %QCMTD20d(72)=$g(^TTQC(%QCMTD20d(27),"LOT",%QCMTD20d(28),"TYPE",%QCMTD20d(29),%QCMTD20d(30),"TEST",%QCMTD20d(31),"DATA",%QCMTD20d(32),%QCMTD20d(3),%QCMTD20d(9)))
+ s %QCMTD20d(4)=$p(%QCMTD20d(72),"\",4) s %QCMTD20d(5)=$p(%QCMTD20d(72),"\",1) s %QCMTD20d(6)=$p(%QCMTD20d(72),"\",2) s %QCMTD20d(7)=$p(%QCMTD20d(72),"\",3) s %QCMTD20d(8)=$p(%QCMTD20d(72),"\",5) s %QCMTD20d(12)=$p(%QCMTD20d(72),"\",6) s %QCMTD20d(13)=$p(%QCMTD20d(72),"\",7) s %QCMTD20d(14)=$p(%QCMTD20d(72),"\",8) s %QCMTD20d(15)=$p(%QCMTD20d(72),"\",9)
+ s %QCMTD20d(11)="" f %irep=1:1:$g(^TTQC(%QCMTD20d(27),"LOT",%QCMTD20d(28),"TYPE",%QCMTD20d(29),%QCMTD20d(30),"TEST",%QCMTD20d(31),"DATA",%QCMTD20d(32),%QCMTD20d(3),%QCMTD20d(9),"REM",0)) s $li(%QCMTD20d(11),%irep)=$g(^(%irep))
+ s %QCMTD20d(1)=$p(%QCMTD20d(2),"||",1,6)
+ s %QCMTD20d(10)=$$CT009^at487($g(%QCMTD20d(1)),$g(%QCMTD20d(3))) s %QCMTD20d(24)=$zu(28,%QCMTD20d(10),7)
+ s %QCMTD20d(33)=$lb(""_%QCMTD20d(24))
+ g:%QCMTD20d(26)'=%QCMTD20d(33) %0CCdun
+%0CBuncommitted ;
+ s:$g(SQLCODE)'<0 SQLCODE=0 s %QCMTD20d(34)=%QCMTD20d(34)+1,%ROWCOUNT=%QCMTD20d(34),%ROWID=%QCMTD20d(2),%QCMTD20c=10 q
+%QCMTD20f i '$g(%QCMTD20c) { s SQLCODE=-102 q  } i %QCMTD20c=100 { s SQLCODE=100 q  } s SQLCODE=0
+ s $zt="%0Cerr" i $d(%0CacheRowLimit)#2,$g(%QCMTD20d(34))'<%0CacheRowLimit { s SQLCODE=100,%ROWCOUNT=%QCMTD20d(34),%QCMTD20c=100 q  } g %0Cfirst:%QCMTD20c=1
+%0CCdun i $zu(115,2)=1,$g(%QCMTD20d(35))=1 { l -@%QCMTD20d(36) s %QCMTD20d(35)=0 }
+ g %0CBk2
+%0CBdun 
+%0CAdun 
+ s %ROWCOUNT=%QCMTD20d(34),SQLCODE=100,%QCMTD20c=100 q
+%QCMTD20c i '$g(%QCMTD20c) { s SQLCODE=-102 q  } s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%QCMTD20d(34)),1:0)
+ i $zu(115,2)=1,$g(%QCMTD20d(35))=1 { l -@%QCMTD20d(36) } k %QCMTD20c,%QCMTD20d,%QCMTD20E,%QCMTD20l,%QCMTD20n,%QCMTD20R,%QCMTD20Z s SQLCODE=0 q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) s %QCMTD20c=100 q
+%0Eo n %i,icol,ir
+ f icol=0:1:14 i $d(PLIST(icol)) s %i(icol)=PLIST(icol)
+ s %ROWID=$$%insert^User.QCMLTTestCodeLevelData.T1(.%i,$c(0,0,0,0)),%ROWCOUNT='SQLCODE
+ q  // From %0Eo
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Gerr" s %mmmsqld(12)=0 s %mmmsqld(13)=""
+ s %mmmsqld(3)=$g(ROWID)
+ n %data,icol,ir
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(2)=%mmmsqld(3)
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2),%mmmsqld(6)=$p(%mmmsqld(2),"||",3),%mmmsqld(7)=$p(%mmmsqld(2),"||",4),%mmmsqld(8)=$p(%mmmsqld(2),"||",5),%mmmsqld(9)=$p(%mmmsqld(2),"||",6),%mmmsqld(10)=$p(%mmmsqld(2),"||",7),%mmmsqld(11)=$p(%mmmsqld(2),"||",8)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",%mmmsqld(9)'="",%mmmsqld(10)'="",%mmmsqld(11)'="",$d(^TTQC(%mmmsqld(4),"LOT",%mmmsqld(5),"TYPE",%mmmsqld(6),%mmmsqld(7),"TEST",%mmmsqld(8),"DATA",%mmmsqld(9),%mmmsqld(10),%mmmsqld(11)))
+ e  g %0GBdun
+ s %mmmsqld(31)=$$%getlock^User.QCMLTTestCodeLevelData.T1(%mmmsqld(2)) i '%mmmsqld(31) s SQLCODE=-110 g %0Gc
+ ; asl MOD# 3
+ s %mmmsqld(4)=$p(%mmmsqld(2),"||"),%mmmsqld(5)=$p(%mmmsqld(2),"||",2),%mmmsqld(6)=$p(%mmmsqld(2),"||",3),%mmmsqld(7)=$p(%mmmsqld(2),"||",4),%mmmsqld(8)=$p(%mmmsqld(2),"||",5),%mmmsqld(9)=$p(%mmmsqld(2),"||",6),%mmmsqld(10)=$p(%mmmsqld(2),"||",7),%mmmsqld(11)=$p(%mmmsqld(2),"||",8)
+ i %mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",%mmmsqld(9)'="",%mmmsqld(10)'="",%mmmsqld(11)'="",$d(^TTQC(%mmmsqld(4),"LOT",%mmmsqld(5),"TYPE",%mmmsqld(6),%mmmsqld(7),"TEST",%mmmsqld(8),"DATA",%mmmsqld(9),%mmmsqld(10),%mmmsqld(11)))
+ e  g %0GCdun
+ k %data
+ f icol=0:1:14 i $d(PLIST(icol)) s %data(icol)=PLIST(icol)
+ d %update^User.QCMLTTestCodeLevelData.T1(%mmmsqld(2),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(12))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(31)=1 %ReleaseLock^User.QCMLTTestCodeLevelData.T1(%mmmsqld(2)) g %0Gc
+%0GCdun 
+ d:%mmmsqld(31)=1 %ReleaseLock^User.QCMLTTestCodeLevelData.T1(%mmmsqld(2)) g:SQLCODE<0 %0Gc
+%0GBdun 
+%0GAdun 
+%0Gc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(12)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Gerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(31))=1 %ReleaseLock^User.QCMLTTestCodeLevelData.T1(%mmmsqld(2)) g %0Gc
+%0Io n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Ierr" s %mmmsqld(11)=0 s %mmmsqld(12)=""
+ s %mmmsqld(2)=$g(ROWID)
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(1)=%mmmsqld(2)
+ s %mmmsqld(3)=$p(%mmmsqld(1),"||"),%mmmsqld(4)=$p(%mmmsqld(1),"||",2),%mmmsqld(5)=$p(%mmmsqld(1),"||",3),%mmmsqld(6)=$p(%mmmsqld(1),"||",4),%mmmsqld(7)=$p(%mmmsqld(1),"||",5),%mmmsqld(8)=$p(%mmmsqld(1),"||",6),%mmmsqld(9)=$p(%mmmsqld(1),"||",7),%mmmsqld(10)=$p(%mmmsqld(1),"||",8)
+ i %mmmsqld(3)'="",%mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",%mmmsqld(9)'="",%mmmsqld(10)'="",$d(^TTQC(%mmmsqld(3),"LOT",%mmmsqld(4),"TYPE",%mmmsqld(5),%mmmsqld(6),"TEST",%mmmsqld(7),"DATA",%mmmsqld(8),%mmmsqld(9),%mmmsqld(10)))
+ e  g %0IBdun
+ s %mmmsqld(30)=$$%getlock^User.QCMLTTestCodeLevelData.T1(%mmmsqld(1)) i '%mmmsqld(30) s SQLCODE=-110 g %0Ic
+ ; asl MOD# 3
+ s %mmmsqld(3)=$p(%mmmsqld(1),"||"),%mmmsqld(4)=$p(%mmmsqld(1),"||",2),%mmmsqld(5)=$p(%mmmsqld(1),"||",3),%mmmsqld(6)=$p(%mmmsqld(1),"||",4),%mmmsqld(7)=$p(%mmmsqld(1),"||",5),%mmmsqld(8)=$p(%mmmsqld(1),"||",6),%mmmsqld(9)=$p(%mmmsqld(1),"||",7),%mmmsqld(10)=$p(%mmmsqld(1),"||",8)
+ i %mmmsqld(3)'="",%mmmsqld(4)'="",%mmmsqld(5)'="",%mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",%mmmsqld(9)'="",%mmmsqld(10)'="",$d(^TTQC(%mmmsqld(3),"LOT",%mmmsqld(4),"TYPE",%mmmsqld(5),%mmmsqld(6),"TEST",%mmmsqld(7),"DATA",%mmmsqld(8),%mmmsqld(9),%mmmsqld(10)))
+ e  g %0ICdun
+ d %delete^User.QCMLTTestCodeLevelData.T1(%mmmsqld(1),$c(0,2,0,0),'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(11))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(30)=1 %ReleaseLock^User.QCMLTTestCodeLevelData.T1(%mmmsqld(1)) g %0Ic
+%0ICdun 
+ d:%mmmsqld(30)=1 %ReleaseLock^User.QCMLTTestCodeLevelData.T1(%mmmsqld(1)) g:SQLCODE<0 %0Ic
+%0IBdun 
+%0IAdun 
+%0Ic s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(11)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Ierr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(30))=1 %ReleaseLock^User.QCMLTTestCodeLevelData.T1(%mmmsqld(1)) g %0Ic
+%0Mo d %QCMTD10f q:SQLCODE'=0
+ s PLIST(0)=%QCMTD10d(1),PLIST(1)=%QCMTD10d(2),PLIST(2)=%QCMTD10d(3),PLIST(3)=%QCMTD10d(4),PLIST(4)=%QCMTD10d(5),PLIST(5)=%QCMTD10d(6),PLIST(6)=%QCMTD10d(7),PLIST(7)=%QCMTD10d(8),PLIST(8)=%QCMTD10d(9),PLIST(9)=%QCMTD10d(10),PLIST(10)=%QCMTD10d(11),PLIST(11)=%QCMTD10d(12),PLIST(12)=%QCMTD10d(13),PLIST(13)=%QCMTD10d(14),PLIST(14)=%QCMTD10d(15)
+ q
+%0No d %QCMTD20f q:SQLCODE'=0
+ s PLIST(0)=%QCMTD20d(1),PLIST(1)=%QCMTD20d(2),PLIST(2)=%QCMTD20d(3),PLIST(3)=%QCMTD20d(4),PLIST(4)=%QCMTD20d(5),PLIST(5)=%QCMTD20d(6),PLIST(6)=%QCMTD20d(7),PLIST(7)=%QCMTD20d(8),PLIST(8)=%QCMTD20d(9),PLIST(9)=%QCMTD20d(10),PLIST(10)=%QCMTD20d(11),PLIST(11)=%QCMTD20d(12),PLIST(12)=%QCMTD20d(13),PLIST(13)=%QCMTD20d(14),PLIST(14)=%QCMTD20d(15)
+ q
+%0Qo n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlZ s $zt="%0Qerr" s %mmmsqld(25)=0,%mmmsqld(26)=""
+ s %mmmsqld(17)=$g(ROWID)
+ s SQLCODE=100
+ ; asl MOD# 2
+ s PLIST(1)=%mmmsqld(17)
+ s %mmmsqld(19)=$p(PLIST(1),"||"),%mmmsqld(20)=$p(PLIST(1),"||",2),%mmmsqld(21)=$p(PLIST(1),"||",3),%mmmsqld(22)=$p(PLIST(1),"||",4),%mmmsqld(23)=$p(PLIST(1),"||",5),%mmmsqld(24)=$p(PLIST(1),"||",6),PLIST(2)=$p(PLIST(1),"||",7),PLIST(8)=$p(PLIST(1),"||",8)
+ i %mmmsqld(19)'="",%mmmsqld(20)'="",%mmmsqld(21)'="",%mmmsqld(22)'="",%mmmsqld(23)'="",%mmmsqld(24)'="",PLIST(2)'="",PLIST(8)'="",$d(^TTQC(%mmmsqld(19),"LOT",%mmmsqld(20),"TYPE",%mmmsqld(21),%mmmsqld(22),"TEST",%mmmsqld(23),"DATA",%mmmsqld(24),PLIST(2),PLIST(8)))
+ e  g %0QBdun
+ s %mmmsqld(44)=$g(^TTQC(%mmmsqld(19),"LOT",%mmmsqld(20),"TYPE",%mmmsqld(21),%mmmsqld(22),"TEST",%mmmsqld(23),"DATA",%mmmsqld(24),PLIST(2),PLIST(8)))
+ s PLIST(3)=$p(%mmmsqld(44),"\",4) s PLIST(4)=$p(%mmmsqld(44),"\",1) s PLIST(5)=$p(%mmmsqld(44),"\",2) s PLIST(6)=$p(%mmmsqld(44),"\",3) s PLIST(7)=$p(%mmmsqld(44),"\",5) s PLIST(11)=$p(%mmmsqld(44),"\",6) s PLIST(12)=$p(%mmmsqld(44),"\",7) s PLIST(13)=$p(%mmmsqld(44),"\",8) s PLIST(14)=$p(%mmmsqld(44),"\",9)
+ s PLIST(10)="" f %irep=1:1:$g(^TTQC(%mmmsqld(19),"LOT",%mmmsqld(20),"TYPE",%mmmsqld(21),%mmmsqld(22),"TEST",%mmmsqld(23),"DATA",%mmmsqld(24),PLIST(2),PLIST(8),"REM",0)) s $li(PLIST(10),%irep)=$g(^(%irep))
+ s PLIST(0)=$p(PLIST(1),"||",1,6)
+ s PLIST(9)=$$CT009^at487($g(PLIST(0)),$g(PLIST(2)))
+ g:$zu(115,2)=0 %0QBuncommitted i $zu(115,2)=1 l +^TTQC($p(PLIST(1),"||",1),"LOT",$p(PLIST(1),"||",2),"TYPE",$p(PLIST(1),"||",3),$p(PLIST(1),"||",4),"TEST",$p(PLIST(1),"||",5),"DATA",$p(PLIST(1),"||",6),$p(PLIST(1),"||",7),$p(PLIST(1),"||",8))#"S":$zu(115,4) i $t { s %mmmsqld(25)=1,%mmmsqld(26)=$name(^TTQC($p(PLIST(1),"||",1),"LOT",$p(PLIST(1),"||",2),"TYPE",$p(PLIST(1),"||",3),$p(PLIST(1),"||",4),"TEST",$p(PLIST(1),"||",5),"DATA",$p(PLIST(1),"||",6),$p(PLIST(1),"||",7),$p(PLIST(1),"||",8)))_"#""SI""" } else { s SQLCODE=-114,%msg="Unable to acquire shared lock on table SQLUser.QC_MLTTestCodeLevelData for RowID value: "_PLIST(1) ztrap "LOCK"  }
+ ; asl MOD# 3
+ s %mmmsqld(19)=$p(PLIST(1),"||"),%mmmsqld(20)=$p(PLIST(1),"||",2),%mmmsqld(21)=$p(PLIST(1),"||",3),%mmmsqld(22)=$p(PLIST(1),"||",4),%mmmsqld(23)=$p(PLIST(1),"||",5),%mmmsqld(24)=$p(PLIST(1),"||",6),PLIST(2)=$p(PLIST(1),"||",7),PLIST(8)=$p(PLIST(1),"||",8)
+ i %mmmsqld(19)'="",%mmmsqld(20)'="",%mmmsqld(21)'="",%mmmsqld(22)'="",%mmmsqld(23)'="",%mmmsqld(24)'="",PLIST(2)'="",PLIST(8)'="",$d(^TTQC(%mmmsqld(19),"LOT",%mmmsqld(20),"TYPE",%mmmsqld(21),%mmmsqld(22),"TEST",%mmmsqld(23),"DATA",%mmmsqld(24),PLIST(2),PLIST(8)))
+ e  g %0QCdun
+ s %mmmsqld(62)=$g(^TTQC(%mmmsqld(19),"LOT",%mmmsqld(20),"TYPE",%mmmsqld(21),%mmmsqld(22),"TEST",%mmmsqld(23),"DATA",%mmmsqld(24),PLIST(2),PLIST(8)))
+ s PLIST(3)=$p(%mmmsqld(62),"\",4) s PLIST(4)=$p(%mmmsqld(62),"\",1) s PLIST(5)=$p(%mmmsqld(62),"\",2) s PLIST(6)=$p(%mmmsqld(62),"\",3) s PLIST(7)=$p(%mmmsqld(62),"\",5) s PLIST(11)=$p(%mmmsqld(62),"\",6) s PLIST(12)=$p(%mmmsqld(62),"\",7) s PLIST(13)=$p(%mmmsqld(62),"\",8) s PLIST(14)=$p(%mmmsqld(62),"\",9)
+ s PLIST(10)="" f %irep=1:1:$g(^TTQC(%mmmsqld(19),"LOT",%mmmsqld(20),"TYPE",%mmmsqld(21),%mmmsqld(22),"TEST",%mmmsqld(23),"DATA",%mmmsqld(24),PLIST(2),PLIST(8),"REM",0)) s $li(PLIST(10),%irep)=$g(^(%irep))
+ s PLIST(0)=$p(PLIST(1),"||",1,6)
+ s PLIST(9)=$$CT009^at487($g(PLIST(0)),$g(PLIST(2)))
+%0QBuncommitted ;
+ s SQLCODE=0 g %0Qc
+%0QCdun i $zu(115,2)=1,$g(%mmmsqld(25))=1 { l -@%mmmsqld(26) s %mmmsqld(25)=0 }
+%0QBdun 
+%0QAdun 
+%0Qc s %ROWCOUNT='SQLCODE i $zu(115,2)=1,$g(%mmmsqld(25))=1 { l -@%mmmsqld(26) } q
+%0Qerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) g %0Qc
+]]></Routine>
+</Export>

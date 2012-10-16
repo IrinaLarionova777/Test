@@ -1,0 +1,576 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="CLNBQMAIN" type="INT" languagemode="0"><![CDATA[
+CLNBQMAIN
+	; +----------------+
+	; | Binary Queries |
+	; | Engine         |
+	; +----------------+
+	;  Nov 21, 2006 by Mc_Fly
+	;  TrakHealth BCN
+	; 
+	; Globals:
+	; 
+	; Configuration:
+	; ^BQC(cube)=Cube description\build routine
+	; ^BQC(cube,1,level)=Level description
+	; ^BQC(cube,2,field)= 1 - Field Name
+	;                     2 - Free
+	;                     3 - field_type
+	;                     4 - Level
+	;                     5 - Double field (field code)
+	;                     6 - Descripcion xecute (must be a function)
+	;                     7 - Free
+	;                     8 - Free
+	;                     9 - Free
+	;                    10 - Xecute when field<0 x "s v="_$p(^BQC(cube,2,field),"\",10)
+	;                    11 - Disabled field
+	; 
+	; Custom configuration:
+	; ^BQZ(cube)=Custom cube descripcion\visible\order
+	; ^BQZ(cube,1,level)=Custom level description\visible\order
+	; ^BQZ(cube,2,field)=Custom field description\visible\order
+	; 
+	; Si el camp és Multiple Choice
+	; ^BQZ(cube,2,field,code)=descripcion
+	; 
+	; Data:
+	; ^BQD(cube)=partial_date time minutes reindexed/total\full_date time...
+	; ^BQD(cube,0," "_minimal_rowid)=CRC
+	; ^BQD(cube,0," "_real_rowid,field,order)=int_value
+	; ^BQD(cube,level,1,rowid)=col_","_chunk
+	; ^BQD(cube,level,2,chunk,col)=rowid
+	; ^BQD(cube,level,3,field,int_value1,int_value2,chunk)=1010001000100...
+	; 
+	; Log:
+	; ^BQL(cube,swfull,$h date,$job,order)=date_time_" "_message
+	;
+	; User:
+	; ^BQU(user,1,cube,field)=order
+	; ^BQU(user,2,report_name)
+	; ^BQU(user,2,report_name,1)
+	; ^BQU(user,2,report_name,2)
+	; 
+	; Setup:
+	; ^BQS("MServer")="CN_IPTCP:127.0.0.1[1972]"
+	; ----------------------------------------------
+	q
+status(cube) n swful,swpar,r
+	s (swful,swpar)=0
+	l +^BQD(cube,"partial"):0 e  s swpar=1
+	l -^BQD(cube,"partial")
+	l +^BQD(cube,"full"):0 e  s swful=1
+	l -^BQD(cube,"full")
+	s r=$g(^BQD(cube))
+	s $p(r,"\",3,4)=swpar_"\"_swful
+	q r
+getcubes()	n i,n,r,wdes,des,vis,ord,tord
+	k tord s i=""
+	f  s i=$o(^BQC(i)) q:i=""  d
+	. s des=$p(^(i),"\",1)
+	. s r=$g(^BQZ(i)),wdes=$p(r,"\",1),vis=+$p(r,"\",2),ord=+$p(r,"\",3)
+	. i 'vis q
+	. i $l(wdes) s des=wdes
+	. s tord(ord,i)=des
+	k PLIST s n=0,(ord,i)=""
+	f  s ord=$o(tord(ord)) q:ord=""  d
+	. f  s i=$o(tord(ord,i)) q:i=""  s n=n+1,PLIST(n)=i_$c(1)_tord(ord,i)
+	q n
+getlevels(cube)	n i,n,r,wdes,des,vis,ord,tord
+	k tord s i=""
+	f  s i=$o(^BQC(cube,1,i)) q:i=""  d
+	. s des=$p(^(i),"\",1)
+	. s r=$g(^BQZ(cube,1,i)),wdes=$p(r,"\",1),vis=+$p(r,"\",2),ord=+$p(r,"\",3)
+	. i 'vis q
+	. i $l(wdes) s des=wdes
+	. s tord(ord,i)=des
+	k PLIST s n=0,(ord,i)=""
+	f  s ord=$o(tord(ord)) q:ord=""  d
+	. f  s i=$o(tord(ord,i)) q:i=""  s n=n+1,PLIST(n)=i_$c(1)_i_" - "_tord(ord,i)
+	q n
+getfields(cube,user)	n help,i,n,alfa,ord,fam,j,k,des,r,type,vis
+	k help
+	s help("ALF")=201
+	s help("DAT")=202
+	s help("DOU")=203
+	s help("NUM")=204
+	s help("TIM")=205
+	s help("EXA")=201
+	k alfa
+	s i=0 ; Hide negative fields
+	f  s i=$o(^BQC(cube,2,i)) q:i=""  d
+	. s r=^BQC(cube,2,i),des=$p(r,"\")
+	. s r=$g(^BQZ(cube,2,i)),wdes=$p(r,"\",1),vis=+$p(r,"\",2),ord=+$p(r,"\",3)
+	. i 'vis q
+	. i $l(wdes) s des=wdes
+	. i $d(^BQU(user,1,cube,i)) s ord=+^(i)
+	. s alfa(ord,$$ALPHAUP^SSUTIL4(des),i)=des
+	k PLIST s (i,j,k)="",n=0
+	f  s i=$o(alfa(i)) q:i=""  d
+	. f  s j=$o(alfa(i,j)) q:j=""  d
+	.. f  s k=$o(alfa(i,j,k))  q:k=""  d
+	... s des=alfa(i,j,k)
+	... s r=^BQC(cube,2,k)
+	... s type=$p(r,"\",3),fam=$p(r,"\",4),dou=$p(r,"\",5),gdesc=$p(r,"\",6)
+	... s n=n+1
+	... s famdes=$p(^BQC(cube,1,fam),"\",1),wfamdes=""
+	... s wfamdes=$p($g(^BQZ(cube,1,fam)),"\")
+	... i $l(wfamdes) s famdes=wfamdes
+	... s PLIST(n)=des_$c(9,9,9)_$s($l(gdesc):"",1:"--")_$c(9,9)_fam_" - "_famdes_$c(9)_k_$c(9)_help(type)_$c(9)_fam_$c(9)_gdesc_$c(9)_dou
+	q $o(^BQC(cube,2,""),-1)
+searchAlfa(field,text,type)
+	; Code format: nn|nn|...|nn where nn can have * and ?
+	n (cube,level,field,double,text,type)
+	f i=1:1:$l(text,"&") s otext=$p(text,"&",i) d
+	. k ^TMP("BQ",$j,"TMPOR")
+	. f j=1:1:$l(otext,"|") s v=$p(otext,"|",j) d
+	.. s v1=$c(31) s v2=$s(type="EXA":v,1:$$UPPER^SSUTIL4(v))
+	.. i double s v1=$p(v,"=",1),v2=$$UPPER^SSUTIL4($p(v,"=",2,999)) i '$l(v2) s v2="*"
+	.. i $e(v2)=">"!($e(v2)="<")!(v2["#") d searchGreaLess q
+	.. i v2'["*"&(v2'["?") d doOr(field,v1,$$ext2int(v2)) q
+	.. s ini=$p($p(v2,"*",1),"?",1)
+	.. s p="" f n=1:1:$l(v2) s c=$e(v2,n),p=p_$s(c="?":"1E",c="*":".E",1:"1"""_c_"""")
+	.. s v2=$$ext2int(ini) i $l(ini),$d(^BQD(cube,level,3,field,v1,v2)) s v2=$o(^BQD(cube,level,3,field,v1,v2),-1)
+	.. f  s v2=$o(^BQD(cube,level,3,field,v1,v2)) q:v2=""  q:$e(v2,1,$l(ini))'=ini  i v2?@p d doOr(field,v1,v2)
+	. d doAnd
+	d doEnd
+	q
+searchGreaLess
+	s (ini,end)=""
+	i $e(v2)=">" s ini=$$ext2int($e(v2,2,$l(v2)))
+	i $e(v2)="<" s end=$$ext2int($e(v2,2,$l(v2)))
+	i v2["#" s ini=$$ext2int($p(v2,"#",1)),end=$$ext2int($p(v2,"#",2)),ini=$o(^BQD(cube,level,3,field,v1,ini),-1)
+	s v2=ini
+	f  s v2=$o(^BQD(cube,level,3,field,v1,v2)) q:v2=""  q:'$isvalidnum(v2)  q:$l(end)&(v2>end)  d doOr(field,v1,v2)
+	q
+searchOther(field,text,type)
+	; Other format: nn|nn|...|nn where nn can have >nnn <nnn nnn#nnn
+	n (cube,level,field,double,text,type)
+	f i=1:1:$l(text,"&") s otext=$p(text,"&",i) d
+	. k ^TMP("BQ",$j,"TMPOR")
+	. f j=1:1:$l(otext,"|") s v=$p(otext,"|",j) d
+	.. s v1=$c(31),v2=v i double s v1=$p(v,"=",1),v2=$p(v,"=",2,999)
+	.. i $$issingleitem(v2) d doOr(field,v1,$$ext2int(v2)) q
+	.. d searchGreaLess
+	. d doAnd
+	d doEnd
+	q
+issingleitem(v)
+	i type="NUM",$isvalidnum(v) q 1
+	i type="DAT",v?2n1"/"2n1"/"4n q 1
+	i type="TIM",v?2n1":"2n1":"2n q 1
+	q 0
+ext2int(v)
+	i type="FAL" q " "_$$UPPER^SSUTIL4(v)
+	i type="ALF" q $$UPPER^SSUTIL4(v)
+	i type="DAT" q $$intdate^SSUTIL4($p(v,"/",2)_"/"_$p(v,"/",1)_"/"_$p(v,"/",3))
+	i type="TIM" q $s(v="":"",1:$zth(v))
+	q v
+int2ext(type,value,format)
+	; format 0- HTML
+	;        1- SLK
+	;        2- CSV
+	i format=1 d  q value
+	. i type="DAT" s:$l(value) value=value-21548 q
+	. i type="TIM" s:$l(value) value=value/86400 q
+	. i type="ALF" s value=""""_value_"""" q
+	. i type="EXA" s value=""""_value_""""
+ 
+	i format=2 d  q value
+	. i type="FAL" s value=$e(value,2,$l(value)) q
+	. i type="DAT" s value=$$extdate2^SSUTIL4(value) s:$e(value)="0" value=$e(value,2,$l(value)) q
+	. i type="TIM" s value=$zt(value) q
+	. i type="ALF" s value=""""_value_"""" q
+	. i type="EXA" s value=""""_value_""""
+ 
+	i type="FAL" q $e(value,2,$l(value))  ; Dec 12, 2005 by Mc_Fly
+	i type="NUM",$isvalidnum(value) q $fn(value,".")
+	i type="DAT" q $$extdate2^SSUTIL4(value)
+	i type="TIM" q $zt(value)
+	q value
+int2query(type,value)
+	i type="DAT" q $$extdate2^SSUTIL4(value)
+	i type="TIM" q $zt(value)
+	q value
+doOr(field,v1,v2)
+	n c,b1,b2
+	s c=""
+	f  s c=$o(^BQD(cube,level,3,field,v1,v2,c)) q:c=""  s b2=^(c),b1=$g(^TMP("BQ",$j,"TMPOR",c)) s ^TMP("BQ",$j,"TMPOR",c)=$bitlogic(b1|b2)
+	q
+doAnd
+	n cmax,c,b1,b2
+	s cmax=$o(^BQD(cube,level,2,""),-1)
+	i '$d(^TMP("BQ",$j,"TMPAND")) d  q
+	. f c=1:1:cmax s ^TMP("BQ",$j,"TMPAND",c)=$g(^TMP("BQ",$j,"TMPOR",c))
+	f c=1:1:cmax s b1=$g(^TMP("BQ",$j,"TMPAND",c)),b2=$g(^TMP("BQ",$j,"TMPOR",c)) s ^TMP("BQ",$j,"TMPAND",c)=$bitlogic(b1&b2)
+	q
+doEnd
+	n chunk
+	i '$d(^TMP("BQ",$j,"TMP")) m ^TMP("BQ",$j,"TMP")=^TMP("BQ",$j,"TMPAND") q
+	s chunk=""
+	f  s chunk=$o(^TMP("BQ",$j,"TMPAND",chunk))  q:chunk=""  d
+	. s ^TMP("BQ",$j,"TMP",chunk)=$bitlogic(^TMP("BQ",$j,"TMP",chunk)&^TMP("BQ",$j,"TMPAND",chunk))
+	q
+count(cube,level,params,user)
+	n (cube,level,params,user)
+	s ^zlog($i(^zlog))="cube="_cube_" level="_level_" params="_params_" user="_user
+	k ^TMP("BQ",$j)
+	; Hide fields
+	s f=0 f  s f=$o(^BQC(cube,2,f),-1) q:f=""  s r=^(f) d
+	. i $p(r,"\",11) q  ; Disabled field
+	. x "s v="_$p(r,"\",10) s params=params_$c(20)_f_$c(2)_v
+	; Search
+	f p=1:1:$l(params,$c(20)) d
+	. s fv=$p(params,$c(20),p)
+	. s f=$p(fv,$c(2),1)
+	. s v=$p(fv,$c(2),2)
+	. s r=$g(^BQC(cube,2,f))
+	. s type=$e($p(r,"\",3),1,3),double=$p(r,"\",5)
+	. s ^zlog($i(^zlog))="type="_type
+	. i $f(" ALF DOU EXA "," "_type_" ") d searchAlfa(f,v,type) q
+	. d searchOther(f,v,type)
+	s chunk="",count=0
+	f  s chunk=$o(^TMP("BQ",$j,"TMP",chunk)) q:chunk=""  d
+	. s r=^TMP("BQ",$j,"TMP",chunk)
+	. s count=count+$bitcount(r,1)
+	s des=$p($g(^BQC(cube,1,level)),"\",1)
+	s wdes=$p($g(^BQZ(cube,1,level)),"\",1)	i $l(wdes) s des=wdes
+	q count_"^"_$fn(count,".")_" "_$zcvt(des,"l")
+reportini(cube,level,display,type,sorder,cutnreg)
+	n (cube,level,display,type,sorder,cutnreg)
+	s ^zlog($i(^zlog))="reportini^"_$zn_"("_$g(cube)_","_$g(level)_","_$g(display)_","_$g(type)_","_$g(sorder)_","_$g(cutnreg)_")"
+	s levmax=$l(sorder,$c(20))
+	i $l(sorder)=0 s levmax=0
+	s levmax=levmax+1 ; rowid is included
+	s gorder="^TMP(""BQ"",$j,""row"""
+	f n=1:1:levmax s gorder=gorder_",o("_n_")" d
+	. s ^TMP("BQ",$j,"gsort",n)=gorder_")"
+	. s dir=$p($p(sorder,$c(20),n),$c(2),2)
+	. s dir=$s(dir=">":-1,1:1)
+	. s ^TMP("BQ",$j,"dir",n)=dir
+	s gorder=gorder_",rowidmerge,f,n)"
+	s r=0 ; nrow 1
+	s r=r_$c(1)_cube ; Cube 2
+	s r=r_$c(1)_level ; Level 3
+	s r=r_$c(1)_1 ; Chunk 4
+	s r=r_$c(1)_1 ; Pnt 5
+	s r=r_$c(1)_display ; Display 6
+	s r=r_$c(1)_type ; type 7
+	s r=r_$c(1)_1 ; Head 8
+	s r=r_$c(1)_sorder ; Sorder 9
+	s r=r_$c(1)_gorder ; gorder 10
+	s r=r_$c(1)_levmax ; levmax 11
+	s r=r_$c(1)_cutnreg ; cutnreg 12
+	s ^TMP("BQ",$j)=r
+	s ^TMP("BQ",$j,"vars")=""
+	s h=$h,d=$p(h,",",1),t=$p(h,",",2)
+	s d=$$extdate2^SSUTIL4(h),t=$ztime(t)
+	s v=$p(d,"/",3)_$p(d,"/",2)_$p(d,"/",1)_$tr(t,":")
+	q "BQD"_v
+report()
+	n
+	s r=^TMP("BQ",$j)
+	s cube=$p(r,$c(1),2),level=$p(r,$c(1),3),chunk=$p(r,$c(1),4),pnt=$p(r,$c(1),5)
+	s display=$p(r,$c(1),6),format=$p(r,$c(1),7),sorder=$p(r,$c(1),9),gorder=$p(r,$c(1),10)
+	s levmax=$p(r,$c(1),11),cutnreg=$p(r,$c(1),12)
+	s ^zlog($i(^zlog))="gorder="_gorder
+	s r=^TMP("BQ",$j,"TMP",chunk)
+	s (flag,tot)=0
+	k frame
+	m frame=^TMP("BQ",$j,"frame")
+	f  d  q:flag
+	. s pnt=$bitfind(r,1,pnt)
+	. i pnt=0 s chunk=$o(^TMP("BQ",$j,"TMP",chunk)),pnt=0 d  q
+	.. i chunk="" s flag=1 q
+	.. s r=^TMP("BQ",$j,"TMP",chunk)
+	. s rowid=^BQD(cube,level,2,chunk,pnt)
+	. s o(levmax)=rowid
+	. i $l(sorder) f n=1:1:$l(sorder,$c(20)) d
+	.. s f=$p($p(sorder,$c(20),n),$c(2))
+	.. s rc=^BQC(cube,2,f),type=$p(rc,"\",3),flevel=$p(rc,"\",4),double=$p(rc,"\",5)
+	.. s wrowid=" "_$p(rowid,"||",1,flevel)
+	.. s v=$$UPPER^SSUTIL4($g(^BQD(cube,0,wrowid,f,1)))
+	.. i double s v=$p(v,"\",2)_$p(v,"\",1)
+	.. i $l(v)=0 s v=0
+	.. s o(n)=v
+	. s tot=tot+1,pnt=pnt+1
+	. s rowid=" "_rowid
+	. k data
+	. f col=1:1:$l(display,"\") d
+	.. s f=$p(display,"\",col),wf=f,showdesc=0
+	.. s ^zlog($i(^zlog))="f="_f
+	.. i wf>10000 s wf=wf-10000,showdesc=1
+	.. s r1=^BQC(cube,2,wf),type=$p(r1,"\",3),l1=$p(r1,"\",4),double=$p(r1,"\",5),xdesc=$p(r1,"\",6)
+	.. s rowidori=$p(rowid,"||",1,l1)
+	.. i l1>level s rowidori=rowidori_"||"
+	.. s swjump=0 i $d(^BQD(cube,0,rowidori)) s swjump=1
+	.. s swend=0
+	.. f  s:'swjump rowidori=$o(^BQD(cube,0,rowidori)) q:rowidori=""  d  q:swend
+	... s swjump=0
+	... i l1>level,$p(rowidori,"||",1,level)'=rowid s swend=1 q
+	... i l1=level,rowidori'=rowid s swend=1 q
+	... i level>l1,rowidori'=$p(rowid,"||",1,l1) s swend=1 q
+	... s max=$o(^BQD(cube,0,rowidori,wf,""),-1)
+	... i max="" q
+	... s rowidmerge=rowidori
+	... f n=1:1:level s $p(rowidmerge,"||",n)="XXX"
+	... f n=1:1:max s data(rowidmerge,col,f,n)=""
+	... s frowid=$p(rowidori,"||",1,l1)
+	... f n=1:1:max s v=$g(^BQD(cube,0,frowid,wf,n)) d  s @gorder=v s ^zlog($i(^zlog))="f="_f_" "_gorder_"="_v
+	.... i double,l1=level s v=$p(v,"\",2)_"="_$$int2ext(type,$p(v,"\",1),format) q
+	.... i double s v=$$int2ext(type,$p(v,"\",1),format) q
+	.... s ^zlog($i(^zlog))="showdesc="_showdesc_" v="_v
+	.... i showdesc s v=$$int2ext("ALF",$$xecute(v,xdesc),format) q 
+	.... s v=$$int2ext(type,v,format)
+	... ;;;s rowidori=rowidori_"||zzz"
+	. m frame=data
+	. i tot=100 s flag=2
+	s r=^TMP("BQ",$j)
+	s $p(r,$c(1),4)=chunk,$p(r,$c(1),5)=pnt
+	s ^TMP("BQ",$j)=r
+	m ^TMP("BQ",$j,"frame")=frame
+	i flag=1 d
+	. k ^TMP("BQ",$j,"col")
+	. s (row,ord,fie,fien)="",n=0
+	. f  s row=$o(^TMP("BQ",$j,"frame",row)) q:row=""  d
+	.. f  s ord=$o(^TMP("BQ",$j,"frame",row,ord)) q:ord=""  d
+	... f  s fie=$o(^TMP("BQ",$j,"frame",row,ord,fie)) q:fie=""  d
+	.... f  s fien=$o(^TMP("BQ",$j,"frame",row,ord,fie,fien)) q:fien=""  d
+	..... s n=n+1
+	..... s ^TMP("BQ",$j,"col",n)=fie_"\"_fien_"\"_row
+	q flag_"^"_tot
+fetch()
+	n (PLIST)
+	s $zt="fetcherr"
+	k PLIST s PLIST=2
+	s r=^TMP("BQ",$j)
+	s nrow=$p(r,$c(1),1),cube=$p(r,$c(1),2),level=$p(r,$c(1),3),display=$p(r,$c(1),6)
+	s type=$p(r,$c(1),7),head=$p(r,$c(1),8),gorder=$p(r,$c(1),10),levmax=$p(r,$c(1),11)
+	s cutnreg=$p(r,$c(1),12)
+	s reg="",tot=0
+	i $d(^TMP("BQ",$j,"buffer")) s n=$o(^TMP("BQ",$j,"buffer","")),reg=^(n) k ^(n)
+	i $d(^TMP("BQ",$j,"buffer")) s PLIST(1)=2,PLIST(2)=tot q reg
+	i head=0,nrow="" s PLIST(1)=1,PLIST(2)=tot q reg ; TODO: canviar nrow per flag
+	s lev=levmax
+	s vars=^TMP("BQ",$j,"vars")
+	f n=1:1:levmax s o(n)=$p(vars,$c(1),n)
+	m gsort=^TMP("BQ",$j,"gsort")
+	m dir=^TMP("BQ",$j,"dir")
+	i head d
+	. k ^TMP("BQ",$j,"buffer")
+	. i type=0 s beg="<th bgcolor=""#C0C0C0"" valign=""bottom""><font size=2>",end="</font></th>" d
+	.. d setreg("<html><head><title>Binary Queries</title></head><body><font face=""Microsoft Sans Serif"">"_$c(13,10))
+	.. d setreg("<table cellspacing=1 cellpadding=1 width=""0%"" border=1>"_$c(13,10))
+	.. d setreg("<tr><th bgcolor=""#C0C0C0"" valign=""bottom""><font size=2>#</font></th>")
+	. i type=1 s beg="",end=$c(13,10) d
+	.. d setreg("ID;BQs;N;E",,end)
+	.. d setreg("P;PGeneral",,end)
+	.. d setreg("P;Pdd/mm/yyyy",,end)
+	.. d setreg("P;Phh:mm:ss",,end)
+	.. s col=1
+	.. s ord="" f  s ord=$o(^TMP("BQ",$j,"col",ord)) q:ord=""  d
+	... s col=col+1,r=^(ord),fie=$p(r,"\",1)
+	... s wfie=fie i wfie>10000 s wfie=wfie-10000
+	... s for=$p(^BQC(cube,2,wfie),"\",3)
+	... i for="DAT" d setreg("F;P1;FG0G;C"_col_$c(13,10)) q
+	... i for="TIM" d setreg("F;P2;FG0G;C"_col_$c(13,10)) q
+	.. d setreg("C;Y1;X1;K""#""",,end)
+	. i type=2 s beg=","_$c(34),end=$c(34) d setreg("#")
+	. s ord="",col=1
+	. f  s ord=$o(^TMP("BQ",$j,"col",ord)) q:ord=""  d
+	.. s r=^(ord),fie=$p(r,"\",1),des=$p(r,"\",3),des=$p(des,"||",level+1,999)
+	.. s (wdes,sep)=""
+	.. i $l(des) s wdes=" " f n=1:1:$l(des,"||") s wdes=wdes_sep_$p(des,"||",n),sep=","
+	.. s wfie=fie i wfie>10000 s wfie=wfie-10000
+	.. s name=$p(^BQC(cube,2,wfie),"\",1)
+	.. s wname=$p($g(^BQZ(cube,2,wfie)),"\",1) i $l(wname) s name=wname
+	.. s col=col+1
+	.. i type=1 s beg="C;X"_col_";K""",end=""""_$c(13,10)
+	.. d setreg(name_wdes,beg,end)
+	. i type=0 d setreg("</tr>"_$C(13,10))
+	. i type=2 d setreg($c(13,10))
+	. s $p(^TMP("BQ",$j),$c(1),8)=0
+	. s lev=1
+	; -------------------------------------
+	i type=0 s beg="<td nowrap><font size=2>",end="</font></td>",bege="<td>",ende="</td>"
+	i type=1 s end=$c(13,10)
+	i type=2 s beg=",",end="" ; s beg=","_$c(34),end=$c(34)
+	
+	s flag=0
+	f  s o(lev)=$o(@gsort(lev),dir(lev)) d  q:flag
+	. i o(lev)="",lev=1 s flag=1 q
+	. i o(lev)="" s lev=lev-1 q
+	. i lev'=levmax s lev=lev+1 q
+	. s nrow=nrow+1
+	. i $l(cutnreg),nrow>cutnreg s flag=1 q
+	. s col=1
+	. i type=0 d setreg("<tr><td nowrap><font size=2>"_nrow_"</font></td>")
+	. i type=1 d setreg("C;Y"_(nrow+1)_";X"_col_";K"_nrow,,end) s col=col+1
+	. i type=2 d setreg(nrow)
+	. s ord=""
+	. f  s ord=$o(^TMP("BQ",$j,"col",ord)) q:ord=""  d
+	.. s r=^(ord),f=$p(r,"\",1),n=$p(r,"\",2),rowidmerge=$p(r,"\",3) ; Do not change f, n & rowidmerge are used into gorder
+	.. s v=$g(@gorder)
+	.. i type=0,v="" d setreg("&nbsp;",bege,ende) q
+	.. i type=1,v="" s col=col+1 q
+	.. i type=1 d setreg(v,"C;X"_col_";K",end) s col=col+1 q
+	.. d setreg(v,beg,end)
+	. i type=0 d setreg("</tr>")
+	. i type=0 d setreg($c(13,10))
+	. i type=2 d setreg($c(13,10))
+	. s tot=tot+1
+	. i $d(^TMP("BQ",$j,"buffer")) s n=$o(^TMP("BQ",$j,"buffer",""),-1)+1,^TMP("BQ",$j,"buffer",n)=reg,flag=2 q
+	
+	s $p(^TMP("BQ",$j),$c(1),1)=nrow
+	f n=1:1:levmax s $p(vars,$c(1),n)=o(n)
+	s ^TMP("BQ",$j,"vars")=vars
+	s PLIST(1)=flag,PLIST(2)=tot
+	i $d(^TMP("BQ",$j,"buffer")) s n=$o(^TMP("BQ",$j,"buffer","")),reg=^TMP("BQ",$j,"buffer",n) k ^(n) q reg
+	i flag=1 d
+	. i type=0 d setreg("</table></font></body></html>") q
+	. i type=1 d setreg("E") q
+	q reg
+fetcherr
+	s $zt=""
+	s ^zlog($i(^zlog))="Error="_$ze
+	q ""
+setreg(txt,beg,end)
+	n n
+	s beg=$g(beg),end=$g(end)
+	i ($l(reg)+$l(txt))>32000 s n=$o(^TMP("BQ",$j,"buffer",""),-1)+1,^TMP("BQ",$j,"buffer",n)=reg,reg=""
+	;;;i type=0 s txt=$tr(txt,"""","'")
+	s reg=reg_beg_txt_end
+	q
+save(param,p2,p3,p4)
+	; param = name^user^cube^family
+	; p2 = Parameters: field_$c(2)_SearchCriteria_$c(20)...
+	; p3 = DisplayString: field\field\...
+	; p4 = SortOrder: field_$c(2)_direction_$c(20)...
+	s name=$p(param,"^",1)
+	s user=$p(param,"^",2)
+	s cube=$p(param,"^",3)
+	s family=$p(param,"^",4)
+	
+	k ^BQU(user,2,name)
+	s ^BQU(user,2,name)=cube_"\"_family
+	s ^BQU(user,2,name,1)=p2
+	s ^BQU(user,2,name,2)=p3
+	s ^BQU(user,2,name,3)=p4
+	q 0
+load(name,user)
+	s r=^BQU(user,2,name)
+	k PLIST
+	s p=0
+	s p=p+1,PLIST(p)=$p(r,"\",1)
+	s p=p+1,PLIST(p)=$p(r,"\",2)
+	s p=p+1,PLIST(p)=$g(^BQU(user,2,name,1))
+	s p=p+1,PLIST(p)=$g(^BQU(user,2,name,2))
+	s p=p+1,PLIST(p)=$g(^BQU(user,2,name,3))
+	q p
+delete(name,user)
+	k ^BQU(user,2,name)
+	q 0
+getsaved(user)
+	k PLIST
+	s p=0,n=""
+	f  s n=$o(^BQU(user,2,n)) q:n=""  s p=p+1,PLIST(p)=n
+	q p
+saveorder(user,cube,list)
+	k ^BQU(user,1,cube)
+	f i=1:1:$l(list,$c(1)) s item=$p(list,$c(1),i),ord=$p(item,$c(2),1),fie=$p(item,$c(2),2) s ^BQU(user,1,cube,fie)=ord
+	q 0
+resetorder(user,cube)
+	k ^BQU(user,1,cube)
+	q 0
+getvalues() n (P0,P1,P2,P3,P4,P5,P6,P7,P8,PLIST,VALUE)
+	; Entrada
+	; P0    = valor del v1
+	; P1    = valor del v2
+	; P2    = cub
+	; P3    = familia
+	; P4    = field
+	; P5	= xecute
+	; P6    = Contar quans n'hi ha
+	; P7    = Filtre
+	; P8    = Veure el 2on camp dels camps dobles
+	; Retorna
+	; VALUE = Nombre de registres\nombre de columnes\camp doble
+ 	s zh=$zh
+	s cube=P2,level=P3,field=P4
+	s xecdesc=P5,countme=P6,ftype=$p(P7,"\",1),filter=$p(P7,"\",2),doublevis=P8
+	s filter=$zcvt(filter,"u")
+	s patt="" f n=1:1:$l(filter) s c=$e(filter,n),patt=patt_$s(c="?":"1E",c="*":".E",1:"1"""_c_"""")
+	k PLIST
+	s r=^BQC(cube,2,field)
+	i '$l(level) s level=$p(r,"\",4)
+	s type=$p(r,"\",3)
+	s double=0
+	i $l($p(r,"\",5)) s double=1
+	i ftype=0 s ini=$p($p(filter,"*",1),"?",1)
+	i ftype=0,P0="",$l(ini) d
+	. i double s P0=$o(^BQD(cube,level,3,field,ini),-1),P1=$c(255) q
+	. s P0=$c(31),P1=$o(^BQD(cube,level,3,field,P0,ini),-1) q
+	
+	s n=0,swmax=0,size=0,oldp0=P0,oldp1=P1
+	i P0="" g v1
+	i $l(xecdesc),double s desc=$$xecute(P0,xecdesc),udesc=$$UPPER^SSUTIL4(desc)
+v2	f  s oldp1=P1,P1=$o(^BQD(cube,level,3,field,P0,P1)) q:P1=""  d  q:swmax
+	. i $zh-zh>15 s P1=oldp0,swmax=2 q  ; Màxim 15 segons
+	. i ftype=0,$l(ini),'double,$e(P1,1,$l(ini))'=ini s swmax=3 q
+	. i ftype=0,$l(filter),'double,P1'?@patt q
+	. i $l(xecdesc),'double d  i ftype=1,$l(patt),udesc'?@patt q
+	.. s desc=$$xecute(P1,xecdesc),udesc=$$UPPER^SSUTIL4(desc)
+	. d savereg
+ 
+	i swmax=3 s (P0,P1)=""
+	i swmax q n
+	
+v1	f  s oldp0=P0,P0=$o(^BQD(cube,level,3,field,P0)) q:P0=""  d  q:swmax
+	. i $zh-zh>15 s P0=oldp0,swmax=2 q  ; Màxim 15 segons
+	. i $l(xecdesc),double d  i ftype=1,$l(patt),udesc'?@patt q
+	.. s desc=$$xecute(P0,xecdesc),udesc=$$UPPER^SSUTIL4(desc)
+	. i ftype=0,$l(ini),double,$e(P0,1,$l(ini))'=ini s swmax=3 q
+	. i ftype=0,$l(filter),double,P0'?@patt q
+	. i double,'doublevis d savereg q
+	. s swmax=4 ; Es un camp "normal"
+ 
+	i P0="" s swmax=3
+	i swmax=4 s swmax=0
+	i swmax=3 s (P0,P1)=""
+	i swmax q n
+	g v2
+savereg
+	s n=n+1
+	s PLIST(n)="",col=0
+	i double d addcol($$int2query(type,P0)) d
+	. i $l(xecdesc) d addcol(desc)
+	. i doublevis d addcol(P1)
+	i 'double d addcol($$int2query(type,P1)) i $l(xecdesc) d addcol(desc)
+	i countme d countme,addcol(count)
+	s size=size+$l(PLIST(n))+$l(n)+7
+	i size>32000 k PLIST(n) s n=n-1,P0=oldp0,P1=oldp1,swmax=1
+	i n=500 s swmax=1
+	q
+xecute(val,xecute) n (val,xecute)
+	s $zt="xecuteerr"
+	s del="\" ; S'utilitza dins del xecute
+	q @xecute
+xecuteerr
+	s $zt=""
+	q ""
+addcol(txt)
+	s col=col+1
+	s $p(PLIST(n),$c(9),col)=txt
+	q
+countme
+	i double,'doublevis d countme2 q
+	s chunk="",count=0
+	f  s chunk=$o(^BQD(cube,level,3,field,P0,P1,chunk)) q:chunk=""  s count=count+$bitcount(^(chunk),1)
+	q
+countme2
+	s (z1,chunk)="",count=0
+	f  s z1=$o(^BQD(cube,level,3,field,P0,z1)) q:z1=""  d
+	. f  s chunk=$o(^BQD(cube,level,3,field,P0,z1,chunk)) q:chunk=""  s count=count+$bitcount(^(chunk),1)
+	q
+]]></Routine>
+</Export>

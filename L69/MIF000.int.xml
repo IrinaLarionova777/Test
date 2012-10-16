@@ -1,0 +1,611 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF000" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF000 ; IG 7/5/98 ; Results filing
+ ;
+ ; all MIF routines should be MIFxxx
+ ; loadlist type MIF should have following functions :
+ ;
+ ; $$NEXTTRAY^MIFxxx(tray)               ; return next tray number
+ ; $$SAVE^MIFxxx(mi)                     ; save data for MIF to send to the instrument
+ ;                                       ; ^TMP("MIF000",$j,"LL") : "EPISODE"
+ ;                                       ;                          "SAMPLE"
+ ;                                       ;                          "ORDER"
+ ;                                       ;                          "TRAY"
+ ;                                       ;                          "TEST"
+ ;                                       ;
+ ; supported calls :
+ ;
+ ; $$open^MIF000(mi,text,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetch^MIF000(mi,text,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchbuffer^MIF000(mi,text,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$fetchall^MIF000(mi,text,p2,p3,p4,p5,p6,p7,p8,p9)
+ ; $$close^MIF000()
+ ; $$file^MIF000(mi,sample,epis,surname,result,date,time,QC,miOverwrite)
+ ; $$filesp^MIF000(mi,sample,epis,result)
+ ; $$fileant^MIF000(mi,sample,epis,result,reportable)
+ ; $$loadlist^MIF000(mi,Tray)
+ ; scanall^MIF000(mi,tg,p2,p3)
+ ; scanone^MIF000(mi,epis,tg,test,suffix,all)
+ ; err^MIF000()
+ ; trace^MIF000(mi,record,way)
+ ; $$start^MIF000()
+ ; $$stop^MIF000()
+ ; $$read^MIF000(start,stop,control,time)
+ ; fileTEPI1^MIF000(mi,epis,tsgrp,ts,vts,user)
+ ; fileTEPI2^MIF000(mi,vts,ti,clear,TEPI)
+ ; $$findQC^MIF000(mi,epis)
+ ;
+findQC(mi,epis) n (mi,epis) s mi=$g(mi),epis=$g(epis),result=""
+ s x1="" f  s x1=$o(^TMIF(mi,"QC",x1)) q:x1=""  d  q:$l(result)
+ .s x2="" f  s x2=$o(^TMIF(mi,"QC",x1,x2)) q:x2=""  d  q:$l(result)
+ ..i $p(^(x2),"\")=epis s result="\"_epis
+ q result
+ ; save data to TEPI
+fileTEPI1(mi,epis,tsgrp,ts,vts,user) n (mi,epis,tsgrp,ts,vts,user) s mi=$g(mi),epis=$g(epis),tsgrp=$g(tsgrp),ts=$g(ts),vts=$g(vts),user=$g(user)
+ s %routine=$p($tr($p($g(^TMIF(mi)),"\",3),"^"),"(")
+ i $l(%routine) s LineRoutine="fileTEPI1^"_%routine i $l($t(@LineRoutine)) x "d fileTEPI1^"_%routine_"("""_mi_""","""_epis_""","""_tsgrp_""","""_ts_""","""_vts_""","""_user_""")" q
+ i $l(vts) s epis=$p(vts,"||",1),ts=$p(vts,"||",2),tscnt=$p(vts,"||",3)
+ i $l(epis),'$d(^TEPI(epis)) q
+ i $l(epis),$l(ts),'$d(^TEPI(epis,1,ts)) q
+ i $l(epis),$l(ts),$l(tscnt),'$d(^TEPI(epis,1,ts,tscnt)) q
+ i $l(epis),$d(^TEPI(epis)) d
+ .s x1="" f  s x1=$o(^TMIF(mi,"TG",x1)) q:x1=""  d
+ ..i $l(tsgrp),tsgrp'=x1 q
+ ..s x2="" f  s x2=$o(^TMIF(mi,"TG",x1,"TS",x2)) q:x2=""  d
+ ...i $l(ts),ts'=x2 q
+ ...s x3=$s($l(vts):$p(vts,"||",3),1:$$getnats^LVBVIS4(epis,x2)) i x3 d
+ ....s sample="" f  s sample=$o(^TMIF(mi,9,epis,sample)) q:sample=""  d
+ .....k PLIST
+ .....s ti="" f  s ti=$o(^TMIF(mi,1,sample,"DATA",ti)) q:ti=""  d
+ ......s x=$o(^TMIF(mi,1,sample,"DATA",ti,""),-1)
+ ......i x d
+ .......s j=$o(PLIST(""),-1)+1
+ .......s $p(PLIST(j),"\",1)=ti
+ .......s $p(PLIST(j),"\",2)=$p($g(^TMIF(mi,1,sample,"DATA",ti,x)),"\",1)
+ .......s comments="" f jj=1:1 q:'$d(^TMIF(mi,1,sample,"DATA",ti,x,"REM",jj))  s comments=comments_$s($l(comments):"|",1:"")_^(jj)
+ .......s $p(PLIST(j),"\",3)=comments
+ .......s $p(PLIST(j),"\",4)=$p($g(^TMIF(mi,1,sample,"DATA",ti,x)),"\",2)
+ .....s PLIST=$o(PLIST(""),-1)
+ .....i $$machsave^LVBVIS4(mi,epis,"E",user,x2_"||"_x3,x1,"G",,,,"Y")
+ q
+ ; save last pathogen/antibiotics to TEPI/TMIF
+fileTEPI2(mi,vts,ti,clear,TEPI) n (mi,vts,ti,clear,TEPI) s mi=$g(mi),vts=$g(vts),ti=$g(ti),clear=$g(clear),TEPI=$g(TEPI)
+ s %routine=$p($tr($p($g(^TMIF(mi)),"\",3),"^"),"(")
+ i $l(%routine) s LineRoutine="fileTEPI2^"_%routine i $l($t(@LineRoutine)) x "d fileTEPI2^"_%routine_"("""_mi_""","""_vts_""","""_ti_""","""_clear_""","""_TEPI_""")" q
+ i $l(vts) d
+ .s epis=$p(vts,"||",1),ts=$p(vts,"||",2),tscnt=$p(vts,"||",3)
+ .i $l(epis),'$d(^TEPI(epis)) q
+ .i $l(epis),$l(ts),'$d(^TEPI(epis,1,ts)) q
+ .i $l(epis),$l(ts),$l(tscnt),'$d(^TEPI(epis,1,ts,tscnt)) q
+ . ;
+ . ; file pathogen/antibiotics to TMIF
+ . ;
+ .i $l(epis),$l(ti) d
+ ..s sample=epis_" "
+ ..s seq=$o(^TMIF(mi,1,sample,"BUG",""),-1) i seq d
+ ...i clear="Y" k ^TMIF(mi,1,sample,"DATA",ti)
+ ...s ord=$o(^TMIF(mi,1,sample,"DATA",ti,""),-1) i $l(ord) d
+ ....s ^TMIF(mi,1,sample,"DATA",ti,ord)=$g(^TMIF(mi,1,sample,"BUG",seq))
+ ....m ^TMIF(mi,1,sample,"DATA",ti,ord,"ANT")=^TMIF(mi,1,sample,"BUG",seq,"ANT")
+ ....k ^TMIF(mi,1,sample,"BUG",seq)
+ .... ;
+ .... ; file pathogen/antibiotics to TEPI
+ .... ;
+ ....i TEPI="Y",$l(ts),$d(^TEPI(epis)) d
+ .....s x1="" f  s x1=$o(^TMIF(mi,"TG",x1)) q:x1=""  d
+ ......s x2="" f  s x2=$o(^TMIF(mi,"TG",x1,"TS",x2)) q:x2=""  i ts=x2 d
+ .......s sample=epis_" "
+ .......k PLIST
+ .......s ti="" f  s ti=$o(^TMIF(mi,1,sample,"DATA",ti)) q:ti=""  d
+ ........s x=$o(^TMIF(mi,1,sample,"DATA",ti,""),-1)
+ ........i x d
+ .........s j=$o(PLIST(""),-1)+1
+ .........s $p(PLIST(j),"\",1)=ti
+ .........s $p(PLIST(j),"\",2)=$p($g(^TMIF(mi,1,sample,"DATA",ti,x)),"\",1)
+ .........s comments="" f jj=1:1 q:'$d(^TMIF(mi,1,sample,"DATA",ti,x,"REM",jj))  s comments=comments_$s($l(comments):"|",1:"")_^(jj)
+ .........s $p(PLIST(j),"\",3)=comments
+ .........s $p(PLIST(j),"\",4)=$p($g(^TMIF(mi,1,sample,"DATA",ti,x)),"\",2)
+ .......s PLIST=$o(PLIST(""),-1)
+ .......i $$machsave^LVBVIS4(mi,epis,"E",,ts_"||"_tscnt,x1,"G",,,,"Y")
+ q
+open(mi,text,p2,p3,p4,p5,p6,p7,p8,p9) k ^TMP($zn,$j,1) s ^TMP($zn,$j,1)=""
+ q 0
+fetch(mi,text,p2,p3,p4,p5,p6,p7,p8,p9) s line=$g(^TMP($zn,$j,1)),SQLCODE=100
+ s line=$o(^TMPmif(mi,99,line),-1) i $l(line) s SQLCODE=0,PLIST(1)=line,PLIST(2)=^(line)
+ s ^TMP($zn,$j,1)=line
+ s PLIST=$o(PLIST(""),-1)
+ i 'SQLCODE,$l(text),PLIST(2)'[text g fetch+1
+ q SQLCODE
+ ; Fetch all data
+fetchbuffer(mi,text,p2,p3,p4,p5,p6,p7,p8,p9) s mi=$g(mi),text=$g(text) k ^TMP($zn,$j,2)
+ s max=$s($g(PLIST(1)):PLIST(1),1:100)
+ f xxx=1:1:max s SQLCODE=$$fetch(mi,text) q:SQLCODE  d
+ .s cnt=$o(^TMP($zn,$j,2,""),-1)+1 f j=1:1:PLIST s $p(^TMP($zn,$j,2,cnt),$c(28),j)=$tr($g(PLIST(j)),"^",$c(3))
+ k PLIST m PLIST=^TMP($zn,$j,2) k ^TMP($zn,$j,2)
+ s PLIST=$o(PLIST(""),-1)
+ q SQLCODE
+fetchall(mi,text,p2,p3,p4,p5,p6,p7,p8,p9) n (mi,text,PLIST) s mi=$g(mi),text=$g(text) k ^TMP($zn,$j,2)
+ i $$open(mi,text)
+ f cnt=1:1 q:$$fetch(mi,text)  s ^TMP($zn,$j,2,cnt)="" f j=1:1:PLIST s $p(^TMP($zn,$j,2,cnt),$c(28),j)=$g(PLIST(j))
+ i $$close()
+ k PLIST m PLIST=^TMP($zn,$j,2)
+ s PLIST=$o(PLIST(""),-1)
+ k ^TMP($zn,$j,2)
+ q 0
+close() k ^TMP($zn,$j,1)
+ q 0
+ ; file scatter plot
+filesp(mi,sample,epis,result) n (mi,sample,epis,result)
+ s mi=$g(mi),sample=$g(sample),epis=$g(epis),result=$g(result)
+ i '$l(sample),$l(epis) s sample=epis
+ i $$select^LVBMIMP(mi) q
+ s delim1=$c(PLIST(10)),delim2=$c(PLIST(11))
+ s sample=sample_" " k ^TMIF(mi,1,sample,"PLOT")
+ i '$d(^TMIF(mi,1,sample)) d
+ .k PLIST s PLIST(2)=sample,PLIST(3)=epis,PLIST(7)=+$h,PLIST(11)=$p($h,",",2)
+ .s PLIST=$o(PLIST(""),-1)
+ .i $$insert^LVBMIRH(mi)
+ f k=1:1:$L(result,delim2) s resdata=$p(result,delim2,k) d
+ .k PLIST
+ .s PLIST(2)=$p(resdata,delim1,1),PLIST(3)=$p(resdata,delim1,2),PLIST(4)=$p(resdata,delim1,3) q:PLIST(2)=""
+ .s PLIST(4)=$tr(PLIST(4),$c(20),"\")
+ .i $$insert^LVBMIRS(mi_"||"_sample)
+ q
+ ; file antibiotics
+ ; reportable: [Y]/N
+ ;             any other - to get if the antibiotic is reportable
+fileant(mi,sample,epis,result,reportable) n (mi,sample,epis,result,reportable)
+ s mi=$g(mi),sample=$g(sample),epis=$g(epis),result=$g(result),reportable=$g(reportable) s:reportable="" reportable="Y"
+ s l=$i(^TMPlog("log")) m ^TMPlog("log",l)=PLIST
+ s ^TMPlog("log",l)=$h_" : "_$j_" : $$fileant^"_$zn_" : "_$g(mi)_"^"_$g(sample)_"^"_$g(epis)_"^"_$g(result)_"^"_$g(reportable)
+ i '$l(sample),$l(epis) s sample=epis
+ i '$l(sample),'$l(epis) q
+ s sample=sample_" " i '$d(^TMIF(mi,1,sample)) d
+ .k PLIST s PLIST(2)=sample,PLIST(3)=epis,PLIST(7)=+$h,PLIST(11)=$p($h,",",2)
+ .s PLIST=$o(PLIST(""),-1)
+ .i $$insert^LVBMIRH(mi)
+ i $$select^LVBMIMP(mi) q
+ s delim1=$c(PLIST(10)),delim2=$c(PLIST(11)),delim3=$c(PLIST(27)),delim4=$c(PLIST(28))
+ f k=1:1:$L(result,delim2) s resdata=$p(result,delim2,k) d
+ .k PLIST s PLIST(3)=$$trans1(mi,$p(resdata,delim1,1),"BUG") i $l(PLIST(3)),'$$insert^LVBMIRB(mi_"||"_sample) d
+ ..s misRID=PLIST(1),bug=PLIST(3),resdata1=$p(resdata,delim1,2),orgCh=$p(resdata,delim1,3)
+ ..f m=1:1:$L(resdata1,delim3) s resdata2=$p(resdata1,delim3,m) d
+ ...k PLIST
+ ...s PLIST(2)=$$trans1(mi,$p(resdata2,delim4,1),"ANT")
+ ...s PLIST(3)=$$trans1(mi,$p(resdata2,delim4,2),"SEN")
+ ...s PLIST(4)=$s($f("YNX",reportable):reportable,1:$$getreportable(bug,PLIST(2)))
+ ...s PLIST(5)=$p(resdata2,delim4,3)
+ ...s PLIST(6)=$p(resdata2,delim4,4)
+ ...i $l(PLIST(2)),($l(PLIST(3))!$l(PLIST(5))!$l(PLIST(6))) i $$insert^LVBMIRBA(misRID)
+ ..i $l(orgCh) d
+ ...f j=1:1:3 s @("x"_j)=$p(misRID,"||",j)
+ ...s (x,ti)="" f  s ti=$o(^TMIF(mi,3,orgCh,ti)) q:ti=""  d
+ ....s x=1 
+ ....i $d(^TMIF(x1,1,x2,"BUG",x3,"ANT")) k ^TMIF(x1,1,x2,"DATA",ti)
+ ....m ^TMIF(x1,1,x2,"DATA",ti,1)=^TMIF(x1,1,x2,"BUG",x3)
+ ...i x k ^TMIF(x1,1,x2,"BUG",x3)
+ q
+ ; get if an antibiotics is reportable
+getreportable(bug,ant) n (bug,ant) s bug=$g(bug),ant=$g(ant),report="N",found=0
+ i '$l(bug)!('$l(ant)) q report
+ ; check antibiotics from pathogen
+ i $d(^TTAB("BUG",bug,"ANT",ant))#10 s found=1,report=$p(^TTAB("BUG",bug,"ANT",ant),"\",1)
+ ; check antibiotics from antibiotic panel
+ i 'found,$d(^TTAB("BUG",bug,"MP")) d
+ .s x="" f  s x=$o(^TTAB("BUG",bug,"MP",x)) q:x=""  d
+ ..s xspec=$p(^(x),"\",1),xss=$p(^(x),"\",2)
+ ..i $l(xspec) q
+ ..i $l(xss) q
+ ..s panel=$p(^(x),"\",3),xx=(''$l(xspec))+(''$l(xss))
+ ..s xx(xx,panel)=$p(^(x),"\",4)
+ .s xx=$o(xx(""),-1) i $l(xx) d
+ ..s panel="" f  s panel=$o(xx(xx,panel)) q:panel=""  i xx(xx,panel)="Y" d  q
+ ...i $d(^TTAB("MP",panel,"ANT",ant))#10 s found=1,report=$p(^TTAB("MP",panel,"ANT",ant),"\",1)
+ ; check antibiotics from pathogen-group
+ i 'found d
+ .s bg=$$seldata^LVBCTBUG(bug,4)
+ .i $l(bg),'found,$d(^TTAB("BUG-GROUP",bg,"AB")) d
+ .. i $d(^TTAB("BUG-GROUP",bg,"AB",ant))#10 s found=1,report=$p(^TTAB("BUG-GROUP",bg,"AB",ant),"\",1)
+ .i $l(bg),'found,$d(^TTAB("BUG-GROUP",bg,"MP")) d
+ ..s x="" f  s x=$o(^TTAB("BUG-GROUP",bg,"MP",x)) q:x=""  d
+ ...s xspec=$p(^(x),"\",1),xss=$p(^(x),"\",2)
+ ...i $l(xspec),xspec'=spec q
+ ...i $l(xss),xss'=ss q
+ ...s panel=$p(^(x),"\",3),xx=(''$l(xspec))+(''$l(xss))
+ ...s xx(xx,panel)=$p(^(x),"\",4)
+ ..s xx=$o(xx(""),-1) i $l(xx) d
+ ...s panel="" f  s panel=$o(xx(xx,panel)) q:panel=""  i xx(xx,panel)="Y" d  q
+ ....i $d(^TTAB("MP",panel,"ANT",ant))#10 s found=1,report=$p(^TTAB("MP",panel,"ANT",ant),"\",1)
+ q report
+ ; file result
+ ; QC -  1. Cup position
+ ;       2. QCid
+file(mi,sample,epis,surname,result,date,time,QC,miOverwrite) n (mi,sample,epis,surname,result,date,time,QC,miOverwrite) k ^TMP($zn,$j,"file")
+ s mi=$g(mi),sample=$g(sample),epis=$g(epis),surname=$g(surname),result=$g(result),date=$g(date),time=$g(time),QC=$g(QC),miOverwrite=$g(miOverwrite)
+ s l=$i(^TMPlog("log")) m ^TMPlog("log",l)=PLIST
+ s ^TMPlog("log",l)=$h_" : "_$j_" : $$file^"_$zn_" : "_$g(mi)_"^"_$g(sample)_"^"_$g(epis)_"^"_$g(surname)_"^"_$g(result)_"^"_$g(date)_"^"_$g(time)_"^"_$g(QC)_"^"_$g(miOverwrite)
+ i (date>$h)!(date<($h-30)) s date=$p($h,",",1),time=$p($h,",",2)
+ i '$l(sample),$l(epis) s sample=epis
+ i '$l(sample),'$l(epis) q
+ i $l(QC) s epis="QC",QCrowid=$$getQC(mi,QC)
+ i $$select^LVBMIMP(mi) q
+ s over=PLIST(15),join=PLIST(16),delim1=$c(PLIST(10)),delim2=$c(PLIST(11)),delim3=$c(PLIST(27)),qctime=PLIST(30),folder=PLIST(12)
+ s file="" i $l(folder) d
+ .f j="\","/" i folder[j,$e(folder,$l(folder))'=j s folder=folder_j
+ .s year=$p($$extdate2^SSUTIL4(+$h),"/",3)
+ .s month=$p($$extdate2^SSUTIL4(+$h),"/",2)
+ .s folder=folder_year_month
+ .f j="\","/" i folder[j,$e(folder,$l(folder))'=j s folder=folder_"_"
+ .s file=folder_mi_".csv"
+ i $l(file) s xxDev=$io o file:("WAS"):0 e  s file=""
+ f k=1:1:$L(result,delim2) s resdata=$p(result,delim2,k) d
+ .s ch=$p(resdata,delim1,1),res=$p(resdata,delim1,2) i $l(ch) d
+ ..i $l(file) u file w sample,",",$$extdate2^SSUTIL4(+$h),",",$$exttime^SSUTIL4($p($h,",",2)),",",ch,",",res,!
+ ..s ti="" f  s ti=$o(^TMIF(mi,3,ch,ti)) q:ti=""  d
+ ...s xx=$g(^TMIF(mi,2,ti)),direction=$p(xx,"\",3),suffix=$p(xx,"\",4)
+ ...i '$l(QC) d
+ ....i $l(suffix),$e(epis,$l(epis))=suffix s ep=$e(epis,1,$l(epis)-1) i $l(ep) s ^TMIF(mi,20,ep,"TI",ti)="",$p(^TMIF(mi,20,ep),"\",3)=$$zts()
+ ....i '$l(suffix),$e(epis,$l(epis))'?1U s ^TMIF(mi,20,epis,"TI",ti)="",$p(^TMIF(mi,20,epis),"\",3)=$$zts()
+ ....s group=$p(^TMIF(mi),"\",33) f j=1:1:$l(group,",") s xm=$p(group,",",j) i $l(xm),$d(^TMIF(xm,2,ti)) d
+ .....s xx=$g(^TMIF(xm,2,ti)),sfx=$p(xx,"\",4)
+ .....i $l(sfx),$e(epis,$l(epis))=sfx s ep=$e(epis,1,$l(epis)-1) i $l(ep) s ^TMIF(mi,20,ep,"TI",ti)="",$p(^TMIF(mi,20,ep),"\",3)=$$zts()
+ .....i '$l(sfx),$e(epis,$l(epis))'?1U s ^TMIF(mi,20,epis,"TI",ti)="",$p(^TMIF(mi,20,epis),"\",3)=$$zts()
+ ...i " Y IL "[(" "_direction_" ") d
+ ....i $l(QC) s ^TMP($zn,$j,"file",sample,ti)=resdata
+ ....e  i $l(suffix),$e(sample,$l(sample))=suffix s ^TMP($zn,$j,"file",$e(sample,1,$l(sample)-1),ti)=resdata
+ ....e  i '$l(suffix),$e(sample,$l(sample))'?1U s ^TMP($zn,$j,"file",sample,ti)=resdata
+ i $l(file) c file u xxDev
+ s SAMPLE="" f  s SAMPLE=$o(^TMP($zn,$j,"file",SAMPLE)) q:SAMPLE=""  s (sample,epis)=SAMPLE d
+ .k list s list=""
+ .i $l(QC) s epis="QC"
+ .i join'="Y" d
+ .. ; limit to only 25 samples
+ ..s found=0  f zz=32:1:33,35:1:60 i '$d(^TMIF(mi,1,sample_$c(zz))) s sample=sample_$c(zz),found=1 q
+ ..i 'found s sample=sample_$c(32)
+ .i join="Y" s sample=sample_$c(32) i over="Y",$$delete^LVBMIRH(mi_"||"_sample)
+ .s ti="" f  s ti=$o(^TMP($zn,$j,"file",SAMPLE,ti)) q:ti=""  s resdata=^(ti) d
+ ..s res=$p(resdata,delim1,2),flag=$p(resdata,delim1,3),spec=$p(resdata,delim1,4),comments=$p(resdata,delim1,5)
+ ..i $l(res)!$l(comments)!$l(flag) d
+ ...i $l(res) d
+ ....i res="0." s res="0"
+ ....f  q:$e(res)'=" "  s res=$e(res,2,$l(res))
+ ....f  q:$e(res,$l(res))'=" "  s res=$e(res,1,$l(res)-1)
+ ....i $isvalidnum(res),res'=0 f  q:$e(res)'="0"  s res=$e(res,2,$l(res))
+ ... ; translate flags
+ ...s skip="" i $l(flag) d
+ ....s flag=$tr(flag,"^",",")
+ ....s new="" f xx=1:1:$l(flag,",") s fl=$p(flag,",",xx) i $l(fl) s fl=$$trans1(mi,fl,"FLG") d
+ .... ; reject result
+ ....i $p(fl,$c(1),2)="Y" s (res,comments)="" q
+ .... ; error result
+ ....i $p(fl,$c(1),3)="E" s res=$p(fl,$c(1),4),skip="Y"
+ ....s fl=$p(fl,$c(1),1) i $l(fl) s new=new_$s($l(new):",",1:"")_fl
+ ....s flag=new
+ ...i '($l(res)!$l(comments)) q
+ ...s tires=res i skip'="Y" d
+ ....s dec="" i '$l(QC) s dec=$$seldata^LVBCTTC(ti,5) i $l(dec) s dec=$s($e(dec)="N":$e(dec,2,$l(dec)),1:"")
+ ....i $l(tires) d
+ ..... ; convert results
+ .....d
+ ...... ; translate result
+ ......i $d(^TMIF(mi,2,ti,1)) s tires=$$trans(mi,ti,tires) q:found
+ ...... ; divider scale
+ ......s div=$p($g(^TMIF(mi,2,ti)),"\",2) i div,tires?1.999PN d
+ .......i ($e(tires)=">")!($e(tires)="<") s tires=$e(tires)_($e(tires,2,99)/div)
+ .......e  s tires=tires/div
+ ......i $e(tires,$l(tires))="." s tires=$e(tires,1,$l(tires)-1)
+ ......i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)
+ ... ; translate comments
+ ...s ticomments=comments i $l(ticomments) d
+ ....s new="" f xx=1:1:$l(ticomments,delim3) s com=$p(ticomments,delim3,xx) i $l(com) d
+ .....s com=$$trans(mi,ti,com) i $l(com) s new=new_$s($l(new):delim3,1:"")_com
+ ....s ticomments=new
+ ... ; save QC data
+ ...s QCrun="" i $l(QC),$l(QCrowid) d
+ ....s mix=mi i $l(miOverwrite) s mix=miOverwrite
+ .... ; find qc run
+ ....s RunDate=date,RunTime=time
+ ....s QCx="" f  s QCx=$o(^TMIF(mix,"QC-RUN",$p(QCrowid,"||",2,3),date,QCx)) q:QCx=""  i time'<^(QCx),time'>(^(QCx)+qctime) s RunDate=date,RunTime=^(QCx) q
+ ....i '$l(QCx) s QCx=$o(^TMIF(mix,"QC-RUN",$p(QCrowid,"||",2,3),date,QCx),-1)+1
+ ....k PLIST s PLIST(2)=RunDate,PLIST(3)=RunTime,PLIST(4)=tires,PLIST(8)=QCx,PLIST(11)="Y"
+ ....s PLIST=$o(PLIST(""),-1)
+ ....s par=$p(QCrowid,"||",2)_"||"_$p(QCrowid,"||",3)_"||M||"_mix_"||"_ti_"||"_$p(QCrowid,"||",4)
+ ....s ^TMIF(mix,"QC-RUN",$p(QCrowid,"||",2,3),RunDate,QCx)=RunTime
+ ....s ^TMIF(mix,"QC-RUN",$p(QCrowid,"||",2,3),RunDate,QCx,$p(QCrowid,"||",4))=""
+ ....i '$$insert^LVBQCMTD(par,"Y") s QCrun=%ROWID
+ ... ; file result
+ ...k mix s ts="" f  s ts=$o(^TMIF(mi,2,ti,0,ts)) q:ts=""  d
+ ....s mix=$p($g(^TMIF(mi,0,ts)),"\") s:mix="" mix=mi i $l(miOverwrite) s mix=miOverwrite
+ ....i $d(^TMIF(mix)),'$d(mix(mix)) d
+ .....i '$d(^TMIF(mix,1,sample)) d
+ ......k PLIST s PLIST(2)=sample,PLIST(3)=epis,PLIST(5)=date,PLIST(6)=time,PLIST(4)=surname,PLIST(7)=+$h,PLIST(11)=$p($h,",",2)
+ ......s PLIST=$o(PLIST(""),-1)
+ ......i $$insert^LVBMIRH(mix)
+ .....f j=1:1 q:'$d(^TMIF(mix,1,sample,"DATA",ti,j))  i $p(^TMIF(mix,1,sample,"DATA",ti,j),"\",1,3)=(tires_"\"_flag_"\"_spec) s j="" q
+ .....i $l(j) d
+ ......s ^TMIF(mix,1,sample,"DATA",ti,j)=(tires_"\"_flag_"\"_spec_"\\\"_QCrun_"\\"_date_"\"_time)
+ ......i '$d(list(ti)) s syn=$p($g(^TTAB("TC",ti)),"\",12),list=list_$s($l(list):",",1:"")_$s($l(syn):syn,1:ti),list(ti)=""
+ ......i $l(ticomments) d
+ .......f xx=1:1:$l(ticomments,delim3) d
+ ........f jj=1:1 q:'$d(^TMIF(mix,1,sample,"DATA",ti,j,"REM",jj))  i ^TMIF(mix,1,sample,"DATA",ti,j,"REM",jj)=$p(ticomments,delim3,xx) s jj="" q
+ ........i $l(jj) s ^TMIF(mix,1,sample,"DATA",ti,j,"REM",jj)=$p(ticomments,delim3,xx)
+ .......s ^TMIF(mix,1,sample,"DATA",ti,j,"REM",0)=$o(^TMIF(mix,1,sample,"DATA",ti,j,"REM",""),-1)
+ .....s mix(mix)=""
+ .i $l(list) d events^LVBCOM01(epis,"IR","Result received from instrument <"_mi_"> : <"_list_">")
+ k ^TMP($zn,$j,"file")
+ q
+getQC(mi,QC) n (mi,QC) s mi=$g(mi),QC=$g(QC),QC1=$p(QC,"\",1),QC2=$p(QC,"\",2),result=""
+ i $l(QC1)!$l(QC2) d
+ .i $$open^LVBMIQC(mi,"Y")
+ .f  q:$$fetch^LVBMIQC(mi,"Y")  d  i $l(result) q
+ ..i $l($p(PLIST(2),$c(1),3)),$l($p(PLIST(3),$c(1))) d
+ ...i $l(QC1),QC1=PLIST(5) s result="||"_$p(PLIST(2),$c(1),1)_"||"_$p(PLIST(2),$c(1),3)_"||"_$p(PLIST(3),$c(1))
+ ...i $l(QC2),QC2=PLIST(4) s result="||"_$p(PLIST(2),$c(1),1)_"||"_$p(PLIST(2),$c(1),3)_"||"_$p(PLIST(3),$c(1))
+ .i $$close^LVBMIQC()
+ q result
+trans1(mi,result,type) s mi=$g(mi),result=$g(result),type=$g(type) n (mi,result,type) s res=""
+ i type="BUG",'$$select^LVBMIMB(mi_"||"_result) s res=$p(PLIST(3),$c(1))
+ i type="ANT",'$$select^LVBMIMA(mi_"||"_result) s res=$p(PLIST(3),$c(1))
+ i type="SEN",'$$select^LVBMIMS(mi_"||"_result) s res=$p(PLIST(3),$c(1))
+ i type="FLG",'$$select^LVBMIFL(mi_"||"_result) s res=$p(PLIST(3),$c(1))_$c(1)_$p(PLIST(4),$c(1))_$c(1)_$p(PLIST(3),$c(1),3)_$c(1)_$p(PLIST(3),$c(1),2)
+ q res
+trans(mi,ti,result) s mi=$g(mi),ti=$g(ti),result=$g(result) n (mi,ti,result,found)
+ s found=0
+ i 'found,$l(result)<50,$d(^TMIF(mi,2,ti,1,result)) s found=1,result=$p(^(result),"\")
+ ; check =
+ i 'found d
+ .i $$open^LVBMIRT(mi_"||"_ti)
+ .f  q:$$fetch^LVBMIRT(mi_"||"_ti)  i $e(PLIST(2))="="  d  q:found
+ ..i result=$e(PLIST(2),2,$l(PLIST(2))) s found=1,result=PLIST(3)
+ .i $$close^LVBMIRT()
+ ; check <
+ i 'found d
+ .i $$open^LVBMIRT(mi_"||"_ti)
+ .f  q:$$fetch^LVBMIRT(mi_"||"_ti)  i $e(PLIST(2))="<",$isvalidnum($tr(result,"<>")) d  q:found
+ ..i $tr(result,"<>")<$e(PLIST(2),2,$l(PLIST(2))) s found=1,result=PLIST(3)
+ .i $$close^LVBMIRT()
+ ; check >
+ i 'found d
+ .i $$open^LVBMIRT(mi_"||"_ti)
+ .f  q:$$fetch^LVBMIRT(mi_"||"_ti)  i $e(PLIST(2))=">",$isvalidnum($tr(result,"<>")) d  q:found
+ ..i $tr(result,"<>")>$e(PLIST(2),2,$l(PLIST(2))) s found=1,result=PLIST(3)
+ .i $$close^LVBMIRT()
+ ; check -
+ i 'found d
+ .i $$open^LVBMIRT(mi_"||"_ti)
+ .f  q:$$fetch^LVBMIRT(mi_"||"_ti)  i $e(PLIST(2))="-",$isvalidnum($tr(result,"<>")) d  q:found
+ ..i $tr(result,"<>")<$p($e(PLIST(2),2,$l(PLIST(2))),",",1) q
+ ..i $tr(result,"<>")>$p($e(PLIST(2),2,$l(PLIST(2))),",",2) q
+ ..s found=1,result=PLIST(3)
+ .i $$close^LVBMIRT()
+ ; check *ELSE*
+ i 'found,$d(^TMIF(mi,2,ti,1,"*ELSE*")) s found=1,result=$p(^("*ELSE*"),"\")
+ ; check *INT*
+ i 'found,$d(^TMIF(mi,2,ti,1,"*INT*")) s found=1,result=$j(result,0,0)
+ q result
+loadlist(mi,Tray) n (mi,Tray) s mi=$g(mi),Tray=$g(Tray)
+ ; find routine
+ s routine=$$seldata^LVBMIMP(mi,5)
+ i routine["^" s routine=$p(routine,"^",2)
+ i routine["(" s routine=$p(routine,"(",1)
+ i routine["$$" s routine=$p(routine,"$$",2)
+ i $l(routine) d
+ .i $$open^LVBMILL(mi,"R")
+ .f  q:$$fetch^LVBMILL(mi,"R")  d
+ ..i $l(Tray),Tray'=PLIST(12) q
+ ..s tray=PLIST(12),ll=PLIST(3),LLSpecimen=PLIST(11)
+ .. ; update loadlist information
+ ..s PLIST(5)=$P($h,",",1),PLIST(6)=$P($h,",",2)
+ ..i $$update^LVBMILL(PLIST(1))
+ .. ; get list of patients
+ ..i $$open^LVBMILLP(mi_"||"_ll)
+ ..f  q:$$fetch^LVBMILLP(mi_"||"_ll)  d
+ ...s epis=PLIST(3),sample=PLIST(4),order=PLIST(2),specimen=PLIST(5),dilution=PLIST(6) k test
+ ... ; get list of tests
+ ...i $$open^LVBMILLT(mi_"||"_ll_"||"_order)
+ ...f  q:$$fetch^LVBMILLT(mi_"||"_ll_"||"_order)  d
+ ....s ts=PLIST(3) i $$getall1^LVBCTTC(ts)
+ ....s z="" f  s z=$o(PLIST(z)) q:z=""  s tc=$p(PLIST(z),$c(2),1) i $l(tc) d
+ .....s active=$p($g(^TMIF(mi,2,tc)),"\",3) i active="Y" d
+ ......s ch=$p($g(^TMIF(mi,2,tc)),"\",1) i $l(ch) d
+ .......s suffix=$p($g(^TMIF(mi,2,tc)),"\",4) i '$l(suffix) s suffix=" "
+ .......s test(suffix,ch)=""
+ ...i $$close^LVBMILLT()
+ ...s suffix="" f  s suffix=$o(test(suffix)) q:suffix=""  d
+ .... ; save patient information
+ ....k ^TMP($zn,$j)
+ ....m ^TMP($zn,$j,"LL","TEST")=test(suffix)
+ ....s ^TMP($zn,$j,"LL","EPISODE")=epis
+ ....s ^TMP($zn,$j,"LL","SUFFIX")=$s(suffix=" ":"",1:suffix)
+ ....s ^TMP($zn,$j,"LL","SAMPLE")=sample
+ ....s ^TMP($zn,$j,"LL","ORDER")=order
+ ....s ^TMP($zn,$j,"LL","TRAY")=tray
+ ....s ^TMP($zn,$j,"LL","DILUTION")=dilution
+ ....s ^TMP($zn,$j,"LL","SPECIMEN")=$s($l(specimen):specimen,1:LLSpecimen)
+ ....i $l(routine) s $zt="err^"_$zn,set="s err=$$SAVE^"_routine_"("""_mi_""")" x set
+ ....k ^TMP($zn,$j)
+ ..i $$close^LVBMILLP()
+ .i $$close^LVBMILL()
+ q
+ ; limit scan to first 10 episodes
+scanall(mi,tg,full,p3)	n (mi,tg,full) k ^TMP("MIF-SCAN",$j)
+	s mi=$g(mi),tg=$g(tg),full=$g(full),stop=0,qt=$$seldata^LVBMIMP(mi,40)
+	s ep="" f  s ep=$o(^TMIF(mi,20,ep)) q:ep=""  d  q:stop>10
+	.i full="Y",$$seldata^LVBEPVIS(ep,86)'=0 q
+	.f j=1,2,3 s @("x"_j)=$p($g(^TMIF(mi,20,ep)),"\",j)
+	.s new=""
+	. ; check entry with send
+	.i 'new,((qt="UR")!(qt="U")!(qt="")) d
+	..i (($p(x1,",",1)*24*3600)+$p(x1,",",2))>(($p(x2,",",1)*24*3600)+$p(x2,",",2)),(($p($h,",",1)*24*3600)+$p($h,",",2))-(($p(x1,",",1)*24*3600)+$p(x1,",",2))>10 s new=1
+	. ; check receive with send
+	.i 'new,((qt="UR")!(qt="")) d
+	..i (($p(x3,",",1)*24*3600)+$p(x3,",",2))>(($p(x2,",",1)*24*3600)+$p(x2,",",2)),(($p($h,",",1)*24*3600)+$p($h,",",2))-(($p(x3,",",1)*24*3600)+$p(x3,",",2))>10 s new=1
+	.i 'new,((qt="O")!(qt="")),'$l(x2),(($p($h,",",1)*24*3600)+$p($h,",",2))-(($p(x1,",",1)*24*3600)+$p(x1,",",2))>10 s new=1
+	.i new d
+	..k ^TMP("MIF-SINGLE",$j,mi)
+	..d scanone(mi,ep,tg,,,"Y")
+	..s ep1="" f  s ep1=$o(^TMP("MIF-SINGLE",$j,mi,ep1)) q:ep1=""  i $d(^TMP("MIF-SINGLE",$j,mi,ep1))\10 d
+	...m ^TMP("MIF-SCAN",$j,mi,ep1)=^TMP("MIF-SINGLE",$j,mi,ep1)
+	...s stop=stop+1
+	..k ^TMP("MIF-SINGLE",$j,mi)
+	q
+ ; scan TTRQ for single episode
+scanone(mi,epis,tg,test,suffix,all) n (mi,epis,tg,test,suffix,all) k ^TMP($zn,$j),^TMP("MIF-SINGLE",$j,mi),xxVTS
+ s mi=$g(mi),epis=$g(epis),tg=$g(tg),test=$g(test),suffix=$g(suffix),all=$g(all)
+ s site=$$seldata^LVBMIMP(mi,21)
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . ; check if TestSet exist in TestGroup
+ .i $l(test),ts'=test q
+ . ; not for this instrument
+ .i '$d(^TMIF(mi,0,ts)) q
+ .i $l(tg),$$select^LVBMITGS(mi_"||"_tg_"||"_ts) q
+ .s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d
+ ..s vtsRID=epis_"||"_ts_"||"_tscnt
+ .. ; test is on hold
+ ..s hold=$$seldata^LVBVISTS(vtsRID,45)
+ .. ; different user site
+ ..i $l(site),site'=$$site^LVBVISTS(vtsRID) q
+ .. ; send only if test set has not been authorised yet
+ ..i $$status^LVBVIS1(vtsRID)'="A" s ^TMP($zn,$j,1,epis,ts,$p(vtsRID,"||",3))=$s(hold="Y":"Y",1:"")
+ i '$d(^TMIF(mi,20,epis)),$d(^TMPmif(mi,20,epis)) m ^TMIF(mi,20,epis)=^TMPmif(mi,20,epis) k ^TMPmif(mi,20,epis)
+ k test,list s (test(epis),list)=""
+ s sfx="" f  s sfx=$o(^TMIF(mi,20,epis,"SFX",sfx)) q:sfx=""  s test(epis_sfx)=""
+ s ts="" f  s ts=$o(^TMP($zn,$j,1,epis,ts)) q:ts=""  d
+ .i '$$getall1^LVBCTTC(ts) k FORMAT m FORMAT=PLIST d
+ .. ; check hold
+ ..s tscnt="" f  s tscnt=$o(^TMP($zn,$j,1,epis,ts,tscnt)) q:tscnt=""  s hold=^(tscnt) i hold="Y" d
+ ...s ok=1,z="" f  s z=$o(FORMAT(z)) q:z=""  s tc=$p(FORMAT(z),$c(2),1) i $l(tc) d
+ ....i $p($g(^TEPI(epis,1,ts,tscnt,"DATA",tc)),"\",10)="Y" s ok=0 q
+ ...i ok k ^TMP($zn,$j,1,epis,ts,tscnt)
+ ..s z="" f  s z=$o(FORMAT(z)) q:z=""  s tc=$p(FORMAT(z),$c(2),1) i $l(tc) d
+ ... ; check if result already has been entered
+ ...s ok=1,tscnt="" f  s tscnt=$o(^TMP($zn,$j,1,epis,ts,tscnt)) q:tscnt=""  d
+ ....i '$d(^TEPI(epis,1,ts,tscnt,"DATA",tc)) s ok=0 q
+ ....i $p($g(^TEPI(epis,1,ts,tscnt,"DATA",tc)),"\",10)="Y" s ok=0 q
+ ...i 'ok s xx=$g(^TMIF(mi,2,tc)),ch=$p(xx,"\",1),direction=$p(xx,"\",3),sfx=$p(xx,"\",4) i $l(ch)," Y LI "[(" "_direction_" ") d
+ ....i $l(suffix),suffix'=sfx q
+ ....i $l(tg) s ok=0 d  q:'ok
+ .....i '$$select^LVBMITGI(mi_"||"_tg_"||"_tc),PLIST(3)="Y" s ok=1
+ ....i all="Y",$d(^TMIF(mi,20,epis,"TI",tc)) q
+ ....i $l(sfx) s ^TMIF(mi,20,epis,"SFX",sfx)=""
+ ....s (test(epis_sfx,ch),test(epis_sfx))="",xxVTS(epis_sfx,ch,epis_"||"_ts_"||"_tscnt)=""
+ ....i '$d(list(tc)) s syn=$p($g(^TTAB("TC",tc)),"\",12),list=list_$s($l(list):",",1:"")_$s($l(syn):syn,1:tc),list(tc)=""
+ k ^TMP($zn,$j) m ^TMP("MIF-SINGLE",$j,mi)=test
+ i $d(^TMP("MIF-SINGLE",$j,mi)) d
+ .s $p(^TMIF(mi,20,epis),"\",2)=$$zts()
+ .i all'="Y",$l(list) d events^LVBCOM01(epis,"IL","Sample loaded on instrument <"_mi_"> for tests : "_list)
+ .i all="Y",$l(list) d events^LVBCOM01(epis,"IL","Request sent to the instrument <"_mi_"> for tests : "_list)
+ q
+zts() q $h_"."_$e($p($zts,".",2),1,3)
+err s err=$ze n (mi,err)
+ s max=$$seldata^LVBMIMP(mi,23) i 'max s max=200
+ s date=$$extdate2^SSUTIL4(+$h),time=$$exttime^SSUTIL4($p($h,",",2))
+ s z=$o(^TMPmif(mi,98,""),-1)+1,^TMPmif(mi,98,z)=date_" "_time_" : "_err
+ f j=z-max:-1 q:'$d(^TMPmif(mi,98,j))  k ^TMPmif(mi,98,j)
+ q
+ ; way : H-->M - Host to machine
+ ;       H<--M - Machine to host
+ ;       ***** - text messages / errors
+trace(mi,record,way) n (mi,record,way) s mi=$g(mi),record=$g(record),way=$g(way)
+ s max=$$seldata^LVBMIMP(mi,23) i 'max s max=200
+ s:'$l(way) way="H<--M"
+ s z=$o(^TMPmif(mi,99,""),-1)+1,^TMPmif(mi,99,z)=way_" : "_$h_"."_$e($p($zts,".",2),1,3)_" : "_record
+ f j=z-max:-1 q:'$d(^TMPmif(mi,99,j))  k ^TMPmif(mi,99,j)
+ q
+start() n (mi,par4,par41) s mi=$g(mi),ok=1 i $l(mi) d
+ .s date=$$extdate2^SSUTIL4(+$h),time=$$exttime^SSUTIL4($p($h,",",2))
+ .s $zt="err^"_$zn l +^TMIFLOCK(mi):1 e  q
+ . ; find number of instruments already running
+ .s (cnt,x)="" f  s x=$o(^TMIF(x)) q:x=""  i x'=mi d
+ ..l +^TMIFLOCK(x):0 e  s cnt=cnt+1
+ ..l -^TMIFLOCK(x)
+ .i cnt'<$p($p($g(^CF("SM",1,"KEY")),"^",1),",",2) d message(mi,"Unable to start due to License limit "_date_" "_time) q
+ .l -^TMIFLOCK(mi)
+ .i par4="File Transfer" s ok=0
+ .i par4'="File Transfer" d
+ ..i $l($g(^TMIF(mi,"TCP"))) o par4:(^("TCP")::"C"):20 e  d message(mi,"Unable to start "_date_" "_time) q
+ ..i '$l($g(^TMIF(mi,"TCP"))) o par4::20 e  d message(mi,"Unable to start "_date_" "_time) q
+ ..x "u par4:"_par41 s ok=0
+ .i 'ok d
+ ..s stop="N"
+ ..  ;---&sql(UPDATE MIF_MachineParameters (MIMP_ShutDown) VALUES (:stop) WHERE MIMP_RowID = :mi)
+  ..  ;--- ** SQL PUBLIC Variables: SQLCODE, mi, stop
+ .. Do %0Ao
+ ..d message(mi,"Started "_date_" "_time)
+ .. ; clear sending queue
+ ..k ^TMIF(mi,10)
+ ..l +^TMIFLOCK(mi):1
+ q ok
+stop() n (mi) s mi=$g(mi),ok=0 i $l(mi) d
+ .s stop=$$seldata^LVBMIMP(mi,6) i stop="Y" s ok=1 d
+ ..s date=$$extdate2^SSUTIL4(+$h),time=$$exttime^SSUTIL4($p($h,",",2))
+ ..d message(mi,"Shutdown "_date_" "_time)
+ q ok
+message(mi,message) n (mi,message) s mi=$g(mi),message=$g(message)
+  ;---&sql(UPDATE MIF_MachineParameters (MIMP_Message) VALUES (:message) WHERE MIMP_RowID = :mi)
+   ;--- ** SQL PUBLIC Variables: SQLCODE, message, mi
+ Do %0Co
+ q
+ ; control : Y-strip control char
+read(start,stop,control,time) n (start,stop,control,time,mi)
+ s start=$g(start),stop=$g(stop),control=$g(control),time=$g(time),(line,ok)=0
+ s:'time time=10 s:'$l(start) ok=1
+ s result="" f  r *x:time q:(","_stop_",")[(","_$c(x)_",")  q:x=-1  i x d
+ .i $l($g(mi)) d
+ ..i 'line s line=$o(^TMPmif(mi,99,""),-1)+1
+ ..s ^TMPmif(mi,99,line)=$g(^TMPmif(mi,99,line))_$c(x)
+ .i 'ok,(","_start_",")[(","_$c(x)_",") s ok=1 q
+ .i control="Y",x<32 q
+ .i ok s result=result_$c(x)
+ q result
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Aerr" s %mmmsqld(5)=0 s %mmmsqld(6)=""
+ s %mmmsqld(2)=$g(stop),%mmmsqld(4)=$g(mi)
+ n %data
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TMIF(%mmmsqld(3)))
+ e  g %0ABdun
+ s %mmmsqld(9)=$$%getlock^User.MIFMachineParameters.T1(%mmmsqld(3)) i '%mmmsqld(9) s SQLCODE=-110 g %0Ac
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TMIF(%mmmsqld(3)))
+ e  g %0ACdun
+ k %data
+ s %data(6)=$g(%mmmsqld(2))
+ d %update^User.MIFMachineParameters.T1(%mmmsqld(3),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(5))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(9)=1 %ReleaseLock^User.MIFMachineParameters.T1(%mmmsqld(3)) g %0Ac
+%0ACdun 
+ d:%mmmsqld(9)=1 %ReleaseLock^User.MIFMachineParameters.T1(%mmmsqld(3)) g:SQLCODE<0 %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(5)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Aerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(9))=1 %ReleaseLock^User.MIFMachineParameters.T1(%mmmsqld(3)) g %0Ac
+%0Co n %mmmsqlc,%mmmsqld,%mmmsqlE,%mmmsqll,%mmmsqln,%mmmsqlp,%mmmsqlR,%mmmsqls,%mmmsqlt,%mmmsqlTS,%mmmsqlTS2,%mmmsqlZ s $zt="%0Cerr" s %mmmsqld(5)=0 s %mmmsqld(6)=""
+ s %mmmsqld(2)=$g(message),%mmmsqld(4)=$g(mi)
+ n %data
+ s SQLCODE=100
+ k:'$TLEVEL %0CacheLock If $zu(115,1)=2,'$TLEVEL { s %mmmsqlTS2=1 TSTART } If $zu(115,1) { s %mmmsqlTS=1 TSTART  }
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ i %mmmsqld(3)'="",$d(^TMIF(%mmmsqld(3)))
+ e  g %0CBdun
+ s %mmmsqld(9)=$$%getlock^User.MIFMachineParameters.T1(%mmmsqld(3)) i '%mmmsqld(9) s SQLCODE=-110 g %0Cc
+ ; asl MOD# 3
+ i %mmmsqld(3)'="",$d(^TMIF(%mmmsqld(3)))
+ e  g %0CCdun
+ k %data
+ s %data(14)=$g(%mmmsqld(2))
+ d %update^User.MIFMachineParameters.T1(%mmmsqld(3),$c(0,2,0,0),.%data,,'$g(%mmmsqlTS))
+ i 'SQLCODE i $i(%mmmsqld(5))'<$g(%0CacheRowLimit,9223372036854775807) d:%mmmsqld(9)=1 %ReleaseLock^User.MIFMachineParameters.T1(%mmmsqld(3)) g %0Cc
+%0CCdun 
+ d:%mmmsqld(9)=1 %ReleaseLock^User.MIFMachineParameters.T1(%mmmsqld(3)) g:SQLCODE<0 %0Cc
+%0CBdun 
+%0CAdun 
+%0Cc s %ROWCOUNT=$s($g(SQLCODE)'<0:+$g(%mmmsqld(5)),1:0)
+ If $zu(115,1),$g(%mmmsqlTS) { TCOMMIT:SQLCODE'<0  TROLLBACK:SQLCODE<0 1 } TCOMMIT:SQLCODE=100&&(%ROWCOUNT=0)&&($g(%mmmsqlTS2))&&($zu(115,1)=2)  q
+%0Cerr s $zt="" d SQLRunTimeError^%apiSQL($ze,.SQLCODE,.%msg) d:$g(%mmmsqld(9))=1 %ReleaseLock^User.MIFMachineParameters.T1(%mmmsqld(3)) g %0Cc
+]]></Routine>
+</Export>

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="LVBMOVEIN" type="INT" languagemode="0" generated="1"><![CDATA[
+LVBMOVEIN ; ML 13/02/02 ; Labtrak Database Movements - Inbound
+ q
+ ; loop thru and find unsent episodes
+create n  k ^TMP($zn,$j)
+ i '$$select^MVBCFSM(1) s currentsite=PLIST(43),mainsite=PLIST(33) k PLIST
+ ; process waiting entries in queue
+ d Process
+ ; process queue
+ s site="" f  s site=$o(^TTAB("USLOC",site)) q:site=""  d
+ .i site=currentsite q
+ .i $$select^LVBCTUSL(currentsite) q
+ .m USL=PLIST k PLIST i USL(6)="" q
+ .s dir=$tr(USL(6),$c(16,17,18),"^\|")_"\in\"_site_"*.*"
+ . ; import files
+ .d FileImp
+ . ; process new entries in queue
+ .d Process
+ q
+ ; find files to be processed
+FileImp i $zf(-1,"DIR "_dir_" /B > ""move.txt""")
+ s file="move.txt",$zt="Error1^"_$zn
+ o file:("RS"::$c(10,13))
+ f  u file r x s xfile=$p(x," ",$l(x," ")) i xfile[".",$l(xfile) s ^TMP($zn,$j,"FileName",xfile)=""
+End1 c file
+ ; extract file content
+End2 s $zt="Error2^"_$zn
+ s file=$o(^TMP($zn,$j,"FileName","")) i $l(file) d
+ .s dir=$tr(USL(6),$c(16,17,18),"^\|")_"\in\"_file
+ .o dir:("RS"::$c(10,13)):1 e  q
+ .k ^TMOVE("IN-PROCESS",file)
+ .u dir s line="" f  r line:10 s cnt=$o(^TMOVE("IN-PROCESS",file,""),-1)+1,^TMOVE("IN-PROCESS",file,cnt)=line
+ q
+ ; process inbound processing queue
+Process s file="" f  s file=$o(^TMOVE("IN-PROCESS",file)) q:file=""  d
+ .s cnt="" f  s cnt=$o(^TMOVE("IN-PROCESS",file,cnt)) q:cnt=""  d
+ ..s line=^TMOVE("IN-PROCESS",file,cnt)
+ .. ; extract subscript levels
+ ..s sub=$p(line,$c(26)) f i=1:1:5 s @("sub"_i)=$p(sub,",",i)
+ ..l +^TMOVE("IN",sub1,sub2,sub3,sub4)
+ ..s ^TMOVE("IN",sub1,sub2,sub3,sub4)=sub5
+ ..f i=2:1:$l(line,$c(26)) s str=$p(line,$c(26),i) d
+ ...k sub s sub=$p(str,$c(27)),data=$p(str,$c(27),2)
+ ...i $l(sub,"-")<2 s ^TMOVE("IN",sub1,sub2,sub3,sub4,sub)=data q
+ ...f j=1:1:$l(sub,"-") s sub(j)=$p(sub,"-",j)
+ ...i j=2 s ^TMOVE("IN",sub1,sub2,sub3,sub4,sub(1),sub(2))=data
+ ...i j=3 s ^TMOVE("IN",sub1,sub2,sub3,sub4,sub(1),sub(2),sub(3))=data
+ ..l -^TMOVE("IN",sub1,sub2,sub3,sub4)
+ ..k ^TMOVE("IN-PROCESS",file,cnt)
+ q
+ ; error log
+Error1 i $ze'["ENDOFFILE" d BACK^%ETN q
+ g End1
+ ; error log
+Error2 i $ze'["ENDOFFILE" d BACK^%ETN q
+ c dir
+ ; del the file
+ i '$zf(-1,"del "_dir)
+ g End2
+]]></Routine>
+</Export>

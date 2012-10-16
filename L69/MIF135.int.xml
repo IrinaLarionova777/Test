@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIF135" type="INT" languagemode="0" generated="1"><![CDATA[
+MIF135(mi) ; ML 14/06/01 ; Tosoh G7 GLYCOHEMOGLOBIN
+ ;
+ ; Sample number is set to 5 digits
+ ;
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),eot=$c(4),ack=$c(6),lf=$c(10),cr=$c(13),nak=$c(21)
+ i $$start^MIF000() q
+ f  d Main i $$stop^MIF000() q
+ c par4
+ q
+Main f  r *x:60 d
+ .i $c(x)=eot d ORDER
+ .i $c(x)=stx d
+ ..s record="" s record=$$read^MIF000(,etx)
+ ..d trace^MIF000(mi,record,"H<--M"),ACK
+ .. ; query message
+ ..i $e(record)="G" s epis=$tr($e(record,3,99),"* ") i $l(epis) s ^TMP($zn,$j,"ENQ",epis)=$tr($e(record,3,99)," ")
+ ..i "012"[$e(record) d
+ ...s (sample,epis,surname,result,date,time,QC)=""
+ ...s res=$e(record,8,57),flag=$e(58,59),epis=$tr($e(record,60,99),"* ")
+ ...i $l(epis) d
+ ....i $e(epis,1,2)="QC" s QC="\"_epis
+ ....f j=1:1:10 d
+ .....s x1="C"_j,x2=$tr($e(res,j-1*5+1,j*5)," "),x3=flag
+ .....s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+ ...i $l(result) d
+ ....d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ ....s (sample,epis,surname,result,date,time,QC)=""
+ q
+ORDER ; create list of orders if exists
+ s epis="" f  s epis=$o(^TMP($zn,$j,"ENQ",epis)) q:epis=""  d
+ .s xxEpis=^(epis)
+ .k ^TMP("MIF-SINGLE",$j,mi)
+ .d scanone^MIF000(mi,epis)
+ .i $d(^TMP("MIF-SINGLE",$j,mi)) s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="A,"_xxEpis_$j("",20-$l(epis))_",0000  ,01      ,        "
+ .k ^TMP("MIF-SINGLE",$j,mi)
+ .k ^TMP($zn,$j,"ENQ",epis)
+ s line="" f  s line=$o(^TMIF(mi,10,line)) q:line=""  i '$$SEND(^(line)) k ^TMIF(mi,10,line)
+ q
+SEND(str) s str=$g(str)
+ s str=stx_str_etx,str=str_$$CHSUM(str)
+ w str,*-3 d trace^MIF000(mi,str,"H-->M")
+ f j=1:1:5 r *R:1 i ($c(R)=ack)!($c(R)=eot) q
+ i $c(R)=ack d trace^MIF000(mi,"ACK","H<--M") q 0
+ i $c(R)=eot d trace^MIF000(mi,"EOT","H<--M") q 1
+ d trace^MIF000(mi,R,"H<--M")
+ q 2
+CHSUM(x) ; calculate check sum
+ q $zcrc(x,1)
+ACK ; send 'ack' to instrument
+ w ack,*-3
+ d trace^MIF000(mi,"ACK","H-->M")
+ q
+]]></Routine>
+</Export>

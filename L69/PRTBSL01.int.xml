@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTBSL01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTBSL01 ; IG 13/10/98 ; Banking slip
+ q
+ ; Parameters :  1. Audit Number
+ ;
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="Banking Slip - "_$g(AUDIT(3))
+ s line=line+1,xHEADER(line)=""
+ s line=line+1,xHEADER(line)="Posting Audit Number "_PAR1
+ s line=line+1,xHEADER(line)=""
+ i $l(AUDIT(4)) d
+ .s line=line+1,xHEADER(line)="** CREDIT ** ACCOUNT OF : "_AUDIT(4)
+ .s line=line+1,xHEADER(line)=""
+ i $l(AUDIT(5)) d
+ .s line=line+1,xHEADER(line)="ACCOUNT No : "_AUDIT(5)
+ .s line=line+1,xHEADER(line)=""
+ d HEADER^PRTREP00(.xHEADER),BODY,PRINT
+ k ^TMP($zn,$j),^TMP("PRTREP00",$j)
+ q
+INIT ; initialise parameters
+ f j=1:1:$l(PAR,$c(1)) s @("PAR"_j)=$p(PAR,$c(1),j)
+ k xSORT d H^PRTREP00(PAR10,$zn)
+ s X=xLINE(2),MAX=$l(X),$p(SPACE," ",MAX)="",$p(LINE,"-",MAX)=""
+ s audit=$o(^TBATi("AUDIT",PAR1,"")) i $l(audit) d
+ .s auddate=$p(^TBATi("AUDIT",PAR1,audit),"\",1)
+ .s audcode=$p(^TBATi("AUDIT",PAR1,audit),"\",2)
+ .i $l(audcode),'$$select^LVBCTAU(audcode) k AUDIT m AUDIT=PLIST
+ q
+BODY ; create report
+ s batch="" f  s batch=$o(^TBATi("AUDIT",PAR1,batch)) q:batch=""  d
+ .s bline="" f  s bline=$o(^TBAT(batch,bline)) q:bline=""  d
+ ..s bROWID=batch_"||"_bline,epis=$p(^(bline),"\")
+ ..i $$open^LVBCRBLA(bROWID)
+ ..f  q:$$fetch^LVBCRBLA(bROWID)  d
+ ...s cnt=$o(^TMP($zn,$j,"REPORT",PLIST(3),""),-1)+1 m ^TMP($zn,$j,"REPORT",PLIST(3),cnt)=PLIST
+ ...s ^TMP($zn,$j,"REPORT",PLIST(3))=$g(^TMP($zn,$j,"REPORT",PLIST(3)))+PLIST(4)
+ ..i $$close^LVBCRBLA()
+ q
+PRINT ; print report
+ i $d(^TMP($zn,$j,"REPORT")) d
+ .f type="CQ","CC","CS" i $d(^TMP($zn,$j,"REPORT",type)) d
+ ..s cnt="" f  s cnt=$o(^TMP($zn,$j,"REPORT",type,cnt)) q:cnt=""  d
+ ...k plist m plist=^TMP($zn,$j,"REPORT",type,cnt)
+ ...s xxx(1)=type,xxx(2)=plist(4)
+ ...i type="CQ" s xxx(3)=plist(8),xxx(4)=plist(7),xxx(5)=$p(plist(5),$c(1),2) i '$l(xxx(5)) s xxx(5)=plist(5)
+ ...i type="CC" s xxx(3)=plist(8),xxx(4)=plist(7),xxx(5)=$p(plist(6),$c(1),2),xxx(6)=plist(9) i '$l(xxx(5)) s xxx(5)=plist(6)
+ ...s subtotal=$g(subtotal)+xxx(2)
+ ...d PRINT^PRTREP00(,.N) k xxx
+ ...s linecnt=$g(linecnt)+1 i linecnt=70!($o(^TMP($zn,$j,"REPORT",type,cnt))="") d
+ ....s linecnt=""
+ ....d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ....d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ....s xxx(5)="Subtotal for page",xxx(2)=subtotal,subtotal=""
+ ....d PRINT^PRTREP00(,.N) k xxx
+ ....d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ....i $o(^TMP($zn,$j,"REPORT",type,cnt)) d
+ .....d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .....d ADDLINE^PRTREP00(REPID,"PRT","#")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..s xxx(1)="Total",xxx(2)=^TMP($zn,$j,"REPORT",type)
+ ..d BoldAmt("on")
+ ..i type="CC" s xxx(3)="No. of CCards : "_$o(^TMP($zn,$j,"REPORT",type,""),-1)
+ ..i type="CQ" s xxx(3)="No. of cheques : "_$o(^TMP($zn,$j,"REPORT",type,""),-1)
+ ..i type="CS" s xxx(3)="for cash :"
+ ..d PRINT^PRTREP00(,.N) k xxx d BoldAmt("")
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ ..d ADDLINE^PRTREP00(REPID,"PRT","!")
+ ..i $o(^TMP($zn,$j,"REPORT",type))'="" d ADDLINE^PRTREP00(REPID,"PRT","#")
+ .s (total,type)="" f  s type=$o(^TMP($zn,$j,"REPORT",type)) q:type=""  s total=total+$g(^TMP($zn,$j,"REPORT",type))
+ .s xxx(1)="Total",xxx(2)=total,xxx(3)="For All Payment Types"  d BoldAmt("on")
+ .d PRINT^PRTREP00(,.N) k xxx d BoldAmt("")
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="BSL"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ q
+ ; turn bold 'amount' field on/off
+BoldAmt(onoff) s onoff=$g(onoff)
+ i onoff="on" d  q
+ .s x="" f  s x=$o(N(x)) q:x=""  i $g(N(x,2))=2 s N(x,"FONT")="~BOLD"
+ s x="" f  s x=$o(N(x)) q:x=""  i $g(N(x,2))=2 k N(x,"FONT")
+ q
+]]></Routine>
+</Export>

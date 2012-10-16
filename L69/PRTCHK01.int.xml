@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCHK01" type="INT" languagemode="0" generated="1"><![CDATA[
+PRTCHK01 ;IG 27/05/98 ;DataBase check
+ Q
+ ; Parameters :  1.Date from
+ ;               2.Date to
+ ;               3.Sort by : D-date of collection
+ ;                            -MRN
+ ;               4.Check Doctor table
+ ; Fields :      1-MRN#
+ ;               2-Lab No
+ ;               3-Name
+ ;               4-Date of collection
+ ;               5-Problem description
+CREATE(REPID,PAR,USER,%msql) ; Create report
+ n (REPID,PAR,USER,%msql) K ^TMP($ZN,$J)
+ k xHEADER d INIT
+ s line=1,xHEADER(line)="DataBase check report"
+ i PAR4="Y" d
+ .s line=2,xHEADER(line)=""
+ .s line=3,xHEADER(line)="including Doctors DB check"
+ d HEADER^PRTREP00(.xHEADER,PAR1,PAR2),BODY,PRINT
+CREND K ^TMP($ZN,$J),^TMP("PRTREP00",$J)
+ Q
+ ; initialize parameters
+INIT F J=1:1:$L(PAR,$C(1)) S @("PAR"_J)=$P(PAR,$C(1),J)
+ K xSORT D H^PRTREP00(PAR10,$ZN)
+ S X=xLINE(2),MAX=$L(X),$P(SPACE," ",MAX)="",$P(LINE,"-",MAX)=""
+ Q
+ ; create temporary printing file
+BODY s (Start,rowid)=1 i '$$select^MVBCFLAB(rowid) s Start=$p(PLIST(38),$c(1))
+ ; check Doctor's DB
+ i PAR4="Y" d
+ .s x="" f  s x=$o(^TTAB("DR",x)) q:x=""  i $$seldata^LVBCTDR(x,25)="Y" d
+ ..s ds=$$UPPER^SSUTIL4($$seldata^LVBCTDR(x,3))
+ ..s dpr=$$UPPER^SSUTIL4($$seldata^LVBCTDR(x,18))
+ ..f j=5,6,7 s @("dph"_j)=$tr($$seldata^LVBCTDR(x,j)," ")
+ ..i $l(dph5) s ^TMP($zn,$j,"DR1",ds_" "_dpr_" "_dph5,x)=""
+ ..i $l(dph6) s ^TMP($zn,$j,"DR1",ds_" "_dpr_" "_dph6,x)=""
+ ..i $l(dph7) s ^TMP($zn,$j,"DR1",ds_" "_dpr_" "_dph7,x)=""
+ ..i $l(dph5) s ^TMP($zn,$j,"DR2",ds_" "_dph5,x)=""
+ ..i $l(dph6) s ^TMP($zn,$j,"DR2",ds_" "_dph6,x)=""
+ ..i $l(dph7) s ^TMP($zn,$j,"DR2",ds_" "_dph7,x)=""
+ ..s ^TMP($zn,$j,"DR3",ds_" "_dpr,x)=""
+ ..i $l(dph5) s ^TMP($zn,$j,"DR4",dpr_" "_dph5,x)=""
+ ..i $l(dph6) s ^TMP($zn,$j,"DR4",dpr_" "_dph6,x)=""
+ ..i $l(dph7) s ^TMP($zn,$j,"DR4",dpr_" "_dph7,x)=""
+ .f dr="DR1","DR2","DR3","DR4" d
+ ..s x1="" f  s x1=$o(^TMP($zn,$j,dr,x1)) q:x1=""  i $o(^TMP($zn,$j,dr,x1,""))=$o(^TMP($zn,$j,dr,x1,""),-1) k ^TMP($zn,$j,dr,x1)
+ ..m ^TMP($zn,$j,"DR")=^TMP($zn,$j,dr)
+ i Start s date="" f  s date=$o(^TDAY(1,date)) q:date=""  q:date>(Start-1)  d
+ .s epis="" f  s epis=$o(^TDAY(1,date,0,epis)) q:epis=""  d
+ ..i PAR3="D" s sort2=$p(^TEPI(epis),"\",18),sort1=$p(^TEPI(epis),"\",10)
+ ..i PAR3'="D" s sort1=$p(^TEPI(epis),"\",18),sort2=$p(^TEPI(epis),"\",10)
+ ..s:sort1="" sort1=" " s:sort2="" sort2=" "
+ ..s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="Date of collection <"_$$extdate2^SSUTIL4(date)_">"
+ s date=PAR1 f  d:$l(date)  s date=$o(^TDAY(1,date)) q:date=""  i $l(PAR2),date>PAR2 q
+ .s epis="" f  s epis=$o(^TDAY(1,date,0,epis)) q:epis=""  d
+ ..i PAR3="D" s sort2=$p(^TEPI(epis),"\",18),sort1=$p(^TEPI(epis),"\",10)
+ ..i PAR3'="D" s sort1=$p(^TEPI(epis),"\",18),sort2=$p(^TEPI(epis),"\",10)
+ ..s:sort1="" sort1=" " s:sort2="" sort2=" "
+ .. ; check if patient has doctor
+ ..s doc=$p(^TEPI(epis),"\",13) i '$l(doc) d
+ ...s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="Does not have doctor"
+ ..i $l(doc),'$d(^TTAB("DR",doc)) d
+ ...s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="Doctor does not exist <"_doc_">"
+ .. ; check if patient has Payment code
+ ..s pc=$p(^TEPI(epis),"\",7) i '$l(pc) d
+ ...s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="Does not have payment code"
+ ..i $l(pc),'$d(^TTAB("BI",pc)) d
+ ...s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="Payment code does not exist <"_pc_">"
+ .. ; check if patient has MEDICARE number
+ ..s medicare=$tr($p(^TEPI(epis),"\",6)," ")
+ ..i $l(pc),$d(^TTAB("BI",pc)),$p(^TTAB("BI",pc),"\",5)="Y"
+ ...s return=$$medicare^LVBEPVIS($p(^TEPI(epis),"\",7),$p(^TEPI(epis),"\",18),medicare)
+ ...i ok=40 s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="Medicare number is empty"
+ ...i ok s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="Medicare number is incorrect <"_medicare_">"
+ .. ; check if patient has MEDICARE number
+ ..s medicare=$tr($p(^TEPI(epis),"\",6)," ")
+ ..i $l(pc),$d(^TTAB("BI",pc)),$p(^TTAB("BI",pc),"\",22)="Y",'$l($tr(medicare,0)) d
+ ...s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="VA number is incorrect <"_medicare_">"
+ .. ; check if patient has been billed
+ ..i $l($p(^TEPI(epis),"\",19)) q
+ .. ; check if patient has tests
+ ..i '$d(^TEPI(epis,1)) d  q
+ ...s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="Does not have tests"
+ .. ; check if patient could be priced
+ ..s PriceNoCharge="" i $l(pc) s PriceNoCharge=$p($g(^TTAB("BI",pc)),"\",15)
+ ..s ok=0,ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ ...i '$d(^TTAB("TS",ts,3)) q
+ ...s BillType=$p(^TTAB("TS",ts),"\",13)
+ ...s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $p(^(cnt),"\",34)'="Y" d
+ ....i BillType="N",PriceNoCharge'="Y" q
+ ....s ok=ok+1
+ ..i ok s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d  q:'ok
+ ...i '$d(^TTAB("TS",ts,3))!($p(^TTAB("TS",ts),"\",13)="C") q
+ ...s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  i $p(^(cnt),"\",34)'="Y" d
+ ....i $p(^TEPI(epis,1,ts,cnt),"\",31)'="A" s ok=0 q
+ .. ; check if patient was priced with another patient
+ ..i ok s (stop,cnt)="" f  s cnt=$o(^TEPI(epis,6,cnt),-1) q:cnt=""  d  i 'ok!stop q
+ ...i ($p(^(cnt),"\",1)="IN")!($p(^(cnt),"\",1)="RB") s stop=1 q
+ ...i $p(^(cnt),"\",1)="AP" s stop=1 s xep=$p($p(^(cnt),"\",4)," on ",2) i $l(xep) s ok=0
+ .. ; check if patient still on TBIL(9)
+ ..i ok i $d(^TBIL(9,epis)) s ok=0 q
+ .. ; check if patient still on TBIL(2)
+ ..i ok d  i 'ok q
+ ...s x1="" f  s x1=$o(^TBIL(2,x1)) q:x1=""  d  i 'ok q
+ ....s x2="" f  s x2=$o(^TBIL(2,x1,x2)) q:x2=""  i $d(^TBIL(2,x1,x2,epis)) s ok=0 q
+ .. ; check VA code
+ ..i ok s va=$tr($p(^TEPI(epis),"\",24)," ") i $l(va),$p($g(^TTAB("VA",va)),"\",2)="Y" s ok=0
+ .. ; check DA code
+ ..i ok s mrn=$tr($p(^TEPI(epis),"\",18)," ") i $l(mrn) s da=$p($g(^TDEB(mrn,date,0,epis)),"\",5) i $l(da),$p($g(^TTAB("DA",da)),"\",2)="Y" s ok=0
+ ..i ok s ^TMP($zn,$j,"REPORT",sort1,sort2,epis)="Has not been priced"
+ Q
+PRINT i $d(^TMP($zn,$j,"REPORT")) d
+ .s sort1="" f  s sort1=$o(^TMP($zn,$j,"REPORT",sort1)) q:sort1=""  d
+ ..s sort2="" f  s sort2=$o(^TMP($zn,$j,"REPORT",sort1,sort2)) q:sort2=""  d
+ ...s epis="" f  s epis=$o(^TMP($zn,$j,"REPORT",sort1,sort2,epis)) q:epis=""  d
+ ....i '$$select^LVBEPVIS(epis) s xxx(1)=^TMP($zn,$j,"REPORT",sort1,sort2,epis) d PRINT^PRTREP00(.PLIST,.N) k xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ i $d(^TMP($zn,$j,"DR")) d
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","Doctor's DB check")
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .s sort1="" f  s sort1=$o(^TMP($zn,$j,"DR",sort1)) q:sort1=""  d
+ ..s (x,dr)="" f  s dr=$o(^TMP($zn,$j,"DR",sort1,dr)) q:dr=""  s x=x_$s($l(x):" , ",1:"")_"<"_dr_">"
+ ..s xxx(1)="Check following Doctor's details : "_x
+ ..d PRINT^PRTREP00(,.N) k xxx
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ .d ADDLINE^PRTREP00(REPID,"PRT",xLINE(1))
+ .d ADDLINE^PRTREP00(REPID,"PRT","!")
+ s report="CHK"
+ s EndLine=$$seldata^LVBCTCLR(report,9)
+ i EndLine="Y" D PRINTEND^PRTREP00(xLINE(1))
+ Q
+]]></Routine>
+</Export>
