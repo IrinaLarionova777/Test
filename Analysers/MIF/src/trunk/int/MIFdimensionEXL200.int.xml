@@ -155,8 +155,11 @@ SendOrder(epis,specimen) ; create list of orders if exists
      do scanone^MIF000(mi,epis)
      if $$select^LVBEPVIS(epis,"Y") quit 2 // No Request Message
      // set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
-     set surname=$get(PLIST(3)) //,name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
-     set priority="0" //Routine
+     set surname=$get(PLIST(3)) //,name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8)
+     // приоритет по эпизоду
+     set priority="0" //Routine 
+     if $$seldata^LVBCTPR(PLIST(17),4)="Y" set priority="1" // STAT
+     
      set specimen="" 
      set message="D"_fs_"0"_fs_"0"_fs_"A"_fs_$$Translit^KSUTIL1(surname)_fs_epis_fs_specimen_fs_fs_priority_fs_"1"_fs_"**"_fs_"1"_fs
      
@@ -172,7 +175,8 @@ SendOrder(epis,specimen) ; create list of orders if exists
          set codeTypeSpecimen=$piece(rec,"\",46)
          if codeTypeSpecimen="" set codeTypeSpecimen=$$TestSpecimenType^KSReportSQL(testset)
          if codeTypeSpecimen="" set codeTypeSpecimen=0
-         set specimens(codeTypeSpecimen,tc)=""
+         set priorityCodeTest=$piece(rec,"\",10)
+         set specimens(codeTypeSpecimen,tc)=priorityCodeTest
          set $piece(^TMP("MIF-SINGLE",$j,mi,epis,tc),$char(0),2)=codeTypeSpecimen 
      }
      set specimen=$order(specimens(""))
@@ -187,8 +191,13 @@ SendOrder(epis,specimen) ; create list of orders if exists
      for {
 	     set tc=$order(specimens(specimen,tc)) if tc="" quit
 	     set message=message_tc_fs 
-	     
+	     // если в каком-нибудь одном тесте стоит cito, то cito на весь эпизод ставим
+	     set priorityCodeTest=specimens(specimen,tc)
+	     if priority="0" if $$seldata^LVBCTPR(priorityCodeTest,4)="Y" set priority="1" // STAT
      }
+     // еще раз записываем приоритет
+     set $piece(message,fs,9)=priority
+     
      quit $$SendToInstrument(message,0)
 
  // Send string message to Instrument
