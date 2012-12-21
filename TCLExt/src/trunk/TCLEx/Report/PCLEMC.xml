@@ -50,7 +50,7 @@ pRepParamGlb - глобал с данными</Description>
 		Set @pRepParamGlb@("FullName")=$$FullName^KSPCLUtils(episobj.EPVISExtra1,episobj.EPVISExtra2,episobj.EPVISExtra3,40)
 	}		
 
-	Set @pRepParamGlb@("Age")=..Age(episobj.EPVISDateOfBirth,episobj.EPVISDateOfCollection,pLanguage)	
+	Set @pRepParamGlb@("Age")=##class(TCLEx.Report.Function).Age(episobj.EPVISDateOfBirth,episobj.EPVISDateOfCollection,pLanguage)  //..Age(episobj.EPVISDateOfBirth,episobj.EPVISDateOfCollection,pLanguage)	
 	//
 	Set sex=$Select(pLanguage=2:"Unknown",1:"Неизвестен")   
 	Set sexcode="U"
@@ -68,10 +68,10 @@ pRepParamGlb - глобал с данными</Description>
 	//
 	Set doctobj=episobj.EPVISDoctorCodeDR
 	If $IsObject(doctobj) {
+		Set @pRepParamGlb@("DoctorCode")=doctobj.%Id()
 		Set @pRepParamGlb@("Doctor")=$Select(pLanguage=2:doctobj.CTDRSurname,1:doctobj.CTDRExtraName1)
 	}
-	Set @pRepParamGlb@("DoctorNames")=$Extract(episobj.EPVISExtra4,1,32)
-	//
+	set @pRepParamGlb@("DoctorNames")=$Extract(episobj.EPVISExtra4,1,32)
 		
 	Set @pRepParamGlb@("DOB")=$$Horolog2Date^KSUTIL1(episobj.EPVISDateOfBirth)
 	Set depcode=$Piece(pDepCode,$Char(1),1)
@@ -94,9 +94,56 @@ pRepParamGlb - глобал с данными</Description>
 			}	
 		}
 	}
+	
 	Set @pRepParamGlb@("VerificationQueue")=(queueid'="")
 	If $IsObject(episobj.EPVISStatusPrinting) {
 		Set @pRepParamGlb@("PrintingStatus")=episobj.EPVISStatusPrinting.%Id()
+	}
+	
+	Set authtestset=""
+	Set key="",testobj=""
+	For  {
+		Set testobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testobj) Continue
+		If '##class(TCLEx.Function.TestSet).IsAuthorised(testobj) Continue
+		Set testsetid=testobj.%Id()
+		If '##class(TCLEx.Report.ZenEMC).IsTestSet4Department(testsetid,.pTestSets,pDepCode) Continue
+		Set authtestset=testsetid
+		Quit
+	}
+	
+	If authtestset'="" {
+		Do ..SetTestSetVals(authtestset,pLanguage,pRepParamGlb)
+	}
+	/*
+	If ..ImpersonalResult {
+		Set @pRepParamGlb@("FullName")=""
+		Set @pRepParamGlb@("DOB")=""
+	}*/
+]]></Implementation>
+</Method>
+
+<Method name="SetTestSetVals">
+<Description>
+pTestSetId - Id набора тестов
+pTestSets - буфер наборов тестов 
+pLanguage - язык результата  
+pRepParamGlb - глобал с данными</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pLanguage:%String,pRepParamGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj) Quit
+	
+	Set @pRepParamGlb@("TS_ID")=testsetobj.%Id()
+	Set @pRepParamGlb@("TS_DateOfAuthorisation")=$$DisplayDate^KSPCLUtils(testsetobj.VISTSDateOfAuthorisation)
+	;
+	Set userobj=testsetobj.VISTSUserAuthorisedDR  
+	If $IsObject(userobj) { 
+	    set codeDoctorAuth=userobj.%Id()
+		Set @pRepParamGlb@("TS_AuthorisedDoctorId")=codeDoctorAuth
+		Set @pRepParamGlb@("TS_AuthorisedDoctor")=$$DoctorName^Settings.Reports(userobj,pLanguage) //userobj.SSUSRName 
 	}
 ]]></Implementation>
 </Method>
@@ -166,8 +213,9 @@ pRepParamGlb - глобал с данными</Description>
 	Do ..Add(pRepGlb,"HDR",$Char(27)_"&l26a")  
 	;
 	Set wasimage=0,dyimage=685			; сдвиг по вертикали, если не печатаем растровую графику (заголовок бланка, печать, подпись врача, если печатаем, то 0)
+	s ^test(222)=pPDF
 	If pPDF { ; Если вывод для последующего преобразования в pdf
-		Do ..PrintLogo(pRepGlb,"HDR",hospcode,.wasimage)
+		Do ..PrintLogo(pRepGlb,"HDR",hospcode,pDepCode,.wasimage)
 	}	
 	If wasimage Set dyimage=0 ; не нужен сдвиг по вертикали, если не печатали растровую графику (заголовок бланка, печать, подпись врача...)
 	;
@@ -312,11 +360,15 @@ pRepParamGlb - глобал с данными</Description>
 pRepGlb - глобал с отчетом
 pSection - секция отчета
 pHospId - ID ЛПУ
+pDepCode - код отдела
 pWasImage - возвращаемое по ссылке значения была ли печать изображения (вляет на сдвиг координаты Y)</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pRepGlb:%String,pSection:%String,pHospId:%String,&pWasImage:%Boolean]]></FormalSpec>
+<FormalSpec><![CDATA[pRepGlb:%String,pSection:%String,pHospId:%String,pDepCode:%String,&pWasImage:%Boolean]]></FormalSpec>
 <Implementation><![CDATA[
 	Set glb=$Name(^BionImg("ResultReportHeaders","EMC"))
+	set pDepCode=$get(pDepCode)
+	if ((pDepCode="H")||(pDepCode="Z"))&&($data(^BionImg("ResultReportHeaders","EMCpato"))) set glb=$Name(^BionImg("ResultReportHeaders","EMCpato"))
+	s ^test("header")=pDepCode_"*"_$data(^BionImg("ResultReportHeaders","EMCpato"))_"*"_glb
 	If ($Data(@glb))&&('pWasImage) {
 		Set pWasImage=1
 	}	
@@ -347,8 +399,15 @@ pRepGlb - формируемый глобал с полученными PCL ко
 <Implementation><![CDATA[
 	Set YH=7300,YStep=125
 	Do ..SetNormalFont(pRepGlb,"PRT")
-	Do ..Line(pRepGlb,"PRT",1000,YH,$Select(pLanguage=2:"DOCTOR'S SIGNATURE",1:"ВРАЧ")_"     ____________________________")
-	Do ..Line(pRepGlb,"PRT",4700,YH,$Select(pLanguage=2:"STAMP",1:"ШТАМП"))
+	//Do ..Line(pRepGlb,"PRT",1000,YH,$Select(pLanguage=2:"DOCTOR'S SIGNATURE",1:"ВРАЧ")_" "_$get(@pRepParamGlb@("TS_AuthorisedDoctor"))_" ____________________")
+	//Do ..Line(pRepGlb,"PRT",4700,YH,$Select(pLanguage=2:"STAMP",1:"ШТАМП"))
+	if pPDF=1 {
+		Do ..Line(pRepGlb,"PRT",1000,YH,$Select(pLanguage=2:"DOCTOR'S SIGNATURE",1:"ВРАЧ")_"     ____________________________")
+	    Do ..Line(pRepGlb,"PRT",4700,YH,$Select(pLanguage=2:"STAMP",1:"ШТАМП"))
+	} else {
+		Do ..Line(pRepGlb,"PRT",500,YH,$Select(pLanguage=2:"DOCTOR: ",1:"ВРАЧ: ")_$extract($get(@pValuesGlb@("TS_AuthorisedDoctor"))_" ____________________________",1,100)) ;was 1000
+	    Do ..Line(pRepGlb,"PRT",4700,YH,$Select(pLanguage=2:"STAMP",1:"ШТАМП"))
+	}
 	Set YH=YH+(3*YStep)
 	Set str=""
 	If $Get(@pValuesGlb@("VerificationQueue")) {

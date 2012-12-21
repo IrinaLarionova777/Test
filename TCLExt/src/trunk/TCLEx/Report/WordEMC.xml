@@ -100,7 +100,6 @@
       $$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult))
         
       // Печать временного файла нужное кол-во раз и его удаление
-      set ^test(111,"gggg")=fileResult
       if ($get(fileResult)'="")&&(##class(%File).Exists(fileResult)) {
 	      for ii=1:1:qCopies {
               //$$$ThrowOnError(..printPDF($get(fileResult),$get(pPrinterCode)))
@@ -141,7 +140,6 @@
 	     //$$$ThrowOnError(##class(Report.rpt).startPdfBoxFacade(pFileReport,printerName,flagSilence))
 	     set command=##class(%File).NormalizeFilenameWithSpaces(..getPathToSumatraPDF()_"\SumatraPDF.exe")_" -print-to """_printerName_""" "_##class(%File).NormalizeFilenameWithSpaces(pFileReport)
 	     //set command=""""_..getPathToSumatraPDF()_"\SumatraPDF.exe"_""" -print-to """_printerName_""" """_pFileReport_""""
-	     s ^test(111,"ggg")=command
 	     do $zf(-1,command)
      }
    } catch(exception)
@@ -261,6 +259,8 @@
       set $piece(params,$char(0),3)=""
       set $piece(params,$char(0),6)=""
 	  set $piece(params,$char(0),11)="1" // нет фио+др
+	  set $piece(params,$char(0),21)="" // нет фио авторизовавшего врача при формировании файла почему-то
+	  
       $$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult))
       Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_fileResult,1,1)
      
@@ -356,7 +356,8 @@
 	    set tscnt=$piece(testsetid,"||",3)
         set dep=$extract(testset,1)
         kill ^||EMC.Vals     
-	    Do ..CreateValuesBuf(epis,,dep,language,$Name(^||EMC.Vals))
+	    Do ##class(TCLEx.Report.PCLEMC).CreateValuesBuf(epis,,dep,language,$Name(^||EMC.Vals))
+	    m ^test("pp")=^||EMC.Vals
 	    
 	    set $piece(params,$char(0),1)=$get(^||EMC.Vals("CompanyName"))
 	    set $piece(params,$char(0),2)=epis
@@ -369,6 +370,10 @@
 	    set $piece(params,$char(0),9)=$get(^||EMC.Vals("DoctorNames"))
 	    set $piece(params,$char(0),11)=$select($get(flagImpersonalResult)=1:1,1:0)
 	    
+	    Set doctor=$Get(^||EMC.Vals("TS_AuthorisedDoctorId"))
+	    Set doctoralias=$$DoctorAlias^Settings.Reports(doctor)
+	    Set doctorAuthName=$get(^||EMC.Vals("TS_AuthorisedDoctor")) //$$DoctorName^Settings.Reports(doctor,language)
+	    set $piece(params,$char(0),21)=doctorAuthName
 	    
 	      // строка внизу - типатип отчета	    
 	    set str=""
@@ -385,10 +390,9 @@
 	    
 	    // logo, stamp, faximile
 	    Set fileStamp="",fileFaximile=""
-	    Set doctor=$Get(^||EMC.Vals("TS_AuthorisedDoctorId"))
-	    Set doctoralias=$$DoctorAlias^Settings.Reports(doctor)
 	    set pathImage=##class(TCLEx.Report.ZenEMC).ImagePath()
-	    set fileLogo=pathImage_"\emc_logo.jpg"
+	    set fileLogo=pathImage_"\"_##class(TCLEx.Report.ZenEMC).getNameFileLogo(dep,$name(^||EMC.Vals))
+	    	    	    
 	    If (doctoralias'="") {
 		   Set fileStamp=pathImage_"\stamp_"_doctoralias_".png"
 		   If '##class(%File).Exists(fileStamp) {
@@ -542,11 +546,11 @@
 <ClassMethod>1</ClassMethod>
 <FormalSpec>epis:%String,testset:%String,tscnt:%String,language:%String</FormalSpec>
 <ReturnType>%String</ReturnType>
-<Implementation><![CDATA[ quit $get(epis)_"-"_$zcvt($extract(language,1),"U")_"-"_$get(testset)
+<Implementation><![CDATA[ quit $get(epis)_"-"_$zcvt($extract(language,1),"U")_"-"_$get(testset)_"-"_$tr($j($get(tscnt),2)," ","0")
 ]]></Implementation>
 </Method>
 
-<Method name="CreateValuesBuf">
+<Method name="CreateValuesBufold">
 <Description>
 Загрузить значения полей, необходимых для печати результата
 pEpis - эпизод
@@ -557,7 +561,6 @@ pRepParamGlb - глобал с данными</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pDepCode:%String,pLanguage:%String,pRepParamGlb:%String]]></FormalSpec>
 <Implementation><![CDATA[
-	
 	Kill @pRepParamGlb
 	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
 	If '$IsObject(episobj) Quit
@@ -595,7 +598,7 @@ pRepParamGlb - глобал с данными</Description>
 	Set @pRepParamGlb@("SexCode")=sexcode
 	Set @pRepParamGlb@("Sex")=sex
 	//
-	Set doctobj=episobj.EPVISDoctorCodeDR
+	Set doctobj=episobj.EPVISDoctorCodeDR 
 	If $IsObject(doctobj) {
 		Set @pRepParamGlb@("DoctorCode")=doctobj.%Id()
 		Set @pRepParamGlb@("Doctor")=$Select(pLanguage=2:doctobj.CTDRSurname,1:doctobj.CTDRExtraName1)
@@ -642,7 +645,7 @@ pRepParamGlb - глобал с данными</Description>
 	}
 	//
 	If authtestset'="" {
-		Do ..SetTestSetVals(authtestset,pLanguage,pRepParamGlb)
+		Do ..SetTestSetValsold(authtestset,pLanguage,pRepParamGlb)
 	}
 	/*
 	If ..ImpersonalResult {
@@ -652,7 +655,7 @@ pRepParamGlb - глобал с данными</Description>
 ]]></Implementation>
 </Method>
 
-<Method name="SetTestSetVals">
+<Method name="SetTestSetValsold">
 <Description>
 pTestSetId - Id набора тестов
 pTestSets - буфер наборов тестов 
@@ -667,10 +670,11 @@ pRepParamGlb - глобал с данными</Description>
 	Set @pRepParamGlb@("TS_ID")=testsetobj.%Id()
 	Set @pRepParamGlb@("TS_DateOfAuthorisation")=$$DisplayDate^KSPCLUtils(testsetobj.VISTSDateOfAuthorisation)
 	;
-	Set userobj=testsetobj.VISTSUserAuthorisedDR
+	Set userobj=testsetobj.VISTSUserAuthorisedDR   
 	If $IsObject(userobj) { 
-		Set @pRepParamGlb@("TS_AuthorisedDoctorId")=userobj.%Id()
-		Set @pRepParamGlb@("TS_AuthorisedDoctor")=userobj.SSUSRName
+	    set codeDoctorAuth=userobj.%Id()
+		Set @pRepParamGlb@("TS_AuthorisedDoctorId")=codeDoctorAuth
+		Set @pRepParamGlb@("TS_AuthorisedDoctor")=$$DoctorName^Settings.Reports(codeDoctorAuth,pLanguage) //userobj.SSUSRName 
 	}
 ]]></Implementation>
 </Method>
@@ -680,6 +684,7 @@ pRepParamGlb - глобал с данными</Description>
 Путь к файлу загрузки процесса OpenOffice (soffice.exe)</Description>
 <ClassMethod>1</ClassMethod>
 <Implementation><![CDATA[
+	//set ^test(111,"pathToOpenOfficeProgram")=$get(^Settings("WordToPdf","pathToOpenOfficeProgram"))
 	if $get(^Settings("WordToPdf","pathToOpenOfficeProgram"))'="" quit ^Settings("WordToPdf","pathToOpenOfficeProgram")
     else  quit "C:\\Program Files (x86)\\OpenOffice.org 3\\program\\"
 ]]></Implementation>
