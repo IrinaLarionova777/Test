@@ -5,6 +5,7 @@ MIFastm(mi) ; ASTM protocol  -  test (Bi-Directional) (Russion Burdenko))
  set mi=$get(mi) if '$length(mi) quit
  kill ^TMIF(mi,10) 
  //set $ztrap="err^MIF000dop"
+ set $ztrap="err^MIF000"
  if $$select^LVBMIMP(mi) quit
  for j=1:1:PLIST set @("par"_j)=PLIST(j)
  set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21)
@@ -12,13 +13,20 @@ MIFastm(mi) ; ASTM protocol  -  test (Bi-Directional) (Russion Burdenko))
  if $$start^MIF000() quit
  do trace^MIF000(mi,"Started job="_$job,"DEBUG")
  //set compiled=$listget(^rINDEX($zname,"OBJ"),1)
+ set tcpadr=$get(^TMIF(mi,"TCP")) // если указан ip-адрес, то host - client, иначе host - server
  for {
-	 do Main 
+	 if tcpadr'="" {
+		 do Main
+	 } else {
+		 do MainWithCatchError
+	 }
 	 if $$stop^MIF000() quit
-	 //if $listget(^rINDEX($zname,"OBJ"))'=compiled ztrap "EDIT" // эмуляция ошибки EDIT, если программа-драйвер изменилась
+	 //if $listget(^rINDEX($zname,"OBJ"))'=compiled ztrap "EDIT"  // эмуляция ошибки EDIT, если программа-драйвер изменилась
  }
  close par4
  quit
+ 
+ // for host-client 
 Main 
  read *R:10
  ;if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
@@ -26,6 +34,20 @@ Main
  set nameMachine="",nameLIS=""
  do receiveENQ
  quit
+
+ // for host-server
+MainWithCatchError 
+ try {
+   read *R:10
+   //if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+   if $char(R)'=enq quit
+   set nameMachine="",nameLIS=""
+   do receiveENQ
+ } catch {
+	 do err^MIF000
+ }   
+ quit
+ 
  ;обработка полученного от прибора ENQ
 receiveENQ
  set (sample,epis,surname,result,date,time,QC)="" 

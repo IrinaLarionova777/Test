@@ -7,33 +7,39 @@ MIFsysmexUF500i(mi) ; ASTM protocol  -  Sysmex UF-500i (Bi-Directional) (Russion
  // предполагаю, что QC (Sintific records) and обычные результаты (OBX) в разных группах ENQ-L
  set mi=$get(mi) if '$length(mi) quit
  kill ^TMIF(mi,10) 
- //set $ztrap="err^MIF000dop"
- s $zt="err^MIF000"
  if $$select^LVBMIMP(mi) quit
  for j=1:1:PLIST set @("par"_j)=PLIST(j)
  set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21)
  set lf=$char(10),cr=$char(13)
  if $$start^MIF000() quit
+ //s $zt=""
  do trace^MIF000(mi,"Started job="_$job,"DEBUG")
- //set compiled=$listget(^rINDEX($zname,"OBJ"),1)
  for {
-	 //if $listget(^rINDEX($zname,"OBJ"))'=compiled ztrap "EDIT" // эмуляция ошибки EDIT, если программа-драйвер изменилась
+	 do Main
+	 //do trace^MIF000(mi,"after Main"_$zts,"H<--M")
 	 if $$stop^MIF000() d trace^MIF000(mi,"stop","DEBUG")  quit
-	 read *r:10
-     //if $c(r)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_r_">","H<--M") continue
-     if $char(r)'=enq continue
-     do receiveENQ
  }
  close par4
  quit
 
+Main 
+ try {
+	 read *R:10
+    //if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+    if $c(R)'=enq q
+    do receiveENQ
+ } catch {
+	 do err^MIF000
+ }  
+ quit 
+
  ;обработка полученного от прибора ENQ
 receiveENQ
- set (sample,epis,surname,result,date,time,QC)="" 
- do trace^MIF000(mi,"ENQ","H<--M")
- do ACK
- set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=60,ok=1
- for {
+   set (sample,epis,surname,result,date,time,QC)="" 
+   do trace^MIF000(mi,"ENQ","H<--M")
+   do ACK
+   set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=60,ok=1
+   for {
 	 read *R:10 
 	 if $char(R)=eot quit
 	 ;if $c(R)'=stx d trace^MIF000(mi,"Waiting <STX> but received <"_R_">","H<--M") q
@@ -120,12 +126,12 @@ receiveENQ
 	     continue
      }
      set timeSilenceStart=$piece($horolog,",",2)
- }
- if ok=1 {
+   }
+   if ok=1 {
 	 do trace^MIF000(mi,$select($char(R)=eot:"EOT",$char(R)=enq:"ENQ",1:R),"H<--M")
 	 do ORDER
- }
- quit
+   }
+  quit
 Last ; file result if exists
  do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"H<--H")
  if epis?1.99AN,$length(result) {
@@ -219,32 +225,36 @@ SET(epis,tcx,priority) ; set record to be sent to instrument
  set ^TMIF(mi,10,epis,line)="OBR|"_"1"_"|"_epis_"||"_tcx_"|"_$get(priority)_"||||||A||||||||||||||"
  quit
 Send(epis) ; send list of orders if exists
- do ENQ 
- for j=1:1:10 {
+   do ENQ 
+   for j=1:1:10 {
 	 read *R:1 
 	 quit:$char(R)=ack!($char(R)=enq)  
 	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
- }
- if $char(R)=enq quit
- if $char(R)'=ack do EOT quit
- do trace^MIF000(mi,"ACK","H<--M")
- set x="" for FRAME=1:1 set x=$Order(^TMIF(mi,10,epis,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,epis,x))
- if x="" kill ^TMIF(mi,10,epis)
- do EOT
+   }
+   if $char(R)=enq quit
+   if $char(R)'=ack do EOT quit
+   do trace^MIF000(mi,"ACK","H<--M")
+   set x="" for FRAME=1:1 set x=$Order(^TMIF(mi,10,epis,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,epis,x))
+   if x="" kill ^TMIF(mi,10,epis)
+   do EOT
  quit
 SEND(str) ; send string to instrument
- set str=str_cr_etx,chsum=$$CHSUM(str)
- write stx,str,chsum,cr,lf,*-3 
- do trace^MIF000(mi,str_chsum,"H-->M")
- for j=1:1:6 {
+ new ans,str,chsum,j,R
+ set ans=0
+   set str=str_cr_etx,chsum=$$CHSUM(str)
+   write stx,str,chsum,cr,lf,*-3 
+   do trace^MIF000(mi,str_chsum,"H-->M")
+   for j=1:1:6 {
 	 read *R:1 
 	 quit:($char(R)=ack)!($char(R)=eot)
 	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
- }
- if $char(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
- if $char(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
- do trace^MIF000(mi,R,"H<--M")
- quit 2
+   }
+   if $char(R)=ack do trace^MIF000(mi,"ACK","H<--M") set ans=0 quit 
+   if $char(R)=eot do trace^MIF000(mi,"EOT","H<--M") set ans=1 quit
+   do trace^MIF000(mi,R,"H<--M")
+   set ans=2
+   quit ans
+ 
 CHSUM(x) ; calculate check sum
  new (x) 
  set z=0 for y=1:1:$length(x) set z=z+$ascii(x,y)
@@ -254,5 +264,7 @@ ACK write ack,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
 NAK write nak,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
 EOT write eot,*-3 do trace^MIF000(mi,"EOT","H-->M") quit
 ENQ write enq,*-3 do trace^MIF000(mi,"ENQ","H-->M") quit
+
+
 ]]></Routine>
 </Export>

@@ -5,6 +5,7 @@ MIFastmETB(mi) ; ASTM protocol с обработкой ETB
  set mi=$get(mi) if '$length(mi) quit
  kill ^TMIF(mi,10) 
  //set $ztrap="err^MIF000dop"
+ set $ztrap="err^MIF000"
  if $$select^LVBMIMP(mi) quit
  for j=1:1:PLIST set @("par"_j)=PLIST(j)
  set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21),etb=$char(23)
@@ -13,31 +14,56 @@ MIFastmETB(mi) ; ASTM protocol с обработкой ETB
  if $$start^MIF000() quit
  do trace^MIF000(mi,"Started job="_$job,"DEBUG")
  //set compiled=$listget(^rINDEX($zname,"OBJ"),1)
+ set tcpadr=$get(^TMIF(mi,"TCP")) // если указан ip-адрес, то host - client, иначе host - server
  for {
-	 do Main 
+	 if tcpadr'="" {
+		 do Main
+	 } else {
+		 do MainWithCatchError
+	 }
 	 if $$stop^MIF000() quit
 	 //if $listget(^rINDEX($zname,"OBJ"))'=compiled ztrap "EDIT"  // эмуляция ошибки EDIT, если программа-драйвер изменилась
  }
  close par4
  quit
+ 
+ // for host-client
 Main 
  read *R:10
  ;i $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
  if $char(R)'=enq quit
  set nameMachine="",nameLIS=""
- set (sample,epis,surname,result,date,time,QC)=""
  do receiveENQ
- do ORDER
  quit
+
+ // for host-server
+MainWithCatchError 
+ try {
+   read *R:10
+   //if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+   if $char(R)'=enq quit
+   set nameMachine="",nameLIS=""
+   do receiveENQ
+ } catch {
+	 do err^MIF000
+ }   
+ quit
+ 
  ;обработка полученного от прибора ENQ
 receiveENQ 
  do trace^MIF000(mi,"ENQ","H<--M")
  do ACK
+ set (sample,epis,surname,result,date,time,QC)=""
+ set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=60,ok=1
  set buffer=""
  for {
-	 read *R:10 
-	 if $char(R)=eot quit
+	 read *R:10
+	 if $char(R)=eot quit 
+	 if $char(R)=enq do trace^MIF000(mi,"ENQ is recieved at the wrong time","H-->M") do EOT set ok=0 quit
+	 set timeSilence=$piece($horolog,",",2)-timeSilenceStart
+	 if timeSilence>timeSilenceLimit do trace^MIF000(mi,"timeSilence>timeSilenceLimit ("_timeSilence_">"_timeSilenceLimit_")","H-->M") do EOT set ok=0 quit
      if $char(R)'=stx continue
+     set timeSilenceStart=$piece($horolog,",",2)
      set record=$$read^MIF000("",lf) if '$length(record)  continue
      do trace^MIF000(mi,record,"H<--M")
      set record=$extract(record,1,$length(record)-1)
@@ -58,6 +84,7 @@ receiveENQ
      do trace^MIF000(mi,"buffer="_buffer,"H<--M")
      for pp=1:1:$length(buffer,$char(13)) {
 	     set record=$piece(buffer,$char(13),pp)
+	     set timeSilenceStart=$piece($horolog,",",2)
 	     if record="" continue 
 	     set typerecord=$piece(record,"|",1)
 	     if typerecord="" continue
@@ -113,10 +140,15 @@ receiveENQ
 	        do Last 
 	        continue
          }
+         
     }
     set buffer=""
+    set timeSilenceStart=$piece($horolog,",",2)
  } 
- do trace^MIF000(mi,$select($char(R)=eot:"EOT",1:R),"H<--M")
+ if ok=1 {
+	 do trace^MIF000(mi,$select($char(R)=eot:"EOT",$char(R)=enq:"ENQ",1:R),"H<--M")
+	 do ORDER
+ }
  quit
 Last ; file result if exists
  do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_$get(date)_" time="_$get(time)_" QC="_$get(QC),"H<--H")

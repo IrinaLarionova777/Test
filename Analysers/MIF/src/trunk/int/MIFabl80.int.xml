@@ -15,27 +15,52 @@ MIFabl80(mi) ; ASTM protocol  -  ABL 80 (Bi-Directional) (Russion EMC)
  if $$start^MIF000() quit
  do trace^MIF000(mi,"Started job="_$job,"DEBUG")
  set nameMachine="",nameLIS="",version=""
+ set tcpadr=$get(^TMIF(mi,"TCP"))
  for {
-	 if $$stop^MIF000() quit
-	 read *R:10
-     ;if $c(R)'=soh d trace^MIF000(mi,"Waiting <SOH> but received <"_R_">","H<--M") q
-     if $char(R)'=soh continue
-     do receiveENQ
+	 if tcpadr'="" {
+		 do Main
+	 } else {
+		 do MainWithCatchError
+	 }
+	 if $$stop^MIF000() d trace^MIF000(mi,"stop","DEBUG")  quit
  }
  close par4
  quit
 
+Main 
+ read *R:10
+ //if $c(R)'=soh d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ if $c(R)'=soh q
+ do receiveENQ
+ quit 
+
+MainWithCatchError 
+ try {
+	 read *R:10
+    //if $c(R)'=soh d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+    if $c(R)'=soh q
+    do receiveENQ
+ } catch {
+	 do err^MIF000
+ }  
+ quit 
+
  ;обработка полученного от прибора ENQ
 receiveENQ
- set (sample,epis,surname,result,date,time,QC)="" 
- do trace^MIF000(mi,"SOH","H<--M")
- set ok=1
- //do ACK
- for {
+   set (sample,epis,surname,result,date,time,QC)="" 
+   do trace^MIF000(mi,"SOH","H<--M")
+   set ok=1
+   //do ACK
+   for {
 	 //читаем до $char(13)
      set record=$$read() if '$length(record) continue
      // если получен EOT, то выходим Не понятно, надо ли посылать ACK.
      if record=eot do trace^MIF000(mi,"EOT","M-->H") do ACK quit
+     
+     // приходят комментарии по-русски 
+     if $extract(record,1)="C" {
+	     set $piece(record,"|",4)=$zconvert($piece(record,"|",4),"I","LatinC")
+     }
      do trace^MIF000(mi,record,"H<--M")
      ; check record validity
      ;set chsum=$piece(record,etx,2),chrecord=$piece(record,etx,1)_etx
@@ -95,11 +120,11 @@ receiveENQ
 	     continue
      }
      
- }
- if ok=1 {
+   }
+   if ok=1 {
 	 //do trace^MIF000(mi,"before ORDER","DEBUG")
 	 do ORDER
- }
+   }
  quit
 Last ; file result if exists
  do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"H<--H")
@@ -157,38 +182,42 @@ ORDER ; create list of orders if exists
      do Send(epis)
  }
  quit
+ 
 SET(epis,tcx) ; set record to be sent to instrument
  set line=$order(^TMIF(mi,10,epis,""),-1)+1
  set ^TMIF(mi,10,epis,line)="O|"_N_"|"_epis_"||^^^"_tcx_"|||||||||||||||||||||"
  quit
+ 
 Send(epis) ; send list of orders if exists
- do SOH 
- ;for j=1:1:10 {
- ;	 read *R:1 
- ;	 quit:$char(R)=ack!($char(R)=enq)  
- ; 	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
- ;}
- ;if $char(R)=enq quit
- ;if $char(R)'=ack do EOT quit
- ;do trace^MIF000(mi,"ACK","H<--M")
- set x="" for FRAME=1:1 set x=$Order(^TMIF(mi,10,epis,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,epis,x))
- if x="" kill ^TMIF(mi,10,epis)
- do EOT
+   do SOH 
+   ;for j=1:1:10 {
+   ;	 read *R:1 
+   ;	 quit:$char(R)=ack!($char(R)=enq)  
+   ; 	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
+   ;}
+   ;if $char(R)=enq quit
+   ;if $char(R)'=ack do EOT quit
+   ;do trace^MIF000(mi,"ACK","H<--M")
+   set x="" for FRAME=1:1 set x=$Order(^TMIF(mi,10,epis,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,epis,x))
+   if x="" kill ^TMIF(mi,10,epis)
+   do EOT
  quit
+ 
 SEND(str) ; send string to instrument
- //set str=str_cr_etx,chsum=$$CHSUM(str)
- //write stx,str,chsum,cr,lf,*-3 
- write str,cr,*-3 
- do trace^MIF000(mi,str,"H-->M")
- ;for j=1:1:6 {
- ;	 read *R:1 
- ;	 quit:($char(R)=ack)!($char(R)=eot)
- ;	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
- ;}
- ;if $char(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
- ;if $char(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
- ;do trace^MIF000(mi,R,"H<--M")
+   //set str=str_cr_etx,chsum=$$CHSUM(str)
+   //write stx,str,chsum,cr,lf,*-3 
+   write str,cr,*-3 
+   do trace^MIF000(mi,str,"H-->M")
+   ;for j=1:1:6 {
+   ;	 read *R:1 
+   ;	 quit:($char(R)=ack)!($char(R)=eot)
+   ;	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
+   ;}
+   ;if $char(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
+   ;if $char(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
+   ;do trace^MIF000(mi,R,"H<--M")
  quit 0
+ 
 CHSUM(x) ; calculate check sum
  new (x) 
  set z=0 for y=1:1:$length(x) set z=z+$ascii(x,y)
