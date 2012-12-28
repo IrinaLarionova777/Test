@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS52" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS52   ;Отчет для анализа работы прибора ; liv
+ ;
+ q
+ ; Отчет CLNRUS52  +  CLNRUS52.xsl  + DLL: CLNSPARM007.clsSTART
+ ;==================================================================================================================
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ 
+  ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 1300: 600 : 1100 : 300 : t:True"
+ 
+ ; список приборов
+ set @Par=""
+ s @Par@("PAR3a")="Label   : 100 : 1000 : 1000 : 300 : Прибор:"
+ ;s @Par@("PAR3")="ListBox: 1300 : 1000 : 4000 : 300 : :True:::List"         ;Standart
+ set default="0"
+ s @Par@("PAR3")="ComboBox: 1300 : 1000 : 4000 : 300 : :True: "_default_" :List" ;Standart
+ set id=""
+ for {
+	 set id=$order(^TMIF(id),1,record) if id="" quit
+	 set name=$piece(record,"\",1)
+	 ;set @Par@("PAR3",name_$char(4)_id)=name
+	 set @Par@("PAR3",id)=name
+ }
+ if $data(@Par@("PAR3"))>1 set @Par@("PAR3",0)="Все приборы"
+ ;
+ ; Флаг "С детализацией по тестам"
+ s @Par@("PAR4")="CheckBox : 100 : 1500 : 200  : 300 : : : 0 "
+ s @Par@("PAR4a")="Label   : 500 : 1500 : 5000 : 300 : С детализацией по тестам:"
+ 
+ ; настройка формы
+ s @Par@("form")="Отчет для анализа работы прибора:500:300:Формиров.:Выход"
+ m ^test("par")=@Par
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ s ^test("par")=PAR
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j),^TEMP($zn,$J)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ g XML
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+  ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ ; прибор
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Прибор>" q
+ quit
+ 
+XML   ; обработка данных и формирование XML ...
+  set flagDetailsTest=PAR4
+  set r=$char(0)
+  s Mas="^TEMP($zn,$J)" k @Mas
+  S MasXML="^TEMP($zn,$J,""XML"")" kill @MasXML
+ 
+  kill devices
+  if PAR3="0" {  //  all devices
+	 set id=""
+     for {
+	    set id=$order(^TMIF(id)) if id="" quit
+	    set devices(id)=""
+     }
+  }
+  else 
+  {
+	 set devices(PAR3)=""  
+  }
+
+  set @MasXML@("User",1,"DateFrom")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+  set @MasXML@("User",1,"DateTo")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+  set @MasXML@("User",1,"FlagDetailsForTests")=flagDetailsTest
+
+  set nndev=0
+  set mi=""
+  for {
+	  set mi=$order(devices(mi)) if mi="" quit
+	  set nndev=nndev+1
+	  set @MasXML@("User",1,"GRDevice",nndev,"Device")=$piece($get(^TMIF(mi)),"\",1)
+  
+      kill @MasXML@("Epis")
+      set date=PAR1-1,nn=0
+      for {
+	      set date=$order(^TMIFinfo(mi,"Date",date)) if (date="")||(date>PAR2) quit
+	      set epis=""
+	      for {
+		      set epis=$order(^TMIFinfo(mi,"Date",date,epis)) if epis="" quit
+		      set record=$get(^TMIFinfo(mi,0,epis)) 
+		      if $piece(record,r,3)="" continue
+		      set @MasXML@("Epis",epis)=record
+		      set test=""
+		      for {
+			      set test=$order(^TMIFinfo(mi,0,epis,test),1,record) if test="" quit
+			      if $piece(record,r,3)="" continue // тесты, по которым нет результатов , не берем
+			      set @MasXML@("Epis",epis,test)=record
+		      }
+	      }
+      }
+      //m ^test("ddd")=@MasXML@("Epis")
+      set value1=0,value2=0,kol1=0,kol2=0
+      set epis=""
+      for {
+	      set epis=$order(@MasXML@("Epis",epis),1,record) if epis="" quit
+	      if $$select^LVBEPVIS(epis,"Y") continue
+		  set dateEntry=PLIST(10)
+		  set timeEntry=PLIST(11)
+	      set dateGetResult=$piece(record,r,3)
+	      set timeGetResult=$piece(record,r,4)
+          set dateSendOrder=$piece(record,r,1)
+          set timeSendOrder=$piece(record,r,2)
+          set urgent="" set priority=$piece($get(^TEPI(epis)),"\",15) if priority'="" if $$seldata^LVBCTPR(priority,4)="Y" set (urgent,urgentTest)="Срочно"
+	      ;set cito=PLIST(24)
+	      set nn=nn+1
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Episode")=epis
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeEntry")=$select(dateEntry'="":$zdate(dateEntry,4),1:"")_" "_$select(timeEntry'="":$ztime(timeEntry,2),1:"")
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeSet")=$s(dateSendOrder'="":$zdate(+dateSendOrder,4),1:"")_" "_$s(timeSendOrder'="":$ztime(timeSendOrder,2),1:"")
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeGet")=$s(dateGetResult'="":$zdate(+dateGetResult,4),1:"")_" "_$s(timeGetResult'="":$ztime(timeGetResult,2),1:"")
+	      set diffSetGet=0
+	      if dateSendOrder'="",dateGetResult'="" set diffSetGet=##class(TCLEx.Function.DateTime).DateTimeDiff(dateSendOrder,timeSendOrder,dateGetResult,timeGetResult,"m")
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DiffSetGet")=diffSetGet
+	      set value2=value2+diffSetGet if +diffSetGet'=0 set kol2=kol2+1
+	      
+	      set nnepis=nn
+	      set tests="",dateAuth=0,timeAuth=0
+	      set ts=""
+          for {
+	          set ts=$order(^TEPI(epis,1,ts)) if ts="" quit
+	          set tscnt=""
+	          for {
+		         set tscnt=$order(^TEPI(epis,1,ts,tscnt),1,recTEPI) if tscnt="" quit
+		         ;set dateEntryTest=$$seldata^LVBVISTS(rowid,4) if +dateEntryTest=0 set dateEntryTest=dateEntry
+			     ;set timeEntryTest=$$seldata^LVBVISTS(rowid,5) if +timeEntryTest=0 set timeEntryTest=timeEntry
+			     set dateEntryTest=$piece(recTEPI,"\",21) if +dateEntryTest=0 set dateEntryTest=dateEntry
+			     set timeEntryTest=$piece(recTEPI,"\",22) set:timeEntryTest timeEntryTest=timeEntryTest*60 if +timeEntryTest=0 set timeEntryTest=timeEntry
+			     
+			     set dateAuthTest=$piece(recTEPI,"\",4) //$$seldata^LVBVISTS(rowid,7)
+		         set timeAuthTest=$piece(recTEPI,"\",5) set:timeAuthTest timeAuthTest=timeAuthTest*60 //$$seldata^LVBVISTS(rowid,8)
+		         if +dateAuthTest>+dateAuth set dateAuth=dateAuthTest,timeAuth=timeAuthTest
+	             set diffEntryAuth=0
+	             if dateAuthTest'="" set diffEntryAuth=##class(TCLEx.Function.DateTime).DateTimeDiff(dateEntryTest,timeEntryTest,dateAuthTest,timeAuthTest,"m")
+		         
+		         if urgent="" {
+			         set priority=$piece(recTEPI,"\",10) //$$seldata^LVBVISTS(rowid,13)
+                     set urgentTest="" if priority'="" if $$seldata^LVBCTPR(priority,4)="Y" s (urgent,urgentTest)="Срочно"
+		         }
+		         
+		         if $$getall2^LVBCTTC(ts) continue
+		         kill masTests merge masTests=PLIST
+	             set ok=0
+	             //s x=$$seldata^LVBVISTS(vts,13) i $$seldata^LVBCTPR(x,4)="Y" s urgent="Y"
+	             ;set rowid=epis_"||"_ts_"||"_tscnt
+	             set id=""
+	             for {
+		             set id=$order(masTests(id)) if id="" quit
+		             set tc=$piece(masTests(id),$char(2),1) if tc="" continue
+		             // обрабатывается ли эжтот тест прибором
+		             if '$data(^TMIF(mi,2,tc)) continue
+		             if $piece($get(^TMIF(mi,2,tc)),"\",1)="" continue
+		             if '$data(@MasXML@("Epis",epis,tc)) continue
+		             set record=@MasXML@("Epis",epis,tc)
+		             if $piece(record,r,3)="" continue // тесты, по которым нет результатов , не берем
+		             // название теста - суффикс , если его нет, то код
+		             set test=$piece($piece(PLIST(id),$char(2),4),$char(28),1)
+		             if test="" set test=tc
+		             set tests=tests_$select(tests'="":", ",1:"")_test
+		             
+		             if flagDetailsTest=1 {
+			             set nn=nn+1
+			             set dateGetResult=$piece(record,r,3)
+                         set timeGetResult=$piece(record,r,4)
+                         set dateSendOrder=$piece(record,r,1)
+                         set timeSendOrder=$piece(record,r,2)
+                         ;set priority=$piece(recTEPI,"\",10) //$$seldata^LVBVISTS(rowid,13)
+                         ;set urgentTest="" if priority'="" if $$seldata^LVBCTPR(priority,4)="Y" s (urgent,urgentTest)="Срочно"
+			             set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Episode")=""
+	                     set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Tests")=test
+	                     set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeEntry")=$select(dateEntryTest'="":$zdate(dateEntryTest,4),1:"")_" "_$select(timeEntryTest'="":$ztime(timeEntryTest,2),1:"")
+	                     set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeSet")=$s(dateSendOrder'="":$zdate(+dateSendOrder,4),1:"")_" "_$s(timeSendOrder'="":$ztime(timeSendOrder,2),1:"")
+	                     set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeGet")=$s(dateGetResult'="":$zdate(+dateGetResult,4),1:"")_" "_$s(timeGetResult'="":$ztime(timeGetResult,2),1:"")
+	                     set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeAuth")=$s(dateAuthTest'="":$zdate(+dateAuthTest,4),1:"")_" "_$s(timeAuthTest'="":$ztime(timeAuthTest,2),1:"")
+	                     set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Cito")=urgentTest
+	                     set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DiffEntryAuth")=diffEntryAuth
+	                     set diffSetGet=0
+	                     if dateSendOrder'="",dateGetResult'="" set diffSetGet=##class(TCLEx.Function.DateTime).DateTimeDiff(dateSendOrder,timeSendOrder,dateGetResult,timeGetResult,"m")
+	                     set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DiffSetGet")=diffSetGet 
+	                     set rec=$get(@MasXML@("AvgTest",mi,test))
+	                     if +diffEntryAuth'=0 {
+		                     set $piece(rec,r,1)=$piece(rec,r,1)+1
+	                         set $piece(rec,r,2)=$piece(rec,r,2)+diffEntryAuth
+	                     }
+	                     if +diffSetGet'=0 {
+		                     set $piece(rec,r,3)=$piece(rec,r,3)+1
+		                     set $piece(rec,r,4)=$piece(rec,r,4)+diffSetGet
+	                     }
+	                     set @MasXML@("AvgTest",mi,test)=rec
+		             }
+	             }
+	          }
+          }
+          if +dateAuth=0 set dateAuth=""
+          if +timeAuth=0 set timeAuth=""
+          
+          set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nnepis,"Tests")=tests
+          set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nnepis,"Cito")=urgent
+          set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nnepis,"DateTimeAuth")=$s(dateAuth'="":$zdate(+dateAuth,4),1:"")_" "_$s(timeAuth'="":$ztime(timeAuth,2),1:"")
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nnepis,"Cito")=urgent
+          set diffEntryAuth=0
+	      if dateAuth'="" set diffEntryAuth=##class(TCLEx.Function.DateTime).DateTimeDiff(dateEntry,timeEntry,dateAuth,timeAuth,"m")
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nnepis,"DiffEntryAuth")=diffEntryAuth
+	      set value1=value1+diffEntryAuth if +diffEntryAuth'=0 set kol1=kol1+1 
+      }
+      kill @MasXML@("Epis")
+      if $data(@MasXML@("User",1,"GRDevice",nndev,"GrEpis"))<10 kill @MasXML@("User",1,"GRDevice",nndev) continue
+	  
+	  // последняя строчка - средние значения разницы времен    	         
+	  set average1=0 if kol1'=0 set average1=+$j(value1/kol1,0,0)
+	  set average2=0 if kol2'=0 set average2=+$j(value2/kol2,0,0)
+	  set nn=nn+1
+	  set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Episode")="Average"
+	  set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Tests")=""
+	  set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeEntry")=""
+	  set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeSet")=""
+	  set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeGet")=""
+	  set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeAuth")=""
+	  set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Cito")=""
+	  set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DiffEntryAuth")=average1
+	  set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DiffSetGet")=average2
+  }
+  // средние величины по тестам
+  set mi="",nndev=0
+  for {
+	  set mi=$order(@MasXML@("AvgTest",mi)) if mi="" quit
+	  set test="",nn=0
+	  set nndev=nndev+1
+	  set @MasXML@("User",1,"GRDeviceAvg",nndev,"Device")=$piece($get(^TMIF(mi)),"\",1)
+	  for {
+		 set test=$order(@MasXML@("AvgTest",mi,test),1,record) if test="" quit
+		 set kol1=$piece(record,r,1)
+		 set diffEntryAuth=$piece(record,r,2) 
+		 set kol2=$piece(record,r,3)
+		 set diffSetGet=$piece(record,r,4)
+		 set averageEntryAuth=0,averageSetGet=0 
+		 if +kol1'=0 set averageEntryAuth=+$j(diffEntryAuth/kol1,0,0)
+		 if +kol2'=0 set averageSetGet=+$j(diffSetGet/kol2,0,0)
+		 
+		 set nn=nn+1
+		 set @MasXML@("User",1,"GRDeviceAvg",nndev,"GrTestAvg",nn,"Test")=test
+		 set @MasXML@("User",1,"GRDeviceAvg",nndev,"GrTestAvg",nn,"DiffEntryAuth")=averageEntryAuth
+		 set @MasXML@("User",1,"GRDeviceAvg",nndev,"GrTestAvg",nn,"DiffSetGet")=averageSetGet
+	  }
+  }
+  m ^test("avg")=@MasXML@("AvgTest")
+  kill @MasXML@("AvgTest"),@MasXML@("Epis")
+  //kill @MasXML@("User",1,"GRDeviceAvg")
+  ;log
+  k ^zz M ^zz("XML")=@MasXML     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS52.xsl",USER)
+  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  k ^TEMP($zn,$J),^TEMP($j)
+  quit "0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"  
+ ;------------------------------------------------
+XMLold    ; обработка данных и формирование XML ...
+  s Mas="^TEMP($zn,$J)" k @Mas
+  S MasXML="^TEMP($zn,$J,""XML"")" 
+  kill devices
+  if PAR3="0" {
+	 set id=""
+     for {
+	    set id=$order(^TMIF(id)) if id="" quit
+	    set devices(id)=""
+     }
+  }
+  else 
+  {
+	 set devices(PAR3)=""  
+  }
+  set mi=PAR3
+  set @MasXML@("User",1,"DateFrom")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+  set @MasXML@("User",1,"DateTo")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+  //set @MasXML@("User",1,"Device")=$piece($get(^TMIF(mi)),"\",1)
+  set nndev=0
+  set mi=""
+  for {
+	  set mi=$order(devices(mi)) if mi="" quit
+	  set nndev=nndev+1
+	  set @MasXML@("User",1,"GRDevice",nndev,"Device")=$piece($get(^TMIF(mi)),"\",1)
+	  set nn=0
+      for glob=$name(^TMIF(mi,20)),$name(^TMPmif(mi,20)) {
+	    set epis=""
+        for {
+	      set epis=$order(@glob@(epis),1,record) if epis="" quit
+	      if $$select^LVBEPVIS(epis,"Y") continue
+	      // test date of entry
+	      set dateEntry=PLIST(10)
+	      if (dateEntry<PAR1)||(dateEntry>PAR2) continue
+	      // test date get results
+	      set datetimeGet=$piece(record,"\",3)
+	      if datetimeGet="" continue
+	      // data
+	      set timeEntry=PLIST(11)
+	      set datetimeSet=$piece(record,"\",2) // date time sent order to device
+	      ;set cito=PLIST(24)
+	      set info=$$GetTests(mi,epis),tests=$piece(info,$char(1),1),cito=$piece(info,$char(1),2)
+	      //if '$get(@MasXML@("User",1,"GRDevice",nndev,"Device"))="" set @MasXML@("User",1,"GRDevice",nndev,"Device")=$piece($get(^TMIF(mi)),"\",1)
+	      set nn=nn+1
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Episode")=epis
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Tests")=tests
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeEntry")=$zdate(dateEntry,4)_" "_$ztime(timeEntry,2)
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeSet")=$zdate(+datetimeSet,4)_" "_$ztime($piece(datetimeSet,",",2),2)
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"DateTimeGet")=$zdate(+datetimeGet,4)_" "_$ztime($piece(datetimeGet,",",2),2)
+	      set @MasXML@("User",1,"GRDevice",nndev,"GrEpis",nn,"Cito")=cito
+        }
+      }
+      if $data(@MasXML@("User",1,"GRDevice",nndev))<10 kill @MasXML@("User",1,"GRDevice",nndev)
+  }
+  ;log
+  k ^zz M ^zz("XML")=@MasXML     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS52.xsl",USER)
+  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  k ^TEMP($zn,$J),^TEMP($j)
+  quit "0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+  ;
+GetTests(mi,epis)
+  set tests="",urgent="",dateAuth=0,timeAuth=0
+  set ts=""
+  for {
+	  set ts=$order(^TEPI(epis,1,ts)) if ts="" quit
+	  set tscnt=""
+	  for {
+		  set tscnt=$order(^TEPI(epis,1,ts,tscnt),1,rec) if tscnt="" quit
+		  // priority
+		  //s x=$$seldata^LVBVISTS(epis_"||"_ts_"||"_tscnt,13) if $$seldata^LVBCTPR(x,4)="Y" s urgent="Y"
+	      if $$getall2^LVBCTTC(ts) continue
+	      set ok=0
+	      //s x=$$seldata^LVBVISTS(vts,13) i $$seldata^LVBCTPR(x,4)="Y" s urgent="Y"
+	      set rowid=epis_"||"_ts_"||"_tscnt
+	      set id=""
+	      for {
+		     set id=$order(PLIST(id)) if id="" quit
+		     set tc=$piece(PLIST(id),$char(2),1) if tc="" continue
+		     if '$data(^TMIF(mi,2,tc)) continue
+		     if $piece($get(^TMIF(mi,2,tc)),"\",1)="" continue
+		     if '$data(@MasXML@("Epis",epis,tc)) continue
+		     set test=$piece($piece(PLIST(id),$char(2),4),$char(28),1)
+		     if test="" set test=tc
+		     set tests=tests_$select(tests'="":", ",1:"")_test
+		     set ok=1
+		     set dateAuthtest=$$seldata^LVBVISTS(rowid,7)
+		     if dateAuthtest>dateAuth set dateAuth=dateAuthtest,timeAuth=$$seldata^LVBVISTS(rowid,8)
+	      }
+	      if (ok=1)&&(urgent="") {
+		     //set priority=$piece(rec,"\",10)
+		     set rowid=epis_"||"_ts_"||"_tscnt
+		     set priority=$$seldata^LVBVISTS(rowid,13)
+		     i $$seldata^LVBCTPR(priority,4)="Y" s urgent="Срочно"
+	      }
+	  }
+  }
+  if +dateAuth=0 set dateAuth=""
+  if +timeAuth=0 set timeAuth=""
+  quit $lb(tests,urgent,dateAuth,timeAuth)
+]]></Routine>
+</Export>

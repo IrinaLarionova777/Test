@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS24" type="MAC" languagemode="0"><![CDATA[
+PRTCLNRUS24	; Акт сдачи-приемки работ; 17.10.2010
+	quit
+FORM(USER) [PLIST] PUBLIC {
+	S Par="^TEMP($J)" k @Par 
+	Set prevmonth=$$PreviousMonth^KSUTIL1($$CurrentMonth^KSUTIL1())
+	Set firstdateh=$$FirstDateOfMonthH^KSUTIL1(prevmonth)
+	Set lastdateh=$$LastDateOfMonthH^KSUTIL1(prevmonth)
+	Set hor=+$Horolog
+	Set (diffirstdate,diflastdate)=0
+	If firstdateh'="" {
+		Set diffirstdate=hor-firstdateh
+	}	
+	If lastdateh'="" {
+		Set diflastdate=hor-lastdateh
+	}	
+	; период дат
+	s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Период с:"
+	s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-"_diffirstdate_":True"
+	s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Период по:"
+	s @Par@("PAR2")="DateText: 1300: 600 : 1100 : 300 : t-"_diflastdate_":True"
+	s @Par@("PAR3a")="Label   : 100: 1000 : 1000 : 300 : Акт от:"
+	s @Par@("PAR3")="DateText: 1300: 1000 : 1100 : 300 : t-"_diflastdate_":True"
+	;
+	; список плательщиков
+	s @Par@("PAR4a")="Label   : 100 : 1500 : 1000 : 300 : Плательщик:"
+	;k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
+	;s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+	;. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR4",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
+	kill @Par@("PAR4") do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR4")))
+	s @Par@("PAR4")="ListBox : 100 : 1800 : 5900 : 3000 : :True: 0 : Checkbox  "   
+	; 
+	s @Par@("PAR5a")="Label: 3000: 200 : 1600 : 300 : Сохранить в файлах"
+	s @Par@("PAR5")="CheckBox: 4650: 200 : 200 : 300 :::0"
+    ;
+	; настройка формы
+	s @Par@("form")="Акт сдачи-приемки работ ("_$G(USER)_"):500:300:Формиров.:Выход"
+	q "^TEMP("_$J_")" 
+}
+CREATE(REPID,PAR,USER,%msql) PUBLIC {
+	kill ^TMP($zn,$j)
+	quit
+}
+START(USER,PAR) [USER,PAR,PAR1,PAR2,PAR3,PAR4,PAR5,MSGERROR,PAYMENT] PUBLIC {
+	set USER=$g(USER),PAR=$g(PAR)
+	i $get(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+	s MSGERROR="" d INIT(PAR) i $g(MSGERROR)'="" quit MSGERROR
+	quit $s(+$get(PAR5)=1:$$StartFormFile(),1:$$START0())
+}
+START0() [PAR1,PAR2,PAR3,PAR4,MSGERROR,PAYMENT,USER,PAR] PUBLIC {
+	k ^TEMP($J)	s Mas="^TEMP($zn,$J)" k @Mas
+	do BODY($g(PAR1),$g(PAR2),$g(PAR3),$g(PAR4),.PAYMENT ,Mas)
+	do XML(USER, Mas)
+	k ^TEMP($zn,$J),^TEMP($j)
+	q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+}
+    ;форм-е файлов только
+StartFormFile() [PAR1,PAR2,PAR3,PAR4,PAR5,MSGERROR,PAYMENT,USER,PAR] PUBLIC {
+	kill error set ok=0,strLPU=PAR4
+	do ##class(Report.rpt).KillLog("rpt24")
+	for i=1:1:$length(strLPU,$char(1)) {
+		set PAR4=$piece(strLPU,$char(1),i),ret=$$FormFile() 
+		if +ret s ok=1
+		if '+ret s error($o(error(""),-1)+1)=$piece(ret,"^",2)
+	}
+	set error="" if $d(error)>1 set error=##class(Report.rpt).manageErrors(.error)
+	set MSGERROR="100^" if ok=1 set MSGERROR=MSGERROR_##class(Report.rpt).messageAboutSuccess(PAR2)
+	if error'="" set MSGERROR=MSGERROR_$c(13)_error
+	q MSGERROR  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+}
+FormFile() [PAR1,PAR2,PAR3,PAR4,PAR5,MSGERROR,PAYMENT,USER,PAR] PUBLIC {
+	s ref="^TEMP($zn,$J)" k @ref
+	do BODY($g(PAR1),$g(PAR2),$g(PAR3),$g(PAR4),.PAYMENT,ref)
+	set ret=##class(Report.rpt24).StartRpt($g(PAR1), $g(PAR2), $g(PAR3), $g(PAR4), $get(PAYMENT) ,$na(@ref) )
+	k @ref
+	q ret
+}
+#; инициализация входных параметров
+INIT(PAR) [MSGERROR,PAR,mas,PAR1,PAR2,PAR3,PAR4,PAR5,PAYMENT] PUBLIC {
+	d PARAM^REPORTSPB(PAR,"mas")
+	if $get(PAR5)="" s PAR5=1
+	s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+	; период дат
+	i $G(PAR1)="" s MSGERROR="100^Не определено значение <Период с>" q
+	i $G(PAR2)="" s MSGERROR="100^Не определено значение <Период по>" q
+	i PAR1>PAR2 s MSGERROR="100^Значение <Период с> больше значения <Период по>" q
+	i $G(PAR3)="" s MSGERROR="100^Не определено значение <Дата акта>" q
+	; плательщик
+	i $G(PAR4)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+	if +$get(PAR5)=0 i $L(PAR4,$C(1))>1 s MSGERROR="100^Может быть выбрано только 1 значение поля <Плательщик>" q
+	s PAYMENT=""
+	f i=1:1:$L(PAR4,$C(1)) {
+		s pay=$P(PAR4,$C(1),i)
+		if pay '= "" {
+			s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+			s PAYMENT=$G(PAYMENT(pay))
+		}
+	}
+	i '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+	set PAR1=$$GetStartDate(PAR1, PAR4)
+	i PAR1>PAR2 s MSGERROR="100^Значение <Период с> больше значения <Период по>" q
+	quit
+}
+BODY(pDateFrom,pDateTo,pInvoiceDate,pHospitals,pSortByDate,pResGlb) public {
+	Kill @pResGlb
+	If (pHospitals="")||($Length(pHospitals,$Char(1))>1) Quit 
+	Set pcobj=##class(User.CTPaymentCode).%OpenId(pHospitals)
+	If '$IsObject(pcobj) Quit
+	Set paycodeaddr=pcobj.CTPCPayCodeAddress
+	Kill ^||tmp
+	Do GetData^PRTCLNRUS23(pDateFrom,pDateTo,pHospitals,$Name(^||tmp))
+	Set totalsum=0
+	Set invoice=""
+	For  {
+		Set invoice=$Order(^||tmp(invoice))
+		If invoice="" Quit
+		Set epis=""
+		For  {
+			Set epis=$Order(^||tmp(invoice,epis))
+			If epis="" Quit
+			Set item=""
+			For  {
+				Set item=$Order(^||tmp(invoice,epis,item),1,itemvals1)
+				If item="" Quit
+				Set itemvals2=$Get(@pResGlb@("REPORT",item))
+				;I $P(item,$C(1),1)="B003" ZW itemvals1,itemvals2 R *Y
+				Set itemdesc=$ListGet(itemvals1,1)
+				Set itemcnt=$ListGet(itemvals2,1)+$ListGet(itemvals1,2)
+				Set price=$Piece(item,$Char(1),3)
+				Set itemsum=$ListGet(itemvals2,3)+$ListGet(itemvals1,3)
+				Set totalsum=totalsum+$ListGet(itemvals1,3)
+				Set @pResGlb@("REPORT",item)=$ListBuild(itemcnt,price,itemsum)
+				If '$Data(@pResGlb@("REPORT-TS", item)) {
+					Set @pResGlb@("REPORT-TS", item) = itemdesc
+				}
+			
+			}
+		}
+	}
+	Set @pResGlb@("REPORT")=totalsum
+	Set @pResGlb@("REPORT-P") = $ListBuild($$GetContractNumber(pHospitals),$$GetContractDate(pHospitals),$Piece(paycodeaddr,"|",2),$Piece(paycodeaddr,"|",3))
+}
+GetContractDate(payment) [payment, contractdate, SQLCODE] PUBLIC {	
+  	&sql(SELECT CT_Hospital.CTHOS_FloppyFormat Into :contractdate FROM CT_Hospital 
+		INNER JOIN ((CT_HospitalBillingLoc INNER 
+		JOIN CT_BillLocationPayCode ON 
+		CT_HospitalBillingLoc.CTHOB_BillingLocation_DR = 
+		CT_BillLocationPayCode.CTBLA_ParRef) INNER JOIN 
+		CT_PaymentCode ON CT_BillLocationPayCode.CTBLA_PayCode_DR = 
+		CT_PaymentCode.CTPC_RowId) ON CT_Hospital.CTHOS_RowId = CT_HospitalBillingLoc.CTHOB_ParRef 
+		WHERE CT_PaymentCode.CTPC_Code=:payment)
+	 quit $case(SQLCODE,0:$g(contractdate),:"")
+ }
+
+	// Номер договора по ЛПУ 
+GetContractNumber(pHospital) PUBLIC {	
+	Set result=""
+	Set hospobj=##class(User.CTHospital).%OpenId(pHospital)
+	If $IsObject(hospobj) {
+		Set result=hospobj.CTHOSReferenceNumber
+	}
+	If result="" {
+		Set result=pHospital
+	}	
+	Quit result
+}
+ 
+GetStartDate(dateFrom, payment) PUBLIC {
+	set contrDate = $zdh($$GetContractDate(payment),4,,,,,,,0)
+	quit $s(dateFrom<contrDate:contrDate,1:dateFrom)
+}
+XML(USER, Mas) [MSGERROR,PAR1,PAR2,PAR3,PAR4,PAYMENT] PUBLIC {
+	If '$Data(@Mas@("REPORT")) Set MSGERROR="100^Нет данных согласно заданному критерию поиска!" Quit
+	; ---
+	Set MasO="^TEMP($zn,$J,""XML"")"
+	Set @MasO@("User",1,"Date1")=$Translate($$extdate2^SSUTIL4(PAR1),"/",".")
+	Set @MasO@("User",1,"Date2")=$Translate($$extdate2^SSUTIL4(PAR2),"/",".")
+	Set @MasO@("User",1,"Date3")=$Translate($$extdate2^SSUTIL4(PAR3),"/",".")
+	Set contractvals=$Get(@Mas@("REPORT-P"))
+	Set @MasO@("User",1,"ContNo")=$ListGet(contractvals,1)
+	Set @MasO@("User",1,"ContDate")=$ListGet(contractvals,2)
+	Set @MasO@("User",1,"position")=$ListGet(contractvals,3) 
+	Set @MasO@("User",1,"CEO")=$ListGet(contractvals,4)
+	Set @MasO@("User",1,"Payment")=PAYMENT
+
+	Set @MasO@("WriteFileLabTrakClientExtension") = "_out.xml"
+	Set @MasO@("User",1,"Amount")=$$MoneyFormat(@Mas@("REPORT")),@MasO@("User",1,"StrAmount")=$$SumStr^PRTCLNRUS25(@Mas@("REPORT"))
+	Set NGr1=0,itemdr=""
+	For  {
+		Set itemdr=$Order(@Mas@("REPORT", itemdr),1,itemvals)
+		If itemdr="" Quit
+		Set itemcode=$Piece(itemdr,$Char(1),1)
+		If itemcode'="" {
+			Set tsname=$$ABtrans($Get(@Mas@("REPORT-TS",itemdr)))
+			Set @MasO@("User",1,"Gr",NGr1,"Code")=itemcode
+			Set @MasO@("User",1,"Gr",NGr1,"Desc")=tsname
+			Set @MasO@("User",1,"Gr",NGr1,"Count")=$ListGet(itemvals,1)
+			Set @MasO@("User",1,"Gr",NGr1,"Amount")=$ListGet(itemvals,2)
+			Set @MasO@("User",1,"Gr",NGr1,"SumAmount")=$ListGet(itemvals,3)
+			Set NGr1=$Increment(NGr1)
+		}	
+	}
+	Set %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS24.xsl",USER)
+	If $Extract(%Ret)="*" Set MSGERROR="100^Ошибка:"_$Extract(%Ret,2,$Length(%Ret)) Quit
+	; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+	Set MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+}
+
+MoneyFormat(s) {
+	quit $tr($j(+$g(s),0,2),".",",")
+}
+ABtrans(s) {
+	quit $tr(s, $c(945,946,947,948,949,950), "abgdez")
+}
+ 
+]]></Routine>
+</Export>

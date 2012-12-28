@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS28" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS28   ;SPARM; Сервис - Список микроорганизмов/антибиотиков ;@gol;
+ ;
+ q
+ ; Отчет CLNRUS28  +  CLNRUS28.xsl + DLL: CLNSPARM007.clsSTART
+ ;==================================================================================================================
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ quit
+ ;==================================================================================================================
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ ; тип отчета (радио-кнопки)
+ s @Par@("PAR1")="RadioButton : 1000 : 100 : 3000 : 800 :  Тип отчета :True: ANT :List"    
+ s @Par@("PAR1","ANT")="Антибиотики"
+ s @Par@("PAR1","BUG")="Микроорганизмы"
+ ; флаг "Выводить только активные"
+ s @Par@("PAR2")="CheckBox: 100 : 1200 : 200  : 300 : : : 1 "
+ s @Par@("PAR2a")="Label   : 500 : 1200 : 4000 : 300 : Вывести только активные записи:"
+ ; флаги для настройки вывода полей таблицы
+ s @Par@("PAR3a")="Label   : 100 : 1700 : 5000 : 300 : Дополнительная настройка полей таблицы:"
+ ; номер последовательности
+ s @Par@("PAR4")="CheckBox: 100 : 2100 : 200  : 300 : : : 0 "
+ s @Par@("PAR4a")="Label   : 500 : 2100 : 5000 : 300 : Номер последовательности вывода:"
+ ; нац.номер + классификация + вкл.в отчет
+ s @Par@("PAR5")="CheckBox: 100 : 2400 : 200  : 300 : : : 0 "
+ s @Par@("PAR5a")="Label   : 500 : 2400 : 5000 : 300 : Нац.номер + Классификация + Флаг Включать в отчет:"
+ ; анализатор
+ s @Par@("PAR6")="CheckBox: 100 : 2700 : 200  : 300 : : : 1 "
+ s @Par@("PAR6a")="Label   : 500 : 2700 : 5000 : 300 : Анализаторы (трансляция результата):"
+ ; тип сортировки данных (радио-кнопки)
+ s @Par@("PAR7")="RadioButton : 100 : 3200 : 4000 : 800 : Тип сортировки данных :True: 2 :List"    
+ s @Par@("PAR7","1")="По коду"
+ s @Par@("PAR7","2")="По описанию"
+ s @Par@("PAR7","3")="По номеру последовательности"
+ ; настройка формы
+ s @Par@("form")="Список микроорганизмов/антибиотиков :500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) New (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ g XML
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; тип отчета: "ANT" ="Антибиотики" / "BUG" ="Микроорганизмы"
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Тип отчета>" q
+ s TypeReport=$G(PAR1)
+ s FlagActive=+$G(PAR2)	; флаг "Выводить только активные записи"
+ s FlagNpp=+$G(PAR4)	; флаг "номер последовательности"
+ s FlagDop=+$G(PAR5)	; флаг "нац.номер + классификация + вкл.в отчет"
+ s FlagMIF=+$G(PAR6)	; флаг "Анализаторы" (трансляция результата)
+ s FlagSort=$G(PAR7)	; тип сортировки данных (радио-кнопки)
+ quit
+ ;------------------------------------------------
+XML    ; обработка данных и формирование XML ...
+  S MasXML="^TEMP($zn,$J,""XML"")" 
+  ; флаг "Привязка к анализаторам"
+  i $G( FlagMIF)=1 d MIF(TypeReport)
+  ; тип отчета "ANT" ="Антибиотики"
+  i $G(TypeReport)="ANT" do XMLANT
+  ; тип отчета "BUG" ="Микроорганизмы"
+  i $G(TypeReport)="BUG" do XMLBUG
+  ;
+  ; входные параметры
+  S @MasXML@("User",1,"FlagReport")=$S(TypeReport="ANT":1,TypeReport="BUG":2,1:TyeReport)
+  S @MasXML@("User",1,"FlagActive")=+$G(FlagActive)		;флаг "Выводить только активные записи"
+  S @MasXML@("User",1,"FlagNpp")=+$G(FlagNpp)   		;Флаг "номер последовательности"
+  S @MasXML@("User",1,"FlagDop")=+$G(FlagDop)   		;Флаг "нац.номер + классификация + вкл.в отчет"   
+  S @MasXML@("User",1,"FlagMIF")=+$G(FlagMIF)   		;Флаг "Привязка к анализаторам"
+  S @MasXML@("User",1,"FlagSort")=$G(FlagSort)   		;тип сортировки данных (радио-кнопки)
+  S @MasXML@("User",1,"ColMIF")=+$G(SortCol)			;кол-во колонок для анализаторов
+  ;
+  s @MasXML@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+  S @MasXML@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+  ;
+  ;log
+  ;k ^zz M ^zz=@Mas     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS28.xsl",USER)
+  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  k ^TEMP($zn,$J),^TEMP($j)
+  quit "0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+  ; 
+  ;-------------------------------------------------
+XMLANT  ; тип отчета "ANT" ="Антибиотики" (CT_Antibiotics)
+  S NN1=0,code="" f  s code=$O(^TTAB("ANT",code)) q:code=""  do
+  . i $$select^LVBCTANT(code) quit
+  . i $G(FlagActive)=1 i $P($G(PLIST(6)),$C(1),1)="N" quit
+  . ;формируем данные
+  . S NN1=$i(NN1)
+  . s @MasXML@("User",1,"Next",NN1,"NN")=NN1
+  . ; код 
+  . s @MasXML@("User",1,"Next",NN1,"Code")=$G(PLIST(2))      	;CTANT Code
+  . ; наименование
+  . s @MasXML@("User",1,"Next",NN1,"Desc")=$G(PLIST(3))    		;CTANT Name
+  . ; флаг Active
+  . s @MasXML@("User",1,"Next",NN1,"FlagActive")=$G(PLIST(6))   ;CTANT ActiveFlag 
+  . ; № послед.вывода на экран
+  . s @MasXML@("User",1,"Next",NN1,"Sequence")=$G(PLIST(4))    ;CTANT DisplaySequence
+  . ; Привязка к анализаторам
+  . i $G(FlagMIF)=1 do  		
+  . S mif="" f  s mif=$o(SortCol(mif)) q:mif=""  s ind=$g(SortCol(mif)) d:ind'=""
+  .. S @MasXML@("User",1,"Next",NN1,"Col",ind,"MIF")=$G(@Mas@("SORT",mif,"TRANS",code))   
+  quit
+  ;-------------------------------------------------
+XMLBUG  ; тип отчета "BUG" ="Микроорганизмы" (CT_Bugs)
+  S NN1=0,code="" f  s code=$O(^TTAB("BUG",code)) q:code=""  do
+  . i $$select^LVBCTBUG(code) quit
+  . i $G(FlagActive)=1 i $P($G(PLIST(13)),$C(1),1)="N" quit
+  . ; формируем данные
+  . S NN1=$i(NN1)
+  . s @MasXML@("User",1,"Next",NN1,"NN")=NN1
+  . ; код 
+  . s @MasXML@("User",1,"Next",NN1,"Code")=$G(PLIST(2))      	;CTBUG Code
+  . ; наименование
+  . s @MasXML@("User",1,"Next",NN1,"Desc")=$G(PLIST(3))    		;CTBUG Name
+  . ; флаг Active
+  . s @MasXML@("User",1,"Next",NN1,"FlagActive")=$G(PLIST(13))   ;CTBUG ActiveFlag
+  . ; синоним
+  . s @MasXML@("User",1,"Next",NN1,"Synon")=$G(PLIST(6))    	;CTBUG Synonym
+  . ; нацинальный номер (ID для Vitek 2 Compact)
+  . s @MasXML@("User",1,"Next",NN1,"NatID")=$G(PLIST(5))  		;CTBUG National ID
+  . ; классификация (ID для miniAPI)
+  . s @MasXML@("User",1,"Next",NN1,"Class")=$G(PLIST(7))    	;CTBUG Classification
+  . ; Флаг "Вкл.в отчет"
+  . s @MasXML@("User",1,"Next",NN1,"FlagRep")=$G(PLIST(8))    	;CTBUG Reported
+  . ; № послед.вывода на экран
+  . s @MasXML@("User",1,"Next",NN1,"Sequence")=$G(PLIST(14))    ;CTBUG DisplaySequence
+  . ; Привязка к анализаторам
+  . i $G(FlagMIF)=1 do  		
+  . S mif="" f  s mif=$o(SortCol(mif)) q:mif=""  s ind=$g(SortCol(mif)) d:ind'=""
+  .. S @MasXML@("User",1,"Next",NN1,"Col",ind,"MIF")=$G(@Mas@("SORT",mif,"TRANS",code))   
+  quit  
+  ;------------------------------------------------------
+MIF(sub)
+  s sub=$G(sub) q:sub=""
+  s mif="" f  s mif=$O(^TMIF(mif)) q:mif=""  do
+  . q:'$D(^TMIF(mif,"TRANS-"_sub))
+  . s id="" f  s id=$O(^TMIF(mif,"TRANS-"_sub,id)) q:id=""  do
+  .. s code=$G(^TMIF(mif,"TRANS-"_sub,id)) q:code=""
+  .. s @Mas@("TRANS",code,"MIF",mif)=id
+  .. ; индексы для динамич. построения столбцов
+  .. s @Mas@("SORT",mif)=$g(@Mas@("SORT",mif))+1 
+  .. s @Mas@("SORT",mif,"TRANS",code)=id
+  ; динамический заголовок таблицы (анализаторы)
+  k SortCol s ind=0,mif="" f  s mif=$o(@Mas@("SORT",mif)) q:mif=""  d 
+  . s ind=ind+1,SortCol=ind
+  . s SortCol(mif)=ind
+  . s @MasXML@("User",1,"Col",ind,"Code")=mif
+  quit
+]]></Routine>
+</Export>

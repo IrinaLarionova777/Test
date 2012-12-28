@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS53b" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS53b   ;Мониторинг лицензий - отчет по пользователям; liv
+ ;
+ q
+ ; просто экран
+ ; Отчет CLNRUS53b  +  CLNRUS53b.xsl  + DLL: CLNSPARM007.clsSTART
+ ;==================================================================================================================
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ set dateStart="",timeStart="",diffDateStart=""
+ set recStart=$get(^MonitorLicenses("LIC","Start"))
+ if recStart'="" set dateStart=$li(recStart,1),timeStart=$li(recStart,2) set diffDateStart=$h-dateStart if diffDateStart'>0 set diffDateStart=""
+ set dateStop="",timeStop="",diffDateStop=""
+ set recStop=$get(^MonitorLicenses("LIC","Stop"))
+ if recStop'="" set dateStop=$lg(recStop,1),timeStop=$lg(recStop,2) set diffDateStop=$h-dateStop if diffDateStop'>0 set diffDateStop=""
+  ; период дат
+ s @Par@("PAR0")="Label   : 100 : 200 : 6000 : 300 : Отчет по данным, собранным при мониторинге лицензий (по пользователям).:"
+ 
+ s @Par@("PAR1a")="Label   : 100 : 600 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 600 : 1100 : 300 : t"_$select(diffDateStart'="":"-"_diffDateStart,1:"")_":True"
+ 
+ s @Par@("PAR3a")="Label   : 2700 : 600 : 1000 : 300 : Время от:"
+ s @Par@("PAR3")="Text : 3700: 600 : 1100 : 300 :"_$select(+timeStart'=0:$tr($ztime(timeStart,2),":","."),1:"00.00.00")_":False"
+ 
+ s @Par@("PAR2a")="Label   : 100: 1000 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 1300: 1000 : 1100 : 300 : t"_$select(diffDateStop'="":"-"_diffDateStop,1:"")_":True"
+ 
+ s @Par@("PAR4a")="Label   : 2700 : 1000 : 1000 : 300 : Время до:"
+ s @Par@("PAR4")="Text : 3700: 1000 : 1100 : 300 :"_$tr($select(+timeStop'=0:$ztime(timeStop,2),1:$ztime($piece($h,",",2),2)),":",".")_":False"
+
+ ; настройка формы
+ s @Par@("form")="Просмотр данных мониторинга лицензий:500:300:Формиров.:Выход"
+ k ^test("fff") m ^test("fff")=@Par
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ s ^test("par")=PAR
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j),^TEMP($zn,$J)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ g XML
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ set PAR3=+$get(PAR3),PAR4=+$get(PAR4) 
+ quit
+ 
+XML   ; обработка данных и формирование XML ...
+  set r=$char(0)
+  s Mas="^TEMP($zn,$J)" k @Mas
+  S MasXML="^TEMP($zn,$J,""XML"")" kill @MasXML
+ 
+  if '$data(^MonitorLicenses("LIC")) {
+   q "100^Нет данных по мотиторингу лицензий"
+  }
+  
+  // иначе 18.20 превращается в 18.02
+  set pp=$piece(PAR3,".",2)
+  set PAR3=$piece(PAR3,".",1)_":"_$select($length(pp)=1:pp*10,1:pp)
+  set pp=$piece(PAR4,".",2)
+  set PAR4=$piece(PAR4,".",1)_":"_$select($length(pp)=1:pp*10,1:pp)
+    
+  set timeStart=$ztimeh($tr(PAR3,".",":"))
+  set timeStop=$ztimeh($tr(PAR4,".",":"))
+  set @MasXML@("User",1,"DateStart")=$zdate(PAR1,4)
+  set @MasXML@("User",1,"TimeStart")=$ztime(timeStart)
+  set @MasXML@("User",1,"DateStop")=$zdate(PAR2,4)
+  set @MasXML@("User",1,"TimeStop")=$ztime(timeStop)
+   //set ^test("ggg")=PAR3_"*"_timeStart_"*"_PAR4_"*"_timeStop
+  set date=PAR1-0.5 set nn=0 set color=1
+  for {
+	  set date=$order(^MonitorLicenses("LIC","Date",date)) if date=""||(date>PAR2) quit
+	  set datepr=$zdate(date,4)
+	  set time=$select(date=PAR1:timeStart-0.5,1:"") 
+	  for {
+		  set time=$order(^MonitorLicenses("LIC","Date",date,time)) if time=""||((date=PAR2)&&(time>timeStop)) quit
+		  set timepr=$ztime(time)
+		  set color=$select(color=1:0,1:1)
+		  set id="" 
+          for {
+	          set id=$order(^MonitorLicenses("LIC","Date",date,time,id)) if id="" quit
+	          set x=""
+	          for {
+		          set x=$order(^MonitorLicenses("LIC",1,id,x)) if x="" quit
+		          set record=$get(^MonitorLicenses("LIC",1,id,x))
+                  set nn=nn+1
+                  set @MasXML@("User",1,"Data",nn,"Date")=datepr
+                  set @MasXML@("User",1,"Data",nn,"Time")=timepr
+                  set user=$tr($piece($piece(x,"^",2),"(",1)," ","")
+                  set @MasXML@("User",1,"Data",nn,"User")=user
+                  set userName="" if user'="" set userName=$piece($get(^SSU("SSUSR",1,user)),"^",2)
+                  set @MasXML@("User",1,"Data",nn,"UserName")=userName
+                  set @MasXML@("User",1,"Data",nn,"Comp")=$tr($piece($piece($piece(x,"^",2),"(",2),")",1),"/","")
+                  set @MasXML@("User",1,"Data",nn,"DateTimeEnter")=$zdatetime(record,4)
+                  set @MasXML@("User",1,"Data",nn,"Odd")=color //$select(nn#2'=0:"1",1:"0")
+	          }
+          }
+	  }
+  }
+  ;log
+  k ^zz M ^zz("XML")=@MasXML     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS53b.xsl",USER)
+  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  k ^TEMP($zn,$J),^TEMP($j)
+  quit "0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"  
+
+]]></Routine>
+</Export>

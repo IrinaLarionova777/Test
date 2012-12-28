@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS23old" type="MAC" languagemode="0"><![CDATA[
+PRTCLNRUS23	; Отчет по оказанным услугам; 17.10.2010
+	quit
+FORM(USER) [PLIST] PUBLIC {
+	S Par="^TEMP($J)" k @Par 
+	; период дат
+	s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+	s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+	s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+	s @Par@("PAR2")="DateText: 1300: 600 : 1100 : 300 : t:True"
+	;
+	; список плательщиков
+	s @Par@("PAR3a")="Label   : 100 : 1500 : 1000 : 300 : Плательщик:"
+	k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
+	s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+	. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR3",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
+	s @Par@("PAR3")="ListBox : 100 : 1800 : 5900 : 3000 : :True: 0 : Checkbox  "   
+	; 
+	s @Par@("PAR4")="RadioButton : 3200 : 100 : 2100 : 800 : Сортировка:True: 1 :List"    
+	s @Par@("PAR4",1)="по пациенту"
+	s @Par@("PAR4",2)="по дате"
+	;
+	s @Par@("PAR5a")="Label: 100: 1000 : 1600 : 300 : Сохранить в файлах"
+	s @Par@("PAR5")="CheckBox: 1750: 1000 : 200 : 300 :::0"
+	; настройка формы
+	s @Par@("form")="Отчет по оказанным услугам ("_$G(USER)_"):500:300:Формиров.:Выход"
+	q "^TEMP("_$J_")" 
+}
+CREATE(REPID,PAR,USER,%msql) PUBLIC {
+	kill ^TMP($zn,$j)
+	quit
+}
+START(USER,PAR) [PAR1,PAR2,PAR3,PAR4,PAR5,MSGERROR,PAYMENT,SortByDate,USER] PUBLIC {
+	set USER=$g(USER),PAR=$g(PAR)
+	i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+	s MSGERROR=""            
+	d INIT(PAR) i $g(MSGERROR)'="" quit MSGERROR
+	quit $s(+$get(PAR5)=1:$$StartFormFile(),1:$$START0())
+}
+START0() [PAR1,PAR2,PAR3,SortByDate,MSGERROR,USER,PAR] PUBLIC {
+	k ^TEMP($J)	s Mas="^TEMP($zn,$J)" k @Mas
+	do BODY($g(PAR1),$g(PAR2),$g(PAR3),SortByDate,Mas)
+	do XML(USER, Mas)
+	k ^TEMP($zn,$J),^TEMP($j)
+	q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+}
+    ;форм-е файлов только
+StartFormFile() [PAR1,PAR2,PAR3,MSGERROR] PUBLIC {
+	kill error set ok=0,strLPU=PAR3
+	do ##class(Report.rpt).KillLog("rpt23")
+	for i=1:1:$length(strLPU,$char(1)) {
+		set PAR3=$piece(strLPU,$char(1),i),ret=$$FormFile() 
+		if +ret s ok=1
+		if '+ret s error($o(error(""),-1)+1)=$piece(ret,"^",2)
+	}
+	set error="" if $d(error)>1 set error=##class(Report.rpt).manageErrors(.error)
+	set MSGERROR="100^" if ok=1 set MSGERROR=MSGERROR_##class(Report.rpt).messageAboutSuccess(PAR2)
+	if error'="" set MSGERROR=MSGERROR_$c(13)_error
+	q MSGERROR  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+}
+FormFile() [PAR1,PAR2,PAR3,SortByDate] PUBLIC {
+	s ref="^TEMP($zn,$J)" kill @ref
+	do BODY($g(PAR1),$g(PAR2),$g(PAR3),SortByDate,ref)
+	set ret=##class(Report.rpt23).StartRpt($g(PAR1), $get(PAR2), $get(PAR3), SortByDate, $na(@ref) )
+	kill @ref
+	q ret
+}
+#; инициализация входных параметров
+INIT(PAR) [MSGERROR,PAR,mas,PAR1,PAR2,PAR3,PAR4,PAR5,SortByDate,PAYMENT] PUBLIC {
+	d PARAM^REPORTSPB(PAR,"mas")
+	s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+	if $get(PAR5)="" s PAR5=1
+	; период дат
+	i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+	i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+	i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+	; плательщик
+	i $G(PAR3)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+	s PAYMENT=""
+	f i=1:1:$L(PAR3,$C(1)) {
+		s pay=$P(PAR3,$C(1),i)
+		if pay '= "" {
+			s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+			s PAYMENT="("_pay_") "_$G(PAYMENT(pay))
+		}
+	}
+	i '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" q	
+	set SortByDate=+$g(PAR4)=2
+	s ^test("rpt23","PAR4")=PAR4
+	set PAR1=$$GetStartDate^PRTCLNRUS24(PAR1, PAR4)
+	i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+	quit
+}
+BODY(pDateFrom,pDateTo,pHospitals,pSortByDate,pResGlb) public {
+	Kill @pResGlb
+	If (pHospitals="") Quit 
+	Kill ^||tmp
+	Do GetData(pDateFrom,pDateTo,pHospitals,$Name(^||tmp))
+	;
+	Set totalvals=$Get(^||tmp)
+	Set totalcnt=$ListGet(totalvals,1)
+	Set totalsum=$ListGet(totalvals,2)
+	;
+	Set @pResGlb@("REPORT")=totalcnt
+	Set @pResGlb@("REPORT-A")=totalsum
+
+	Set invoice=""
+	For  {
+		Set invoice=$Order(^||tmp(invoice))
+		If invoice="" Quit
+		Set epis=""
+		For  {
+			Set epis=$Order(^||tmp(invoice,epis),1,episvals)
+			If epis="" Quit
+			Set fullname=$ListGet(episvals,1)
+			Set entrydate=$ListGet(episvals,2)
+			Set episcnt=$ListGet(episvals,3)
+			Set epissum=$ListGet(episvals,4)
+			Set sortvalue=$Case(pSortByDate,1:entrydate,:fullname)
+			Set @pResGlb@("REPORT",sortvalue,epis)= $ListBuild(entrydate,episcnt,epissum,fullname)
+		
+			Set item=""
+			For  {	
+				Set item=$Order(^||tmp(invoice,epis,item),1,itemvals)
+				If item="" Quit
+				Set itemdesc=$ListGet(itemvals,1)
+				Set itemcnt=$ListGet(itemvals,2)
+				Set itemsum=$ListGet(itemvals,3)
+				Set @pResGlb@("REPORT-EP",epis,item)= $ListBuild(itemcnt,itemsum)
+				If '$Data(@pResGlb@("REPORT-TS", item)) {
+					Set @pResGlb@("REPORT-TS", item) = itemdesc
+				}
+			}	
+		}
+	
+	}
+	;Kill ^Y Merge ^Y=@pResGlb	
+}	
+ ; Сбор информации по счетам за период [pDateFrom,pDateTo] по списку ЛПУ pHospitals (если несколько, то разделены $Char(1))
+ ; Результат в pResGlb в формате:
+ ; Set @pResGlb=$ListBuild(totalcnt,totalsum)
+ ; Set @pResGlb@(invoiceid)=$ListBuild(invoiceobj.INVBNumber,invoiceobj.INVBDateOfCreation,invoicecnt,invoicesum)
+ ; Set @pResGlb@(invoiceid,episid)=$ListBuild(fullname,entrydate,episcnt,epissum)
+ ; Set @pResGlb@(invoiceid,episid,item)=$ListBuild(itemdesc,$ListGet(itemvals,2)+1,$ListGet(itemvals,2)+itemsum)
+GetData(pDateFrom,pDateTo,pHospitals,pResGlb) [SQLCODE,hospitallist,invoiceid] public {
+	Kill @pResGlb
+	Set cnt=$Length(pHospitals,$Char(1)) 						; Формируем список ЛПУ в формате $LB()
+	Set hospitallist=""
+	For i=1:1:cnt {
+		Set code=$Piece(pHospitals,$Char(1),i)
+		If code'="" Set hospitallist=hospitallist_$ListBuild(code)
+	}	
+	Do GetInvoices(hospitallist)
+	Set invoiceid=""
+	Set totalsum=0,totalcnt=0
+	
+	For  {
+		Set invoiceid=$Order(^||Invoices(invoiceid),1,invoicevals)
+		If invoiceid="" Quit
+		Set invoicesum=0,invoicecnt=0
+		Do GetEpisodes(invoiceid,pDateFrom,pDateTo)
+		Set episid=""
+		For  {
+			Set episid=$Order(^||Episodes(episid))
+			If episid="" Quit
+			Set episobj=##class(User.EPVisitNumber).%OpenId(episid)
+			If $IsObject(episobj) {
+				Set surname=episobj.EPVISSurname
+				Set name=episobj.EPVISGivenName
+				Set fathername=episobj.EPVISName1
+				Set entrydate=episobj.EPVISDateOfEntry
+				Set fullname=surname_" "_name_" "_fathername
+				Set episcnt=0
+				Set epissum=0
+				Set iscito=0
+				If ($IsObject(episobj.EPVISPriorityCodeDR))&&(episobj.EPVISPriorityCodeDR.%Id()="U") Set iscito=1
+				Set key2=""
+				For  {
+					Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key2)
+					If $IsObject(testsetobj) {
+						Set itemsum=0,(item,itemcode,itemdesc)=""
+						If $IsObject(testsetobj.VISTSTestSetDR) {
+							Set testcode=testsetobj.VISTSTestSetDR.%Id()
+							Set billitemobj=##class(User.EPVisitBillingItems).%OpenId(episid_"||"_testcode)
+							If $IsObject(billitemobj) {
+								Set itemsum=billitemobj.VISBIAmount
+								If $IsObject(billitemobj.VISBIItemDR) {
+									Set itemcode=billitemobj.VISBIItemDR.%Id()
+									Set itemdesc=billitemobj.VISBIItemDR.CTBIDescription
+									If iscito Set itemdesc=itemdesc_" (Срочно)"
+									Set item=itemcode_$Char(1)_iscito_$Char(1)_itemsum
+									Set itemvals=$Get(@pResGlb@(invoiceid,episid,item))
+									Set @pResGlb@(invoiceid,episid,item)=$ListBuild(itemdesc,$ListGet(itemvals,2)+1,$ListGet(itemvals,2)+itemsum)
+									Set episcnt=episcnt+1
+									Set epissum=epissum+itemsum
+									Set invoicesum=invoicesum+itemsum
+									Set invoicecnt=invoicecnt+1
+									Set totalcnt=totalcnt+1
+									Set totalsum=totalsum+itemsum
+								}	
+							}	
+						}	
+					}
+					If key2="" Quit	
+				}
+				Set @pResGlb@(invoiceid,episid)=$ListBuild(fullname,entrydate,episcnt,epissum)
+			}	
+		} ; episode	
+		If (invoicecnt>0) Set @pResGlb@(invoiceid)=$ListBuild($ListGet(invoicevals,1),$ListGet(invoicevals,2),invoicecnt,invoicesum)	
+	} ; invoice
+  	Set @pResGlb=$ListBuild(totalcnt,totalsum)
+  	;K ^Y M ^Y=@pResGlb
+}	
+GetInvoices(pHospitalList) [SQLCODE,pHospitalList,invoiceid,number,dateofcreation] public {
+	; Выбираем счета только тех ЛПУ, которые были выбраны в отчете
+	Kill ^||Invoices
+	&sql( DECLARE INVCURS CURSOR FOR
+		Select INVB_RowID,INVB_Number,INVB_DateOfCreation
+		Into :invoiceid,:number,:dateofcreation
+		from INV_Batch where INVB_PayCode_DR  %INLIST :pHospitalList
+	)
+	Set totalsum=0,totalcnt=0
+	&sql(OPEN INVCURS)
+	&sql(FETCH INVCURS)
+	
+	While (SQLCODE = 0) {
+		If (invoiceid'="") Set ^||Invoices(invoiceid)=$ListBuild(number,dateofcreation)
+		&sql(FETCH INVCURS)
+	}
+  	&sql(CLOSE INVCURS)
+}
+GetEpisodes(pInvoiceId,pDateFrom,pDateTo) [SQLCODE,pInvoiceId,episid] public {
+	Kill ^||Episodes
+	&sql( DECLARE EPISCURS CURSOR FOR
+		Select INVBP_Episode_DR 
+		Into :episid
+		from INV_BatchEpisode 
+		where INVBP_ParRef=:pInvoiceId
+	)
+	Set totalsum=0,totalcnt=0
+	&sql(OPEN EPISCURS)
+	&sql(FETCH EPISCURS)
+	
+	While (SQLCODE = 0) {
+		If episid'="" {
+			Set paymentdate=##class(TCLEx.Function.Episode).PaymentDate(episid)	; Смотрим дату платежа эпизода
+			If (paymentdate'<pDateFrom)&&(paymentdate'>pDateTo) {				; Обрабатываем, только если дата платежа в отчетном периода [pDateFrom,pDateTo]
+				Set ^||Episodes(episid)=""	
+			}
+		}				
+		&sql(FETCH EPISCURS)
+	}
+  	&sql(CLOSE EPISCURS)
+	
+}	
+	
+Test(pGlb) public {
+	Set (allcnt,allsum)=0
+	Set epis=""
+	For  {
+		Set epis=$Order(@pGlb@(epis),1,episvals)
+		If epis="" Quit
+		Set (episcnt,epissum)=0
+		Set item=""
+		For  {
+			Set item=$Order(@pGlb@(epis,item),1,itemvals)
+			If item="" Quit
+			Set episcnt=episcnt+$ListGet(itemvals,2)
+			Set epissum=epissum+$ListGet(itemvals,3)
+			Set allcnt=allcnt+$ListGet(itemvals,2)
+			Set allsum=allsum+$ListGet(itemvals,3)
+		}
+		If $ListGet(episvals,3)'=episcnt Write !,epis,")",$ListGet(episvals,3),"'=",episcnt
+		If $ListGet(episvals,4)'=epissum Write !,epis,")",$ListGet(episvals,4),"'=",epissum
+		;Write !,epis,")",$ListGet(episvals,3),"=",episcnt
+		;Write !,epis,")",$ListGet(episvals,4),"=",epissum
+	}
+	If $ListGet(@pGlb,1)'=allcnt Write !,"Total:",$ListGet(@pGlb,1),"'=",allcnt
+	If $ListGet(@pGlb,2)'=allsum Write !,"Total:",$ListGet(@pGlb,2),"'=",allsum
+	;Write !,"Total:",$ListGet(@pGlb,1),"'=",allcnt
+	;Write !,"Total:",$ListGet(@pGlb,2),"'=",allsum
+		
+}	
+
+XML(USER, Mas) [MSGERROR,PAR1,PAR2,PAR3,PAYMENT] PUBLIC {
+	i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+	; ---
+	S MasO="^TEMP($zn,$J,""XML"")"
+	s date1=$o(^TEPIi("AUTHORISED",PAR1-1)),date2=$o(^TEPIi("AUTHORISED",PAR2+1),-1)
+	S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(date1),"/",".")
+	S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(date2),"/",".")
+	S @MasO@("User",1,"Payment")=PAYMENT
+	S @MasO@("WriteFileLabTrakClientExtension") = "_out.xml"
+	S @MasO@("User",1,"Count")=+$G(@Mas@("REPORT"))
+	S @MasO@("User",1,"Amount")=$$MoneyFormat(@Mas@("REPORT-A"))
+	set NGr1=0,patname = $o(@Mas@("REPORT", ""))
+	while patname '="" {
+		set epis = $o(@Mas@("REPORT", patname, ""))
+		while epis '= "" {
+			set NGr1=$i(NGr1), billing = $g(@Mas@("REPORT", patname, epis)), epdate = $TR($$extdate2^SSUTIL4($li(billing, 1)),"/",".")
+			set @MasO@("User", 1, "Gr", NGr1, "FIO") = $li(billing, 4), ^("Epis") = epis, ^("NGr")=NGr1, ^("EDate") = epdate, ^("Count") = $li(billing, 2), ^("Amount")=$$MoneyFormat($li(billing, 3))
+			set itemdr = $o(@Mas@("REPORT-EP", epis, ""))
+			while itemdr '= "" {
+				Set ts = $g(@Mas@("REPORT-EP", epis, itemdr))
+				Set tsname = $$ABtrans($g(@Mas@("REPORT-TS",itemdr)))
+				set @MasO@("User", 1, "Gr", NGr1, "Ts", itemdr, "Count") = $li(ts, 1), ^("Amount") = $$MoneyFormat($li(ts, 2)), ^("Desc") = tsname, ^("Code") = $P(itemdr,$C(1),1)
+				set itemdr = $o(@Mas@("REPORT-EP", epis, itemdr))
+			}
+			set epis = $o(@Mas@("REPORT", patname, epis))
+		}
+		set patname = $o(@Mas@("REPORT", patname))
+	}
+	S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS23.xsl",USER)
+	i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+	; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+	s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+	quit
+}
+MoneyFormat(s) {
+	quit $tr($j(+$g(s),0,2),".",",")
+}
+ABtrans(s) {
+	quit $tr(s, $c(945,946,947,948,949,950), "abgdez")
+}
+ 
+]]></Routine>
+</Export>

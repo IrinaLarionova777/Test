@@ -1,0 +1,436 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS19" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS19   ;SPARM; Стат.форма № 4 для ВИЧ-лаборатории ;Салехард;@gol;
+ q
+ ;
+ ; Отчет CLNRUS19  +  CLNRUS19.xsl  + DLL: CLNSPARM007.clsSTART
+ ;            
+ ; Считаем кол-во выполненных исследований (входящие в выбранную группу наборов тестов) по "кодам" пациентов
+ ; 1) идем по индексу ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ; 2) и считаем кол-во выполненных наб.тестов за заданный период
+ ;    
+ ;  - Нужно чтобы 118 код делился на амбулаторию, стационар, мед.работников и реципиентов.
+ ;  - Дети и подростки тоже 118 код надо делить на амб и стац.(под таблицей идет графа).
+ ;  - И такой же отчет нужен по ВГС и HbsAg.Можно это сделать?
+ ;    
+ ;    
+ ;    109 код нам очень нужен им коируют всех берем,мед. работники работающие с кровью идут при мед. осмотре по 115,остальные по 118 вот их и отмечали 118 мед.раб т.к. СПИД центр хочет отображения их количества
+ ;    Под таблицей отдельной строкой нужно разбить 118 код на амб, стац, мед.раб и реципиентов. Подростки и дети 118 код тоже делить на амб и стац.
+ ;    
+ ;    Для них в графе Положит в ИФА он не считает итого(сумма строк1+14)?
+ ;    
+ ; PLIST(81)= Extra Field 8	  - Код пациента для ВИЧ-лаборатории
+ ;==================================================================================================================
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par             
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-30 :True"
+ s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 1300: 600 : 1100 : 300 : t:True"
+ ;
+ s @Par@("PAR3b")="Label   : 100 : 1000 : 5000 : 300 : Выберите или группы наборов тестов или тесты"
+ ;
+ ; список групп наборов тестов
+ s @Par@("PAR3a")="Label   : 100 : 1400 : 1000 : 500 : Группы наб.тестов"
+ s cnt=0,code="" f  s code=$O(^TTAB("GR",code)) q:code=""  d
+ . ; проверяем ограничение по отделам
+ . s dep=$P($G(^TTAB("GR",code)),"\",2) quit:$$ValUser^LVBCTDEP(USER,dep,1)
+ . s ok=0,ts="" f  s ts=$o(^TTAB("GR",code,"TS",ts)) q:ts=""  do
+ .. i '$$select^LVBCTTS(ts,"Y",USER) s ok=1
+ . q:'ok
+ . s @Par@("PAR3",code)=code_" - "_$P($G(^TTAB("GR",code)),"\",1) s cnt=cnt+1
+ s @Par@("PAR3")="ComboBox : 1300 : 1400 : 6000 : 300 : : False: :List"   
+ ;
+ ;список всех тестов
+ s @Par@("PAR9a")="Label   : 100 : 1900 : 1200 : 500 : Тесты:"
+ s @Par@("PAR9")="ComboBox: 1300 : 1900 : 6000 : 300 : : False: :Standart"
+ k PLIST s err=$$getall^LVBCTTC("",USER,"Y")
+ s ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+ . s code=$P(PLIST(ind),$C(2),1) q:code="" 
+ . i '$D(^TTAB("TC",code,1)) quit   ;тест не привязан ни к одному набору
+ . s @Par@("PAR9",code)=code_"   "_$P(PLIST(ind),$C(2),2)   
+ ; 
+ ; таблица для выбранных тестов
+ s @Par@("zzflex")="FlexGrid   : 100 : 2300 : 12500 : 2000 : 3,cboPAR9"
+ ; строка-подсказка
+ s @Par@("PAR9b")="Label   : 300 : 4400 : 12500 : 500 : [Для формирования списка тестов выберите Тест и нажмите кнопку Добавить]:"
+ ;
+ ; флаг (радио-кнопки)
+ s @Par@("PAR4")="RadioButton : 3500 : 100 : 3500 : 800 :  Тип отчета :True: 1 :List"    
+ s @Par@("PAR4",1)="Таблица по кодам контингентов"
+ s @Par@("PAR4",2)="Статистическая форма № 4"
+ ; флаг "Разбить количество по амбулатории/стационару"
+ s @Par@("PAR5")="CheckBox: 1300 : 4800 : 200  : 300 : : : 0 "
+ s @Par@("PAR5a")="Label   : 1600 : 4800 : 5000 : 300 : Разбить количество по амбулатории/стационару:"
+ ; 
+ ; примечание
+ s @Par@("PAR6a")="Label   : 100 : 5200 : 7300 : 200 : Примечание  -  Если код контингента не определён для лаб.номера или введен неправильно,"
+ s @Par@("PAR7a")="Label   : 1300 : 5600 : 6000 : 300 : то в Стат.форме считаем его как код ""118"" (Прочие)"
+ 
+ ; флаг "Выводить ошибки"
+ s @Par@("PAR8")="CheckBox: 100 : 6000 : 200  : 300 : : : 0 "
+ s @Par@("PAR8a")="Label   : 500 : 6000 : 5000 : 500 : Выводить ошибки:"
+ ;
+ ; настройка формы
+ s @Par@("form")="Стат.форма № 4 для ВИЧ-лаборатории (по кодам контингентов) ("_USER_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR  ;@@@
+ k ^TEMP($J)
+ s Mas="^TEMP($J,""START"")"
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d BODY,XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ;выбранные тесты
+ ;mas("zzflex")
+ s j="" f  s j=$O(mas("zzflex",j)) q:j=""  do
+ .s testcode=$P($g(mas("zzflex",j,1))," ",1) 
+ .if testcode'="" set @Mas@("SelectTests",testcode)=""
+ ; Группы наб.тестов
+ ; -> формируем обратный массив (набор тестов - группы)
+ set PAR3=$get(PAR3)
+ if PAR3'="" s group=PAR3,ts="" f  s ts=$o(^TTAB("GR",group,"TS",ts)) q:ts=""  do
+ . i $$select^LVBCTTS(ts,"Y",USER) quit
+ . s @Mas@("TWG",ts,group)=""
+ if PAR3'="",'$D(@Mas@("TWG")) s MSGERROR="100^В выбранной группе """_PAR3_""" нет доступных наборов тестов" quit
+ if '$D(@Mas@("TWG")),'$data(@Mas@("SelectTests")) s MSGERROR="100^Не выбрано ни одного теста и ни одной группы тестов" quit
+ ; Тип отчета: 0 - "Таблица по кодам контингентов"; 1 - "Статистическая форма № 4"
+ s FlagStatForma=+$G(PAR4) s FlagStatForma=$S(FlagStatForma=2:1,1:0)
+ ; Флаг "Разбить количество по амбулатории/стационару"
+ s FlagTypeLoc=+$G(PAR5) 
+ ; Флаг "Выводить ошибки"
+ s FlagError=+$G(PAR8)
+ quit
+ ;------------------------------------------------
+BODY  ; обработка данных...
+ ; формируем массив с расшифровками кодов
+ k MasContingent
+ d Contingent
+ ; поиск по дате разрешения (дата авторизации набора тестов)
+ set flTest=0
+ if $data(@Mas@("TWG")) set flTest=1  ;проверяем по выбранным группам наборов тестов
+ else  if $d(@Mas@("SelectTests")) set flTest=2  ;поверяем по выбранным тестам
+ if flTest=0 quit
+ set @Mas@("vsp","flTest")=flTest
+ s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
+ . s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d:$D(^TEPI(epis))
+ .. ; номер МК
+ .. s mrn=$P(^TEPI(epis),"\",18) q:mrn=""
+ .. s age=$P(^TEPI(epis),"\",25) s:age="" age=99
+ .. ; Extra Field 8	  - Код пациента для ВИЧ-лаборатории
+ .. s CodePat=$P($G(^TEPI(epis,8)),"\",8) ; PLIST(81)= Extra Field 8
+ .. i CodePat="" do
+ ... s LocPatCode=$P($G(^TEPI(epis)),"\",20) q:LocPatCode=""		; EPVIS_HospitalCode_DR
+ ... s CodePat=$p($G(^TTAB("RH",LocPatCode)),"\",30)				; CTHOS_ReferenceNumber  "\"30 
+ .. s:CodePat'="" CodePat=$E($TR($$ALPHAUP^SSUTIL4(CodePat)," ",""),1,4) s:CodePat="" CodePat="?"
+ .. ; Флаг "Доп.итоги по типу местоположения (стационарный/амбулаторный/прочее)"
+ .. s TypeLoc="" 
+ .. if +$G(FlagTypeLoc)=1 do   
+ ... s location=$P($G(^TEPI(epis)),"\",20)  ;EPVIS_HospitalCode_DR (Patient Location Current)
+ ... ; Location Type [ MultiChoice: In-Patient||Y, Out-Patient||N, GP practice||GP, Primary||P, Others||O ]
+ ... s type=$S(location="":"",1:$P($G(^TTAB("RH",location)),"\",16))
+ ... s TypeLoc=$S(CodePat="118М":"М",CodePat="118Р":"Р",type="Y":"IN",1:"OUT")
+ .. s CodePat=$E(CodePat,1,3)
+ .. if +$G(FlagStatForma)=1 i '$D(MasContingent(CodePat)) s CodePat="118" ;@@@
+ .. ; ---
+ .. ; наборы тестов для лаб.эпизода (ограничение по отделам)
+ .. s ts=$O(DEP("")) f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  do:((flTest=1)&($D(@Mas@("TWG",ts))))!(flTest=2)
+ ... s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
+ .... ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
+ .... s status=$p(^TEPI(epis,1,ts,tscnt),"\",31) q:status'="A" 
+ .... if flTest=2 set ok=0 do  if ok=0 quit
+ ..... set testcode="" for  set testcode=$order(^TEPI(epis,1,ts,tscnt,"DATA",testcode)) q:testcode=""  if $data(@Mas@("SelectTests",testcode)) set ok=1 quit 
+ .... ; формируем индексы для печати выходного файла
+ .... s @Mas@("REPORT","CodePat",CodePat)=$g(@Mas@("REPORT","CodePat",CodePat))+1
+ .... s @Mas@("REPORT","CodePat",CodePat,"mrn",mrn,"epis",epis,"ts",ts)=$G(@Mas@("REPORT","CodePat",CodePat,"mrn",mrn,"epis",epis,"ts",ts))+1
+ .... s @Mas@("REPORT","CodePat",CodePat,"ts")=$g(@Mas@("REPORT","CodePat",CodePat,"ts"))+1
+ .... s @Mas@("REPORT","CodePat",CodePat,"ts",ts)=$g(@Mas@("REPORT","CodePat",CodePat,"ts",ts))+1
+ .... s @Mas@("REPORT")=$G(@Mas@("REPORT"))+1
+ .... ; считаем по возрастам 1-взрослые; 2- дети (0-14); 3 - подростки (15-17)
+ .... s GrAge=$S(age>17:1,age<15:2,1:3)
+ .... ; кол-во проведенных анализов по возрастам
+ .... s @Mas@("REPORT","CodePat",CodePat,"mrn",mrn,"GrAge",GrAge)=$g(@Mas@("REPORT","CodePat",CodePat,"mrn",mrn,"GrAge",GrAge))+1
+ .... ; флаг для набора (норма/отклонение от нормы/контроль врача)
+ .... s vtsRID=epis_"||"_ts_"||"_tscnt
+ .... s flag=$$Norm^UDFSPARM001(vtsRID) s:flag="" flag="?"
+ .... s @Mas@("REPORT","CodePat",CodePat,"ts",ts,"Flag",flag)=$G(@Mas@("REPORT","CodePat",CodePat,"ts",ts,"Flag",flag))+1
+ .... s @Mas@("REPORT","CodePat",CodePat,"Flag",flag)=$G(@Mas@("REPORT","CodePat",CodePat,"Flag",flag))+1
+ .... s @Mas@("REPORT","Flag",flag)=$g(@Mas@("REPORT","Flag",flag))+1
+ .... ; ---
+ .... ; "Разбить количество по амбулатории/стационару"
+ .... if +$G(FlagTypeLoc)=1 do 
+ ..... i $G(TypeLoc)="" s TypeLoc="?"
+ ..... s @Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc)=$g(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc))+1
+ ..... s @Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"mrn",mrn,"epis",epis,"ts",ts)=$G(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"mrn",mrn,"epis",epis,"ts",ts))+1
+ ..... s @Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"ts")=$g(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"ts"))+1
+ ..... s @Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"ts",ts)=$g(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"ts",ts))+1
+ ..... s @Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"mrn",mrn,"GrAge",GrAge)=$g(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"mrn",mrn,"GrAge",GrAge))+1
+ ..... s @Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"ts",ts,"Flag",flag)=$G(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"ts",ts,"Flag",flag))+1
+ ..... s @Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"Flag",flag)=$G(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"Flag",flag))+1
+ .... ; ---
+ .... ; вывод ошибок
+ .... i '$D(MasContingent(CodePat)) d:+$G(FlagError)=1
+ ..... s @Mas@("ERROR",mrn,epis)=CodePat
+ ;
+ ;k ^zz m ^zz=@Mas   ;@@@
+ quit
+ ; ----------------------------------------------------- 
+XML      ; Формирование XML...
+ i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных!" quit
+ S MasO="^TEMP($J,""XML"")"
+ ; формируем XML
+ ;
+ set flTest=+$get(@Mas@("vsp","flTest")) 
+ ;
+ ; Стандартный вид отчета "Статистическая форма № 4"
+ i +$G(FlagStatForma)=1 do
+ . ; таблица для стат.формы № 4
+ . d Forma4	
+ . s NN="" f  s NN=$O(MasForm(NN)) q:NN=""  do
+ .. s CodePat="" f  s CodePat=$O(MasForm(NN,"CodeZ",CodePat)) q:CodePat=""  do
+ ... S MasForm(NN,"KolTS")=$G(MasForm(NN,"KolTS"))+$g(@Mas@("REPORT","CodePat",CodePat))
+ ... ; считаем патологические результаты
+ ... s flag="" f  s flag=$O(@Mas@("REPORT","CodePat",CodePat,"Flag",flag)) q:flag=""  do
+ .... S MasForm(NN,"KolTS-"_flag)=$G(MasForm(NN,"KolTS-"_flag))+$g(@Mas@("REPORT","CodePat",CodePat,"Flag",flag))
+ ... ; считаем пациентов
+ ... s SumMRN=0,mrn="" f  s mrn=$O(@Mas@("REPORT","CodePat",CodePat,"mrn",mrn)) q:mrn=""  do
+ .... S MasForm(NN,"KolMRN")=$G(MasForm(NN,"KolMRN"))+1
+ .... s GrAge="" f  s GrAge=$O(@Mas@("REPORT","CodePat",CodePat,"mrn",mrn,"GrAge",GrAge)) q:GrAge=""  do
+ ..... S MasForm(NN,"KolMRN-"_GrAge)=$G(MasForm(NN,"KolMRN-"_GrAge))+1
+ ... ; ---
+ ... ; "Разбить количество по амбулатории/стационару" ;IN-стац; OUT-амб; OTHER-прочее
+ ... if +$G(FlagTypeLoc)=1 do 
+ .... s TypeLoc="" f  s TypeLoc=$O(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc)) q:TypeLoc=""  do
+ ..... s MasForm(NN,"TypeLoc",TypeLoc,"Name")=$S(TypeLoc="IN":"cтационар",TypeLoc="М":"мед.работники",TypeLoc="Р":"реципиенты",TypeLoc="OUT":"амбулатория",1:TypeLoc)
+ ..... s MasForm(NN,"TypeLoc",TypeLoc,"Code")=TypeLoc
+ ..... S MasForm(NN,"TypeLoc",TypeLoc,"KolTS")=$G(MasForm(NN,"TypeLoc",TypeLoc,"KolTS"))+$g(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc))
+ ..... s flag="" f  s flag=$O(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"Flag",flag)) q:flag=""  do
+ ...... S MasForm(NN,"TypeLoc",TypeLoc,"KolTS-"_flag)=$G(MasForm(NN,"TypeLoc",TypeLoc,"KolTS-"_flag))+$g(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"Flag",flag))
+ ..... ; считаем пациентов
+ ..... s SumMRN=0,mrn="" f  s mrn=$O(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"mrn",mrn)) q:mrn=""  do
+ ...... S MasForm(NN,"TypeLoc",TypeLoc,"KolMRN")=$G(MasForm(NN,"TypeLoc",TypeLoc,"KolMRN"))+1
+ ...... s GrAge="" f  s GrAge=$O(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"mrn",mrn,"GrAge",GrAge)) q:GrAge=""  do
+ ....... S MasForm(NN,"TypeLoc",TypeLoc,"KolMRN-"_GrAge)=$G(MasForm(NN,"TypeLoc",TypeLoc,"KolMRN-"_GrAge))+1
+ .. ; ---
+ .. m @MasO@("User",1,"Gr",NN)=MasForm(NN)
+ .. k @MasO@("User",1,"Gr",NN,"CodeZ")
+ . ; считаем ИТОГО (сумма строк 01+14)
+ . S @MasO@("User",1,"Itog-KolTS")=$G(@MasO@("User",1,"Gr",1,"KolTS"))+$G(@MasO@("User",1,"Gr",14,"KolTS"))
+ . S @MasO@("User",1,"Itog-KolTS-H")=$G(@MasO@("User",1,"Gr",1,"KolTS-H"))+$G(@MasO@("User",1,"Gr",14,"KolTS-H"))
+ . S @MasO@("User",1,"Itog-KolMRN")=$G(@MasO@("User",1,"Gr",1,"KolMRN"))+$G(@MasO@("User",1,"Gr",14,"KolMRN"))
+ . S @MasO@("User",1,"Itog-KolMRN-2")=$G(@MasO@("User",1,"Gr",1,"KolMRN-2"))+$G(@MasO@("User",1,"Gr",14,"KolMRN-3"))
+ . S @MasO@("User",1,"Itog-KolMRN-3")=$G(@MasO@("User",1,"Gr",1,"KolMRN-3"))+$G(@MasO@("User",1,"Gr",14,"KolMRN-3"))
+ ; 
+ ; Таблица по кодам контингентов
+ i +$G(FlagStatForma)=0 do
+ . s NGr1=0,CodePat="" f  s CodePat=$o(@Mas@("REPORT","CodePat",CodePat)) q:CodePat=""  d
+ .. S NGr1=$i(NGr1)
+ .. S @MasO@("User",1,"Gr",NGr1,"Code")=CodePat
+ .. S @MasO@("User",1,"Gr",NGr1,"Name")=$S($G(MasContingent(CodePat))="":CodePat_" (ОШИБКА! считаем как 118)",1:$G(MasContingent(CodePat)))
+ .. S @MasO@("User",1,"Gr",NGr1,"KolTS")=+$g(@Mas@("REPORT","CodePat",CodePat))
+ .. S @MasO@("User",1,"Itog-KolTS")=+$G(@MasO@("User",1,"Itog-KolTS"))+$g(@Mas@("REPORT","CodePat",CodePat))
+ .. ; считаем патологические результаты
+ .. s flag="" f  s flag=$O(@Mas@("REPORT","CodePat",CodePat,"Flag",flag)) q:flag=""  do
+ ... S @MasO@("User",1,"Gr",NGr1,"KolTS-"_flag)=+$g(@Mas@("REPORT","CodePat",CodePat,"Flag",flag))
+ ... S @MasO@("User",1,"Itog-KolTS-"_flag)=+$G(@MasO@("User",1,"Itog-KolTS-"_flag))+$g(@Mas@("REPORT","CodePat",CodePat,"Flag",flag))
+ .. ; считаем пациентов
+ .. s mrn="" f  s mrn=$O(@Mas@("REPORT","CodePat",CodePat,"mrn",mrn)) q:mrn=""  do
+ ... S @MasO@("User",1,"Gr",NGr1,"KolMRN")=$G(@MasO@("User",1,"Gr",NGr1,"KolMRN"))+1
+ ... S @MasO@("User",1,"Itog-KolMRN")=$G(@MasO@("User",1,"Itog-KolMRN"))+1
+ ... s GrAge="" f  s GrAge=$O(@Mas@("REPORT","CodePat",CodePat,"mrn",mrn,"GrAge",GrAge)) q:GrAge=""  do
+ .... S @MasO@("User",1,"Gr",NGr1,"KolMRN-"_GrAge)=$G(@MasO@("User",1,"Gr",NGr1,"KolMRN-"_GrAge))+1
+ .... S @MasO@("User",1,"Itog-KolMRN-"_GrAge)=$G(@MasO@("User",1,"Itog-KolMRN-"_GrAge))+1
+ .. ; ---
+ .. ; "Разбить количество по амбулатории/стационару" ;IN-стац; OUT-амб; OTHER-прочее
+ .. if +$G(FlagTypeLoc)=1 do 
+ ... s TypeLoc="" f  s TypeLoc=$O(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc)) q:TypeLoc=""  do
+ .... s @MasO@("User",1,"Gr",NGr1,"TypeLoc",TypeLoc,"Code")=TypeLoc
+ .... s @MasO@("User",1,"Gr",NGr1,"TypeLoc",TypeLoc,"Name")=$S(TypeLoc="IN":"cтационар",TypeLoc="М":"мед.работники",TypeLoc="Р":"реципиенты",TypeLoc="OUT":"амбулатория",1:TypeLoc)
+ .... S @MasO@("User",1,"Gr",NGr1,"TypeLoc",TypeLoc,"KolTS")=+$g(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc))
+ .... ; считаем патологические результаты
+ .... s flag="" f  s flag=$O(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"Flag",flag)) q:flag=""  do
+ ..... S @MasO@("User",1,"Gr",NGr1,"TypeLoc",TypeLoc,"KolTS-"_flag)=$G(@MasO@("User",1,"Gr",NGr1,"TypeLoc",TypeLoc,"KolTS-"_flag))+$g(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"Flag",flag))
+ .... ; считаем пациентов
+ .... s SumMRN=0,mrn="" f  s mrn=$O(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"mrn",mrn)) q:mrn=""  do
+ ..... S @MasO@("User",1,"Gr",NGr1,"TypeLoc",TypeLoc,"KolMRN")=$G(@MasO@("User",1,"Gr",NGr1,"TypeLoc",TypeLoc,"KolMRN"))+1
+ ..... s GrAge="" f  s GrAge=$O(@Mas@("REPORT","CodePat",CodePat,"TypeLoc",TypeLoc,"mrn",mrn,"GrAge",GrAge)) q:GrAge=""  do
+ ...... S @MasO@("User",1,"Gr",NGr1,"TypeLoc",TypeLoc,"KolMRN-"_GrAge)=$G(@MasO@("User",1,"Gr",NGr1,"TypeLoc",TypeLoc,"KolMRN-"_GrAge))+1
+ . ; ---
+ . ; расшифровка наборов тестов, ктр. входят в выбранную группу
+ . s NGr2=0
+ . if flTest=1 set ts="" f  s ts=$O(@Mas@("TWG",ts)) q:ts=""  do
+ .. s NGr2=$i(NGr2)
+ .. S @MasO@("User",1,"Detali",NGr2,"Code")=ts
+ .. S @MasO@("User",1,"Detali",NGr2,"Desc")=$P($G(^TTAB("TS",ts)),"\",1)
+ . if flTest=2 set testcode="" for  set testcode=$order(@Mas@("SelectTests",testcode)) quit:testcode=""  do  ;
+ .. s NGr2=$i(NGr2)
+ .. S @MasO@("User",1,"Detali",NGr2,"Code")=testcode
+ .. S @MasO@("User",1,"Detali",NGr2,"Desc")=$P($G(^TTAB( "TC", testcode )),"\",1)
+ ;
+ ; Обработка ошибок
+ i $G(FlagError)=1 do
+ . i '$D(@Mas@("ERROR")) s FlagError=0 quit
+ . s NN=0,mrn="" f  s mrn=$O(@Mas@("ERROR",mrn)) q:mrn=""  do
+ .. s epis="" f  s epis=$O(@Mas@("ERROR",mrn,epis)) q:epis=""  do
+ ... s CodePat=$G(@Mas@("ERROR",mrn,epis))
+ ... s NN=$i(NN)
+ ... S @MasO@("User",1,"Error",NN,"NN")=NN
+ ... S @MasO@("User",1,"Error",NN,"mrn")=mrn
+ ... S @MasO@("User",1,"Error",NN,"epis")=epis
+ ... S @MasO@("User",1,"Error",NN,"fio")=$TR($P($G(^TEPI(epis)),"\",1,2),"\"," ")
+ ... S @MasO@("User",1,"Error",NN,"CodePat")=CodePat
+ ;
+ ; шапка
+ S @MasO@("User",1,"DatePrint")=$TR($zd(+$h,4),"/",".")
+ S @MasO@("User",1,"User")=$S(USER'="":$P($G(^SSU("SSUSR",1,$G(USER))),"^",1),1:"________________________")
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+ if flTest=1 S @MasO@("User",1,"GroupTS")=$S($E($G(PAR3),1)="*":"* все",1:"["_PAR3_"] "_$P($G(^TTAB("GR",PAR3)),"\",1))
+ ;if flTest=2 set strTests="" do  S @MasO@("User",1,"GroupTS")="Тесты: "_strTests
+ .set testcode="" for  set testcode=$order(@Mas@("SelectTests",testcode)) quit:testcode=""  set strTests=$select(strTests'="":", ",1:"")_testcode
+ s @MasO@("User",1,"FlagStatForma")=+$G(FlagStatForma)			; Флаг "Статистическая форма № 4 (стандартный вид отчета)"
+ s @MasO@("User",1,"FlagTypeLoc")=+$G(FlagTypeLoc)				; Флаг "Разбить количество по амбулатории/стационару"
+ s @MasO@("User",1,"FlagError")=+$G(FlagError)					; Флаг "Выводить ошибки"
+ ;
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ;
+ ;M ^zz=@MasO     ;@@@
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS19.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ;
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ quit
+ ;-------------------------------
+Contingent
+	k MasContingent
+	;i +$G(FlagStatForma)=0 do
+	. s MasContingent("100")="Граждане Российской Федерации"
+	. s MasContingent("119")="Обследованные в плановом порядке"
+	. s MasContingent("126")="Обследованные добровольно"
+	s MasContingent("102")="Больные наркоманией"
+	s MasContingent("103")="Гомо- и бисексуалисты"
+	s MasContingent("104")="Больные заболеваниями, передающимися половым путем"
+	s MasContingent("108")="Доноры (крови, биологических жидкостей органов и тканей)"
+	s MasContingent("109")="Беременные (доноры плацентарной и абортной крови)"
+	s MasContingent("112")="Лица, находящиеся в местах лишения свободы"
+	s MasContingent("113")="Обследованные по клиническим показаниям"
+	s MasContingent("115")="Медицинский персонал, работающий больными ВИЧ-инфекцией или инфицированным материалом"
+	s MasContingent("118")="Прочие"
+	s MasContingent("120")="Обследованные при эпидемиологическим расследовании"
+	s MasContingent("200")="Иностранные граждане"
+	quit
+	;---------------------------------------------------
+Forma4	;таблица для стат.формы № 4
+	k MasForm
+	s MasForm(1,"NameZ")="Граждане Российской Федерации"
+	s MasForm(1,"Name")="всего (сумма строк 02+05+13)"
+	s MasForm(1,"Name2")="в том числе:"
+	s MasForm(1,"Num")="01"
+	s MasForm(1,"Code")="100"
+	s MasForm(1,"CodeZ","108")=""
+	s MasForm(1,"CodeZ","115")=""
+	s MasForm(1,"CodeZ","102")=""
+	s MasForm(1,"CodeZ","103")=""
+	s MasForm(1,"CodeZ","104")=""
+	s MasForm(1,"CodeZ","112")=""
+	s MasForm(1,"CodeZ","113")=""
+	s MasForm(1,"CodeZ","109")=""
+	s MasForm(1,"CodeZ","118")=""
+	s MasForm(1,"CodeZ","120")=""
+	;
+	s MasForm(2,"NameZ")="Обследованные в плановом порядке"
+	s MasForm(2,"Name")="(сумма строк 03+04)"
+	s MasForm(2,"Num")="02"
+	s MasForm(2,"Code")="119"
+	s MasForm(2,"CodeZ","108")=""
+	s MasForm(2,"CodeZ","115")=""
+	;
+	s MasForm(3,"Name")="Доноры (крови, биологических жидкостей органов и тканей)"
+	s MasForm(3,"Num")="03"
+	s MasForm(3,"Code")="108"
+	s MasForm(3,"CodeZ","108")=""
+	;
+	s MasForm(4,"Name")="Медицинский персонал, работающий с больными ВИЧ-инфекцией или инфицированным материалом"
+	s MasForm(4,"Num")="04"
+	s MasForm(4,"Code")="115"
+	s MasForm(4,"CodeZ","115")=""
+	;
+	s MasForm(5,"NameZ")="Обследованные добровольно"
+	s MasForm(5,"Name")="(сумма строк 06-12)"
+	s MasForm(5,"Num")="05"
+	s MasForm(5,"Code")="126"
+	s MasForm(5,"CodeZ","102")=""
+	s MasForm(5,"CodeZ","103")=""
+	s MasForm(5,"CodeZ","104")=""
+	s MasForm(5,"CodeZ","112")=""
+	s MasForm(5,"CodeZ","113")=""
+	s MasForm(5,"CodeZ","109")=""
+	s MasForm(5,"CodeZ","118")=""
+	;
+	s MasForm(6,"Name")="больные наркоманией"
+	s MasForm(6,"Num")="06"
+	s MasForm(6,"Code")="102"
+	s MasForm(6,"CodeZ","102")=""
+	;
+	s MasForm(7,"Name")="гомо- и бисексуалисты"
+	s MasForm(7,"Num")="07"
+	s MasForm(7,"Code")="103"
+	s MasForm(7,"CodeZ","103")=""
+	;
+	s MasForm(8,"Name")="больные заболеваниями, передающимися половым путем"
+	s MasForm(8,"Num")="08"
+	s MasForm(8,"Code")="104"
+	s MasForm(8,"CodeZ","104")=""
+	;
+	s MasForm(9,"Name")="лица, находящиеся в местах лишения свободы"
+	s MasForm(9,"Num")="09"
+	s MasForm(9,"Code")="112"
+	s MasForm(9,"CodeZ","112")=""
+	;
+	s MasForm(10,"Name")="обследованные по клиническим показаниям"
+	s MasForm(10,"Num")="10"
+	s MasForm(10,"Code")="113"
+	s MasForm(10,"CodeZ","113")=""
+	;
+	s MasForm(11,"Name")="беременные (доноры плацентарной и абортной крови)"
+	s MasForm(11,"Num")="11"
+	s MasForm(11,"Code")="109"
+	s MasForm(11,"CodeZ","109")=""
+	;
+	s MasForm(12,"Name")="прочие"
+	s MasForm(12,"Num")="12"
+	s MasForm(12,"Code")="118"
+	s MasForm(12,"CodeZ","118")=""
+	s MasForm(12,"CodeZ","118М")=""
+	s MasForm(12,"CodeZ","118Р")=""
+	;
+	s MasForm(13,"NameZ")="Обследованные при эпидемиологическом расследовании"
+	s MasForm(13,"Num")="13"
+	s MasForm(13,"Code")="120"
+	s MasForm(13,"CodeZ","120")=""
+	;
+	s MasForm(14,"NameZ")="Иностранные граждане"
+	s MasForm(14,"Num")="14"
+	s MasForm(14,"Code")="200"
+	s MasForm(14,"CodeZ","200")=""
+	quit
+]]></Routine>
+</Export>

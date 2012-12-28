@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS46" type="MAC" languagemode="0"><![CDATA[
+PRTCLNRUS46 ; Список заказов для исполнителя; 28.01.2011
+#;==================================================================================================================
+#; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+#; Возвращает:   имя массива
+#;
+FORM(USER) [PLIST, PAR3] PUBLIC {
+	set USER=$g(USER), Par=$na(^TEMP($J)), date1 = $zd($h, 4), $p(date1, "/") = "01" kill @Par
+	set default=$$ListLab($na(@Par@("PAR3")))
+	set @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+#;	set ^("PAR1")="DateText: 1300: 200 : 1100 : 300 :t-180 :True"
+	set ^("PAR1")="DateText: 1300: 200 : 1100 : 300 :"_date1_" :True"
+	set ^("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+	set ^("PAR2")="DateText: 1300: 600 : 1100 : 300 : t:True"
+	; список лабораторий
+	set ^("PAR3a")="Label   : 100 : 1000 : 1000 : 300 : Лаборатория:"
+	set ^("PAR3")="ListBox : 1300 : 1000 : 4000 : 3000: :True:  :Checkbox"         ;Standart
+	; настройка формы
+	s ^("form")="Отчет по оказанным услугам ("_USER_"):500:300:Формиров.:Выход"
+	quit Par
+}
+CREATE(REPID, PAR, USER, %msql) PUBLIC {
+	kill ^TMP($zn,$j)
+	quit
+}
+#;==================================================================================================================
+#; Формирование отчета согласно заданным критериям (передаются из формы VB)
+#; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+#; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+#;             100^сообщение об ошибке
+#;
+START(USER,PAR) [PAR1,PAR2,PAR3,MSGERROR] PUBLIC {
+	set USER=$g(USER),PAR=$g(PAR)
+	i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+	set MSGERROR="", Mas=$na(^TEMP($zn,$j)) k @Mas, ^TEMP($J)
+	d INIT(PAR)
+	set MSGERROR=$g(MSGERROR)
+	if $g(MSGERROR)="" {
+		do BODY($g(PAR1),$g(PAR2),$g(PAR3),Mas), XML(USER, Mas)
+		kill @Mas, ^TEMP($j)
+	}
+	q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+}
+#;------------------------------------------------
+#; инициализация входных параметров
+INIT(PAR) [MSGERROR,PAR,mas,PAR1,PAR2,PAR3] PUBLIC {
+	do PARAM^REPORTSPB(PAR,"mas")
+	set j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+	; период дат
+	if $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+	if $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+	if PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+	; лаборатория
+	i $G(PAR3)="" s MSGERROR="100^Не определено значение <Лаборатория>" q
+	if PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+	quit
+}
+BODY(PAR1,PAR2,PAR3,Mas) [MSGERROR, SQLCODE] PUBLIC {
+	kill lab
+	if PAR3=0 
+	{
+	   set code=""
+	   for {
+		  set code=$order(^TTAB("RL",code)) if code="" quit
+		  set lab(code)=""   
+	   }	
+	}
+	else 
+	{	
+		for i=1:1:$length(PAR3,$c(1)) set pp=$piece(PAR3,$c(1),i) if pp'="" set lab(pp)="" 
+	}
+	kill ^||vsp
+	set Status="S",ReferralLab=""
+	for {
+	   set ReferralLab=$order(lab(ReferralLab)) if ReferralLab="" quit
+	   set episode=""
+	   for {
+		  set episode=$order(^TEPIi("MOVE-TRL",Status,ReferralLab,episode)) if episode="" quit
+		  set order=""
+		  for {
+			  set order=$order(^TEPIi("MOVE-TRL",Status,ReferralLab,episode,order)) if order="" quit
+			  set rec=$get(^TEPI(episode,9,order)) if rec="" continue
+			  set DateSent=$piece(rec,"\",6)
+			  if (DateSent<PAR1)||(DateSent>PAR2) continue  
+			  set TimeSent=$piece(rec,"\",7)
+			  set recEpis=$get(^TEPI(episode))
+			  set Surname=$piece(recEpis,"\",1),GivenName=$piece(recEpis,"\",2),Birth=$piece(recEpis,"\",4)
+			  set TestDate=$piece(recEpis,"\",10) ;EPVIS_DateOfCollection
+			  set Pregnant=$piece(recEpis,"\",34) ;EPVIS_Pregnant
+			  set PregnantNumberOfWeeks=$piece(recEpis,"\",35) ;EPVIS_PregnantNumberOfWeeks
+			  set Diurese=$piece($get(^TEPI(episode,8)),"\",7) ;EPVIS_Extra7 
+			  set sex=$piece(recEpis,"\",3) ;set Sex="" if sex'="" set Sex=$piece($get(^TTAB("SP",sex)),"\",1)
+			  set USL=$piece(recEpis,"\",36) if USL=""||('$data(^TTAB("USLOC",USL))) continue  ;так в сформировавшемся по sql запросу коде
+			  set USLDesc="" if USL'="" set USLDesc=$piece($get(^TTAB("USLOC",USL)),"\",1)
+			  set clicond=$piece($get(^TEPI(episode,0)),"\",17) set ConditionsDesc="" if clicond'="" set ConditionsDesc=$piece($get(^TTAB("CLC",clicond)),"\",1) ;???
+			  set PregnanceInfo = ConditionsDesc 
+			  set:PregnantNumberOfWeeks]"" PregnanceInfo=PregnanceInfo_$s(PregnanceInfo]"":" ",1:"")_"берем:"_PregnantNumberOfWeeks
+			  set:Diurese]"" PregnanceInfo=PregnanceInfo_$s(PregnanceInfo]"":" ",1:"")_"суточный диурез: "_Diurese
+			  set refts=""
+			  for {
+				 set refts=$order(^TEPI(episode,9,order,"VTS",refts)) if refts="" quit
+				 set ts=$piece(refts,"||",2),tscnt=$piece(refts,"||",3) 
+				 set TestName=$piece($get(^TTAB("TS",ts)),"\",1)
+				 set recTS=$get(^TEPI(episode,1,ts,tscnt))
+				 set specimen=$piece(recTS,"\",46) set Desc="" if specimen'="" set Desc=$piece($get(^TTAB("SPEC",specimen)),"\",1) 
+				 set ExtTestName=$get(^TTAB("RL",ReferralLab,"TS",ts)) 
+				 set groupby=USLDesc_$c(1)_episode_$c(1)_DateSent_$c(1)_TimeSent_$c(1)_Birth_$c(1)_ts_$c(1)_TestDate_$c(1)_Pregnant_$c(1)_PregnantNumberOfWeeks_$c(1)_sex
+				 set key=ReferralLab_$c(1)_order_$c(1)_refts
+				 set ^||vsp(groupby,key)=$lb(episode, Surname_" "_GivenName, sex, Birth, TestName, Desc, TestDate, PregnanceInfo, ExtTestName)
+			  }
+			  
+		  }   
+	   }
+	   	
+	}
+    set groupby=""
+    for {
+	   set groupby=$order(^||vsp(groupby)) if groupby="" quit
+	   set USLDesc=$piece(groupby,$c(1),1),DateSent=$piece(groupby,$c(1),3),TimeSent=$piece(groupby,$c(1),4)
+	   set key=""
+	   for {
+		  set key=$order(^||vsp(groupby,key)) if key="" quit
+		  set ReferralLab=$piece(key,$c(1),1)
+		  set lab=USLDesc, keylab = ReferralLab_"^"_DateSent_"^"_TimeSent 
+		  set:keylab="" keylab="?" set:lab="" lab="?" 
+		  set ordernum=$i(@Mas@("REPORT", lab, keylab)) 
+		  set @Mas@("REPORT", lab, keylab, ordernum)=^||vsp(groupby,key)
+	   }   
+    }
+    kill ^||vsp
+
+
+}
+#;------------------------------------------------
+#; обработка данных...
+BODYold(PAR1,PAR2,PAR3, Mas) [MSGERROR, SQLCODE, TestNum, ReferralLab, DateSent, TimeSent, Surname, GivenName, Birth, TestName, TestDate, Desc, 
+                           Pregnant, PregnantNumberOfWeeks, Sex, ConditionsDesc, USLDesc, Diurese, ExtTestName] PUBLIC {
+	&sql(DECLARE C1 CURSOR FOR
+	SELECT EP_VisitMovements.VISMV_ParRef, EP_VisitMovements.VISMV_ToReferralLab_DR, EP_VisitMovements.VISMV_DateSent, EP_VisitMovements.VISMV_TimeSent, 
+	EP_VisitNumber.EPVIS_Surname, EP_VisitNumber.EPVIS_GivenName, EP_VisitNumber.EPVIS_DateOfBirth, CT_TestSet.CTTS_Name, 
+	EP_VisitNumber.EPVIS_DateOfCollection, CT_Specimen.CTSPE_Desc, EP_VisitNumber.EPVIS_Pregnant, EP_VisitNumber.EPVIS_PregnantNumberOfWeeks, 
+	CT_Species.CTSP_Code, CT_ClinicalConditions.CTCLC_Description, CT_UserLocation.CTUSL_Desc, EP_VISITNumber.EPVIS_Extra7, 
+	CT_RefLabTestSets.CTRLT_ExternalTestSet
+	INTO :TestNum, :ReferralLab, :DateSent, :TimeSent, :Surname, :GivenName, :Birth, :TestName, :TestDate, :Desc, :Pregnant,
+	:PregnantNumberOfWeeks, :Sex, :ConditionsDesc, :USLDesc, :Diurese, :ExtTestName
+	FROM ((((EP_VisitMovements INNER JOIN EP_VisitMovementsTests ON EP_VisitMovements.VISMV_RowID = EP_VisitMovementsTests.VISMT_ParRef 
+	INNER JOIN EP_VisitNumber ON EP_VisitMovements.VISMV_ParRef = EP_VisitNumber.EPVIS_RowId 
+	LEFT JOIN CT_Species ON EP_VisitNumber.EPVIS_Species_DR = CT_Species.CTSP_RowId
+	LEFT JOIN CT_ClinicalConditions ON EP_VisitNumber.EPVIS_ClinicalConditions_DR = CT_ClinicalConditions.CTCLC_RowID) 
+	INNER JOIN EP_VisitTestSet ON (EP_VisitMovementsTests.VISMT_vtsRID_DR = EP_VisitTestSet.VISTS_RowId) AND EP_VisitNumber.EPVIS_VisitNumber = EP_VisitTestSet.VISTS_ParRef) 
+	LEFT JOIN CT_Specimen ON EP_VisitTestSet.VISTS_SpecimenType_DR = CT_Specimen.CTSPE_RowId) 
+	INNER JOIN CT_TestSet ON EP_VisitTestSet.VISTS_TestSet_DR = CT_TestSet.CTTS_RowId) 
+	INNER JOIN CT_UserLocation ON EP_VisitNumber.EPVIS_UserSite_DR = CT_UserLocation.CTUSL_RowId
+	LEFT JOIN CT_RefLabTestSets ON CT_RefLabTestSets.CTRLT_TestSet_DR=CT_TestSet.CTTS_RowId AND CT_RefLabTestSets.CTRLT_ParRef=EP_VisitMovements.VISMV_ToReferralLab_DR
+	WHERE EP_VisitMovements.VISMV_Status='S' AND
+	EP_VisitMovements.VISMV_DateSent BETWEEN :PAR1 AND :PAR2
+	GROUP BY EP_VisitMovements.VISMV_ParRef, EP_VisitMovements.VISMV_DateSent, EP_VisitMovements.VISMV_TimeSent, EP_VisitNumber.EPVIS_DateOfBirth,
+	 CT_TestSet.CTTS_Code,EP_VisitNumber.EPVIS_DateOfCollection, EP_VisitNumber.EPVIS_Pregnant, EP_VisitNumber.EPVIS_PregnantNumberOfWeeks, CT_Species.CTSP_Code
+	)
+	&sql(OPEN C1)
+	&sql(FETCH C1)
+	set laboratories = $c(1)_PAR3_$c(1)
+	while (SQLCODE = 0) {
+		set lab=USLDesc, keylab = ReferralLab_"^"_DateSent_"^"_TimeSent
+		if ReferralLab]"" && (laboratories[($c(1)_ReferralLab_$c(1)) || (PAR3 = 0)) {
+			set:keylab="" keylab="?" set:lab="" lab="?"
+			set ordernum=$i(@Mas@("REPORT", lab, keylab))
+			set PregnanceInfo = ConditionsDesc 
+			set:PregnantNumberOfWeeks]"" PregnanceInfo=PregnanceInfo_$s(PregnanceInfo]"":" ",1:"")_"берем:"_PregnantNumberOfWeeks
+			set:Diurese]"" PregnanceInfo=PregnanceInfo_$s(PregnanceInfo]"":" ",1:"")_"суточный диурез: "_Diurese
+			set @Mas@("REPORT", lab, keylab, ordernum)=$lb(TestNum, Surname_" "_GivenName, Sex, Birth, TestName, Desc, TestDate, PregnanceInfo, ExtTestName)
+		}
+		&sql(FETCH C1)
+	}
+  	&sql(CLOSE C1)
+}
+#;--------------------------------------------------------------------------
+#; Формирование XML
+XML(USER, Mas) [MSGERROR,PAR1,PAR2,PAR3] PUBLIC {
+	if '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+	S MasO=$na(^TEMP($zn,$J,"XML"))
+	set NGr1=0,lab = $o(@Mas@("REPORT", ""))
+	while lab ]"" {
+		set keylab = $o(@Mas@("REPORT", lab, ""))
+		while keylab]"" {
+			set NGr1=$i(NGr1), dateSent = $p(keylab, "^", 2), timeSent = $p(keylab, "^", 3), referralLab=$p($g(^TTAB("RL",$p(keylab, "^"))),"\")
+			set:dateSent>0 dateSent = $tr($zd(dateSent,4),"/",".")
+			set:timeSent>0 timeSent = $zt(timeSent,2)
+			set @MasO@("User", 1, "Gr", NGr1, "UslDesc") = lab, ^("TimeSent") = dateSent_" "_timeSent, ^("ReferralLab") = referralLab
+			set ordernum = $o(@Mas@("REPORT", lab, keylab, "")), (TotalTests, TotalOrders, NCol1)=0, (prevTestNum, prevTestName, prevPat) = ""
+			while ordernum ]"" {
+				set NCol1=$i(NCol1), rline = $g(@Mas@("REPORT", lab, keylab, ordernum)), testNum=$lg(rline,1), testname=$lg(rline,5), testdate=$lg(rline,7)
+				set patient = $lg(rline, 2, 4), newTest = prevTestNum'= testNum || (prevPat '= patient), TotalTests = ordernum
+				set:testdate>0 testdate = $tr($zd(testdate,4),"/",".")
+				set:newTest||(testname]""&&(testname'=prevTestName)) (prevTestName, @MasO@("User", 1, "Gr", NGr1, "Col", NCol1, "TestName")) = testname, 
+				@MasO@("User", 1, "Gr", NGr1, "Col", NCol1, "ExtTestName") = $lg(rline,9)
+				if newTest {
+					set birth = $lg(rline, 4)
+					set:birth>0 birth = $tr($zd(birth,4),"/",".")
+					set @MasO@("User", 1, "Gr", NGr1, "Col", NCol1, "TestNum") = testNum, ^("PatName") = $lg(rline, 2), 
+					^("Sex") = $lg(rline, 3), ^("Birth") = birth, TotalOrders = $i(TotalOrders), ^("OrderNum") = TotalOrders_".", 
+					prevPat = patient, prevTestNum = testNum
+				}
+				set @MasO@("User", 1, "Gr", NGr1, "Col", NCol1, "Desc") = $lg(rline, 6), ^("TestDate")=testdate, ^("Pregnant")=$lg(rline, 8)
+				set ordernum = $o(@Mas@("REPORT", lab, keylab, ordernum))
+			}
+			set @MasO@("User", 1, "Gr", NGr1, "TotalTests") = TotalTests, ^("TotalOrders") = TotalOrders
+			set keylab = $o(@Mas@("REPORT", lab, keylab))
+		}
+		set lab = $o(@Mas@("REPORT", lab))
+	}	
+	S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS46.xsl",USER)
+	i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+	; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+	s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+	quit
+}
+#; Список лабораторий
+ListLab(list) [SQLCODE, Code, Description] {
+	&sql(DECLARE C0 CURSOR FOR
+	SELECT CTRL_Code, CTRL_Description INTO :Code, :Description
+	FROM CT_ReferralLaboratory
+	ORDER BY CTRL_Description
+	)
+	set default = "0", @list@(default) = "* Все лаборатории"
+	&sql(OPEN C0)
+	&sql(FETCH C0)
+	While (SQLCODE = 0) {
+		if Code]"", Description]"" {
+			set @list@(Code)=Description
+		}
+		&sql(FETCH C0)
+	}
+  	&sql(CLOSE C0)
+	quit default
+}
+]]></Routine>
+</Export>

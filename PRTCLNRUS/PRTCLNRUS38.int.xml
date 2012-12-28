@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS38" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS38 ;SPARM; Деятельность лаборатории (по направляющим врачам) ; @gol;
+ q
+ ; Отчет CLNRUS38  +  CLNRUS38.xsl  + DLL: CLNSPARM007.clsSTART
+ ; 
+ ; Обработка данных: 
+ ; 1) идем по индексу ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ; 2) отбираем только записи с заданным направл.врачом
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+ ;                        
+FORM(USER) New (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par
+ set ok=##class(TCLEx.Report.Function).TestAccessUserToReport(USER) 
+ if 'ok {
+    set @Par@("PAR1")="Label   : 100 : 200 : 1100 : 600 : Доступ запрещен"
+    s @Par@("form")="Деятельность лаборатории (по направляющим врачам) ("_$G(USER)_"):500:300:Формиров.:Выход"
+    quit Par
+ }  
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1500: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 1500: 600 : 1100 : 300 : t:True"
+ ; 
+ ; список отделов
+ s @Par@("PAR3a")="Label   : 100 : 1000 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR3")
+ s @Par@("PAR3")="ComboBox: 1500 : 1000 : 5000 : 300 : :True: "_default_" :List"         ;Standart
+ ; 
+ ; список врачей (CT_Doctor)
+ s @Par@("PAR4a")="Label   : 100 : 1400 : 1400 : 500 : Направляющий врач:"
+ s cnt=0,code="" f  s code=$O(^TTAB("DR",code)) q:code=""  d:code'=$C(1)
+ . s cnt=cnt+1
+ . s @Par@("PAR4",code)=code_" - "_$P($G(^TTAB("DR",code)),"\",1) 
+ if cnt>1 s @Par@("PAR4","0")="* Все врачи"
+ s default=$S(cnt>1:0,1:$O(@Par@("PAR4","")))
+ s @Par@("PAR4")="ComboBox: 1500 : 1400 : 5000 : 300 : :True: "_default_" :List"         ;Standart
+ ; 
+ ; флаг "Группировать врачей по Курьерам"
+ s @Par@("PAR6")="CheckBox: 1500 : 1800 : 200  : 300 : : : 0 "
+ s @Par@("PAR6a")="Label   : 1800 : 1800 : 5000 : 500 : Группировать врачей по ""Курьерам печати"":"
+ ;
+ ; флаг (радио-кнопки)
+ s @Par@("PAR5")="RadioButton : 500 : 2300 : 5000 : 1200 :  Тип отчета :True: 1 :List"    
+ s @Par@("PAR5",1)="Сводный по отделам (без разбивки по наборам тестов)"
+ s @Par@("PAR5",2)="Расшифровка по наборам тестов"
+ s @Par@("PAR5",3)="Расшифровка по тестам"
+ s @Par@("PAR5",4)="Расшифровка по группам наборов тестов"
+ ; флаг
+ s @Par@("PAR7")="CheckBox: 100 : 4000 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 500 : 4000 : 6000 : 300 : Развернуть таблицу (строки - врачи; столбцы - отделы):"
+ ; флаг 
+ s @Par@("PAR8")="CheckBox: 100 : 4400 : 200  : 300 : : : 1 "
+ s @Par@("PAR8a")="Label   : 500 : 4400 : 5000 : 500 : Не считать расчетные тесты (для которых введены формулы вычисления):"
+ ;
+ ; настройка формы
+ s @Par@("form")="Деятельность лаборатории (по направляющим врачам) ("_$G(USER)_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;------------------------------------------------
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ quit
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) New (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d BODY,XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ; отдел
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Отдел>" q
+ k DEP
+ if PAR3="0" do     ;* Все
+ . s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ else  do  q:MSGERROR'=""
+ . i '$D(^TTAB("DEP",PAR3)) s MSGERROR="100^В Labtrake нет кода отдела <"_DEP_">" q
+ . s DEP(PAR3)=""
+ ; направляющий врач
+ i $G(PAR4)="" s MSGERROR="100^Не определено значение <Направляющий врач>" q
+ s DocPat=PAR4
+ i DocPat=0 s DocPat=""    ;* Все
+ ; Флаг "Тип отчета"
+ ; 1 = "Сводный по отделам (без разбивки по наборам тестов)"
+ ; 2 = "Расшифровка по наборам тестов"
+ ; 3 = "Расшифровка по тестам"
+ ; 4 = "Расшифровка по группам наборов тестов"
+ s FlagReport=+$G(PAR5) ;s MSGERROR="100^FlagReport="_FlagReport q
+ ; флаг "Группировать врачей по Курьерам"
+ s FlagGrCourier=+$G(PAR6)
+ ; если выбран сводный отчет + все врачи 
+ ; => разворачиваем таблицу (строки - врачи; столбцы - отделы)
+ s FlagTurnRound=+$G(PAR7)
+ i FlagTurnRound=1,FlagReport'=1 s MSGERROR="100^Таблицу можно развернуть только для сводного отчета!!!" q
+ ; флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ s FlagNotCalcul=+$G(PAR8)
+ quit
+ ;------------------------------------------------
+BODY  ; обработка данных...
+ ;
+ ; Флаг "Расшифровка по группам наборов тестов" -> формируем обратный массив (набор тестов - группы)
+ i $G(FlagReport)=4 d
+ . s group="" f  s group=$o(^TTAB("GR",group)) q:group=""  d
+ .. s ts="" f  s ts=$o(^TTAB("GR",group,"TS",ts)) q:ts=""  do
+ ... s dept=$e(ts,1) q:dept=""  quit:'$D(DEP(dept))
+ ... s @Mas@("TWG",ts,group)=""
+ ;
+ ; поиск по дате разрешения (дата авторизации набора тестов)
+ s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
+ . s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ .. s (doctor,courier,Nseq,key)=""
+ .. s doctor=$P($G(^TEPI(epis)),"\",13)  ;EPVIS_DoctorCode_DR (DesRef CT_Doctor)
+ .. ; направляющий врач (ограничение)
+ .. i DocPat'="" i doctor'=DocPat quit   
+ .. ; флаг "Группировать врачей по Курьерам печати"
+ .. s courier=$S(doctor="":"",1:$P($G(^TTAB("DR",doctor,0)),"\",1)) s:courier="" courier="?"
+ .. s:doctor="" doctor="?"
+ .. ; номер последоват. вывода
+ .. s Nseq=$S(courier'="?"&(+$G(FlagGrCourier)=1):$P($G(^TTAB("CR",courier)),"\",9),1:"99999")
+ .. ; ключ сортировки врачей: N п/п_$C(1)_Код
+ .. s key=$J(Nseq,5)_$C(1)_$S($G(FlagGrCourier)=1:$G(courier),1:$G(doctor))
+ .. ;---------------
+ .. ; проверяем по номеру МК, где был зарегистрован образец
+ .. s mrn=$P(^TEPI(epis),"\",18) q:mrn=""  
+ .. ; наборы тестов для лаб.эпизода (ограничение по отделам)
+ .. s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  do
+ ... s dept=$e(ts,1) q:dept=""  quit:'$D(DEP(dept))
+ ... s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
+ .... s vtsRID=epis_"||"_ts_"||"_tscnt 
+ .... i '$$select^LVBVISTS(vtsRID,"Y",USER) d:$G(PLIST(33))="A"     ;считаем только "РАЗРЕШЕННЫЕ" наборы тестов
+ ..... ;---------------
+ ..... ; считаем итоги с разбивкой по тестам
+ ..... i $G(FlagReport)=3 d BODY2 quit
+ ..... ;---------------
+ ..... ; считаем итоги с разбивкой по группам наборов тестов (Дополнительный цикл по группе)
+ ..... i $G(FlagReport)=4  do  quit
+ ...... s group="" f  s group=$O(@Mas@("TWG",ts,group)) q:group=""  s dept=group d BODY1
+ ..... ;---------------
+ ..... ; строим таблицу (строки - отделы; столбцы - врачи)
+ ..... if +$g(FlagTurnRound)=0 d BODY1 quit
+ ..... ;----------------------------------------------------------------------------
+ ..... ; разворачиваем таблицу (строки - врачи, столбцы - отделы) - только для сводного отчета!
+ ..... if +$g(FlagTurnRound)=1 do
+ ...... ; считаем итоги по врачам и отелам
+ ...... s @Mas@("REPORT","doc",key,"dept",dept)=$g(@Mas@("REPORT","doc",key,"dept",dept))+1 
+ ...... s @Mas@("REPORT","doc",key)=$g(@Mas@("REPORT","doc",key))+1 
+ ...... s @Mas@("REPORT","dept",dept)=$g(@Mas@("REPORT","dept",dept))+1 
+ ...... s @Mas@("REPORT")=$g(@Mas@("REPORT"))+1 
+ ...... ; формируем индексы для построения динамического заголовка таблицы 
+ ...... s @Mas@("SORT",dept)=$g(@Mas@("SORT",dept))+1 
+ ;
+ ;k ^zz m ^zz=@Mas   ;@@@
+ quit
+ ;----------------------------------------------------------------------------
+BODY1 ;формируем индексы по наборам тестов
+ Do
+ . ; считаем итоги с разбивкой по наборам тестов
+ . i +$G(FlagReport)=2!(+$G(FlagReport)=4) do
+ .. s @Mas@("REPORT",dept,"ts",ts)=$g(@Mas@("REPORT",dept,"ts",ts))+1              
+ .. s @Mas@("REPORT",dept,"ts",ts,"doc",key)=$g(@Mas@("REPORT",dept,"ts",ts,"doc",key))+1 
+ . ; считаем итоги по отелам и врачам
+ . s @Mas@("REPORT",dept,"doc",key)=$g(@Mas@("REPORT",dept,"doc",key))+1 
+ . s @Mas@("REPORT",dept)=$g(@Mas@("REPORT",dept))+1   
+ . s @Mas@("REPORT")=$g(@Mas@("REPORT"))+1    
+ . ; индексы для динамич. построения столбцов по врачам
+ . s @Mas@("SORT",key)=$g(@Mas@("SORT",key))+1 
+ quit
+ ; ----------------------------------------------------- 
+BODY2 ;формируем индексы для типа отчета 3 - расшифровка по тестам
+ Do
+ . s tc="" f  s tc=$o(^TEPI(epis,1,ts,tscnt,"DATA",tc)) q:tc=""  d
+ .. ; флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ .. i $G(FlagNotCalcul)=1 i $d(^TTAB("TC",tc,3,ts)) quit   
+ .. s @Mas@("REPORT",dept,"ts",tc)=$g(@Mas@("REPORT",dept,"ts",tc))+1
+ .. s @Mas@("REPORT",dept,"ts",tc,"doc",key)=$g(@Mas@("REPORT",dept,"ts",tc,"doc",key))+1 
+ .. ; считаем итоги по отелам и врачам
+ .. s @Mas@("REPORT",dept,"doc",key)=$g(@Mas@("REPORT",dept,"doc",key))+1 
+ .. s @Mas@("REPORT",dept)=$g(@Mas@("REPORT",dept))+1   
+ .. s @Mas@("REPORT")=$g(@Mas@("REPORT"))+1    
+ .. ;индексы для динамич. построения столбцов по врачам
+ .. s @Mas@("SORT",key)=$g(@Mas@("SORT",key))+1 
+ quit 
+ ;----------------------------------------------------------------------------
+XML      ; Формирование XML...
+ i '$D(@Mas@("REPORT"))!('$D(@Mas@("SORT"))) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+ ;
+ S MasO="^TEMP($zn,$J,""XML"")"
+ ; I ВАРИАНТ =>  строим таблицу (строки - отделы; динамические столбцы - врачи)
+ if +$g(FlagTurnRound)=0 d XML1
+ ; II ВАРИАНТ =>  разворачиваем таблицу (строки - врачи; динамические столбцы - отделы)
+ if +$g(FlagTurnRound)=1 d XML2
+ ;
+ ; входные параметры
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+ S @MasO@("User",1,"Department")=$S(PAR3="0":"* Все",1:PAR3_" - "_$P($G(^TTAB("DEP",PAR3)),"\",1))
+ S @MasO@("User",1,"Doctor")=$S($G(DocPat)="":"* Все",1:DocPat_"-"_$P($G(^TTAB("DR",DocPat)),"\",1))
+ S @MasO@("User",1,"FlagReport")=+$G(FlagReport)		;Флаг 1/2/3 - Сводный/наборы тестов/тесты
+ S @MasO@("User",1,"FlagTurnRound")=+$G(FlagTurnRound)	;Флаг "Развернуть таблицу"
+ S @MasO@("User",1,"FlagNotCalcul")=+$G(FlagNotCalcul)	;флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ ;
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ;
+ ;log
+ ;k ^zz M ^zz=@Mas     ;@@@
+ ;
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS38.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ quit
+ ; 
+ ; ------------------------------------------------------------------------------------------
+XML1  ; I ВАРИАНТ =>  строим таблицу (строки - отделы; динамические столбцы - врачи)
+ ; 
+ ; формируем динамический заголовок таблицы (напр.врач)
+ k SortCol s ind1=0,key="" f  s key=$o(@Mas@("SORT",key)) q:key=""  d 
+ . s ind1=$i(ind1),SortCol=ind1
+ . s doctor=$P(key,$C(1),2)
+ . s SortCol(key)=ind1
+ . s @MasO@("User",1,"Column")=ind1
+ . s @MasO@("User",1,"Column",ind1,"Code")=doctor
+ . s name=$S(doctor="":"",$G(FlagGrCourier)=1:$P($G(^TTAB("CR",doctor)),"\",1),1:$P($G(^TTAB("DR",doctor)),"\",1))
+ . s @MasO@("User",1,"Column",ind1,"Desc")=$S(name="":"?",1:name)
+ ;
+ ;m ^zz("SortCol-XML1")=SortCol  ;@@@
+ ;
+ ; итоги по отделам / врачам
+ s NGr=0,dep="" f  s dep=$o(@Mas@("REPORT",dep)) q:dep=""  d
+ . s NGr=$i(NGr)
+ . S @MasO@("User",1,"Gr",NGr,"Npp")=NGr
+ . ;наименование отдела/группы наборов тестов
+ . s name=$S(FlagReport=4:"["_dep_"] "_$P($G(^TTAB("GR",dep)),"\",1),1:$P($G(^TTAB("DEP",dep)),"\",1))
+ . S @MasO@("User",1,"Gr",NGr,"Code")=name    	
+ . S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT",dep))           ;кол-во наборов по отделу
+ . ; --------
+ . ; разбивка по врачам
+ . S doctor="" f  s doctor=$o(SortCol(doctor)) q:doctor=""  s ind=$g(SortCol(doctor)) d:ind'=""
+ .. S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol")=$G(@Mas@("REPORT",dep,"doc",doctor))     
+ . ; ----------
+ . ; расшифровка по наборам тестов (2) / по тестам (3) / по группам наборов тестов (4)
+ . i +$G(FlagReport)>1 do
+ .. s NGr2=0,ts="" f  s ts=$o(@Mas@("REPORT",dep,"ts",ts)) q:ts=""  d
+ ... s NGr2=$i(NGr2)
+ ... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Npp")=NGr2
+ ... ; наименование набора/теста (код-описание)
+ ... s name=$e(ts_$j("",6),1,6)_$S(FlagReport=3:$P($G(^TTAB("TC",ts)),"\",1),1:$P($G(^TTAB("TS",ts)),"\",1))
+ ... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Code")=name
+ ... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol")=$G(@Mas@("REPORT",dep,"ts",ts))
+ ... ; --------
+ ... ; разбивка по врачам
+ ... S doctor="" f  s doctor=$o(SortCol(doctor)) q:doctor=""  s ind=$g(SortCol(doctor)) d:ind'=""
+ .... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Col",ind,"Kol")=$G(@Mas@("REPORT",dep,"ts",ts,"doc",doctor))
+ ; итоги общие
+ S @MasO@("User",1,"ItogoTS")=+$G(@Mas@("REPORT"))
+ ; разбивка по врачам
+ S doctor="" f  s doctor=$o(SortCol(doctor)) q:doctor=""  s ind=$g(SortCol(doctor)) d:ind'=""
+ . S @MasO@("User",1,"ItogoCol",ind,"Kol")=+$G(@Mas@("SORT",doctor))   
+ quit
+ ; -------------------------------------------------------------------------------------------------
+XML2 ; II ВАРИАНТ =>  разворачиваем таблицу (строки - врачи; динамические столбцы - отделы)
+ ;
+ ; формируем динамический заголовок таблицы (отделы)
+ k SortCol s ind=0,department="" f  s department=$o(@Mas@("SORT",department)) q:department=""  d 
+ . s ind=$i(ind),SortCol=ind
+ . s SortCol(department)=ind
+ . s @MasO@("User",1,"Column")=ind
+ . s @MasO@("User",1,"Column",ind,"Code")=department
+ . s @MasO@("User",1,"Column",ind,"Desc")=$P($G(^TTAB("DEP",department)),"\",1)
+ ;
+ ;m ^zz("SortCol-XML2")=SortCol  ;@@@
+ ;
+ ; итоги по отделам / врачам
+ s NGr=0,key="" f  s key=$o(@Mas@("REPORT","doc",key)) q:key=""  d
+ . s doctor=$P(key,$C(1),2)  ;N п/п_$C(1)_код
+ . s name=$S(doctor="":"",$G(FlagGrCourier)=1:$P($G(^TTAB("CR",doctor)),"\",1),1:$P($G(^TTAB("DR",doctor)),"\",1))
+ . s NGr=$i(NGr)
+ . S @MasO@("User",1,"Gr",NGr,"Npp")=NGr
+ . S @MasO@("User",1,"Gr",NGr,"Code")="["_doctor_"] "_name ;$P($G(^TTAB("RH",doctor)),"\",1)
+ . S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT","doc",key))
+ . ; разбивка по отделам
+ . S dept="" f  s dept=$o(SortCol(dept)) q:dept=""  s ind=$g(SortCol(dept)) d:ind'=""
+ .. S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol")=$G(@Mas@("REPORT","doc",key,"dept",dept))     
+ ; итоги общие
+ S @MasO@("User",1,"ItogoTS")=+$G(@Mas@("REPORT"))
+ ; разбивка по отделам
+ S department="" f  s department=$o(SortCol(department)) q:department=""  s ind=$g(SortCol(department)) d:ind'=""
+ . S @MasO@("User",1,"ItogoCol",ind,"Kol")=+$G(@Mas@("SORT",department))   
+ ; счетчик столбцов
+ S @MasO@("User",1,"ColDEP")=+$G(@MasO@("User",1,"Column"))		;кол-во столбцов для отделов
+ quit
+]]></Routine>
+</Export>

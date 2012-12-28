@@ -1,0 +1,498 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS34" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS34   ;SPARM; Рез-ты исследований наборов тестов ;;@gol;
+ q
+ ;
+ ; Отчет CLNRUS34  +  CLNRUS34.xsl  + DLL: CLNSPARM007.clsSTART
+ ; 
+ ; идем по индексу ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ; и достаем результаты для выбранных наборов тестов за заданный период
+ ; 
+ ; Используется сервисная программа ^UDFSPARM001, ^REPORTSPB
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par             
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 3000: 200 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 4100: 200 : 1100 : 300 : t:True"
+ ; ---
+ ; список наборов тестов
+ s @Par@("PAR3a")="Label   : 100 : 600 : 3000 : 300 : Наборы тестов"
+ ; проверяем ограничение по отделам
+ k DEP s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP") k ^TEMP($J,"DEP")
+ s cnt=0,dep="" f  s dep=$O(^TTABi("DEP-TS",dep)) q:dep=""  do:$D(DEP(dep))   ;$$ValUser^LVBCTDEP(USER,dep,1)
+ . s num="" f  s num=$O(^TTABi("DEP-TS",dep,num)) q:num=""  do
+ .. s ts="" f  s ts=$O(^TTABi("DEP-TS",dep,num,ts)) q:ts=""  do
+ ... i $$select^LVBCTTS(ts,"Y",USER) quit
+ ... i $P($G(^TTAB("TS",ts)),"\",12)'="Y" quit    ;CTTS ActiveFlag
+ ... s cnt=$i(cnt)
+ ... s @Par@("PAR3",cnt)=ts_"   "_$P($G(^TTAB("TS",ts)),"\",1) 
+ s @Par@("PAR3","0")="* Все Наборы тестов"
+ s @Par@("PAR3")="ListBox : 100 : 900 : 7900 : 3600 : :True: 0 : Checkbox  "   
+ ; ---
+ ; список Местоположений пациентов (CT_Hospital)
+ s @Par@("PAR26a")="Label   : 100 : 4500 : 2300 : 300 : Местоположение пациента:"
+ s cnt=0,code="" f  s code=$O(^TTAB("RH",code)) q:code=""  d:code'=$C(1)
+ . s cnt=cnt+1
+ . s @Par@("PAR26",code)=code_" - "_$P($G(^TTAB("RH",code)),"\",1) 
+ if cnt>0 s @Par@("PAR26","0")="* Все местоположения"
+ s default=$S(cnt>1:0,1:$O(@Par@("PAR3","")))
+ s @Par@("PAR26")="ComboBox: 2300 : 4500 : 5500 : 300 : :True: "_default_" :List"         ;Standart
+ ; ---
+ ; Флаг "Цветовая палитра в соответствии с Флагом результата"
+ s @Par@("PAR4")="CheckBox : 100 : 5000 : 200  : 300 : : : 0 "
+ s @Par@("PAR4a")="Label   : 500 : 5000 : 5000 : 300 : Цветовая палитра строк в соответствии с Флагом результата:"
+ ; Флаг "Вывести Комментарий к результату (для теста)"
+ s @Par@("PAR5")="CheckBox : 100 : 5300 : 200  : 300 : : : 0 "
+ s @Par@("PAR5a")="Label   : 500 : 5300 : 5000 : 300 : Вывести Комментарии к результату (для теста):"
+ ; ---
+ ; Флаг "Вывести Комментарий к результату (собрать для набора) (для Морфологиии, Цитогенетики)"
+ ; => собираем все произвольные комментарии из тестов на уровень набора тестов
+ s @Par@("PAR27")="CheckBox : 100 : 5600 : 200  : 300 : : : 0 "
+ s @Par@("PAR27a")="Label   : 500 : 5600 : 7500 : 300 : Вывести Комментарии к результату (собрать для набора) (для Морфологиии, Цитогенетики):"
+ ; ---
+ ; Флаг "Вывести единицы измерения для теста"
+ s @Par@("PAR6")="CheckBox : 100 : 5900 : 200  : 300 : : : 0 "
+ s @Par@("PAR6a")="Label   : 500 : 5900 : 5000 : 300 : Вывести Единицы измерения для теста:"
+ ; ---
+ ; список полей для сортировки 1
+ s @Par@("PAR23a")="Label   : 100 : 6400 : 1300 : 300 : Сортировка 1:"
+ s @Par@("PAR23")="ComboBox : 1300 : 6300 : 4500  : 300 : :False: :List"         ;Standart
+ s Mas=$NA(@Par@("PAR23")) d SortName(Mas) 
+  ; список полей для сортировки 2
+ s @Par@("PAR24a")="Label   : 100 : 6800 : 1300 : 300 : Сортировка 2:"
+ s @Par@("PAR24")="ComboBox : 1300 : 6700 : 4500  : 300 : :False: :List"         ;Standart
+ s Mas=$NA(@Par@("PAR24")) d SortName(Mas) 
+ ; список полей для сортировки 3
+ s @Par@("PAR25a")="Label   : 100 : 7200 : 1300 : 300 : Сортировка 3:"
+ s @Par@("PAR25")="ComboBox : 1300 : 7100 : 4500  : 300 : :False: :List"         ;Standart
+ s Mas=$NA(@Par@("PAR25")) d SortName(Mas) 
+ ; ---
+ ; строка-подсказка
+ s @Par@("PAR7a")="Label : 700 : 7600 : 5000 : 300 : ДОПОЛНИТЕЛЬНАЯ настройка вывода полей таблицы:"
+ ; Флаг "Вывести номер МК пациента"
+ s @Par@("PAR8")="CheckBox: 100 : 7900 : 200  : 300 : : : 1 "
+ s @Par@("PAR8a")="Label  : 500 : 7900 : 2000 : 300 : Номер МК пациента:"
+ ; Флаг "Вывести номер МК пациента"
+ s @Par@("PAR9")="CheckBox: 100 : 8200 : 200  : 300 : : : 0 "
+ s @Par@("PAR9a")="Label  : 500 : 8200 : 2000 : 300 : ФИО пациента:"
+ ; Флаг "Вывести пол пациента"
+ s @Par@("PAR10")="CheckBox: 100 : 8500 : 200  : 300 : : : 1 "
+ s @Par@("PAR10a")="Label  : 500 : 8500 : 2000 : 300 : Пол:"
+ ; Флаг "Вывести дату рождения пациента"
+ s @Par@("PAR11")="CheckBox: 100 : 8800 : 200  : 300 : : : 0 "
+ s @Par@("PAR11a")="Label  : 500 : 8800 : 2000 : 300 : Дата рождения:"
+ ; Флаг "Вывести возраст пациента"
+ s @Par@("PAR12")="CheckBox: 100 : 9100 : 200  : 300 : : : 1 "
+ s @Par@("PAR12a")="Label  : 500 : 9100 : 2000 : 300 : Возраст:"
+ ; Флаг "Вывести берем. (недели)"
+ s @Par@("PAR13")="CheckBox: 100 : 9400 : 200  : 300 : : : 0 "
+ s @Par@("PAR13a")="Label  : 500 : 9400 : 2000 : 300 : Берем.(недели):"
+ ; Флаг "Вывести адрес пациента"
+ s @Par@("PAR14")="CheckBox: 100 : 9700 : 200  : 300 : : : 0 "
+ s @Par@("PAR14a")="Label  : 500 : 9700 : 2000 : 300 : Адрес пациента:"
+ ; Флаг "Вывести клинический анамнез"
+ s @Par@("PAR15")="CheckBox: 100 : 10000 : 200  : 300 : : : 0 "
+ s @Par@("PAR15a")="Label  : 500 : 10000 : 2000 : 300 : Клинический анамнез:"
+ ; Флаг "Вывести дату забора"
+ s @Par@("PAR16")="CheckBox: 3100 : 7900 : 200  : 300 : : : 0 "
+ s @Par@("PAR16a")="Label  : 3500 : 7900 : 2000 : 300 : Дата забора:"
+ ; Флаг "Вывести время забора"
+ s @Par@("PAR17")="CheckBox: 3100 : 8200 : 200  : 300 : : : 0 "
+ s @Par@("PAR17a")="Label  : 3500 : 8200 : 2000 : 300 : Время забора:"
+ ; Флаг "Вывести Тип образца"
+ s @Par@("PAR18")="CheckBox: 3100 : 8500 : 200  : 300 : : : 0 "
+ s @Par@("PAR18a")="Label  : 3500 : 8500 : 2000 : 300 : Тип образца:"
+ ; Флаг "Вывести категорию пациента"
+ s @Par@("PAR19")="CheckBox: 3100 : 8800 : 200  : 300 : : : 0 "
+ s @Par@("PAR19a")="Label  : 3500 : 8800 : 2000 : 300 : Категория пациента:"
+ ; Флаг "Вывести местоположение пациента"
+ s @Par@("PAR20")="CheckBox: 3100 : 9100 : 200  : 300 : : : 0 "
+ s @Par@("PAR20a")="Label  : 3500 : 9100 : 2500 : 300 : Местоположение пациента:"
+ ; Флаг "Вывести врача пациента"
+ s @Par@("PAR21")="CheckBox: 3100 : 9400 : 200  : 300 : : : 0 "
+ s @Par@("PAR21a")="Label  : 3500 : 9400 : 2000 : 300 : Лечащий Врач:"
+ ; Флаг "Вывести плательщика пациента"
+ s @Par@("PAR22")="CheckBox: 3100 : 9700 : 200  : 300 : : : 0 "
+ s @Par@("PAR22a")="Label  : 3500 : 9700 : 2000 : 300 : Плательщик:"
+ ; ---
+ Set languageDefault=$Piece($Get(^CF("SM",1)),"^",10)
+ s @Par@("PAR23a")="Label   : 600 : 10300 : 450 : 300 : Язык:"
+ s @Par@("PAR23")="ComboBox: 1150 : 10300 : 5000 : 300 : :False: "_languageDefault_" :List"         ;Standart
+ ;
+ do ParLanguage^PRTCLNRUS07($name(@Par@("PAR23")))
+ ;
+ ; настройка формы
+ s @Par@("form")="Рез-ты исследований наборов тестов ("_USER_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz  ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR  ;@@@
+ ; сохраняем для обработки входных данных (списка наборов тестов)
+ k MasForm m MasForm=^TEMP($j) 
+ k ^TEMP($J)
+ s Mas="^TEMP($J,""START"")"
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d BODY,XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ; Список доступных отделов
+ k DEP s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ ; Наборы тестов
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Набор тестов>" q
+ k MasTS,MasDEP s StringTS=""
+ f i=1:1:$L(PAR3,$C(1)) s cnt=$P(PAR3,$C(1),i) d:cnt'="" 
+ . i cnt="0" s MasTS("*")="" quit     ;* Все
+ . s ts=$P($G(MasForm("PAR3",cnt))," ",1) q:ts=""
+ . s MasTS(ts)=$P($G(^TTAB("TS",ts)),"\",1)
+ . s StringTS=StringTS_$S(StringTS="":"",1:", ")_ts_"-"_$G(MasTS(ts)) ;собираем значения в одну строку (для шапки)
+ i $D(MasTS("*")) s StringTS="* Все доступные наборы тестов",ts="" f  s ts=$O(^TTAB("TS",ts)) q:ts=""  do
+ . i $$select^LVBCTTS(ts,"Y",USER) quit
+ . i $P($G(^TTAB("TS",ts)),"\",12)'="Y" quit    ;CTTS ActiveFlag
+ . q:'$D(DEP($e(ts,1)))
+ . s MasTS(ts)=""
+ i '$D(MasTS)="" s MSGERROR="100^Не определено значение <Набор тестов>" q
+ ; местоположение пациента
+ s LocPat=$G(PAR26) s:LocPat=0 LocPat=""    ;* Все
+ ; ---
+ s FlagColor=+$G(PAR4)		; Цветовая палитра в соответствии с Флагом результата
+ s FlagComment=+$G(PAR5)	; Вывести Комментарий к результату (для теста)
+ s FlagUnits=+$G(PAR6)		; Вывести единицы измерения для теста
+ ; Вывести Комментарии к результату (собрать для набора) (для Морфологиии, Цитогенетики)
+ s FlagCommentSVOD=+$G(PAR27)
+ ; ---   
+ ; ДОПОЛНИТЕЛЬНАЯ настройка вывода полей таблицы
+ s FlagMRN=+$G(PAR8)		; Номер МК пациента
+ s FlagFIO=+$G(PAR9)		; ФИО
+ s FlagSex=+$G(PAR10)		; Пол 
+ s FlagDOB=+$G(PAR11)		; Дата рождения
+ s FlagAge=+$G(PAR12)		; Возраст
+ s FlagPregn=+$G(PAR13)		; Берем.(недели)
+ s FlagAddress=+$G(PAR14)	; Адрес пациента
+ s FlagDiagn=+$G(PAR15)		; Клинический анамнез
+ s FlagDateCol=+$G(PAR16)	; Дата забора
+ s FlagTimeCol=+$G(PAR17)	; Время забора
+ s FlagSpec=+$G(PAR18)		; Тип образца
+ s FlagCategPat=+$G(PAR19)	; Категория пациента
+ s FlagLocPat=+$G(PAR20)	; Местоположение пациента
+ s FlagDocPat=+$G(PAR21)	; Лечащий врач
+ s FlagPayPat=+$G(PAR22)	; Плательщик
+ ;
+ s (FlagEpis,FlagTS,FlagDateExec,FlagTimeExec)=1
+ ; ---
+ s Sort1=$G(PAR23)			; Сортировка 1
+ s Sort2=$G(PAR24)			; Сортировка 2
+ s Sort3=$G(PAR25)			; Сортировка 3
+ s FlagSort1=$S(Sort1'="":1,1:0),FlagSort2=$S(Sort2'="":1,1:0),FlagSort3=$S(Sort3'="":1,1:0)
+ ; ---   
+ ;m ^zz("MasTS")=MasTS s ^zz("StringTS")=StringTS
+ quit
+ ;------------------------------------------------
+BODY  ; обработка данных...
+ ; поиск по дате разрешения (дата авторизации набора тестов)
+ s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
+ . s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d:$D(^TEPI(epis))
+ .. ; местоположение пациента (ограничение)
+ .. s location=$P($G(^TEPI(epis)),"\",20)  ;EPVIS_HospitalCode_DR (Patient Location Current)
+ .. i LocPat'="" i location'=LocPat quit   
+ .. k VISIT
+ .. ; наборы тестов для лаб.эпизода (ограничение по отделам)
+ .. s ts=$E($O(MasTS("")),1) f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  do:$D(MasTS(ts))
+ ... s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
+ .... ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
+ .... s status=$p(^TEPI(epis,1,ts,tscnt),"\",31) q:status'="A"   
+ .... s vtsRID=epis_"||"_ts_"||"_tscnt
+ .... ; флаг для набора (норма/отклонение от нормы)
+ .... s flag=$$Norm^UDFSPARM001(vtsRID) s:flag="" flag="?"
+ .... ;-------------------
+ .... i '$D(VISIT) do  q:'$D(VISIT)
+ ..... k PLIST i $$select^LVBEPVIS(epis,"Y",USER) quit
+ ..... f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ ..... k VISIT m VISIT=PLIST
+ .... ; ------------------
+ .... ; set sorting key - 1/2/3
+ .... s (SORT1,SORT2,SORT3)=""
+ .... s SORT1=$$SORTKEY($G(Sort1)) s:SORT1="" SORT1=" "
+ .... s SORT2=$$SORTKEY($G(Sort2)) s:SORT2="" SORT2=" "
+ .... s SORT3=$$SORTKEY($G(Sort3)) s:SORT3="" SORT3=" "
+ .... ; формируем индексы для печати
+ .... s @Mas@("xREPORT",SORT1,SORT2,SORT3,"Epis",vtsRID)=flag
+ .... s @Mas@("REPORT","ts")=$g(@Mas@("REPORT","ts"))+1
+ .... s @Mas@("REPORT","ts",ts)=$g(@Mas@("REPORT","ts",ts))+1
+ .... s @Mas@("REPORT","ts",ts,"Flag",flag)=$G(@Mas@("REPORT","ts",ts,"Flag",flag))+1
+ .... s @Mas@("REPORT","Flag",flag)=$g(@Mas@("REPORT","Flag",flag))+1
+ ;m ^zz=@Mas   ;@@@
+ quit
+ ;-------------------------------
+SORTKEY(par) ;достаем значения для формирования индексов сортировки данных
+ s result=""
+ d:$G(par)'=""
+ . ; Дата выполнения
+ . i par="ADATE" s result=$g(date) q
+ . ; Время выполнения
+ . i par="ATIME" s result=+$p($G(^TEPI(epis,1,ts,tscnt)),"\",5)*60 q
+ . ; Врач
+ . i par="DOC" s result=$G(VISIT(15)) q
+ . ; Местоположение пациента
+ . i par="LOC" s result=$G(VISIT(22)) q
+ . ; Плательщик (на уровне лаб.номера/набора тестов)
+ . i par="PAYMENT" do  q
+ .. s result=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 		;VISTS_PaymentCode_DR
+ .. i result="" s result=$G(VISIT(9))
+ . ; Категория пациента 
+ . i par="PATCATEG" s result=$G(VISIT(94)) q
+ . ; Набор тестов 
+ . i par="TS" s result=$g(ts) q
+ . ; Лабораторный номер
+ . i par="EPIS" s result=$g(epis) q
+ . ; Номер МК
+ . i par="MRN" s result=$G(VISIT(20)) q
+ . ; Местоположение пользователя"
+ . i par="USLOC" s result=$G(VISIT(66)) q
+ . ; Дата забора
+ . i par="COLDATE" s result=$G(VISIT(12)) q
+ . ; Время забора
+ . i par="COLTIME" s result=$G(VISIT(13)) q
+ q result
+ ;------------------
+SORT(par,value,flag) ; flag: 1 - индексы для пересортировки; 2 - данные для таблицы
+ New (par,value,flag,FlagPayPat,FlagLocPat,FlagDocPat,FlagCategPat,FlagDateCol,FlagTimeCol,FlagEpis,FlagTS,FlagDateExec,FlagTimeExec,FlagMRN) 
+ s flag=+$G(flag),value=$G(value)
+ s result=value 
+ Do:value'=" "
+ . ; Дата выполнения
+ . i par="ADATE" i flag=2 s result=$TR($$extdate2^SSUTIL4(+value),"/",".") s FlagDateExec=0
+ . ; Время выполнения
+ . i par="ATIME" i flag=2 s result=$$exttime^SSUTIL4(+value) s FlagTimeExec=0
+ . ; Врач
+ . i par="DOC" do
+ .. i flag=2 s result=value q
+ .. i '$$select^LVBCTDR(value,"Y") s result=$$NameFormat^LVBCOM03("DR",PLIST(26),PLIST(4),PLIST(3)) s FlagDocPat=0
+ . ; Местоположение пациента
+ . i par="LOC" do
+ .. i flag=2 s result=value q
+ .. i '$$select^LVBCTHOS(value,"Y") s result=PLIST(3) s FlagLocPat=0
+ . ; Плательщик 
+ . i par="PAYMENT" do
+ .. i flag=2 s result=value q
+ .. i '$$select^LVBCTPC(value,"Y") s result=PLIST(3) s FlagPayPat=0
+ . ; Категория пациента 
+ . i par="PATCATEG" i flag=2 s result=""""_value_"""" s FlagCategPat=0
+ . ; Набор тестов 
+ . i par="TS" s result=value s FlagTS=0
+ . ; Лабораторный номер
+ . i par="EPIS" s result=value s FlagEpis=0
+ . ; Номер МК
+ . i par="MRN" s result=value s FlagMRN=0
+ . ; Местоположение пользователя"
+ . i par="USLOC" do
+ .. i flag=2 s result=value q
+ .. i '$$select^LVBCTUSL(value,"Y") s result=PLIST(3)
+ . ; Дата забора
+ . i par="COLDATE" i flag=2 s result=$TR($$extdate2^SSUTIL4(+value),"/",".") s FlagDateCol=0
+ . ; Время забора
+ . i par="COLTIME" i flag=2 s result=$$exttime^SSUTIL4(+value) s FlagTimeCol=0
+ q result
+ ;-------------------------------------------------------
+SortName(Mas,Flag) ;формируем список для сортировки данных (код)=описание
+ S Mas=$G(Mas,"Mas")
+ s Flag=+$G(Flag)  ;0 - Полное наименование (для выбора); 1 - Сокращенное наименование (для шапки ПФ)
+ s @Mas@("ADATE")=$S(Flag=1:"Дата вып.",1:"Дата выполнения")
+ s @Mas@("ATIME")=$S(Flag=1:"Время вып.",1:"Время выполнения")
+ s @Mas@("DOC")="Врач"								
+ s @Mas@("LOC")=$S(Flag=1:"Местополож.пац.",1:"Местоположение пациента")
+ s @Mas@("PAYMENT")="Плательщик"
+ s @Mas@("PATCATEG")=$S(Flag=1:"Кат.пац.",1:"Категория пациента")
+ s @Mas@("TS")=$S(Flag=1:"Наб.тестов",1:"Набор тестов")
+ s @Mas@("EPIS")=$S(Flag=1:"Лаб.номер",1:"Лабораторный номер")
+ s @Mas@("MRN")=$S(Flag=1:"Номер МК",1:"Номер МК")
+ s @Mas@("COLDATE")="Дата забора" 
+ s @Mas@("COLTIME")=$S(Flag=1:"Время заб.",1:"Время забора")
+ s @Mas@("USLOC")=$S(Flag=1:"Местополож.польз.",1:"Местоположение пользователя")
+ quit    
+ ; ----------------------------------------------------- 
+XML      ; Формирование XML...
+ i '$D(@Mas@("xREPORT")) s MSGERROR="100^Нет данных!" quit
+ S MasO="^TEMP($J,""XML"")"
+ ;
+ ; sort in Alphabetical order
+ i $d(@Mas@("xREPORT")) d
+ . s SORT1="" f  s SORT1=$o(@Mas@("xREPORT",SORT1)) q:SORT1=""  d
+ .. s x1=$$SORT(Sort1,SORT1,1) i '$l(x1) s x1=" "
+ .. s SORT2="" f  s SORT2=$o(@Mas@("xREPORT",SORT1,SORT2)) q:SORT2=""  d
+ ... s x2=$$SORT(Sort2,SORT2,1) i '$l(x2) s x2=" "
+ ... s SORT3="" f  s SORT3=$o(@Mas@("xREPORT",SORT1,SORT2,SORT3)) q:SORT3=""  d
+ .... s x3=$$SORT(Sort3,SORT3,1) i '$l(x3) s x3=" "
+ .... m @Mas@("REPORT","Sort",x1,x2,x3)=@Mas@("xREPORT",SORT1,SORT2,SORT3)
+ ;m ^zz=@Mas   ;@@@
+ ; ---
+ i $d(@Mas@("REPORT")) d
+ . s NN1=0
+ . s SORT1="" f  s SORT1=$o(@Mas@("REPORT","Sort",SORT1)) q:SORT1=""  d
+ .. k MasPatSort
+ .. s MasPatSort("Sort1")=$$SORT(Sort1,SORT1,2) 
+ .. s SORT2="" f  s SORT2=$o(@Mas@("REPORT","Sort",SORT1,SORT2)) q:SORT2=""  d
+ ... s MasPatSort("Sort2")=$$SORT(Sort2,SORT2,2)
+ ... s SORT3="" f  s SORT3=$o(@Mas@("REPORT","Sort",SORT1,SORT2,SORT3)) q:SORT3=""  d
+ .... s MasPatSort("Sort3")=$$SORT(Sort3,SORT3,2)
+ .... ; ---
+ .... s vtsRID="" f  s vtsRID=$o(@Mas@("REPORT","Sort",SORT1,SORT2,SORT3,"Epis",vtsRID)) q:vtsRID=""  d
+ ..... k MasPat
+ ..... ; информация о пациенте (об образце)
+ ..... s epis=$P(vtsRID,"||",1),ts=$P(vtsRID,"||",2),tscnt=$P(vtsRID,"||",3) q:epis=""  q:ts=""  q:tscnt=""
+ ..... k VISIT,PLIST i '$$select^LVBEPVIS(epis) m VISIT=PLIST do
+ ...... ; набор тестов (код_описание)
+ ...... i +$G(FlagTS)=1 S MasPat("TestSet")=ts_" "_$P($G(^TTAB("TS",ts)),"\",1)
+ ...... ; дата выполнения набора тестов
+ ...... i +$G(FlagDateExec)=1 do
+ ....... s date=$p(^TEPI(epis,1,ts,tscnt),"\",4)		;VISTS_DateOfAuthorisation
+ ....... s MasPat("DateExec")=$TR($zd(date,4),"/",".")
+ ...... ; время выполнения набора тестов
+ ...... i +$G(FlagTimeExec)=1 do
+ ....... s time=$p(^TEPI(epis,1,ts,tscnt),"\",5)*60		;VISTS_TimeOfAuthorisation
+ ....... s MasPat("TimeExec")=$zt(time,2)
+ ...... ; лаб.номер
+ ...... i +$G(FlagEpis)=1 s MasPat("Epis")=epis                        	
+ ...... ; фио пациента
+ ...... S MasPat("FIO")=$$NameFormat^LVBCOM03("PT","",$G(VISIT(4)),$G(VISIT(3)))
+ ...... ; Номер МК пациента
+ ...... i +$G(FlagMRN)=1 S MasPat("MRN")=$P($G(VISIT(20)),$C(1))
+ ...... ; Пол 
+ ...... i +$G(FlagSex)=1 S MasPat("Sex")=$p($G(VISIT(5)),$c(1)) 
+ ...... ; Дата рождения
+ ...... i +$G(FlagDOB)=1 S MasPat("DOB")=$TR($$extdate2^SSUTIL4(VISIT(6)),"/",".")
+ ...... ; Возраст
+ ...... i +$G(FlagAge)=1 S MasPat("Age")=$p($G(VISIT(26)),$c(1)) 
+ ...... ; Берем.(недели)
+ ...... i +$G(FlagPregn)=1 do:$G(VISIT(63))="Y"
+ ....... S MasPat("PregnWeek")=$p($G(VISIT(64)),$c(1))_" нед."
+ ....... ; Адрес пациента 
+ ...... i +$G(FlagAddress)=1 do
+ ....... s StrAddr=$$Address^UDFSPARM001(VISIT(34),VISIT(35),VISIT(32),VISIT(33),)  
+ ....... i $l(VISIT(80)) S StrAddr=$S(StrAddr'="":StrAddr_"; ",1:"")_"Участок "_$G(VISIT(80))  ;Extra Field 7
+ ....... s MasPat("Address")=$G(StrAddr)
+ ...... ; Клинический анамнез
+ ...... i +$G(FlagDiagn)=1 s MasPat("Diagn")=$TR($G(VISIT(53)),"|"," ")  
+ ...... ; Дата забора 
+ ...... i +$G(FlagDateCol)=1 S MasPat("DateCol")=$TR($$extdate2^SSUTIL4($G(VISIT(12))),"/",".")
+ ...... ; Время забора
+ ...... i +$G(FlagTimeCol)=1 S MasPat("TimeCol")=$$exttime^SSUTIL4($G(VISIT(13)))
+ ...... ; Тип образца
+ ...... i +$G(FlagSpec)=1 do
+ ....... s specDR=$P($G(^TEPI(epis,1,$P(vtsRID,"||",2),$P(vtsRID,"||",3))),"\",46) q:specDR=""    ;Specimen Type DR
+ ....... S MasPat("Specimen")=$P($G(^TTAB("SPEC",specDR)),"\",1)
+ ...... ; Категория пациента (CT PatientCategory - код)
+ ...... i +$G(FlagCategPat)=1 s MasPat("Categ")=$P($G(VISIT(94)),$C(1),1)  
+ ...... ; Местоположение пациента 
+ ...... i +$G(FlagLocPat)=1 S MasPat("Location")=$p($G(VISIT(22)),$c(1),2) 
+ ...... ; Лечащий врач
+ ...... i +$G(FlagDocPat)=1 S MasPat("Doctor")=$P($G(VISIT(15)),$C(1),2)
+ ...... ; Плательщик (на уровне лаб.номера/набора тестов)
+ ...... i +$G(FlagPayPat)=1 do
+ ....... s pay=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 	;VISTS_PaymentCode_DR
+ ....... s MasPat("Payment")=$S(pay="":$P($G(VISIT(9)),$C(1),2),1:$P($G(^TTAB("BI",pay)),"\",1))
+ ...... ; ---
+ ...... ; Результаты 
+ ...... k MasRESULT 
+ ...... i $$MasResultTS^UDFSPARM001(vtsRID,1,+$G(FlagComment))
+ ...... ; Флаг результата наборов тестов
+ ...... s flagres=$G(@Mas@("REPORT","Sort",SORT1,SORT2,SORT3,"Epis",vtsRID)) 
+ ...... s MasPat("Flag")=flagres 	
+ ...... ; ---
+ ...... ; собираем все произвольные коммент. из тестов на уровень набора тестов (пока только для ЦИТОЛОГИИ/Гистологии/Цитогенетики)
+ ...... k MasCOMMENT
+ ...... i +$G(FlagCommentSVOD)=1 do
+ ....... k PLIST i $$COMMENTS^LVBCOM01(vtsRID,,"Entry",,,"Y") q
+ ....... s cnt=0,i="" f  s i=$O(PLIST(i)) q:i=""  do:$G(PLIST(i))'=""
+ ........ s cnt=$i(cnt),MasCOMMENT(cnt,"Res")=$S(cnt=1:"[Комментарий: ",1:"")_$$TrXML^UDFSPARM001($G(PLIST(i)))
+ ....... i cnt>0 s MasCOMMENT(cnt,"Res")=$G(MasCOMMENT(cnt,"Res"))_"]"   
+ ...... ; ---
+ ...... ; Определяем цвет фона строки в зависимости от Флага результата (CFLI_BackColour)
+ ...... ;  CF_LabtrakIndicators - ^CF("LAB",{CF LabTrak.CFLAB RowId},"COLOUR",{CFLI Code}) 
+ ...... ;  Code [ MultiChoice: Normal Result||0, Above Normal Range||11, Below Normal Range||12 ]
+ ...... i +$G(FlagColor)=1 do
+ ....... s ColorDR=$S(flagres="H":$G(^CF("LAB",1,"COLOUR",11)),flagres="L":$G(^CF("LAB",1,"COLOUR",12)),1:"") q:ColorDR=""
+ ....... s ColorDR=$P(ColorDR,"^",1) q:ColorDR=""
+ ....... s Color=$e($ZHex(+ColorDR)_"000000",1,6)
+ ....... s Color="#"_$E(Color,5,6)_$E(Color,3,4)_$E(Color,1,2) 
+ ....... s MasPat("BackColour")=Color
+ ...... ; ---
+ ...... s NN1=$i(NN1)
+ ...... s @MasO@("User",1,"Next",NN1,"NN")=NN1						
+ ...... m @MasO@("User",1,"Next",NN1)=MasPat
+ ...... m @MasO@("User",1,"Next",NN1)=MasPatSort
+ ...... m @MasO@("User",1,"Next",NN1,"Result")=MasRESULT
+ ...... m @MasO@("User",1,"Next",NN1,"Comment")=MasCOMMENT	;собираем все произвольные коммент. из тестов на уровень набора тестов
+ ;
+ ; заполняем наименование столбцов для полей сортировки данных
+ k MasSort Do SortName($NA(MasSort),1)
+ ;
+ ; общие итоги по отчету
+ s @MasO@("User",1,"Itog-KolTS")=+$G(@Mas@("REPORT","ts"))
+ S @MasO@("User",1,"Itog-KolTS-H")=+$G(@Mas@("REPORT","Flag","H"))+$G(@Mas@("REPORT","Flag","L"))
+ ;
+ ; шапка
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+ S @MasO@("User",1,"TestSet")=$G(StringTS)
+ S @MasO@("User",1,"PatLocation")=$S($G(LocPat)="":"",1:"("_LocPat_") "_$P($G(^TTAB("RH",LocPat)),"\",1))
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ;
+ S @MasO@("User",1,"FlagColor")=+$G(FlagColor)         	; Цветовая палитра в соответствии с Флагом результата
+ S @MasO@("User",1,"FlagUnits")=+$G(FlagUnits)         	; Вывести единицы измерения для теста
+ ;
+ ; поля для сортировки данных Sort1/Sort2/Sort3
+ S @MasO@("User",1,"FlagSort1")=+$G(FlagSort1),@MasO@("User",1,"NameSort1")=$S(Sort1="":"",1:$G(MasSort(Sort1)))
+ S @MasO@("User",1,"FlagSort2")=+$G(FlagSort2),@MasO@("User",1,"NameSort2")=$S(Sort2="":"",1:$G(MasSort(Sort2)))
+ S @MasO@("User",1,"FlagSort3")=+$G(FlagSort3),@MasO@("User",1,"NameSort3")=$S(Sort3="":"",1:$G(MasSort(Sort3)))
+ s @MasO@("User",1,"FlagSort")=$G(FlagSort1)+$G(FlagSort2)+$G(FlagSort3)
+ ; ---    
+ ; доп.настройка вывода полей таблицы
+ S @MasO@("User",1,"FlagMRN")=+$G(FlagMRN)         		; Номер МК пациента
+ S @MasO@("User",1,"FlagFIO")=+$G(FlagFIO)         		; ФИО пациента
+ S @MasO@("User",1,"FlagSex")=+$G(FlagSex)         		; Пол 
+ S @MasO@("User",1,"FlagDOB")=+$G(FlagDOB)         		; Дата рождения
+ S @MasO@("User",1,"FlagAge")=+$G(FlagAge)         		; Возраст
+ S @MasO@("User",1,"FlagPregn")=+$G(FlagPregn)     		; Берем.(недели)
+ S @MasO@("User",1,"FlagAddress")=+$G(FlagAddress)		; Адрес пациента
+ S @MasO@("User",1,"FlagDiagn")=+$G(FlagDiagn)			; Клинический анамнез
+ S @MasO@("User",1,"FlagDateCol")=+$G(FlagDateCol)      ; Дата забора
+ S @MasO@("User",1,"FlagTimeCol")=+$G(FlagTimeCol)      ; Время забора
+ S @MasO@("User",1,"FlagSpec")=+$G(FlagSpec)         	; Тип образца
+ S @MasO@("User",1,"FlagCategPat")=+$G(FlagCategPat)	; Категория пациента
+ S @MasO@("User",1,"FlagLocPat")=+$G(FlagLocPat)        ; Местоположение пациента
+ S @MasO@("User",1,"FlagDocPat")=+$G(FlagDocPat)        ; Лечащий врач
+ S @MasO@("User",1,"FlagPayPat")=+$G(FlagPayPat)        ; Плательщик
+ S @MasO@("User",1,"FlagEpis")=+$G(FlagEpis)        	; Лаб.номер
+ S @MasO@("User",1,"FlagTS")=+$G(FlagTS)        		; Набор тестов
+ S @MasO@("User",1,"FlagDateExec")=+$G(FlagDateExec)    ; Дата выполнения
+ S @MasO@("User",1,"FlagTimeExec")=+$G(FlagTimeExec)    ; Время выполнения
+ ;
+ ;M ^zz=@MasO     ;@@@
+ ;
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS34.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ;
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_"^EXCEL"  ;^WINWORD"  ;^EXCEL"  ;^EXPLORER"
+ quit
+]]></Routine>
+</Export>

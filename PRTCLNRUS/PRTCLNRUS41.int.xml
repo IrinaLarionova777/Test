@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS41" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS41   ;SPARM; Сервис - Список анализаторов;@gol;
+ ;
+ q
+ ; Отчет CLNRUS41  +  CLNRUS41.xsl  + DLL: CLNSPARM007.clsSTART
+ ;==================================================================================================================
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ ; список отделов
+ set @Par="old"
+ s @Par@("PAR1a")="Label   : 100 : 100 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR1")
+ s @Par@("PAR1")="ListBox: 1000 : 100 : 4000 : 300 : :True: "_default_" :List"         ;Standart
+ ;
+ ; флаги для настройки вывода полей таблицы
+ s @Par@("PAR2a")="Label   : 100 : 700 : 5000 : 300 : Дополнительная настройка вывода полей таблицы:"
+ s @Par@("PAR3")="CheckBox: 100 : 1000 : 200  : 300 : : : 0 "
+ s @Par@("PAR3a")="Label   : 500 : 1000 : 4000 : 300 : СОМ-порт:"
+ s @Par@("PAR4")="CheckBox: 100 : 1300 : 200  : 300 : : : 0 "
+ s @Par@("PAR4a")="Label   : 500 : 1300 : 4000 : 300 : Режим работы:"
+ s @Par@("PAR5")="CheckBox: 100 : 1600 : 200  : 300 : : : 0 "
+ s @Par@("PAR5a")="Label   : 500 : 1600 : 4000 : 300 : Программа:"
+ ; 
+ s @Par@("PAR6")="CheckBox: 4100 : 1000 : 200  : 300 : : : 0 "
+ s @Par@("PAR6a")="Label   : 4500 : 1000 : 3000 : 300 : Наборы тестов:"
+ s @Par@("PAR7")="CheckBox: 4100 : 1300 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 4500 : 1300 : 3000 : 300 : Тесты:"
+ s @Par@("PAR8")="CheckBox: 4100 : 1600 : 200  : 300 : : : 0 "
+ s @Par@("PAR8a")="Label   : 4500 : 1600 : 3000 : 300 : Контроль Качества:"
+ ;
+ ; настройка формы
+ s @Par@("form")="Список анализаторов:500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j),^TEMP($zn,$J)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ g XML
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; отдел
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Отдел>" q
+ k DEP
+ if PAR1="0" do     ;* Все
+ . s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ else  do  q:MSGERROR'=""
+ . i '$D(^TTAB("DEP",PAR1)) s MSGERROR="100^В Labtrake нет кода отдела <"_DEP_">" q
+ . s DEP(PAR1)=""
+ ; флаги для настройки вывода полей таблицы
+ s FlagCOM=+$G(PAR3)		; СОМ-порт
+ s FlagDirect=+$G(PAR4)		; Режим работы
+ s FlagPRG=+$G(PAR5)		; Программа
+ s FlagTS=+$G(PAR6)			; Наборы тестов
+ s FlagTC=+$G(PAR7)			; Тесты
+ s FlagQC=+$G(PAR8)			; Контроль Качества
+ s FlagDep=$S(PAR1="0":1,1:0)	; Отдел
+ quit
+ ;------------------------------------------------
+XML    ; обработка данных и формирование XML ...
+  s Mas="^TEMP($zn,$J)" k @Mas
+  S MasXML="^TEMP($zn,$J,""XML"")" 
+  ; 
+  S (NN1,NN2)=0 do
+  . s mif="" f  s mif=$O(^TMIF(mif)) q:mif=""  do
+  .. s str=$G(^TMIF(mif)) q:str=""
+  .. ; проверяем ограничение доступа по отделам ^TMIF({MIF MachineParameters.MIMP Code},0,{MITS TestSet DR})
+  .. k MasTS,MasDep
+  .. s xx=0,ts="" f  s ts=$O(^TMIF(mif,0,ts)) q:ts=""  s dep=$e(ts,1) q:dep=""  q:'$D(DEP(dep))  do
+  ... i +$G(FlagTS)=1 s xx=$i(xx),MasTS("TS",xx,"TestSet")="("_ts_") "_$P($G(^TTAB("TS",ts)),"\",1)
+  ... s MasDep(dep)=""
+  .. quit:'$D(MasDep)
+  .. ; ---
+  .. S NN1=$i(NN1)
+  .. ; N п/п
+  .. s @MasXML@("User",1,"Next",NN1,"NN")=NN1
+  .. s @MasXML@("User",1,"Next",NN1,"Code")=mif       
+  .. s @MasXML@("User",1,"Next",NN1,"Desc")=$$trans($p(str,"\",1))
+  .. ; СОМ-порт - MIMP MUMPS Device
+  .. i +$G(FlagCOM)=1 s @MasXML@("User",1,"Next",NN1,"COM")=$p(str,"\",2)
+  .. ; Режим работы	- MIMP Uni Bi Direct  	Uni Bi Direct [ MultiChoice: Unidirectional||U, Bidirectional Query||B, Bidirectional Loadlist||L, Bidirectional Upload||BU ]
+  .. i +$G(FlagDirect)=1 s @MasXML@("User",1,"Next",NN1,"Direct")=$p(str,"\",7)
+  .. ; Программа - MIMP IF Programme
+  .. i +$G(FlagPRG)=1 s @MasXML@("User",1,"Next",NN1,"Programm")=$p(str,"\",3)
+  .. ; ---
+  .. ; Отделы
+  .. i +$G(FlagDep)=1 do
+  ... s Str="",i="" f  s i=$O(MasDep(i)) q:i=""  s Str=$S(Str="":"",1:Str_"; ")_"("_i_") "_$P($G(^TTAB("DEP",i)),"\",1)
+  ... s @MasXML@("User",1,"Next",NN1,"Department")=Str
+  .. ; ---
+  .. ; Наборы тестов    ^TMIF({MIF MachineParameters.MIMP Code},0,{MITS TestSet DR})
+  .. i +$G(FlagTS)=1 m @MasXML@("User",1,"Next",NN1,"TS")=MasTS("TS")
+  .. ; ---
+  .. ; Тесты    ^TMIF({MIF MachineParameters.MIMP Code},2,{MITC DataItem DR})
+  .. i +$G(FlagTC)=1 do
+  ... s NN2=0,tc="" f  s tc=$O(^TMIF(mif,2,tc)) q:tc=""  do
+  .... k xm f xi=1:1:4 s xm(xi)=$P($G(^TMIF(mif,2,tc)),"\",xi)
+  .... quit:$G(xm(3))=""
+  .... s NN2=$i(NN2)
+  .... s @MasXML@("User",1,"Next",NN1,"TC",NN2,"Test")=tc_" "_$P($G(^TTAB("TC",tc)),"\",12)
+  .... s @MasXML@("User",1,"Next",NN1,"TC",NN2,"TestID")=$S($g(xm(1))="":"???",1:xm(1))
+  .... s @MasXML@("User",1,"Next",NN1,"TC",NN2,"Divider")=$S($g(xm(2))="":"",1:" [Масштаб делителя = "_xm(2)_"]")
+  .... s @MasXML@("User",1,"Next",NN1,"TC",NN2,"Direction")=$S($G(xm(3))="":"?",xm(3)="Y":"Bidirectional",xm(3)="N":"Not Enabled",1:xm(3))
+  .... s @MasXML@("User",1,"Next",NN1,"TC",NN2,"Suffix")=$S($G(xm(4))="":"",1:" [Суффикс: "_xm(4)_"]")
+  .. ; ---
+  .. ; Контроль Качества ;^TMIF("COBI","QC","PNL",1)=PNL\\
+  .. i +$G(FlagQC)=1 do
+  ... s NN2=0,qc="" f  s qc=$O(^TMIF(mif,"QC",qc)) q:qc=""  do
+  .... s qclev="" f  s qclev=$O(^TMIF(mif,"QC",qc,qclev)) q:qclev=""  do
+  ..... s NN2=$i(NN2)
+  ..... s @MasXML@("User",1,"Next",NN1,"QC",NN2,"Desc")=qc_" (уровень: "_qclev_"): ID= "_$P($G(^TMIF(mif,"QC",qc,qclev)),"\",1)
+  ;
+  ; входные параметры
+  S @MasXML@("User",1,"Department")=$S(PAR1="":"",PAR1="0":"* Все",1:PAR1_" - "_$P($G(^TTAB("DEP",PAR1)),"\",1))
+  S @MasXML@("User",1,"FlagCOM")=+$G(FlagCOM)   		; COM-порт
+  S @MasXML@("User",1,"FlagDirect")=+$G(FlagDirect)   	; Режим работы	
+  S @MasXML@("User",1,"FlagPRG")=+$G(FlagPRG)   		; Программа
+  S @MasXML@("User",1,"FlagDep")=+$G(FlagDep) 			; Отдел
+  S @MasXML@("User",1,"FlagTS")=+$G(FlagTS) 			; Наборы тестов
+  S @MasXML@("User",1,"FlagTC")=+$G(FlagTC) 			; Тесты
+  S @MasXML@("User",1,"FlagQC")=+$G(FlagQC) 			; Контроль Качества		
+  ;
+  s @MasXML@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+  S @MasXML@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+  ;
+  ;log
+  ;k ^zz M ^zz("XML")=@MasXML     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS41.xsl",USER)
+  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  k ^TEMP($zn,$J),^TEMP($j)
+  quit "0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+  ;---------------
+trans(res) 
+  q $tr(res,$c(16,17,18,5,6,11,12),"^\|{}[]")
+]]></Routine>
+</Export>

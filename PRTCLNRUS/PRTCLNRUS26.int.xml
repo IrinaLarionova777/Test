@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS26" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS26   ;SPARM; Сервис - Список местоположений пациентов ;@gol;
+ ;
+ q
+ ; Отчет CLNRUS26  +  CLNRUS26.xsl + DLL: CLNSPARM007.clsSTART
+ ; Таблица CT_Hospital 
+ ;==========================================================================================================
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==========================================================================================================
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ ; тип местоположения (CTHOS_LocationType)
+ ; [ MultiChoice: In-Patient||Y, Out-Patient||N, GP practice||GP, Primary||P, Others||O ] 
+ s @Par@("PAR1a")="Label   : 100 : 100 : 2000 : 300 : Тип местоположения:"
+ s @Par@("PAR1")="ComboBox: 2000 : 100 : 3000 : 300 : :True: 0 :List"         ;Standart
+ s @Par@("PAR1","0")="* Все"
+ s @Par@("PAR1","Y")="Стационарный"
+ s @Par@("PAR1","N")="Амбулаторный"
+ s @Par@("PAR1","GP")="Другие"
+ ;s @Par@("PAR1","P")="Первичный (Основной)"
+ ;s @Par@("PAR1","O")="GP practice (Терапевт)"
+ ; 
+ ; флаг "Выводить только местоположения"
+ s @Par@("PAR2")="CheckBox: 100 : 600 : 200  : 300 : : : 1 "
+ s @Par@("PAR2a")="Label   : 500 : 600 : 5000 : 300 : Только активные местоположения:"
+ ; флаги для настройки вывода полей таблицы
+ s @Par@("PAR3a")="Label   : 100 : 1200 : 5000 : 300 : Дополнительная настройка полей таблицы:"
+ s @Par@("PAR4")="CheckBox: 100 : 1500 : 200  : 300 : : : 1 "
+ s @Par@("PAR4a")="Label   : 500 : 1500 : 5000 : 300 : Курьер печати:"
+ s @Par@("PAR5")="CheckBox: 100 : 1800 : 200  : 300 : : : 0 "
+ s @Par@("PAR5a")="Label   : 500 : 1800 : 5000 : 300 : Формат печати + Кол-во копий:"
+ s @Par@("PAR6")="CheckBox: 100 : 2100 : 200  : 300 : : : 0 "
+ s @Par@("PAR6a")="Label   : 500 : 2100 : 5000 : 300 : Тип местоположения:"
+ s @Par@("PAR7")="CheckBox: 100 : 2400 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 500 : 2400 : 5000 : 300 : Клиент (e-mail):"
+ s @Par@("PAR8")="CheckBox: 100 : 2700 : 200  : 300 : : : 0 "
+ s @Par@("PAR8a")="Label   : 500 : 2700 : 5000 : 300 : Язык (для печати ответов):"
+ ; настройка формы
+ s @Par@("form")="Список местоположений пациентов:500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;=========================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) New (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ g XML
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; тип местоположения
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Тип местоположения>" q
+ s TypeLocation=$G(PAR1)
+ ; флаг "Выводить только активные местоположения"
+ s FlagActive=+$G(PAR2)
+ ; флаги для настройки вывода полей таблицы
+ s FlagCour=+$G(PAR4)		;Курьер  (CTHOS_CourierRun_DR -> CT_Courier)
+ s FlagFR=+$G(PAR5)			;Формат печати + Кол-во копий
+ s FlagType=+$G(PAR6)		;Тип местоположения (CTHOS_LocationType)
+ s FlagClient=+$G(PAR7)		;Клиент (CTHOS_Client_DR -> CT_Client)
+ s FlagLang=+$G(PAR8)		;Язык (CTHOS_Language_DR -> SS_Language)
+ quit
+ ;------------------------------------------------
+XML    ; обработка данных и формирование XML ...
+  S MasXML="^TEMP($zn,$J,""XML"")" 
+  ; 
+  S NN1=0,loc="" f  s loc=$O(^TTAB("RH",loc)) q:loc=""  do
+  . i $$select^LVBCTHOS(loc,,USER) quit
+  . i $G(FlagActive)=1 i $P($G(PLIST(25)),$C(1),1)="N" quit
+  . ; проверяем ограничение по типу местоположения
+  . i $G(TypeLocation)'=0 i TypeLocation'=$P($G(PLIST(19)),$C(1),1) quit
+  . ; формируем данные
+  . S NN1=$i(NN1)
+  . s @MasXML@("User",1,"Next",NN1,"NN")=NN1
+  . ; код ;CTHOS_Code
+  . s @MasXML@("User",1,"Next",NN1,"Code")=$G(PLIST(2))      	
+  . ; наименование ;CTHOS_Name
+  . s @MasXML@("User",1,"Next",NN1,"Desc")=$G(PLIST(3))    		
+  . ; флаг Active ;CTHOS_ActiveFlag 
+  . s @MasXML@("User",1,"Next",NN1,"FlagActive")=$G(PLIST(25))  
+  . ; № послед.вывода на экран ;CTHOS_DisplaySequence
+  . s @MasXML@("User",1,"Next",NN1,"Sequence")=$G(PLIST(26))    
+  . i $G(FlagFR)=1 do
+  .. ; Формат печати ;CTHOS_PrintFormat_DR -> CT_PrintFormat  
+  .. s @MasXML@("User",1,"Next",NN1,"PrintFormat")=$P($G(PLIST(12)),$C(1),2)
+  .. ; Кол-во копий ;CTHOS_NoOfCopies
+  .. s @MasXML@("User",1,"Next",NN1,"NoCopies")=$G(PLIST(11))  	
+  . ; Курьер ;CTHOS_CourierRun_DR -> CT_Courier
+  . i $G(FlagCour)=1 do  		
+  .. q:$P($G(PLIST(14)),$C(1),1)="" 
+  .. s @MasXML@("User",1,"Next",NN1,"Courier")="("_$P($G(PLIST(14)),$C(1),1)_") "_$P($G(PLIST(14)),$C(1),2)	
+  . ; Тип местоположения  ;CTHOS_LocationType
+  . ; [ MultiChoice: In-Patient||Y, Out-Patient||N, GP practice||GP, Primary||P, Others||O ] 
+  . i $G(FlagType)=1 do  		
+  .. s type=$P($G(PLIST(19)),$C(1),1)
+  .. s @MasXML@("User",1,"Next",NN1,"Type")=$S(type="Y":"Стационарный",type="N":"Амбулаторный",type="O":"Другое",1:type_" "_$P(PLIST(19),$C(1),2))
+  . ; Клиент ;CTHOS_Client_DR -> CT_Client
+  . i $G(FlagClient)=1 do  		
+  .. q:$P($G(PLIST(28)),$C(1),1)="" 
+  .. s @MasXML@("User",1,"Next",NN1,"Client")="("_$P($G(PLIST(28)),$C(1),1)_") "_$P($G(PLIST(28)),$C(1),2)	
+  . ; Язык  ;CTHOS_Language_DR -> SS_Language
+  . i $G(FlagLang)=1 do  		
+  .. s @MasXML@("User",1,"Next",NN1,"Lang")=$P($G(PLIST(35)),$C(1),2)     
+  ;
+  ; входные параметры
+  S @MasXML@("User",1,"TypeLocation")=$S(TypeLocation="0":"* Все",TypeLocation="Y":"Стационарный",TypeLocation="N":"Амбулаторный",TypeLocation="O":"Другое",1:TypeLocation)
+  S @MasXML@("User",1,"FlagActive")=+$G(FlagActive)	; флаг "Выводить только активные местоположения"
+  S @MasXML@("User",1,"FlagFR")=+$G(FlagFR)   		; Флаг "Формат печати + Кол-во копий"
+  S @MasXML@("User",1,"FlagCour")=+$G(FlagCour)   	; Флаг "Курьер"
+  S @MasXML@("User",1,"FlagType")=+$G(FlagType)   	; Флаг "Тип местоположения"
+  S @MasXML@("User",1,"FlagClient")=+$G(FlagClient) ; Флаг "Клиент"
+  S @MasXML@("User",1,"FlagLang")=+$G(FlagLang) 	; Флаг "Язык"
+  ;
+  s @MasXML@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+  S @MasXML@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+  ;
+  ;log
+  ;k ^zz M ^zz=@Mas     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS26.xsl",USER)
+  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  k ^TEMP($zn,$J),^TEMP($j)
+  quit "0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+]]></Routine>
+</Export>

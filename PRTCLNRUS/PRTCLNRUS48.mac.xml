@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS48" type="MAC" languagemode="0"><![CDATA[
+PRTCLNRUS48 ; Отчет по контейнерам; 26.03.2011
+#;==================================================================================================================
+#; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+#; Возвращает:   имя массива
+#;
+FORM(USER) [PLIST, PAR3] PUBLIC {
+	set USER=$g(USER), Par=$na(^TEMP($J)), date1 = $zd($h, 4), $p(date1, "/") = "01" kill @Par
+	set @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+	set ^("PAR1")="DateText: 1300: 200 : 1100 : 300 :"_date1_" :True"
+	set ^("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+	set ^("PAR2")="DateText: 1300: 600 : 1100 : 300 : t:True"
+#; список плательщиков
+	s @Par@("PAR3a")="Label   : 100 : 900 : 1000 : 300 : Плательщик:"
+	;k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
+	;s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+	;. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR3",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
+	kill @Par@("PAR3") do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR3")))
+	s @Par@("PAR3","0")="* Все плательщики"
+	s @Par@("PAR3")="ListBox : 100 : 1200 : 5900 : 3000 : :True: 0 : Checkbox  "
+	; настройка формы
+	s ^("form")="Отчет по контейнерам ("_USER_"):500:300:Формиров.:Выход"
+	quit Par
+}
+CREATE(REPID, PAR, USER, %msql) PUBLIC {
+	kill ^TMP($zn,$j)
+	quit
+}
+#;==================================================================================================================
+#; Формирование отчета согласно заданным критериям (передаются из формы VB)
+#; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+#; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+#;             100^сообщение об ошибке
+#;
+START(USER,PAR) [PAR1,PAR2,PAR3,MSGERROR] PUBLIC {
+	set USER=$g(USER),PAR=$g(PAR)
+	i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+	set MSGERROR="", Mas=$na(^TEMP($zn,$j)) k @Mas, ^TEMP($J)
+	d INIT(PAR)
+	set MSGERROR=$g(MSGERROR)
+	if $g(MSGERROR)="" {
+		do BODY($g(PAR1),$g(PAR2),$g(PAR3),Mas), XML(USER, Mas)
+		kill @Mas, ^TEMP($j)
+	}
+	q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+}
+#;------------------------------------------------
+#; инициализация входных параметров
+INIT(PAR) [MSGERROR,PAR,mas,PAR1,PAR2,PAR3,PAYMENT] PUBLIC {
+	do PARAM^REPORTSPB(PAR,"mas")
+	set j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+	; период дат
+	if $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+	if $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+	if PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+#; плательщик
+	if $G(PAR3)="" set MSGERROR="100^Не определено значение <Плательщик>" q
+	kill PAYMENT set PAYMENT=""
+	for i=1:1:$L(PAR3,$C(1)) set pay=$P(PAR3,$C(1),i) do:pay'="" 
+	.if pay="0" set PAYMENT("*")="" quit     ;* Все
+	.set PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+	.set PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+	if $D(PAYMENT("*")) s PAYMENT="*",pay="" for  set pay=$O(^TTAB("BI",pay)) quit:pay=""  s PAYMENT(pay)=""
+	if '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" quit
+	if PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>"
+	quit
+}
+#;------------------------------------------------
+#; обработка данных...
+BODY(PAR1,PAR2,PAR3, Mas) [MSGERROR, SQLCODE, payment, paydesc, contdesc, visnumbercount] PUBLIC {
+	&sql(DECLARE C1 CURSOR FOR
+	SELECT CTPC_Code, CTPC_Desc, CTCON_Code, CTCON_Description, COUNT(*)
+	INTO :payment,:paydesc,:contcode,:contdesc,:visnumbercount FROM (
+	SELECT CT_PaymentCode.CTPC_Code, CT_PaymentCode.CTPC_Desc, CT_Container.CTCON_Description, CT_Container.CTCON_Code
+	FROM ((((EP_VisitNumber INNER JOIN EP_VisitTestSet ON EP_VisitNumber.EPVIS_RowId = EP_VisitTestSet.VISTS_ParRef) INNER JOIN CT_PaymentCode ON EP_VisitNumber.EPVIS_PaymentCode_DR = CT_PaymentCode.CTPC_RowId) INNER JOIN EP_VisitTestSetData ON EP_VisitTestSet.VISTS_RowId = EP_VisitTestSetData.VISTD_ParRef) INNER JOIN CT_TestCodeContainers ON EP_VisitTestSetData.VISTD_TestCode_DR = CT_TestCodeContainers.CTTCB_ParRef) INNER JOIN CT_Container ON CT_TestCodeContainers.CTTCB_Container_DR = CT_Container.CTCON_RowID
+	WHERE EP_VisitNumber.EPVIS_DateOfEntry BETWEEN :PAR1 AND :PAR2
+	GROUP BY CT_PaymentCode.CTPC_Code, CT_PaymentCode.CTPC_Desc, EP_VisitNumber.EPVIS_VisitNumber, CT_Container.CTCON_Code
+	)
+	GROUP BY CTPC_Code, CTCON_Code
+	ORDER BY CTPC_Desc, CTCON_Description	
+	)
+	&sql(OPEN C1)
+	&sql(FETCH C1)
+	set payCodes = $c(1)_PAR3_$c(1)
+	while (SQLCODE = 0) {
+		if payment]"" && contdesc]"" && (payCodes[($c(1)_payment_$c(1)) || (PAR3 = 0)) {
+			set:'$d(@Mas@("REPORT", payment)) @Mas@("REPORT", payment)=paydesc
+			set @Mas@("REPORT", payment, contdesc)=visnumbercount
+		}
+		&sql(FETCH C1)
+	}
+  	&sql(CLOSE C1)
+  	K ^ZZZ
+  	M ^ZZZ=@Mas
+}
+#;--------------------------------------------------------------------------
+#; Формирование XML
+XML(USER, Mas) [MSGERROR,PAR1,PAR2,PAR3] PUBLIC {
+	if '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+	set MasO=$na(^TEMP($zn,$J,"XML")), total = 0
+	set NGr1=0,paymentCode = $o(@Mas@("REPORT", ""))
+	while paymentCode ]"" {
+		set paydesc = $g(@Mas@("REPORT", paymentCode)), contdesc = $o(@Mas@("REPORT", paymentCode, "")), NGr1=$i(NGr1), NCol1=0, @MasO@("User", 1, "Gr", NGr1, "Payment") = paydesc,@MasO@("User", 1, "Gr", NGr1, "PaymentCode") = paymentCode
+		while contdesc]"" {
+			set NCol1=$i(NCol1), contcount = $g(@Mas@("REPORT", paymentCode, contdesc))
+			set @MasO@("User", 1, "Gr", NGr1, "Col", NCol1, "ContName") = contdesc, ^("ContCount") = contcount
+			set total = total + contcount,contdesc = $o(@Mas@("REPORT", paymentCode, contdesc))
+		}
+		set paymentCode = $o(@Mas@("REPORT", paymentCode))
+	}	
+	; входные параметры
+	s date1=$o(^TEPIi("AUTHORISED",PAR1-1)),date2=$o(^TEPIi("AUTHORISED",PAR2+1),-1)
+	S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(date1),"/",".")
+	S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(date2),"/",".")
+	S @MasO@("User",1,"Total")=total
+	S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS48.xsl",USER)
+	i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+	; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+	s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+	quit
+}
+ 
+]]></Routine>
+</Export>

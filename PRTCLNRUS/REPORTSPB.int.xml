@@ -1,0 +1,379 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="REPORTSPB" type="INT" languagemode="0"><![CDATA[
+REPORTSPB ;SPARM; Сервичная программа для создания отчетов ;@gol;
+ ; 
+ quit
+ ;==================================================================================================================
+ ; Возвращает имя cache-программы для формирования отчета 
+ROUTINE(report) s report=$G(report)
+ New %routine
+ s report=$G(^TMP("REPORTSPB",$j)) q:report="" ""        
+ s %routine=$p($g(^TTAB("REPORT-GENERIC",report)),"\",1)
+ i $l(%routine) s LineRoutine="START^"_%routine i $l($t(@LineRoutine)) q %routine
+ q ""   
+ ;=====================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+FORM(report,user)
+ s report=$G(report),user=$G(user)
+ New %routine
+ s report=$G(^TMP("REPORTSPB",$j)) q:report="" ""        
+ s %routine=$p($g(^TTAB("REPORT-GENERIC",report)),"\",1)
+ s mas=""
+ i $l(%routine) s LineRoutine="FORM^"_%routine i $l($t(@LineRoutine)) x "s mas=$$FORM^"_%routine_"("""_user_""")" 
+ if $extract($p($g(^TTAB("REPORT-GENERIC",report)),"\",8),1,8)="ReportVB" if mas'="" do ChangeColon(mas)
+ q mas
+ ;===================================================================================================================== 
+ // Раньше в строке описания параметра использовался разделитель ":", в новой dll (RepoerVB.dll) переходим на использование разделителя $char(0)
+ChangeColon(mas)
+ if ($get(mas)="")||('$data(@mas)) quit
+ set par=""
+ for {
+     set par=$order(@mas@(par),1,rec) if par="" quit
+     if rec[$char(0) continue
+     set @mas@(par)=$translate(rec,":",$char(0))	 
+ }
+ quit 
+ ;=====================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+START(report,user,par)
+ s report=$G(report),user=$G(user),par=$G(par)
+ //s ^test("start")=report_"*"_user_"*"_par_"*"_$j
+ New %routine
+ ; достаем код отчета, ктр. формируется в $$select^LVBCTCLR(RowID)
+ s report=$G(^TMP("REPORTSPB",$j)) q:report="" ""        
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC",report)),"\",1)
+ s err=""
+ i $l(%routine) s LineRoutine="START^"_%routine i $l($t(@LineRoutine)) x "s err=$$START^"_%routine_"("""_user_""","""_par_""")" 
+ ;k ^TEMP($J)
+ ;kill ^TMP("REPORTSPB",$j)
+ q err   
+ ;=====================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+STARTjob(report,user,par)
+ s report=$G(report),user=$G(user),par=$G(par)
+ s ^test("start")=report_"*"_user_"*"_par_"*"_$j
+ New %routine
+ ; достаем код отчета, ктр. формируется в $$select^LVBCTCLR(RowID)
+ s report=$G(^TMP("REPORTSPB",$j)) q:report="" ""        
+ ; check client specific routine
+ s %routine=$p($g(^TTAB("REPORT-GENERIC",report)),"\",1)
+ job jobSTART(report,user,par,%routine,$j)
+ q 1
+ ;===================================================================================================================== 
+ //^TEMP($j,"%processing")=$j process _$char(1)_flagEndProcess
+jobSTART(report,user,par,routine,job)
+ s ^test("par2")=report_"*"_user_"*"_par_"*"_routine_"*"_job
+ set ^TEMP(job,"%processing")=$j_$char(2)_routine // need for terminate process if press X in screen progress bar
+ kill ^TEMP($j) merge ^TEMP($j)=^TEMP(job) //так как там пользуются всеми данными по параметрам
+ set err=""
+ i $l(routine) s LineRoutine="START^"_routine i $l($t(@LineRoutine)) x "s err=$$START^"_routine_"("""_user_""","""_par_""")" 
+ set $piece(^TEMP(job,"%processing"),$char(1),2)=err
+ kill ^TEMP($j)
+ quit
+ ;===================================================================================================================== 
+ ; output: не пусто - закончился, "" - не закончился
+TestProcessEnd()
+ //s ^test("testjob",$h)=$j_"*"_$get(^TEMP($j,"%processing"))
+ set outputOfProcess=$piece($get(^TEMP($j,"%processing")),$char(1),2)
+ if outputOfProcess'="" set $piece(^TEMP($j,"%processing"),$char(1),1)=""  // Есть проблема (не могу в VB разделить события закрытия окна по таймеру и крестиком руками) - поэтому пытаюсь отрегулировать этим наличием номера работы в этом месте
+ Quit $select(outputOfProcess'="":outputOfProcess,1:"")  
+ ;=====================================================================================================================
+ //  Удаление временных глобалов. Вызывается из VB при нажатии кнопки Отмена или Х
+ // transfer name temp glob globTemp - unuselessly - suppose ^TEMP($j) так как формирование отчета в процессе job, а там пользуются значениями параметров )
+KillTemp(globTemp)
+ s ^test("killtemp")=$g(globTemp) 
+ kill ^TEMP($j,"%processing") 
+ if $get(globTemp)'="" kill @globTemp
+ else  kill ^TEMP($J)
+ kill ^TMP("REPORTSPB",$j)
+ quit ""
+ ;=====================================================================================================================
+ //  Удаление временных глобалов START^routine. 
+KillTempJob()
+ new info,job,routine
+ set info=$piece($get(^TEMP($j,"%processing")),$char(1),1)
+ set job=$piece(info,$char(2),1)
+ set routine=$piece(info,$char(2),2)
+ s ^test("killtempjob")=$g(job)_"*"_routine
+ if $get(job)'="" kill ^TEMP(job) if $get(routine)'="" kill ^TEMP(routine,job)
+ quit "" 
+ ;=====================================================================================================================
+ // Terminate process with $j=job (вызывается при закрытии окна Progress Bar крестиком)
+KillProcess()
+ new Process,jobChild,info
+ // проверяем , не закончилось ди формирование отчета
+ set info=$get(^TEMP($j,"%processing"))
+ if $piece(info,$char(1),2)'="" quit ""
+ set jobChild=$piece($piece(info,$char(1),1) ,$char(2),1)
+ if +jobChild=0 quit ""
+ s Process=##CLASS(%SYS.ProcessQuery).%OpenId(jobChild)
+ if '$IsObject(Process) quit ""
+ if Process.UserName '= "UnknownUser" quit "" 
+ if Process.ClientExecutableName'="" quit ""  
+ ;if Process.Routine'=$piece($piece(info,$char(1),1) ,$char(2),2) quit ""  // нельзя это проверять, так как программа меняется
+ kill Process
+ do $zu(4,jobChild) s ^test("killprosess",$h)="$j="_$j_" kill process="_jobChild
+ if $$KillTempJob()
+ set $piece(^TEMP($j,"%processing"),$char(1),1)=""
+ quit "" 
+ ;=====================================================================================================================
+ ; Old
+KILL() k ^TEMP($J),^TMP("REPORTSPB",$j) 
+ q ""
+ ;=====================================================================================================================
+ ; для работы с формой VB
+getKey(key,glob)    
+ s key=$G(key),glob=$G(glob) q:glob="" ""
+ k PLIST
+ s PLIST(1)=$O(@glob@(key))
+ q ""
+getItem(key,item,glob)
+ s key=$G(key),glob=$G(glob),item=$G(item) q:glob=""  q:key="" ""
+ k PLIST
+ s PLIST(1)=$O(@glob@(key,item))
+ q ""
+getParam(key,item,glob)
+ s key=$G(key),glob=$G(glob),item=$G(item) q:glob="" ""
+ k PLIST
+ s:item'="" PLIST(1)=$G(@glob@(key,item))
+ s:item="" PLIST(1)=$G(@glob@(key))
+ q ""
+ ; получить значения параметра через PLIST ( для убыстрения процесса) 
+ ; output: 0 - если больше нечего пердать, 100 - есть есть еще что передать
+getValueOfParamByList(key,glob,continue)
+ k PLIST
+ s key=$G(key),glob=$G(glob),continue=$G(continue) q:glob="" ""
+ set limit=15000
+ s ^test("getParam")=key_"*"_glob_"*"_continue
+ 
+ if continue=""  do  ;
+ .kill ^TMP($zn,$j,"params")
+ .set item="" for  set item=$order(@glob@(key,item),1,record) quit:item=""  do  ;
+ ..set ^TMP($zn,$j,"params",item)=record
+ 
+ set PLIST(1)="",continue="",len=0
+ set item="" for  set item=$order(^TMP($zn,$j,"params",item),1,record) quit:(item="")||(continue="Y")  do  ;
+ .set rec=item_$char(1)_record_$char(28)
+ .set len=len+$length(rec)
+ .if len>limit set continue="Y" quit
+ .set PLIST(1)=PLIST(1)_rec
+ .kill ^TMP($zn,$j,"params",item)
+
+ set PLIST=$order(PLIST(""),-1)
+ q $s('$d(^TMP($zn,$j,"params")):0,1:100)
+ ;=====================================================================================
+ ; Разборка входных параметров, ктр. передаются из формы VB в Массив
+PARAM(PAR,Mas)
+ s PAR=$G(PAR),Mas=$G(Mas,"mas")
+ New str,str1,str2,str3,j,j2,j3,row,column
+ k @Mas 
+ f j=1:1:$l(PAR,$c(2)) s str=$p(PAR,$c(2),j),str1=$P(str,$C(3),1),str2=$P(str,$C(3),2) d:str1'=""
+ . i str1'="zzflex" s @Mas@(str1)=str2 quit
+ . i str1="zzflex" do  quit
+ .. f j2=1:1:$l(str2,$c(4)) s row=$p(str2,$c(4),j2) d:row'=""
+ ... f j3=1:1:$l(row,$c(1)) s column=$p(row,$c(1),j3) d:column'=""
+ .... s @Mas@(str1,j2,j3)=column   
+ q
+ ;=====================================================================================
+ ; Запись результирующего файла на сервер с возвратом пути: \\server\...\user\FileName.htm
+WriteFileLabTrakClient(Glob,FileXSL,Client)
+ New R,PathWrite,%Ret,MasEr,i,%Exist
+ S $ZT="Err^"_$zn
+ S R=$C(1)
+ S Glob=$G(Glob) Q:Glob="" "*Имя глобала <пусто>"
+ S Client=$G(Client) ;Q:Client="" "*Имя клиента(пользователя) <пусто>"  
+ s Client="Clients"
+ s NameFile=$ZU(67,12,$j)_"_"_$zd(+$h,3)_"_"_$TR($zt($P($h,",",2),1),":","-")_"_N"_$j
+ S PathWrite=$$Path() 
+ i $E(PathWrite)="*" q PathWrite
+ set resultExtension = ".htm"
+ if $d(@Glob@("WriteFileLabTrakClientExtension")) = 1 do
+ . set resultExtension = @Glob@("WriteFileLabTrakClientExtension")
+ . kill @Glob@("WriteFileLabTrakClientExtension")
+ S %Ret=$$ExistDir(PathWrite_"\"_Client)
+ I %Ret'="" D  Q:%Ret'="" %Ret
+ . S %Ret=$$CreateDir(PathWrite_"\"_Client)
+ . S:%Ret'="" %Ret="*CreateDir:"_%Ret
+ S %Ret=$$XML(Glob,PathWrite_"\"_Client_"\"_NameFile_".xml",NameFile_".xsl") Q:%Ret'="OK" "*"_%Ret
+ S %Ret=$$ExistFile(PathWrite_"\XSL\"_FileXSL) Q:%Ret'="" "*"_%Ret
+ S %Ret=$ZF(-1,"copy "_PathWrite_"\XSL\"_FileXSL_" "_PathWrite_"\"_Client_"\"_NameFile_".xsl")
+ Q:%Ret'=0 "*"_"Файл "_FileXSL_" не скопирован из "_PathWrite_"\XSL\ в "_PathWrite_"\"_Client_"\"
+ S %Ret=$$ExistFile(PathWrite_"\Script\test.wsf")  Q:%Ret'="" "*"_%Ret
+ S %Ret=$$DelFile(PathWrite_"\"_Client_"\"_NameFile_".htm.err")
+ Q:%Ret'=0 "*Запрет на удаление файла ошибок "_PathWrite_"\"_Client_"\"_NameFile_".htm.err"
+ S %Ret=$ZF(-1,"wscript.exe /T:900 """_PathWrite_"\Script\test.wsf"" //job:subXML """_PathWrite_"\"_Client_"\"_NameFile_".xml"" """_PathWrite_"\"_Client_"\"_NameFile_".xsl"" """_PathWrite_"\"_Client_"\"_NameFile_resultExtension_"""")
+ S %Exist=$$ExistFile(PathWrite_"\"_Client_"\"_NameFile_".htm.err")
+ I %Ret=1 D  Q %Ret
+ . I %Exist="" S %Ret="*Ошибка выполнения Script test.wsf "_%Ret_" См.файл "_PathWrite_"\"_Client_"\"_NameFile_".htm.err"
+ . E  S %Ret="*Не удается создать файл! ЗАКРОЙТЕ Microsoft (Word,Excel) нажмите на OK и выполните задание заново "
+ Q:%Ret'=0 "*Неизвестный код возврата выполнения test.wsf="_%Ret
+ Q PathWrite_"\"_Client_"\"_NameFile_resultExtension
+ ;=====================================================================================
+ ; Формирование узла ошибок для вывода в отчете
+ErrTempFXML(OutObj,temp)
+ N Var1,Var2,NN
+ S OutObj=$G(OutObj,$NA(^TEMP($J,"XML","User",1,"Er")))
+ S temp=$G(temp,$NA(^TEMP($J,"Er")))
+ S @OutObj@(1,"Er")="Ошибки"
+ S Var1="",NN=1 F  S Var1=$O(@temp@(Var1)) Q:Var1=""  D
+ . S Var2=$g(@temp@(Var1))
+ . S NN=NN+1,@OutObj@(NN,"Er")=$$TrXML(Var1)_" "_$$TrXML(Var2)
+ Q
+ ;=====================================================================================
+ ; Формирование внешнего XML-файла
+XML(Par1,Par2,Par3)
+ New MasI,Path,MasO,qqo,qqc,qqw,Lev
+ S MasI=$G(Par1) Q:MasI="" "Mas <пусто>"
+ S Path=$G(Par2) Q:Path="" "Path <пусто>"
+ S MasO="^TEMP($J,""OutXML"")"
+ K @MasO
+ D Prolog(MasO,$G(Par3))
+ S qqo="",Lev=0 F  S qqo=$O(@MasI@(qqo)) Q:qqo=""  D
+ . S qqc="" F  S qqc=$O(@MasI@(qqo,qqc)) Q:qqc=""  D
+ .. D Mes("<O"_qqo_$S($G(@MasI@(qqo,qqc))="":"",1:" "_$G(@MasI@(qqo,qqc)))_">",MasO)
+ .. S qqw="" F  S qqw=$O(@MasI@(qqo,qqc,qqw)) Q:qqw=""  D
+ ... I $D(@MasI@(qqo,qqc,qqw))<10 D
+ .... S Lev=Lev+1 
+ .... D Mes($J(" ",Lev)_"<"_qqw_">"_$$TrXML($G(@MasI@(qqo,qqc,qqw)))_"</"_qqw_">",MasO)
+ .... S Lev=Lev-1
+ ... E  D FormXML($NA(@MasI@(qqo,qqc,qqw)),qqw,MasO)
+ .. D Mes("</O"_qqo_">",MasO)
+ D Epilog(MasO)
+ S %Ret=$$WriteFile(MasO,Path)
+ Q %Ret
+FormXML(MasI,qqo,MasO)
+ N qqc,qqw
+ S Lev=Lev+1
+ S qqc="" F  S qqc=$O(@MasI@(qqc)) Q:qqc=""  D
+ . D Mes($J(" ",Lev)_"<O"_qqo_$S($G(@MasI@(qqc))="":"",1:" "_$G(@MasI@(qqc)))_">",MasO)
+ . S qqw="" F  S qqw=$O(@MasI@(qqc,qqw)) Q:qqw=""  D
+ .. I $D(@MasI@(qqc,qqw))<10 D
+ ... S Lev=Lev+1 
+ ... D Mes($J(" ",Lev)_"<"_qqw_">"_$$TrXML($G(@MasI@(qqc,qqw)))_"</"_qqw_">",MasO)
+ ... S Lev=Lev-1
+ .. E  D FormXML($NA(@MasI@(qqc,qqw)),qqw,MasO)
+ . D Mes($J(" ",Lev)_"</O"_qqo_">",$NA(@MasO))
+ S Lev=Lev-1
+ Q
+TrXML(Val)
+ s Val=$G(Val) q:Val="" ""
+ N bb,Str,n s Str=""
+ f n=1:1:$L(Val) s bb=$e(Val,n) d  s Str=Str_bb  ; 
+ .i bb="&" s bb="&amp;" q
+ .i bb="<" s bb="&lt;" q
+ .i bb=">" s bb="&gt;" q
+ .i bb="'" s bb="&apos;" q
+ .i bb="""" s bb="&quot;" q
+ .i $a(bb)=13 q
+ .i $a(bb)=10 q
+ .i $a(bb)=9 q
+ .i $a(bb)=0 s bb="&" q
+ .i $a(bb)<32 s bb="&#"_$a(bb)_";" q
+ q Str   
+ ;       
+Prolog(Par1,Par2) 
+ New Mas,FileXSL
+ S Mas=$G(Par1)  Q:Mas=""
+ s FileXSL=$G(Par2) s:FileXSL="" FileXSL="Print.xsl"
+ ;D Mes("<?xml version='1.0' encoding='windows-1251'?>",Mas)  ;@@@ Для 1251 под cache5
+ D Mes("<?xml version='1.0' encoding='UTF-8'?>",Mas) 		  ;@@@ Для юникода под cache2008
+ D Mes("<?xml-stylesheet type='text/xsl' href='"_FileXSL_"'?>",Mas)
+ D Mes("<baseO>",Mas)
+ Q
+Epilog(Par1)
+ N Mas
+ S Mas=$G(Par1)  Q:Mas=""
+ D Mes("</baseO>",Mas)
+ Q
+Mes(Str,Par1) 
+ S Str=$G(Str),Par1=$G(Par1)
+ S @Par1@($O(@Par1@(""),-1)+1)=Str
+ Q
+WriteFile(Mas,File)         
+ S File=$G(File) Q:File="" "$$WriteFile - Значение File <пусто>"
+ O File:"WN":5
+ Q:'$T "Не открыть файл "_File
+ U File
+ New i,N
+ S N=$O(@Mas@(""),-1)
+ S i="" F  S i=$O(@Mas@(i)) Q:i=""  D
+ . W @Mas@(i)
+ . W:i'=N !
+ C File
+ Q "OK"
+ ;=====================================================================================
+ ;обработчик ошибок
+Err new ind,DateTime 
+ S DateTime=$zd(+$H,4)_" "_$zt($P($H,",",2),2)
+ s ind=$o(^ERRORS($zn,$j,""),-1)+1 s ^ERRORS($zn,$j,ind)=DateTime_" => "_$ZE
+ Q:$Q $G(^ERRORS($zn,$j,ind))
+ Q
+ERROR D BACK^%ETN
+ q 
+ ;-------------------------------------------------------             
+Path() ;CF_SystemDefaults - Путь для отчетов (Path to Reports Local) CFSM_PathToReportsLocal
+ N Dir,j
+ S Dir=$P(^CF("SM",1),"^",26)    ;CFSM_PathToReportsLocal - Text 30 No No No 30 "^"26    => \\medserver\L64\Reports
+ Q:Dir="" "*Не установлен путь для Локальных отчетов в Параметрах системы"
+ i $E(Dir,$l(Dir))="\" s Dir=$E(Dir,1,$l(Dir)-1)
+ q Dir   
+ ;-------------------------------------------------------             
+ExistDir(Dir)  ; Существует ли директорий
+ S $ZT="Err^H999999"
+ S Dir=$G(Dir)
+ Q $S($ZUTIL(140,7,Dir)'=16:"Не существует ресурса "_Dir,1:"")
+ ;
+ExistFile(File) ; Существет ли файл
+ S $ZT="Err^H999999"
+ S File=$G(File)
+ Q $S($ZUTIL(140,4,File)'=0:"Не существует файла "_File,1:"")
+ ;
+CreateDir(Dir)   ; Создать ресурс
+ S $ZT="Err^H999999"
+ S Dir=$G(Dir)
+ N %Ret
+ S %Ret=$ZUTIL(140,9,Dir)
+ Q $S(%Ret=-5:"Ресурс "_ $P(Dir,"\",1,$L(Dir,"\")-1)_" открыт только на чтение",%Ret'=0:"Ошибка "_%Ret_" при создании ресурса "_Dir,1:"")
+ ;
+DelFile(File) ; Удалить файл
+ S $ZT="Err^H999999"
+ S File=$G(File) Q:File="" 0
+ Q:$$ExistFile(File)'="" 0
+ S %Ret=$ZUTIL(140,5,File)
+ Q %Ret
+ ;-------------------------------------------------------             
+Testnms(nms) ; возвращает
+             ; 1, если все ОК
+             ; 0, если область не существует
+             ;-1<$zerrorcode>, если сущ., но не доступна
+ n x
+ s $zt="Errtestnms^"_$zn
+ if $ZU(90,10,nms) s x=$D(^|nms|AnyGlobal) q 1
+ q 0 ; область не существует
+Errtestnms q -1_$P($ze,">")_">" ; область cущ-ет, но не доступна (как правило, ошибка <PROTECT> или <DATABASE>)
+ ;-------------------------------------------------------             
+DelFileTemp() ; Удаляет файлы с расширением htm
+ N PathWrite,%Ret,Client
+ s Client="Clients"
+ S PathWrite=$$Path() i $E(PathWrite)="*" q PathWrite         
+ S %Ret=$$ExistDir(PathWrite_"\"_Client) Q:%Ret'="" %Ret
+ S %Ret=$$DelFiles(PathWrite_"\"_Client)
+ Q "" 
+DelFiles(Dir) ; Удалить файлы из ресурса
+ S $ZT="Err^H999999"
+ S Dir=$G(Dir)
+ N %Ret,i
+ For i=1:1 D  Q:%Ret=""!(i>10000)
+ . S %Ret=$ZSEARCH(Dir_"\*.htm") Q:%Ret=""  S %RetDel=$ZUTIL(140,5,%Ret)
+ For i=1:1 D  Q:%Ret=""!(i>10000)
+ . S %Ret=$ZSEARCH(Dir_"\*.xml") Q:%Ret=""  S %RetDel=$ZUTIL(140,5,%Ret)
+ For i=1:1 D  Q:%Ret=""!(i>10000)
+ . S %Ret=$ZSEARCH(Dir_"\*.xsl") Q:%Ret=""  S %RetDel=$ZUTIL(140,5,%Ret)
+ Q %Ret
+ ;     
+DelSym(Str)  ; Убрать все спец.символы
+ Q $TR(Str,"./,?\+*#@%^&<>~:|![]{}-"," ")
+]]></Routine>
+</Export>

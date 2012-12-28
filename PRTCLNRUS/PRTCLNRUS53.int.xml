@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS53" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS53   ;Мониторинг лицензий - отчет по монитроингу использования лицензий (подсчет лицензий); liv
+ ;
+ q
+ ; просто экран
+ ; Отчет CLNRUS53  +  CLNRUS53.xsl  + DLL: CLNSPARM007.clsSTART
+ ;==================================================================================================================
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ 
+  ; период дат
+ //s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ //s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+ //s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+ //s @Par@("PAR2")="DateText: 1300: 600 : 1100 : 300 : t:True"
+ s @Par@("PAR1")="Label   : 100 : 200 : 6000 : 300 : Отчет по данным, собранным при мониторинге лицензий.:"
+ ; настройка формы
+ s @Par@("form")="Просмотр данных мониторинга лицензий:500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ s ^test("par")=PAR
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j),^TEMP($zn,$J)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ g XML
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ quit
+ 
+XML   ; обработка данных и формирование XML ...
+  set r=$char(0)
+  s Mas="^TEMP($zn,$J)" k @Mas
+  S MasXML="^TEMP($zn,$J,""XML"")" kill @MasXML
+  
+  if '$data(^MonitorLicenses("LIC")) {
+   q "100^Нет данных по мотиторингу лицензий"
+  }
+  
+  set dateStart=$listget($get(^MonitorLicenses("LIC","Start")),1)
+  set @MasXML@("User",1,"DateStart")=$select(dateStart'="":$zdate(dateStart,4),1:"")
+ 
+  set id="",nn=0
+  for {
+	  set id=$order(^MonitorLicenses("LIC",0,id),1,record) if id="" quit
+      set nn=nn+1
+      set @MasXML@("User",1,"Data",nn,"Date")=$lg(record,1) 
+      set @MasXML@("User",1,"Data",nn,"Time")=$lg(record,2) 
+      set @MasXML@("User",1,"Data",nn,"CacheLicense")=+$lg(record,3) 
+      set @MasXML@("User",1,"Data",nn,"Users")=+$lg(record,4) 
+      set @MasXML@("User",1,"Data",nn,"Devices")=+$lg(record,5) 
+      set @MasXML@("User",1,"Data",nn,"Odd")=$select(nn#2'=0:"1",1:"0")
+  }
+  // максимальные значения по дням	      
+  set date="",nn=0
+  for {
+	  set date=$order(^MonitorLicenses("LIC","DayTotal",date)) if date="" quit
+      set nn=nn+1
+      set @MasXML@("User",1,"MaxForDate",nn,"Date")=$zdate(date,4)
+      set @MasXML@("User",1,"MaxForDate",nn,"CacheLicense")=+$get(^MonitorLicenses("LIC","DayTotal",date,"CACHE"))
+      set @MasXML@("User",1,"MaxForDate",nn,"Users")=+$get(^MonitorLicenses("LIC","DayTotal",date,"Users")) 
+      set @MasXML@("User",1,"MaxForDate",nn,"Devices")=+$get(^MonitorLicenses("LIC","DayTotal",date,"Devices"))
+      set @MasXML@("User",1,"MaxForDate",nn,"Odd")=$select(nn#2'=0:"1",1:"0")
+  }
+  
+  // максимальные значения всего за весь мониторинг
+  set @MasXML@("User",1,"Max",1,"CacheLicense")=+$get(^MonitorLicenses("LIC","Total","CACHE"))
+  set @MasXML@("User",1,"Max",1,"Users")=+$get(^MonitorLicenses("LIC","Total","Users")) 
+  set @MasXML@("User",1,"Max",1,"Devices")=+$get(^MonitorLicenses("LIC","Total","Devices"))
+  
+  ;log
+  k ^zz M ^zz("XML")=@MasXML     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS53.xsl",USER)
+  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  k ^TEMP($zn,$J),^TEMP($j)
+  quit "0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"  
+
+]]></Routine>
+</Export>

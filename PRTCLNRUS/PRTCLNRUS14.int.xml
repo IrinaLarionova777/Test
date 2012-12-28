@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS14" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS14   ;SPARM; Журнал контроля качества ;;@gol;
+ ;
+ q
+ ; Отчет CLNRUS14  +  CLNRUS14.xsl  + DLL: CLNSPARM007.clsSTART
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+ ; 
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)"  k @Par 
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText : 1300: 200 : 1000 : 300 : t-30:True"
+ s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText : 1300: 600 : 1000 : 300 : t:True"
+ ;
+ ; список контрольных материалов
+ s @Par@("PAR3a")="Label   : 100 : 1100 : 1100 : 500 : Контрольный материал:"
+ k PLIST s err=$$getall^LVBQCM("")  
+ s cnt=0,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+ . s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR3",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=cnt+1
+ if cnt>1 s @Par@("PAR3","0")="* Все контрольные материалы"
+ s default=$S(cnt>1:0,1:$O(@Par@("PAR3","")))
+ s @Par@("PAR3")="ComboBox: 1300 : 1100 : 6000 : 300 : : True : "_default_" :List"         ;Standart
+ ;
+ ; список отделов
+ s @Par@("PAR4a")="Label   : 100 : 1700 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR4")
+ s @Par@("PAR4")="ComboBox: 1300 : 1700 : 6000 : 300 : :True: "_default_" :List"         ;Standart
+ ; 
+ ; список тестов
+ s @Par@("PAR5a")="Label  : 100 : 2200 : 1000 : 300 : Тест:"
+ k PLIST s err=$$getall^LVBCTTC("",USER,"Y")
+ s ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+ . s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR5",code)=code_"   "_$P(PLIST(ind),$C(2),2)
+ if cnt>1 s @Par@("PAR5","0")="* Все тесты"
+ s default=$S(cnt>1:0,1:$O(@Par@("PAR5","")))
+ s @Par@("PAR5")="ComboBox: 1300 : 2200 : 6000 : 300 : : True : "_default_" :Standart"
+ ; 
+ ; флаг
+ s @Par@("PAR6")="CheckBox: 100 : 2700 : 200  : 300 : : : 1 "
+ s @Par@("PAR6a")="Label   : 500 : 2700 : 5000 : 300 : Вывести доп.столбец ""Z-Score"":"
+ ; флаг
+ s @Par@("PAR7")="CheckBox: 100 : 3100 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 500 : 3100 : 6000 : 300 : Вывести сводные данные по тесту (Фиксированнон среднее, SD и т.д.):"
+ ; 
+ ; настройка формы
+ s @Par@("form")="Журнал Контроля Качества:500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;------------------------------------------------
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j),^TEMP($zn,$J)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d BODY,XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ; контрольный материал
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Контрольный материал>" q
+ k QCMaterial
+ if PAR3="0" do     ;* Все
+ . k PLIST s err=$$getall^LVBQCM("")      
+ . s cnt=0,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+ .. s code=$P(PLIST(ind),$C(2),1) s:code'="" QCMaterial(code)=""
+ else  do  q:MSGERROR'=""
+ . i '$D(^TTQC(PAR3)) s MSGERROR="100^В Labtrake нет кода контрольного материала <"_PAR3_">" q
+ . s QCMaterial(PAR3)=""
+ ; Отдел
+ k DEP,TCcode
+ i $G(PAR4)="" s MSGERROR="100^Не определено значение <Отдел>" q
+ if PAR4="0" do     ;* Все
+ . s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ else  do  q:MSGERROR'=""
+ . i '$D(^TTAB("DEP",PAR4)) s MSGERROR="100^В Labtrake нет кода отдела <"_DEP_">" q
+ . s DEP(PAR4)=""
+ ; список тестов
+ if $G(PAR5)="" s PAR5=0
+ if PAR5="0" do     ;* Все
+ . k PLIST s err=$$getall^LVBCTTC("",$G(USER),"Y")      
+ . s cnt=0,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+ .. s code=$P(PLIST(ind),$C(2),1) q:code=""  q:'$D(DEP($e(code,1)))
+ .. s TCcode(code)=""
+ else  do  q:MSGERROR'=""
+ . i '$D(^TTAB("TC",PAR5)) s MSGERROR="100^В Labtrake нет кода теста <"_PAR5_">" q
+ . q:'$D(DEP($e(PAR5,1)))
+ . s TCcode(PAR5)=""
+ i '$D(TCcode)="" s MSGERROR="100^Нет доступных тестов для поиска данных!" q
+ ; Вывести доп.столбец "Z-Score"
+ s FlagZScore=+$G(PAR6)
+ ; Вывести сводные данные по тесту (Фиксированнон среднее, SD и т.д.)
+ s FlagDetailTC=+$G(PAR7)
+ quit
+ ;------------------------------------------------
+BODY  ; обработка данных...
+ s DRange=PAR1_"/"_PAR2
+ s QCMaterial="" f  s QCMaterial=$O(QCMaterial(QCMaterial)) q:QCMaterial=""  do
+ . s lot="" f  s lot=$o(^TTQC(QCMaterial,"LOT",lot)) q:lot=""  d
+ ..  s type="" f  s type=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type)) q:type=""  d
+ ... s wm="" f  s wm=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm)) q:wm=""  d
+ .... s ti="" f  s ti=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti)) q:ti=""  d:$D(TCcode(ti))
+ ..... s level="" f  s level=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level)) q:level=""  d
+ ...... s date=PAR1-1 f  s date=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level,date)) q:date=""  q:date>PAR2  d
+ ....... s ind=0
+ ....... s run="" f  s run=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level,date,run)) q:run=""  d
+ ........ s ind=$i(ind)
+ ........ s key=date_$C(1)_ind
+ ........ m @Mas@("REPORT",QCMaterial,lot,type,wm,"TEST",ti,date,key,level)=^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level,date,run)
+ .... q:'$D(@Mas@("REPORT",QCMaterial,lot,type,wm,"TEST"))
+ .... ; Вывести сводные данные по тесту (Фиксир.ср., SD и т.д.)
+ .... i +$G(FlagDetailTC) do
+ ..... k MasSvodQC i $$SvodTC(QCMaterial,lot,type,wm,"",DRange)
+ ..... m @Mas@("REPORT",QCMaterial,lot,type,wm,"Svod")=MasSvodQC
+ ;m ^zz=@Mas   ;@@@
+ q
+ ;--------------------------------------------------------------------------
+XML      ; Формирование XML...
+ i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+ ;
+ S MasO="^TEMP($zn,$J,""XML"")"
+ ;
+ ; сортировка: контрольный материал / лот / тип / прибор,рл / тест / дата / номер точки кк / значение х-уровня + правило + флаг "исключен"
+ ;                                               
+ s (NGr,Npp)=0,QCMaterial="" f  s QCMaterial=$o(@Mas@("REPORT",QCMaterial)) q:QCMaterial=""  d
+ . s lot="" f  s lot=$o(@Mas@("REPORT",QCMaterial,lot)) q:lot=""  d
+ .. s type="" f  s type=$o(@Mas@("REPORT",QCMaterial,lot,type)) q:type=""  d
+ ... s wm="" f  s wm=$o(@Mas@("REPORT",QCMaterial,lot,type,wm)) q:wm=""  d
+ .... s NGr=$i(NGr)
+ .... s Npp=Npp+1
+ .... S @MasO@("User",1,"Gr",NGr,"NGr")=Npp
+ .... S @MasO@("User",1,"Gr",NGr,"QC")=$P($G(^TTQC(QCMaterial)),"\",1)                               ; наименование контрольного материала
+ .... S @MasO@("User",1,"Gr",NGr,"QCLot")=$P($G(^TTQC(QCMaterial,"LOT",lot)),"\",1)                  ; лот
+ .... S @MasO@("User",1,"Gr",NGr,"QCType")=$S(type="M":"Анализатор",type="W":"Рабочий лист",1:"")    ; тип кк
+ .... S @MasO@("User",1,"Gr",NGr,"QCWM")=$S(type="M":$P($G(^TMIF(wm)),"\",1),type="W":$P($G(^TTAB("WS",wm)),"\",1),1:"")  ; прибор/рл
+ .... s klev=+$P($G(^TTQC(QCMaterial)),"\",2)
+ .... S @MasO@("User",1,"Gr",NGr,"QCLevelDesc")=$S(klev=2:"1,2",klev=3:"1,2,3",1:1)
+ .... S @MasO@("User",1,"Gr",NGr,"QCLevel")=klev
+ .... s StrLot=$G(^TTQC(QCMaterial,"LOT",lot))
+ .... S @MasO@("User",1,"Gr",NGr,"OpeningDate")=$S(+$p(StrLot,"\",7)=0:"",1:$tr($zd($p(StrLot,"\",7),4),"/","."))
+ .... S @MasO@("User",1,"Gr",NGr,"ExpiryDate")=$S(+$p(StrLot,"\",3)=0:"",1:$tr($zd($p(StrLot,"\",3),4),"/","."))
+ .... S @MasO@("User",1,"Gr",NGr,"CloseDate")=$S(+$p(StrLot,"\",5)=0:"",1:$tr($zd($p(StrLot,"\",5),4),"/","."))
+ .... ; -----
+ .... ; Вывести сводные данные по тесту (Фиксир.ср., SD и т.д.)
+ .... i +$G(FlagDetailTC) do
+ ..... k MasSvodQC m MasSvodQC=@Mas@("REPORT",QCMaterial,lot,type,wm,"Svod")
+ .... ; -----
+ .... ; тесты
+ .... s NGr1=0,ti="" f  s ti=$o(@Mas@("REPORT",QCMaterial,lot,type,wm,"TEST",ti)) q:ti=""  d
+ ..... ; Формата результата теста
+ ..... s FormatTC=$$Format^UDFSPARM001(ti)
+ ..... s FormatTCLen=+$E(FormatTC,2,$l(FormatTC)) s:FormatTCLen<2 FormatTCLen=2
+ ..... ; ---
+ ..... s NGr1=$i(NGr1)
+ ..... S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"TestCode")=ti                             ; код теста
+ ..... S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"TestDesc")=$P($G(^TTAB("TC",ti)),"\",1)   ; наименование теста
+ ..... ; ---
+ ..... ; дата выполнения кк
+ ..... s NGr2=0,date="" f  s date=$o(@Mas@("REPORT",QCMaterial,lot,type,wm,"TEST",ti,date)) q:date=""  d
+ ...... s run="" f  s run=$o(@Mas@("REPORT",QCMaterial,lot,type,wm,"TEST",ti,date,run)) q:run=""  d
+ ....... s NGr2=$i(NGr2)
+ ....... S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Data",NGr2,"Date")=$TR($$extdate2^SSUTIL4(date),"/",".") 
+ ....... ; уровни
+ ....... s level="" f  s level=$o(@Mas@("REPORT",QCMaterial,lot,type,wm,"TEST",ti,date,run,level)) q:level=""  d
+ ........ s str=$G(@Mas@("REPORT",QCMaterial,lot,type,wm,"TEST",ti,date,run,level)) q:str=""
+ ........ s RuleDR=$p(str,"\",5)                                                 ; Violated Rule DR
+ ........ s Rule=$S(RuleDR="":"",1:$P($G(^TTAB("QC-RULE",RuleDR)),"\",1))        ; Violated Rule
+ ........ s ExcludeFlag=$S($p(str,"\",2)="N":"",1:$p(str,"\",2))
+ ........ s ColorDR=$S(RuleDR="":"",1:$P($G(^TTAB("QC-RULE",RuleDR)),"\",4))                            
+ ........ s Color="" i ColorDR'="" do
+ ......... s Color=$e($ZHex(+ColorDR)_"000000",1,6)
+ ......... s Color="#"_$E(Color,5,6)_$E(Color,3,4)_$E(Color,1,2) 
+ ........ S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Data",NGr2,"Value-"_level)=$p(str,"\",1)   ; Результат
+ ........ S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Data",NGr2,"Rule-"_level)=Rule             ; Правило
+ ........ S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Data",NGr2,"RuleColor-"_level)=Color       ; Цвет правила (выделение ячейки)
+ ........ S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Data",NGr2,"Exclude-"_level)=ExcludeFlag   ; Флаг Исключение
+ ........ ; ---
+ ........ ; Вывести сводные данные по тесту (Фиксир.ср., SD и т.д.)
+ ........ i +$G(FlagDetailTC) do
+ ......... m @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Level",level)=MasSvodQC("Test",ti,"Level",level)
+ ........ ; ---
+ ........ i +$G(FlagZScore)=1 do
+ ......... s FixedMean=+$P($G(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level)),"\",1)
+ ......... s FixedSD=+$P($G(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level)),"\",2) q:FixedSD=0
+ ......... s ZScore=(+$p(str,"\",1)-FixedMean)/FixedSD
+ ......... i $E(FormatTC,1)="N" s ZScore=$$FormNum^UDFSPARM001(ZScore,FormatTCLen)
+ ......... S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Data",NGr2,"ZScore-"_level)=ZScore
+ ;    
+ ; входные параметры
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+ S @MasO@("User",1,"Отдел")=$S($G(PAR4)="":"",PAR4=0:"* Все отделы",1:PAR4_" - "_$P($G(^TTAB("DEP",PAR4)),"\",1))
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ;
+ S @MasO@("User",1,"FlagReport")=+$G(FlagReport)			; тип отчета: 1 -"Уровни (столбцы)" ; 2 - "Уровни (строки)"
+ S @MasO@("User",1,"FlagZScore")=+$G(FlagZScore)			; Вывести доп.столбец "Z-Score"
+ S @MasO@("User",1,"FlagDetailTC")=+$G(FlagDetailTC)		; Вывести сводные данные по тесту (Фиксир.ср., SD и т.д.)
+ ;
+ ;log
+ ;M ^zz("XML")=@MasO     ;@@@
+ ;
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS14.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_"^WINWORD" ;"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ quit
+ ;------------
+SvodTC(material,lot,type,wsmach,tg,DRange) ;достаем сводные данные по тесту (Фиксир.среднее, SD и т.д.)
+ New (material,lot,type,wsmach,tg,DRange,MasSvodQC,PLIST) 
+ ; $$fetch^LVBQCMTL3
+ ; PLIST - 1.RowID
+ ;         2.Test Item
+ ;         3.Machine/Worksheet
+ ;         4,5,6.Level(1,2,3)
+ ;         4.1.[Date Range]Mean
+ ;         4.2.[Date Range]SD
+ ;         4.3.[Date Range]CV
+ ;         4.4.[Date Range]No of points
+ ;         4.5.Fixed Mean
+ ;         4.6.Fixed SD
+ ;         4.11.[Total]Mean
+ ;         4.12.[Total]SD
+ ;         4.13.[Total]CV
+ ;         4.14.[Total]No of points
+ ;
+ i $$open^LVBQCMTL3(material,lot,type,wsmach,tg,DRange)
+ f cnt=1:1 q:$$fetch^LVBQCMTL3(material,lot,type,wsmach,tg,DRange)  d
+ . s tc=$P($G(PLIST(2)),$C(1),1) q:tc=""
+ . s FormatTC=$$Format^UDFSPARM001(tc)
+ . s FormatTCLen=+$E(FormatTC,2,$l(FormatTC)) s:FormatTCLen<2 FormatTCLen=2
+ . f lev=4,5,6  s level=lev-3 do
+ .. s SVstr=$G(^TTQC(material,"LOT",lot,"TYPE",type,wsmach,"TEST",tc,"DATA",level))
+ .. ;m MasSvodQC("Test",tc,"LevelPLIST",level)=PLIST
+ .. s MasSvodQC("Test",tc,"Level",level,"DescLevel")=level
+ .. s MasSvodQC("Test",tc,"Level",level,"FixedMean")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),5),FormatTCLen)
+ .. s MasSvodQC("Test",tc,"Level",level,"FixedSD")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),6),FormatTCLen)
+ .. s MasSvodQC("Test",tc,"Level",level,"FloatingMean")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),11),3)
+ .. s MasSvodQC("Test",tc,"Level",level,"FloatingSD")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),12),3)
+ .. s MasSvodQC("Test",tc,"Level",level,"CalcType")=$S($p(SVstr,"\",5)="FX":"Фиксированный",1:"Плавающий")
+ .. s MasSvodQC("Test",tc,"Level",level,"CV")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),13),2)
+ .. s MasSvodQC("Test",tc,"Level",level,"Count")=$P($G(PLIST(lev)),$C(27),14) 
+ i $$close^LVBQCMTL3()
+ q ""
+]]></Routine>
+</Export>

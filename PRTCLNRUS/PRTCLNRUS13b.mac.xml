@@ -1,0 +1,463 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS13b" type="MAC" languagemode="0"><![CDATA[
+PRTCLNRUS13b   ;SPARM; СВОДНАЯ Статистика выполнения исследований по ГОДАМ/КВАРТАЛАМ/МЕСЯЦАМ/НЕДЕЛЯМ/ДНЯМ ;;@gol;
+ ;
+ q
+ ; Отчет CLNRUS13  +  CLNRUS13.xsl  + DLL: CLNSPARM007.clsSTART
+ ; 
+ ; идем по индексу ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ; и считаем кол-во выполненных (авторизированных) наб.тестов за заданный период по ГОДАМ !
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+ ;                        
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par=$name(^TEMP($J)) k @Par 
+ set ok=##class(TCLEx.Report.Function).TestAccessUserToReport(USER) 
+ if 'ok {
+    set @Par@("PAR1")="Label   : 100 : 200 : 1100 : 600 : Доступ запрещен"
+    set @Par@("form")="Деятельность лаборатории (по плательщикам) ("_$G(USER)_"):500:300::Выход"
+    quit Par
+ }
+ ; период дат
+ s date1=$$extdate^SSUTIL4(+$h)  ; convert $h format to external date format (dd/mm/{yy}yy)
+ i date1<0 s date1=""
+ else  s date1="01."_$P(date1,"/",2,3)
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 :"_date1_" :True"
+ s @Par@("PAR2a")="Label   : 100: 700 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 1300: 700 : 1100 : 300 : t:True"
+ ; 
+ ; список отделов
+ s @Par@("PAR3a")="Label   : 100 : 1700 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR3")
+ s @Par@("PAR3")="ComboBox: 1300 : 1700 : 4700 : 300 : :True: "_default_" :List"         ;Standart
+ ;
+ ; флаг "Расшифровка по наборам тестов"
+ s @Par@("PAR4")="CheckBox: 1300 : 2100 : 200  : 300 : : : 0 "
+ s @Par@("PAR4a")="Label   : 1700 : 2100 : 3500 : 300 : Расшифровка по наборам тестов:"
+ ; флаг "Расшифровка по секциям"
+ s @Par@("PAR9")="CheckBox: 1300 : 2400 : 200  : 300 : : : 0 "
+ s @Par@("PAR9a")="Label   : 1700 : 2400 : 3500 : 300 : Расшифровка по секциям:"
+ ; флаг (радио-кнопки)
+ s @Par@("PAR5")="RadioButton : 3500 : 50 : 2500 : 800 : Подсчет по : True: 1 :List"    
+ s @Par@("PAR5",1)="Месяцам"
+ s @Par@("PAR5",2)="Годам"
+ s @Par@("PAR5",3)="Дням"
+ s @Par@("PAR5",4)="Неделям"
+ s @Par@("PAR5",5)="Кварталам"
+ ; флаг (радио-кнопки)
+ s @Par@("PAR6")="RadioButton : 100 : 2100 : 1000 : 600 : Вывод : True: 1 :List"    
+ s @Par@("PAR6",1)="Excel"
+ s @Par@("PAR6",2)="Word"
+ ; флаг "Подписать дни недели (для подсчета по ""Дням"")"
+ s @Par@("PAR7")="CheckBox: 1300 : 2700 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 1700 : 2700 : 2000 : 500 : Подписать дни недели (для подсчета по ""Дням""):"
+ ; флаг (радио-кнопки)
+ s @Par@("PAR8")="RadioButton : 100 : 6500 : 5900 : 900 : Группировка данных : True: 1 :List"    
+ s @Par@("PAR8",1)="Без группировки"
+ s @Par@("PAR8",2)="По заказчику (плательщику) с детализацией"
+ s @Par@("PAR8",3)="По услуге"
+ ; отложен s @Par@("PAR8",4)="По заказчику (плательщику) суммарный"
+ ; список плательщиков
+	s @Par@("PAR10a")="Label   : 100 : 3100 : 1000 : 300 : Плательщик:"
+	;k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
+	;s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+	;. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR10",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
+	kill @Par@("PAR10") do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR10")))
+	s @Par@("PAR10","0")="* Все плательщики"
+	s @Par@("PAR10")="ListBox : 100 : 3400 : 5900 : 3000 : :True: 0 : Checkbox  "   
+ ;
+ ; настройка формы
+ s @Par@("form")="СВОДНАЯ Статистика выполненных исследований:500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;------------------------------------------------
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR)
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ set oldtime=$zh
+ k ^TEMP($j),^TEMP($zn,$J)
+ ;s Mas="^TEMP($zn,$J)" k @Mas
+ Set Mas=$Name(^||Mas) Kill @Mas ; ***
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d BODY,XML
+ ;k ^TEMP($zn,$J),^TEMP($j)
+ Kill @Mas,^TEMP($j) ; ***
+ Set ^xxxTimeTest($zn,$I(^xxxTimeTest($zn)))=$zh-oldtime
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ; отдел
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Отдел>" q
+ k DEP
+ if PAR3="0" do     ;* Все
+ . s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ else  do  q:MSGERROR'=""
+ . i '$D(^TTAB("DEP",PAR3)) s MSGERROR="100^В Labtrake нет кода отдела <"_DEP_">" q
+ . s DEP(PAR3)=""
+ ; Флаг "Расшифровка по наборам тестов"
+ s FlagDetailsTS=+$G(PAR4)
+ ; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2) / по ДНЯМ (3) / по неделям (4) / по кварталам (5)
+ s FlagReport=+$G(PAR5) s:FlagReport=0 FlagReport=1
+ i FlagReport=3 i (PAR2-PAR1)>100 s MSGERROR="100^Для расшифровки по ДНЯМ интервал дат должен быть не больше 100 дней!" q
+ ; Вывод отчета:  1="Excel" ; 2="Word"
+ s FlagExcel=$S(+$G(PAR6)=1:1,1:0)
+ ; Флаг "Подписать дни недели (для подсчета по ""Дням"")"
+ s FlagDescWeek=+$G(PAR7) s:+$G(FlagReport)'=3 FlagDescWeek=0
+ ;
+ i $G(PAR10)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+ k PAYMENT s PAYMENT=""
+ f i=1:1:$L(PAR10,$C(1)) s pay=$P(PAR10,$C(1),i) d:pay'="" 
+ . i pay="0" s PAYMENT("*")="" quit     ;* Все
+ . s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+ . s PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+ i $D(PAYMENT("*")) s PAYMENT="*",pay="" f  s pay=$O(^TTAB("BI",pay)) q:pay=""  s PAYMENT(pay)=""
+ i '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+ ; Флаг "Расшифровка по секциям"
+ set FlagSect=+$g(PAR9)
+ ; Группировка: 2 - по плательщикам, 3 - по услуге, 1 - без группировки
+ set FlagGr = +$g(PAR8)
+ ; log
+ ;s ^zz("INIT")="PAR1="_PAR1_"  PAR2="_PAR2_"  PAR3="_PAR3_"  PAR4="_PAR4_"; PAR5="_PAR5_"; PAR6="_PAR6_"; PAR8="_PAR8   ;@@@
+ q
+ ;------------------------------------------------
+BODY  ; обработка данных...
+ ;
+ do CreateIndex^PRTCLNRUS05a($name(^||inv)) ;инверсии к CT_Schedule_PaymentCode 
+ ;
+ ;new amount
+ Kill ^||Report.Amount ; ***
+ ; поиск по дате разрешения (дата авторизации набора тестов)
+ set FlagReport=+$G(FlagReport)
+ set date=PAR1-1 
+ for {
+	 set date=$o(^TEPIi("AUTHORISED",date)) quit:date=""  quit:date>PAR2 
+     s dateOUT=$$extdate2^SSUTIL4(date)  ;dd/mm/yy
+     ; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2) / по ДНЯМ (3) / по неделям (4) / по кварталам (5)
+     set key=$case(FlagReport, 1: $p(dateOUT,"/",3)_$p(dateOUT,"/",2), 3:$p(dateOUT,"/",3)_$p(dateOUT,"/",2)_$p(dateOUT,"/",1), 4:$$GetMonday(date), 5:$$GetQuarter(date), :$p(dateOUT,"/",3))
+     s:key="" key=" "
+     ; --- наборы тестов --- для лаб.эпизода (ограничение по отделам)
+     s epis="" 
+     for {
+	     set epis=$o(^TEPIi("AUTHORISED",date,epis)) quit:epis=""  
+	     set rec=$get(^TEPI(epis))
+          ;  плательщик (на уровне лаб.номера)
+         s payepis=$p(rec,"\",7) s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+         set cito=$piece(rec,"\",15)
+         s ts=""
+         for {
+	         s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) quit:ts="" 
+	         s dept=$e(ts,1) 
+	         s tscnt="" 
+	         for {
+		         s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) quit:tscnt=""  
+		         Set rects=$Get(^TEPI(epis,1,ts,tscnt))
+                 Set superset=$p(rects,"\",29)
+                 If superset'="" Set dept=$Extract(superset,1) 
+                 If (dept="")||('$Data(DEP(dept))) continue
+                 ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
+                 s status=$p(rects,"\",31) if status'="A" continue 
+                  ;     плательщик (на уровне набора тестов)
+                 s payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                 s:payment="" payment=payepis
+                 ; проверяем ограничение по плательщику
+                 if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+                 ;бесплатно
+                 ;set supressbilling=$piece(rects,"\",34) if supressbilling="Y" continue
+                 ;
+                 Set billingitem=ts,authdate=$Piece(rects,"\",4)
+                 If superset'="" {
+	                 Set billingitem=superset
+	                 If $Data(^||Report.Amount(billingitem,epis,payment)) continue
+                     If '##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) continue
+                     Set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate(epis,superset)
+                     ;if authdate<PAR1||(authdate>PAR2) continue
+                     Set ^||Report.Amount(billingitem,epis,payment)=""
+                 }
+                 Set amount=$$GetBillingItemAmount^PRTCLNRUS05a(payment,epis,authdate,billingitem,cito)
+                 s Ndept=$P($G(^TTAB("DEP",dept)),"\",3) s:Ndept="" Ndept=999   ;номер последов. печати отдела 
+                 if FlagGr=1 {
+                    ; формируем индексы для построения динамического заголовка таблицы (года)
+                    s @Mas@("REPORT",Ndept,dept,"ts",billingitem,"key",key)=$g(@Mas@("REPORT",Ndept,dept,"ts",billingitem,"key",key))+1 
+                    s @Mas@("REPORT",Ndept,dept,"ts",billingitem,"key",key,"amount")=$g(@Mas@("REPORT",Ndept,dept,"ts",billingitem,"key",key,"amount"))+amount
+                    s @Mas@("REPORT",Ndept,dept,"ts",billingitem)=$g(@Mas@("REPORT",Ndept,dept,"ts",billingitem))+1 
+                    s @Mas@("REPORT",Ndept,dept,"ts",billingitem,"amount")=$g(@Mas@("REPORT",Ndept,dept,"ts",billingitem,"amount"))+amount
+                    s @Mas@("REPORT",Ndept,dept,"ts")=$g(@Mas@("REPORT",Ndept,dept,"ts"))+1
+                    s @Mas@("REPORT",Ndept,dept,"amount")=$g(@Mas@("REPORT",Ndept,dept,"amount"))+amount
+                    s @Mas@("REPORT",Ndept,dept,"key",key)=$g(@Mas@("REPORT",Ndept,dept,"key",key))+1
+                    s @Mas@("REPORT",Ndept,dept,"key",key,"amount")=$g(@Mas@("REPORT",Ndept,dept,"key",key,"amount"))+amount
+                    s @Mas@("REPORT",Ndept,dept)=$g(@Mas@("REPORT",Ndept,dept))+1                 ;кол-во вып.наборов тестов по отделу
+                 }
+                 elseif FlagGr = 2 {
+                    s @Mas@("REPORT",payment,"key",key)=$g(@Mas@("REPORT",payment,"key",key))+1
+                    s @Mas@("REPORT",payment,"key",key,"amount")=$g(@Mas@("REPORT",payment,"key",key,"amount"))+amount
+                    s @Mas@("REPORT",payment,"dept",Ndept,dept,"ts",billingitem,"key",key)=$g(@Mas@("REPORT",payment,"dept",Ndept,dept,"ts",billingitem,"key",key))+1 
+                    s @Mas@("REPORT",payment,"dept",Ndept,dept,"ts",billingitem,"key",key,"amount")=$g(@Mas@("REPORT",payment,"dept",Ndept,dept,"ts",billingitem,"key",key,"amount"))+amount
+                    s @Mas@("REPORT",payment,"dept",Ndept,dept,"ts",billingitem)=$g(@Mas@("REPORT",payment,"dept",Ndept,dept,"ts",billingitem))+1 
+                    s @Mas@("REPORT",payment,"dept",Ndept,dept,"ts",billingitem,"amount")=$g(@Mas@("REPORT",payment,"dept",Ndept,dept,"ts",billingitem,"amount"))+amount
+                    s @Mas@("REPORT",payment,"dept",Ndept,dept,"ts")=$g(@Mas@("REPORT",payment,"dept",Ndept,dept,"ts"))+1
+                    s @Mas@("REPORT",payment,"dept",Ndept,dept,"amount")=$g(@Mas@("REPORT",payment,"dept",Ndept,dept,"amount"))+amount
+                    s @Mas@("REPORT",payment,"dept",Ndept,dept,"key",key)=$g(@Mas@("REPORT",payment,"dept",Ndept,dept,"key",key))+1
+                    s @Mas@("REPORT",payment,"dept",Ndept,dept,"key",key,"amount")=$g(@Mas@("REPORT",payment,"dept",Ndept,dept,"key",key,"amount"))+amount
+                    s @Mas@("REPORT",payment,"dept",Ndept,dept)=$g(@Mas@("REPORT",payment,"dept",Ndept,dept))+1           ;кол-во вып.наборов тестов по отделу
+                    s @Mas@("REPORT",payment)=$g(@Mas@("REPORT",payment))+1                                 ;кол-во вып.наборов тестов по заказчику
+                    s @Mas@("REPORT-A",payment)=$g(@Mas@("REPORT-A",payment))+amount     ;сумма услуг по заказчику
+                 }
+                 elseif FlagGr = 3 {
+                    s @Mas@("REPORT",billingitem,"key",key)=$g(@Mas@("REPORT",billingitem,"key",key))+1
+                    s @Mas@("REPORT",billingitem,"key",key,"amount")=$g(@Mas@("REPORT",billingitem,"key",key,"amount"))+amount
+                    s @Mas@("REPORT",billingitem,"pay",payment,"key",key)=$g(@Mas@("REPORT",billingitem,"pay",payment,"key",key))+1 
+                    s @Mas@("REPORT",billingitem,"pay",payment,"key",key,"amount")=$g(@Mas@("REPORT",billingitem,"pay",payment,"key",key,"amount"))+amount
+                    s @Mas@("REPORT",billingitem,"pay",payment,"amount")=$g(@Mas@("REPORT",billingitem,"pay",payment,"amount"))+amount
+                    s @Mas@("REPORT",billingitem,"pay",payment)=$g(@Mas@("REPORT",billingitem,"pay",payment))+1                 ;кол-во вып.наборов тестов по отделу
+                    s @Mas@("REPORT",billingitem)=$g(@Mas@("REPORT",billingitem))+1                                ;кол-во вып.наборов тестов по услуге
+                 }
+                 s @Mas@("REPORT-A",billingitem)=$g(@Mas@("REPORT-A",billingitem))+amount    ;сумма по каждому виду услуг
+                 s @Mas@("REPORT")=$g(@Mas@("REPORT"))+1                                       ;общее кол-во
+                 s @Mas@("AMOUNT")=$g(@Mas@("AMOUNT"))+amount               ;общая сумма
+                 ; индексы для динамич. построения столбцов
+                 s @Mas@("SORT",key)=$g(@Mas@("SORT",key))+1 
+                 s @Mas@("SORTAMT",key)=$g(@Mas@("SORTAMT",key))+amount
+	         }
+         }
+     }
+ }
+ quit
+ ;--------------------------------------------------------------------------
+XML      ; Формирование XML...
+ i '$D(@Mas@("REPORT"))!('$D(@Mas@("SORT"))) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+ s date=PAR1-1, date=$o(^TEPIi("AUTHORISED",date)), newYear = $zd(PAR2,3)-$zd(date,3)>0
+ ;
+ ;S MasO="^TEMP($zn,$J,""XML"")"
+ Set MasO=$Name(^||MasXML) Kill @MasO
+ Set FlagReport=+$G(FlagReport)
+ ; динамический заголовок таблицы (года)
+ k SortCol s ind=0,key="" f  s key=$o(@Mas@("SORT",key)) q:key=""  d 
+ . s ind=ind+1,SortCol=ind
+ . s SortCol(key)=ind
+ . ; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2) / по ДНЯМ (3) / по неделям (4) / по кварталам (5)
+ . if FlagReport>3 set name = $case(FlagReport, 4:$$GetWeek(key), :$$GetQuarterTitle(key, newYear))
+ . else  s name=$S(+$G(FlagReport)=1:$e(key,5,6)_"."_$e(key,1,4),+$G(FlagReport)=3:$e(key,7,8)_"."_$e(key,5,6)_"."_$e(key,3,4),1:key)
+ . i +$G(FlagDescWeek)=1,+$G(FlagReport)=3 do
+ .. s dt=$e(key,5,6)_"/"_$e(key,7,8)_"/"_$e(key,1,4)
+ .. s dt=$$intdate^SSUTIL4(dt) q:dt<0  					;convert mm/dd/yyyy to $h format
+ .. s name=name_" "_$$DayWeek^UDFSPARM001(dt,1)  		;возвращает день недели для даты (формат $h)
+ . s @MasO@("User",1,"Col",ind,"Code")=name ; "'"_name
+ ;
+ ;m ^zz("SortCol")=SortCol  ;@@@
+ ;
+ ; итоги по отделам / по годам
+ if FlagGr=1 do
+ .s (NGr,Npp)=0,Ndep="" f  s Ndep=$o(@Mas@("REPORT",Ndep)) q:Ndep=""  d
+ .. s dep="" f  s dep=$o(@Mas@("REPORT",Ndep,dep)) q:dep=""  d
+ ... s NGr=$i(NGr)
+ ... S @MasO@("User",1,"Gr",NGr,"NGr")=Npp
+ ... S @MasO@("User",1,"Gr",NGr,"Code")=$P($G(^TTAB("DEP",dep)),"\",1)    ;наименование отдела
+ ... S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT",Ndep,dep))      ;кол-во выполненных наборов тестов по отделу
+ ... S @MasO@("User",1,"Gr",NGr,"Amt")=$$j($g(@Mas@("REPORT",Ndep,dep,"amount")),0,2) ;сумма для выполненных наборов тестов по отделу
+ ... ; разбивка по годам
+ ... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ .... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol")=+$G(@Mas@("REPORT",Ndep,dep,"key",key))
+ .... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Amt")=$$j($g(@Mas@("REPORT",Ndep,dep,"key",key,"amount")),0,2)
+ ; расшифровка по секциям
+ ... if FlagSect=1 do
+ .... s NGr2=0,ts="" f  s ts=$o(@Mas@("REPORT",Ndep,dep,"ts",ts)) q:ts=""  d
+ ..... Set sectCode=$$SectionCode(ts)
+ ..... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"Code")=sectCode
+ ..... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"Name")=$p($g(^TTAB("DS",sectCode)),"\")  ;секция
+ ..... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"Kol")=$g(@MasO@("User",1,"Gr",NGr,"SC",sectCode,"Kol"))+$G(@Mas@("REPORT",Ndep,dep,"ts",ts))
+ ..... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"Amt")=$$j($tr($g(@MasO@("User",1,"Gr",NGr,"SC",sectCode,"Amt")),",",".")+$g(@Mas@("REPORT",Ndep,dep,"ts",ts,"amount")),0,2)
+ ..... ; разбивка по периодам
+ ..... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ...... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"Col",ind,"Kol")=$g(@MasO@("User",1,"Gr",NGr,"SC",sectCode,"Col",ind,"Kol"))+$G(@Mas@("REPORT",Ndep,dep,"ts",ts,"key",key))
+ ...... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"Col",ind,"Amt")=$$j($tr($g(@MasO@("User",1,"Gr",NGr,"SC",sectCode,"Col",ind,"Amt")),",",".")+$g(@Mas@("REPORT",Ndep,dep,"ts",ts,"key",key,"amount")),0,2)
+ ..... i $G(FlagDetailsTS)=1 do
+ ...... set NGr2=$i(NGr2)
+ ...... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"TS",NGr2,"NGr")=NGr2
+ ...... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"TS",NGr2,"Code")=$e(ts_$j("",6),1,6)_$$BillingItemName^PRTCLNRUS05(ts)  ;набор тестов (код-описание)
+ ...... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"TS",NGr2,"Kol")=+$G(@Mas@("REPORT",Ndep,dep,"ts",ts))
+ ...... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"TS",NGr2,"Amt")=$$j($g(@Mas@("REPORT",Ndep,dep,"ts",ts,"amount")),0,2)
+ ...... ; разбивка по периодам
+ ...... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ....... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"TS",NGr2,"Col",ind,"Kol")=+$G(@Mas@("REPORT",Ndep,dep,"ts",ts,"key",key))
+ ....... S @MasO@("User",1,"Gr",NGr,"SC",sectCode,"TS",NGr2,"Col",ind,"Amt")=$$j($g(@Mas@("REPORT",Ndep,dep,"ts",ts,"key",key,"amount")),0,2)
+ ; расшифровка по наборам тестов
+ ... else  if $G(FlagDetailsTS)=1 do
+ .... s NGr2=0,ts="" f  s ts=$o(@Mas@("REPORT",Ndep,dep,"ts",ts)) q:ts=""  d
+ ..... S NGr2=$i(NGr2)
+ ..... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"NGr")=NGr2
+ ..... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Code")=$e(ts_$j("",6),1,6)_$$BillingItemName^PRTCLNRUS05(ts)  ;набор тестов (код-описание)
+ ..... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol")=+$G(@Mas@("REPORT",Ndep,dep,"ts",ts))
+ ..... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Amt")=$$j($g(@Mas@("REPORT",Ndep,dep,"ts",ts,"amount")),0,2)
+ ..... ; разбивка по годам
+ ..... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ...... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Col",ind,"Kol")=+$G(@Mas@("REPORT",Ndep,dep,"ts",ts,"key",key))
+ ...... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Col",ind,"Amt")=$$j($g(@Mas@("REPORT",Ndep,dep,"ts",ts,"key",key,"amount")),0,2)
+ else  if FlagGr=2 do
+ .s (NGr,Npp)=0,payment="" f  s payment=$o(@Mas@("REPORT",payment)) q:payment=""  d
+ .. s NGr=$i(NGr)
+ .. S @MasO@("User",1,"Gr",NGr,"NGr")=Npp
+ .. S @MasO@("User",1,"Gr",NGr,"Code")=$p($g(^TTAB("BI",payment)),"\")      ;наименование заказчика
+ .. S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT",payment))          ;кол-во выполненных наборов тестов по заказчику
+ .. S @MasO@("User",1,"Gr",NGr,"Amt")=$$j($g(@Mas@("REPORT-A",payment)),0,2) ;сумма для выполненных наборов тестов по заказчику
+ .. ; разбивка по периодам
+ .. S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol")=+$G(@Mas@("REPORT",payment,"key",key))
+ ... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Amt")=$$j($g(@Mas@("REPORT",payment,"key",key,"amount")),0,2)
+ .. s Ndep="",NGr1=0 f  s Ndep=$o(@Mas@("REPORT",payment,"dept",Ndep)) q:Ndep=""  d
+ ... s dep="" f  s dep=$o(@Mas@("REPORT",payment,"dept",Ndep,dep)) q:dep=""  d
+ .... s NGr1=$i(NGr1)
+ .... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Code")=$P($G(^TTAB("DEP",dep)),"\",1)    ;наименование отдела
+ .... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Kol")=+$G(@Mas@("REPORT",payment,"dept",Ndep,dep))      ;кол-во выполненных наборов тестов по отделу
+ .... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Amt")=$$j($g(@Mas@("REPORT",payment,"dept",Ndep,dep,"amount")),0,2) ;сумма для выполненных наборов тестов по отделу
+ .... ; разбивка по периодам
+ .... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ..... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Col",ind,"Kol")=+$G(@Mas@("REPORT",payment,"dept",Ndep,dep,"key",key))
+ ..... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Col",ind,"Amt")=$$j($g(@Mas@("REPORT",payment,"dept",Ndep,dep,"key",key,"amount")),0,2)
+ ; расшифровка по секциям
+ .... if FlagSect=1 do
+ ..... s NGr2=0,ts="" f  s ts=$o(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts)) q:ts=""  d
+ ...... Set sectCode=$$SectionCode(ts)
+ ...... set @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Code")=sectCode
+ ...... set @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Name")=$p($g(^TTAB("DS",sectCode)),"\")  ;секция
+ ...... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Kol")=$g(@MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Kol"))+$G(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts))
+ ...... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Amt")=$$j($tr($g(@MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Amt")),",",".")+$g(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts,"amount")),0,2)
+ ...... ; разбивка по периодам
+ ...... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ....... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Col",ind,"Kol")=$g(@MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Col",ind,"Kol"))+$G(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts,"key",key))
+ ....... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Col",ind,"Amt")=$$j($tr($g(@MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"Col",ind,"Amt")),",",".")+$g(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts,"key",key,"amount")),0,2)
+ ...... i $G(FlagDetailsTS)=1 do
+ ....... set NGr2=$i(NGr2)
+ ....... set @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"TS",NGr2,"NGr")=NGr2
+ ....... set @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"TS",NGr2,"Code")=$e(ts_$j("",6),1,6)_$$BillingItemName^PRTCLNRUS05(ts)  ;набор тестов (код-описание)
+ ...... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"TS",NGr2,"Kol")=+$G(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts))
+ ...... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"TS",NGr2,"Amt")=$$j($g(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts,"amount")),0,2)
+ ...... ; разбивка по периодам
+ ...... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ....... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"TS",NGr2,"Col",ind,"Kol")=+$G(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts,"key",key))
+ ....... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"SC",sectCode,"TS",NGr2,"Col",ind,"Amt")=$$j($g(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts,"key",key,"amount")),0,2)
+ ; расшифровка по наборам тестов
+ .... else  if $G(FlagDetailsTS)=1 do
+ ..... s NGr2=0,ts="" f  s ts=$o(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts)) q:ts=""  d
+ ...... S NGr2=$i(NGr2)
+ ...... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"TS",NGr2,"NGr")=NGr2
+ ...... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"TS",NGr2,"Code")=$e(ts_$j("",6),1,6)_$$BillingItemName^PRTCLNRUS05(ts)  ;набор тестов (код-описание)
+ ...... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"TS",NGr2,"Kol")=+$G(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts))
+ ...... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"TS",NGr2,"Amt")=$$j($g(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts,"amount")),0,2)
+ ...... ; разбивка по годам
+ ...... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ....... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"TS",NGr2,"Col",ind,"Kol")=+$G(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts,"key",key))
+ ....... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"TS",NGr2,"Col",ind,"Amt")=$$j($g(@Mas@("REPORT",payment,"dept",Ndep,dep,"ts",ts,"key",key,"amount")),0,2)
+ else  if FlagGr=3 do
+ .s (NGr,Npp)=0,ts="" f  s ts=$o(@Mas@("REPORT",ts)) q:ts=""  d
+ .. s NGr=$i(NGr)
+ .. S @MasO@("User",1,"Gr",NGr,"NGr")=Npp
+ .. S @MasO@("User",1,"Gr",NGr,"Code")=$e(ts_$j("",6),1,6)_$$BillingItemName^PRTCLNRUS05(ts)  ;наименование услуги
+ .. S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT",ts))                          ;кол-во выполненных наборов тестов по заказчику
+ .. S @MasO@("User",1,"Gr",NGr,"Amt")=$$j($g(@Mas@("REPORT-A",ts)),0,2) ;сумма для выполненных наборов тестов по заказчику
+ .. ; разбивка по периодам
+ .. S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol")=+$G(@Mas@("REPORT",ts,"key",key))
+ ... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Amt")=$$j($g(@Mas@("REPORT",ts,"key",key,"amount")),0,2)
+ .. s payment="",NGr1=0 f  s payment=$o(@Mas@("REPORT",ts,"pay",payment)) q:payment=""  d
+ ... s NGr1=$i(NGr1)
+ ... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Code")=$p($g(^TTAB("BI",payment)),"\")           ;наименование заказчика
+ ... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Kol")=+$G(@Mas@("REPORT",ts,"pay",payment))      ;кол-во выполненных наборов тестов по отделу
+ ... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Amt")=$$j($g(@Mas@("REPORT",ts,"pay",payment,"amount")),0,2) ;сумма для выполненных наборов тестов по отделу
+ ... ; разбивка по периодам
+ ... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ .... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Col",ind,"Kol")=+$G(@Mas@("REPORT",ts,"pay",payment,"key",key))
+ .... S @MasO@("User",1,"Gr",NGr,"GrDep",NGr1,"Col",ind,"Amt")=$$j($g(@Mas@("REPORT",ts,"pay",payment,"key",key,"amount")),0,2)
+ ; итоги общие
+ Do
+ . S @MasO@("User",1,"Itogo-Kol")=+$G(@Mas@("REPORT"))
+ . S @MasO@("User",1,"Itogo-Amt")=$$j($g(@Mas@("AMOUNT")),0,2)
+ . S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ .. S @MasO@("User",1,"ItogoCol",ind,"Kol")=+$G(@Mas@("SORT",key))
+ .. S @MasO@("User",1,"ItogoCol",ind,"Amt")=$$j($g(@Mas@("SORTAMT",key)),0,2)
+ ;    
+ ; входные параметры
+ s date1=$o(^TEPIi("AUTHORISED",PAR1-1)),date2=$o(^TEPIi("AUTHORISED",PAR2+1),-1)
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(date1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(date2),"/",".")
+ S @MasO@("User",1,"Payment")=$S($G(PAYMENT)="*":"* все",1:PAYMENT)
+ S @MasO@("User",1,"Department")=$S(PAR3="0":"* Все",1:PAR3_" - "_$P($G(^TTAB("DEP",PAR3)),"\",1))
+ S @MasO@("User",1,"FlagDetailsTS")=FlagDetailsTS
+ S @MasO@("User",1,"FlagSect")=FlagSect
+ S @MasO@("User",1,"FlagGr")=FlagGr
+ S @MasO@("User",1,"ColCat")=+$G(SortCol)
+ S @MasO@("User",1,"FlagReport")=+$G(FlagReport)  				; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2)
+ S @MasO@("User",1,"TypeReport")=$case($G(FlagReport),2:"ГОДАМ",3:"ДНЯМ",4:"НЕДЕЛЯМ",5:"КВАРТАЛАМ",:"МЕСЯЦАМ")
+ ;
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ;
+ ;log
+ ;
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS13a.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_$S(+$G(FlagExcel)=1:"^EXCEL",1:"^WINWORD")  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ quit
+ 
+ ; Получить дату понедельника недели с указанной датой
+GetMonday(date)
+	quit date-$zd(date, 10)+1
+ ; Получить неделю, начиная с указанной даты (текст)
+GetWeek(date) PUBLIC {
+	set d2 = date+6, numd1 = $zd(date, 8), numd2 = $zd(d2, 8), diff = numd2-numd1, months = " января февраля марта апреля мая июня июля августа сентября октября ноября декабря"
+	if diff > 1000 {
+		set tdate = $tr($zd(date, 9, months), ","), start = $p(tdate," ",2)_" "_$p(tdate," ")_" "_$p(tdate," ",3)
+	} elseif diff > 6 {
+		set tdate = $tr($zd(date, 9, months), ","), start = $p(tdate," ",2)_" "_$p(tdate," ")
+	} else {
+		set start = +$zd(date, 4)
+	}
+	set tdate = $tr($zd(d2, 9, months), ","), end = $p(tdate," ",2)_" "_$p(tdate," ")_" "_$p(tdate," ",3)
+	quit start_" - "_end
+}
+ ; Получить дату начала квартала для указанной даты
+GetQuarter(date) {
+	set month = $zd(date,1)+2\3-1*3+1
+	quit $zdh(+$zd(date,3)_"-"_month_"-01",3)
+}
+ ; Получить название квартала по дате начала
+GetQuarterTitle(date, displayYear) {
+	set q=$zd(date,1)+2\3
+	if q>3 set text = "IV"
+	else  set text="",$p(text,"I",q+1)=""
+	quit text_" квартал"_$s($g(displayYear):" "_+$zd(date,3),1:"")
+}
+j(num, width, decimals) PUBLIC {
+	q $tr($j(num, width, decimals),".",",")
+}
+
+SectionCode(pBillingItem) public {
+	If $Get(pBillingItem)="" Quit ""
+	If ##class(User.CTSuperSet).%OpenId(pBillingItem) Quit "K1"
+	Set result=$Piece($Get(^TTAB("TS",pBillingItem)),"\",52) 
+	If result'="" Quit result
+	Quit " "
+} 
+
+]]></Routine>
+</Export>

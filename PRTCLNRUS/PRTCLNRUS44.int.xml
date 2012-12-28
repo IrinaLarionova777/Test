@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS44" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS44   ;SPARM; Сервис - Список плательщиков ;@gol;
+ ;
+ q
+ ; Отчет CLNRUS44 + CLNRUS44.xsl + DLL: CLNSPARM007.clsSTART
+ ; Таблица CT_PaymentCode 
+ ;======================================================================================================
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;======================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+ ;                        
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ ; флаг "Выводить только активных плательщиков"
+ s @Par@("PAR1")="CheckBox: 100 : 200 : 200  : 300 : : : 1 "
+ s @Par@("PAR1a")="Label   : 500 : 200 : 5000 : 300 : Вывести только активных плательщиков:"
+ ; флаги для настройки вывода полей таблицы
+ s @Par@("PAR2a")="Label   : 100 : 800 : 5000 : 300 : Дополнительная настройка полей таблицы:"
+ s @Par@("PAR3")="CheckBox: 100 : 1100 : 200  : 300 : : : 0 "
+ s @Par@("PAR3a")="Label   : 500 : 1100 : 5000 : 300 : № п/п для вывода на экран:"
+ s @Par@("PAR4")="CheckBox: 100 : 1400 : 200  : 300 : : : 0 "
+ s @Par@("PAR4a")="Label   : 500 : 1400 : 5000 : 300 : Полное наименование:"
+ ; настройка формы
+ s @Par@("form")="Список врачей:500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) New (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ g XML
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; флаг "Выводить только активных врачей "
+ s FlagActive=+$G(PAR1)
+ ; флаги для настройки вывода полей таблицы
+ s FlagNpp=+$G(PAR3)		; № п/п для вывода на экран
+ s FlagFullDesc=+$G(PAR4)	; Полное наименование
+ ;
+ ; log
+ ;s ^zz("INIT")="PAR1="_PAR1_"  PAR2="_PAR2_"  PAR3="_PAR3_"  PAR4="_PAR4_"; PAR5="_PAR5_"; PAR6="_PAR6   ;@@@
+ quit
+ ;------------------------------------------------
+XML    ; обработка данных и формирование XML ...
+  S MasXML="^TEMP($zn,$J,""XML"")" 
+  S NN1=0,pay="" f  s pay=$O(^TTAB("BI",pay)) q:pay=""  do
+  . s str=$G(^TTAB("BI",pay)) q:str=""
+  . i +$G(FlagActive)=1 i $P(str,"\",27)'="Y" quit		;CTPC_ActiveFlag
+  . ; формируем данные
+  . S NN1=$i(NN1)
+  . s @MasXML@("User",1,"Next",NN1,"NN")=NN1
+  . ; код (CTPC_Code)
+  . s @MasXML@("User",1,"Next",NN1,"Code")=pay  
+  . ; наименование (CTPC_Desc)
+  . s @MasXML@("User",1,"Next",NN1,"Desc")=$P(str,"\",1)
+  . ; флаг Active (CTPC_ActiveFlag)
+  . s @MasXML@("User",1,"Next",NN1,"FlagActive")=$P(str,"\",27)
+  . ; Флаг "№ п/п для вывода на экран" (CTPC_DisplaySequence)
+  . i +$G(FlagNpp)=1 s @MasXML@("User",1,"Next",NN1,"Npp")=$P(str,"\",28) 
+  . ; Флаг "Полное наименование" (CTPC_InvoiceMessage 1)
+  . i +$G(FlagFullDesc)=1 s @MasXML@("User",1,"Next",NN1,"FullDesc")=$P(str,"\",8) 
+  ;
+  ; входные параметры
+  S @MasXML@("User",1,"FlagActive")=+$G(FlagActive)		; флаг "Выводить только активные местоположения"
+  S @MasXML@("User",1,"FlagNpp")=+$G(FlagNpp)   		; Флаг "№ п/п для вывода на экран"
+  S @MasXML@("User",1,"FlagFullDesc")=+$G(FlagFullDesc) ; Флаг "Полное наименование"
+  ;
+  s @MasXML@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+  S @MasXML@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+  ;
+  ;log
+  ;k ^zz M ^zz=@Mas     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS44.xsl",USER)
+  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  k ^TEMP($zn,$J),^TEMP($j)
+  quit "0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+]]></Routine>
+</Export>

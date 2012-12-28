@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS25" type="MAC" languagemode="0"><![CDATA[
+PRTCLNRUS25	; Счет; 31.10.2010
+	quit
+FORM(USER) [PLIST] PUBLIC {
+	S Par="^TEMP($J)" k @Par 
+	Set prevmonth=$$PreviousMonth^KSUTIL1($$CurrentMonth^KSUTIL1())
+	Set firstdateh=$$FirstDateOfMonthH^KSUTIL1(prevmonth)
+	Set lastdateh=$$LastDateOfMonthH^KSUTIL1(prevmonth)
+	Set hor=+$Horolog
+	Set (diffirstdate,diflastdate)=0
+	If firstdateh'="" {
+		Set diffirstdate=hor-firstdateh
+	}	
+	If lastdateh'="" {
+		Set diflastdate=hor-lastdateh
+	}	
+	; период дат
+	s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Период с:"
+	s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-"_diffirstdate_":True"
+	s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Период по:"
+	s @Par@("PAR2")="DateText: 1300: 600 : 1100 : 300 : t-"_diflastdate_":True"
+	; список плательщиков
+	s @Par@("PAR3a")="Label   : 100 : 1500 : 1000 : 300 : Плательщик:"
+	;k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
+	;s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+	;. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR3",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
+	kill @Par@("PAR3") do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR3")))
+	s @Par@("PAR3")="ListBox : 100 : 1800 : 5900 : 3000 : :True: 0 : Checkbox  "   
+	s @Par@("PAR4a")="Label   : 100: 1000 : 1000 : 300 : Дата счета:"
+	s @Par@("PAR4")="DateText: 1300: 1000 : 1100 : 300 : t-"_diflastdate_":True"
+	;
+	s @Par@("PAR5a")="Label: 3000: 200 : 1600 : 300 : Сохранить в файлах"
+	s @Par@("PAR5")="CheckBox: 4650: 200 : 200 : 300 :::0"
+	; 
+	; настройка формы
+	s @Par@("form")="Счет ("_$G(USER)_"):500:300:Формиров.:Выход"
+	q "^TEMP("_$J_")" 
+}
+CREATE(REPID,PAR,USER,%msql) PUBLIC {
+	kill ^TMP($zn,$j)
+	quit
+}
+START(USER,PAR) [PAR1,PAR2,PAR3,PAR4,PAR5,PAYMENT,USER,PAR] PUBLIC {
+	set USER=$g(USER),PAR=$g(PAR)
+	i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+	s MSGERROR="" d INIT(PAR) i $g(MSGERROR)'="" quit MSGERROR
+    quit $s(+$get(PAR5)=1:$$StartFormFile(),1:$$START0())
+}
+START0() [PAR1,PAR2,PAR3,PAR4,PAYMENT,USER,MSGERROR] PUBLIC {
+	k ^TEMP($J)
+	s Mas="^TEMP($zn,$J)" k @Mas
+	do BODY($g(PAR1),$g(PAR2),$g(PAR3),$g(PAR4),.PAYMENT ,Mas),XML(USER, Mas)
+	k ^TEMP($zn,$J),^TEMP($j)
+	q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+}
+   ;форм-е файлов только
+StartFormFile() [PAR1,PAR2,PAR3,PAR4,PAYMENT] PUBLIC {
+	kill error set ok=0,strLPU=PAR3
+	do ##class(Report.rpt).KillLog("rpt25")
+	for i=1:1:$length(strLPU,$char(1)) {
+		set PAR3=$piece(strLPU,$char(1),i),ret=$$FormFile() 
+		if +ret s ok=1
+		if '+ret s error($o(error(""),-1)+1)=$piece(ret,"^",2)
+	}
+	set error="" if $d(error)>1 set error=##class(Report.rpt).manageErrors(.error)
+	set MSGERROR="100^" if ok=1 set MSGERROR=MSGERROR_##class(Report.rpt).messageAboutSuccess(PAR2)
+	if error'="" set MSGERROR=MSGERROR_$c(13)_error
+	q MSGERROR  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+}
+FormFile() [PAR1,PAR2,PAR3,PAR4,PAYMENT] PUBLIC {
+	s ref="^TEMP($zn,$J)" kill @ref
+	do BODY($g(PAR1),$g(PAR2),$g(PAR3),$g(PAR4),.PAYMENT ,ref)
+	set ret=##class(Report.rpt25).StartRpt($g(PAR1), $get(PAR2), $get(PAR4), $get(PAR3), $na(@ref) )
+	kill @ref
+	q ret
+}
+
+#; инициализация входных параметров
+INIT(PAR) [MSGERROR,PAR,mas,PAR1,PAR2,PAR3,PAR4,PAR5,PAYMENT] PUBLIC {
+	d PARAM^REPORTSPB(PAR,"mas")
+	if $get(PAR5)="" s PAR5=1
+	s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+	; период дат
+	i $G(PAR1)="" s MSGERROR="100^Не определено значение <Период с>" q
+	i $G(PAR2)="" s MSGERROR="100^Не определено значение <Период по>" q
+	i PAR1>PAR2 s MSGERROR="100^Значение <Период с> больше значения <Период по>" q
+	i $G(PAR4)="" s MSGERROR="100^Не определено значение <Дата счета>" q
+	; плательщик
+	i $G(PAR3)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+	if +PAR5=0 i $L(PAR3,$C(1))>1 s MSGERROR="100^Может быть выбрано только 1 значение поля <Плательщик>" q
+	s PAYMENT=""
+	f i=1:1:$L(PAR3,$C(1)) {
+		s pay=$P(PAR3,$C(1),i)
+		if pay '= "" {
+			s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+			s PAYMENT=$G(PAYMENT(pay))
+		}
+	}
+	i '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+	set PAR1=$$GetStartDate^PRTCLNRUS24(PAR1, PAR3)
+	i PAR1>PAR2 s MSGERROR="100^Значение <Период с> больше значения <Период по>" q
+	quit
+}
+BODY(pDateFrom,pDateTo,pHospitals,pInvoiceDate,PAYMENT,pResGlb) Public {
+	Kill @pResGlb
+	If (pHospitals="")||($Length(pHospitals,$Char(1))>1) Quit 
+	Kill ^||tmp
+	Do GetData^PRTCLNRUS23(pDateFrom,pDateTo,pHospitals,$Name(^||tmp))
+	Set pcobj=##class(User.CTPaymentCode).%OpenId(pHospitals)
+	If '$IsObject(pcobj) Quit
+	Set @pResGlb@("REPORT")=$lb(pcobj.CTPCCode, pcobj.CTPCDesc, pcobj.CTPCInvoiceMessage1, $Piece(pcobj.CTPCPayCodeAddress,"|",1),$$GetContractDate^PRTCLNRUS24(pHospitals),$$GetContractNumber^PRTCLNRUS24(pHospitals))
+	Set invoice=""
+	For  {
+		Set invoice=$Order(^||tmp(invoice),1,invoicevals)
+		If invoice="" Quit
+		Set invoicenum=$ListGet(invoicevals,1)
+		If invoicenum="" Continue
+		Set invoicedate=$ListGet(invoicevals,2)
+		Set invoicesum=$ListGet(invoicevals,4)
+		Set @pResGlb@("REPORT", invoicenum)=$ListBuild(pInvoiceDate, invoicesum)	; Ставим введенную в форме "Дату Отчета" вместо реальной "Даты создания" (поле INVBDateOfCreation, его значение в переменной invoicedate)
+	}	
+}
+XML(USER, Mas) [MSGERROR,PAR1,PAR2,PAR3,PAYMENT] PUBLIC {
+	i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+	; ---
+	S MasO="^TEMP($zn,$J,""XML"")"
+	S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+	S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+	set paymentinfo = $g(@Mas@("REPORT"))
+	S @MasO@("User",1,"Payment")=$lg(paymentinfo, 1)
+	S @MasO@("User",1,"Desc")=$lg(paymentinfo, 2)
+	S @MasO@("User",1,"Message")=$lg(paymentinfo, 3)
+	S @MasO@("User",1,"Address")=$lg(paymentinfo, 4),@MasO@("User",1,"ContractDate")=$lg(paymentinfo, 5)
+	S @MasO@("User",1,"ContractNumber")=$ListGet(paymentinfo,6)
+	S @MasO@("WriteFileLabTrakClientExtension") = "_out.xml"
+	set NGr1=0,invbnum = $o(@Mas@("REPORT", ""))
+	while invbnum '="" {
+		set invoice = $g(@Mas@("REPORT", invbnum)), invdate = $TR($$extdate2^SSUTIL4($lg(invoice,1)),"/",".")
+		set @MasO@("User",1,"Gr", NGr1, "InvNo")=invbnum, ^("Date") =invdate, ^("Amount")=$$MoneyFormat($lg(invoice, 2)), ^("StrAmount")=$$SumStr($lg(invoice, 2)\1)_" "_($e($lg(invoice, 2)#1*100+100,2,3))_" коп."
+		set invbnum = $o(@Mas@("REPORT", invbnum)),NGr1=$i(NGr1)
+	}
+	S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS25.xsl",USER)
+	i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+	; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+	s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+	quit
+}
+MoneyFormat(s) {
+	quit $tr($j(+$g(s),0,2),".",",")
+}
+SumStr(fSum) PUBLIC {
+	set minus="минус",zero="ноль"
+	set units(0)="один два три четыре пять шесть семь восемь девять десять одиннадцать двенадцать тринадцать четырнадцать пятнадцать шестнадцать семнадцать восемнадцать девятнадцать"
+	set units(1)="одна две"
+	set hundreds="сто двести триста четыреста пятьсот шестьсот семьсот восемьсот девятьсот"
+	set tens="десять двадцать тридцать сорок пятьдесят шестьдесят семьдесят восемьдесят девяносто"
+	set rubles(0)="руб. руб. руб.",rubles(1)="тысяча тысячи тысяч",rubles(2)="миллион миллиона миллионов",rubles(3)="миллиард миллиарда миллиардов",rubles(4)="триллион триллиона триллионов"
+	if fSum<0 {set bMinus=minus,fSum=fSum*-1}
+	set f=$J(fSum,0,2),sText=rubles(0),bMinus=""
+#; Присвоение единиц
+	set Units=units(0),WUnits=Units ;,s=$p(units(0)," ",1,2)
+	set $p(WUnits," ",1,2) = units(1)
+	;for i=1:1:$L(s," ") S $P(WUnits," ",i)=$P(s," ",i)
+#; Присвоение десятков, сотен, нулевой суммы ...
+	set sSum=zero_" "_$P(sText," ",3)_" "
+#; Составление строки с рублями
+	set n=$P(f,".") 
+	if n {
+ 		set z15=1E15,$e(z15,1)="",sf=$e(z15,1,15-$L(n))_n,sSum=""
+		for i=1:1:5 {set j=3*i,m=$E(sf,j-2,j)
+			if i=5!m {
+				set s=rubles(5-i) set:i=5 s=sText
+				set k=$E(m) if k {set sSum=sSum_$P(hundreds," ",k)_" "}
+				set r=+$E(m,2,3) if r>19 {set sSum=sSum_$P(tens," ",$E(r))_" ",r=$E(r,2)}
+				if r {set sSum=sSum_$P($case(i,4:WUnits,:Units)," ",r)_" "}
+				set k=$E(m,3),sSum=sSum_$S($L(r)=2:$P(s," ",3),k=1:$P(s," ",1),'k:$P(s," ",3),k>4:$P(s," ",3),1:$P(s," ",2))_" "
+			}
+		}
+ 	}
+	set:bMinus]"" sSum=bMinus_" "_sSum
+	set $e(sSum,1)=$zcvt($e(sSum,1),"U")
+	quit $zstrip(sSum,">w")
+}
+]]></Routine>
+</Export>

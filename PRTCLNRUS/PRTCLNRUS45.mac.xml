@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS45" type="MAC" languagemode="0"><![CDATA[
+#include %occInclude
+PRTCLNRUS45	; Загрузка прайс-листа; 21.11.2010
+	quit
+FORM(USER) [PLIST] PUBLIC {
+	set Par="^TEMP($J)" k @Par 
+	; период дат
+	set @Par@("PAR1a")="Label   : 100 : 200 : 2000 : 300 : Код прайс-листа:"
+	set schedule = $o(^TSCH(""))
+	while schedule '= "" {
+		if $d(^TSCH(schedule,"AMOUNT"))>1 {
+			set code = $o(^TSCH(schedule, "AMOUNT", ""))
+			while code '= "" {
+				set @Par@("PAR1",code)=$p($g(^TSCH(code),code),"\")
+				set date = $o(^TSCH(schedule, "AMOUNT", code, ""))
+				while date '= "" {
+					set @Par@("PAR2",date)=$TR($$extdate2^SSUTIL4(date),"/",".")
+					set date = $o(^TSCH(schedule, "AMOUNT", code, date))
+				}
+				set code = $o(^TSCH(schedule, "AMOUNT", code))
+			}
+		}
+		set schedule = $o(^TSCH(schedule))
+	}
+	s @Par@("PAR1")="ComboBox : 2200 : 200 : 6000 : 300 : : True: :List"
+	s @Par@("PAR2a")="Label   : 100  : 600 : 2000 : 300 : Дата прайс-листа:"
+	s @Par@("PAR2")="ComboBox : 2200 : 600 : 1100 : 300 : : True: :List"
+	;
+	; список плательщиков
+	s @Par@("PAR3a")="Label   : 100 : 1000 : 6000 : 300 : Загрузка "_$tr($$Path(),":",";")_"<код прайс-листа>.csv"
+	; 
+	; настройка формы
+	s @Par@("form")="Загрузка прайс-листа ("_$G(USER)_"):500:300:Загрузка:Выход"
+	q "^TEMP("_$J_")" 
+}
+CREATE(REPID,PAR,USER,%msql) PUBLIC {
+	kill ^TMP($zn,$j)
+	quit
+}
+START(USER,PAR) [PAR1,PAR2,MSGERROR] PUBLIC {
+	set USER=$g(USER),PAR=$g(PAR)
+	i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+	k ^TEMP($J)
+	s MSGERROR=""
+	do INIT(PAR) i $g(MSGERROR)'="" quit MSGERROR
+	do BODY($g(PAR1),$g(PAR2),$$File(PAR1))
+	k ^TEMP($zn,$J),^TEMP($j)
+	q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+}
+#; инициализация входных параметров
+INIT(PAR) [MSGERROR,PAR,mas,PAR1,PAR2] PUBLIC {
+	d PARAM^REPORTSPB(PAR,"mas")
+	s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+	; период дат
+	i $G(PAR1)="" s MSGERROR="100^Не определено значение <Код прайс-листа>" q
+	i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата прайс-листа>" q
+	i '##class(%File).Exists($$File(PAR1)) s MSGERROR="100^Нет доступа к файлу "_$$File(PAR1) q
+	set MSGERROR = "100^Для <Кода прайс-листа> "_PAR1_" доступны следующие <Даты прайс-листа> "
+	set schedule = $o(^TSCH(""))
+	while schedule '= "" {
+		if $d(^TSCH(schedule,"AMOUNT",PAR1))>1 {
+			set date = $o(^TSCH(schedule, "AMOUNT", PAR1, ""))
+			while date '= "" {
+				if date = PAR2 {kill MSGERROR quit }
+				set MSGERROR=MSGERROR_$TR($$extdate2^SSUTIL4(date),"/",".")_" "
+				set date = $o(^TSCH(schedule, "AMOUNT", PAR1, date))
+			}
+		}
+		set schedule = $o(^TSCH(schedule))
+	}
+	set:$e($g(MSGERROR),$l($g(MSGERROR)))=" " $e(MSGERROR,$l(MSGERROR))=""
+	quit
+}
+BODY(PAR1,PAR2,file) [MSGERROR] PUBLIC {
+	set schedule = $o(^TSCH(""))
+	while schedule '= "" {
+		if $d(^TSCH(schedule,"AMOUNT",PAR1,PAR2))>0 { quit }
+		set schedule = $o(^TSCH(schedule))
+	}
+	if schedule="" set MSGERROR = "100^Для <Кода прайс-листа> "_PAR1_" и даты "_$$extdate2^SSUTIL4(PAR2)_" нет кода расписания"
+	set Mas=$na(^TSCH(schedule,"AMOUNT",PAR1,PAR2)) k @Mas
+	set File = ##class(%File).%New(file)
+	do File.Open("RS", 10)
+	while 'File.AtEnd {
+		set str = File.ReadLine()
+		set code = $zstrip($p(str, ";"),"<>", """")
+		set:code]"" @Mas@(code)=+$tr($p(str, ";",2),"""")_"\N\\\"
+	}
+	do File.Close()
+	set MSGERROR = "100^Прайс-Лист для плательщика '"_$p($g(^TTAB("BI", PAR1)),"\")_"' успешно загружен"
+}
+Path() {
+	set dir=$p(^CF("SM",1),"^",26)    ;CFSM_PathToReportsLocal => \\medserver\L64\Reports
+	quit:dir="" "*Не установлен путь для Локальных отчетов в Параметрах системы"
+	set:$e(dir,$l(dir))'="\" $e(dir,$l(dir)+1)="\"
+	quit dir_"Price\"
+}
+File(code) {
+	quit $$Path()_code_".csv"
+}
+]]></Routine>
+</Export>

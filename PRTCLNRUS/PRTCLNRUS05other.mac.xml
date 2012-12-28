@@ -1,0 +1,473 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS05other" type="MAC" languagemode="0" generated="1"><![CDATA[
+PRTCLNRUS05 ;SPARM; Деятельность лаборатории (по плательщикам) ;Салехард;@gol;
+ q
+ ; Отчет CLNRUS05  +  CLNRUS05.xsl  + DLL: CLNSPARM007.clsSTART
+ ;            
+ ; Тип формирования отчета: по дате выполнения / по дате назначения
+ ; Обработка данных:
+ ; 1) идем по индексу 
+ ; 	 -  поиск по дате разрешения (дата авторизации набора тестов)
+ ; 	    ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ;   -  поиск по дате назначения (дата передачи набора тестов)
+ ; 		^TDAY(4,{EPVIS DateOfEntry},{EPVIS StatusPatient},{EPVIS VisitNumber}) 
+ ; 2) проверяем ограничение по выбранным плательщикам на уровне лаб.номера + набора тестов !
+ ; 3) и считаем кол-во выполненных наб.тестов за заданный период
+ ;     
+ ; + расшифровка по наборам тестов
+ ; + расшифровка по плательщикам
+ ; + расшифровка по пациентам
+ ; + расшифровка по пользователям
+ ;==============================================================================================                      
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 1300: 600 : 1100 : 300 : t:True"
+ ; 
+ ; список отделов
+ s @Par@("PAR4a")="Label   : 100 : 1100 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR4")
+ s @Par@("PAR4")="ComboBox: 1300 : 1100 : 4700 : 300 : :True: "_default_" :List" ;Standart
+ ;
+ ; список плательщиков
+ s @Par@("PAR3a")="Label   : 100 : 1500 : 1000 : 300 : Плательщик:"
+ k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
+ s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+ . s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR3",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
+ m ^test(111,"PAR3")=@Par@("PAR3")
+ ;s ^test(222,"PRTCLMRUS05","count")=cnt-1
+ s @Par@("PAR3","0")="* Все плательщики"
+ s @Par@("PAR3")="ListBox : 100 : 1800 : 5900 : 3000 : :True: 0 : Checkbox  "   
+ ; 
+ ; флаг "Расшифровка по наборам тестов"
+ s @Par@("PAR5")="CheckBox: 100 : 5000 : 200  : 300 : : : 1 "
+ s @Par@("PAR5a")="Label   : 500 : 5000 : 5000 : 300 : Расшифровка по наборам тестов:"
+ ; флаг "Расшифровка по плательщикам"
+ s @Par@("PAR6")="CheckBox: 100 : 5400 : 200  : 300 : : : 0 "
+ s @Par@("PAR6a")="Label   : 500 : 5400 : 5000 : 300 : Расшифровка по плательщикам:"
+ ; флаг "Расшифровка по пользователям"
+ s @Par@("PAR7")="CheckBox: 100 : 5800 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 500 : 5800 : 5000 : 300 : Расшифровка по пользователям (исполнителям):"
+ ; флаг (радио-кнопки)
+ s @Par@("PAR8")="RadioButton : 3500 : 100 : 2550 : 800 : Тип формирования отчета :True: 1 :List"    
+ s @Par@("PAR8",1)="по дате выполнения"
+ s @Par@("PAR8",2)="по дате назначения"
+ ; флаг "Расшифровка по пациентам"
+ s @Par@("PAR9")="CheckBox: 100 : 6200 : 200  : 300 : : : 0 "
+ s @Par@("PAR9a")="Label   : 500 : 6200 : 5000 : 300 : Расшифровка по пациентам:"
+ ; строка-подсказка
+ s @Par@("PAR10a")="Label : 100 : 6600 : 6000 : 300 : ДОПОЛНИТЕЛЬНАЯ настройка для отчета ""Расшифровки по пациентам"":"
+ ; Флаг "Вывести номер МК пациента"
+ s @Par@("PAR11")="CheckBox: 500 : 6900 : 200  : 300 : : : 0 "
+ s @Par@("PAR11a")="Label  : 900 : 6900 : 5000 : 300 : Вывести столбец ""№ МК"" пациента:"
+ ; Флаг "Вывести категорию пациента"
+ s @Par@("PAR12")="CheckBox: 500 : 7200 : 200  : 300 : : : 0 "
+ s @Par@("PAR12a")="Label  : 900 : 7200 : 5000 : 300 : Вывести столбец ""Категория"" пациента:"
+ ; Флаг "Вывести местоположение пациента"
+ s @Par@("PAR13")="CheckBox: 500 : 7500 : 200  : 300 : : : 0 "
+ s @Par@("PAR13a")="Label  : 900 : 7500 : 5000 : 300 : Вывести столбец ""Местоположение пациента"":"
+ ; Флаг "Вывести плательщик/полис пациента"
+ s @Par@("PAR14")="CheckBox: 500 : 7800 : 200  : 300 : : : 0 "
+ s @Par@("PAR14a")="Label  : 900 : 7800 : 5000 : 300 : Вывести столбец ""Плательщик/полис"" пациента:"
+ ; настройка формы
+ s @Par@("form")="Деятельность лаборатории (по плательщикам) ("_$G(USER)_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;------------------------------------------------
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($J)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ i $G(FlagReport)=1 do BODY1	;поиск по дате разрешения (дата авторизации набора тестов)
+ i $G(FlagReport)=2 do BODY2	;поиск по дате назначения (дата передачи набора тестов)
+ d XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ; плательщик
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+ k PAYMENT s PAYMENT=""
+ f i=1:1:$L(PAR3,$C(1)) s pay=$P(PAR3,$C(1),i) d:pay'="" 
+ . i pay="0" s PAYMENT("*")="" quit     ;* Все
+ . s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+ . s PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+ i $D(PAYMENT("*")) s PAYMENT="*",pay="" f  s pay=$O(^TTAB("BI",pay)) q:pay=""  s PAYMENT(pay)=""
+ i '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+ ; отдел
+ i $G(PAR4)="" s MSGERROR="100^Не определено значение <Отдел>" q
+ k DEP  s DEP=""
+ if PAR4="0" do  s DEP="*"     ;* Все
+ . s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ if PAR4'="0" do  q:MSGERROR'=""
+ . i '$D(^TTAB("DEP",PAR4)) s MSGERROR="100^В Labtrake нет кода отдела <"_DEP_">" q
+ . s DEP(PAR4)=$P(^TTAB("DEP",PAR4),"\",1)
+ . s DEP=PAR4_" "_DEP(PAR4)
+ ; Флаг "Расшифровка по наборам тестов"
+ s FlagTS=+$G(PAR5)
+ ; флаг "Расшифровка по плательщикам"
+ s FlagPayment=+$G(PAR6)
+ ; флаг "Расшифровка по пользователям"
+ s FlagUser=+$G(PAR7)
+ ; флаг "Тип формирования отчета" (радио-кнопки) 1-по дате выполнения"; 2-по дате назначения
+ s FlagReport=+$G(PAR8) 
+ i FlagReport=2&(FlagUser=1) s MSGERROR="100^Вы выбрали тип формирования отчета ""по дате назначения"". Расшифровка по пользователям в этом случае не возможна!" quit
+ ; флаг "Расшифровка по пациентам"
+ s FlagEpisode=+$G(PAR9)
+ ; Флаг "Вывести № МК пациента"
+ s FlagMRNPat=+$G(PAR11)
+ ; Флаг "Вывести столбец Категория пациента"
+ s FlagCategPat=+$G(PAR12)
+ ; Флаг "Вывести местоположение пациента"
+ s FlagLocPat=+$G(PAR13)
+ ; Флаг "Вывести плательщик/полис пациента"
+ s FlagPayPat=+$G(PAR14)
+ ; log
+ ;s ^zz("INIT")="PAR1="_PAR1_"  PAR2="_PAR2_"  PAR3="_PAR3_"  PAR4="_PAR4_"; PAR5="_PAR5_"; PAR6="_PAR6   ;@@@
+ quit
+ ;------------------------------------------------
+BODY1  ; обработка данных...
+ ; поиск по дате разрешения (дата авторизации набора тестов)
+ ; ^TEPIi("AUTHORISED",{VISTS DateOfAuthorisation},{EP VisitNumber.EPVIS VisitNumber},{VISTS TestSet DR},{VISTS TestSetCounter}) 
+ Kill ^||Report.Amount
+ i $G(FlagReport)=1 do
+ . s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
+ .. s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d:$D(^TEPI(epis))
+ ... ; плательщик (на уровне лаб.номера)
+ ... s payepis=$p($g(^TEPI(epis)),"\",7) 
+ ... s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+ ... ; наборы тестов для лаб.эпизода (ограничение по отделам)
+ ... s ts=$O(DEP("")) f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  do  
+ .... s dep=$e(ts,1) q:dep=""  quit:'$D(DEP(dep))
+ .... s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
+ ..... Set superset=$p(^TEPI(epis,1,ts,tscnt),"\",29)
+ ..... If superset'="" Set dep=$Extract(superset,1) If '$Data(DEP(dep)) Quit
+ ..... ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
+ ..... If (superset'="")&&('##class(TCLEx.Function.SuperSet).IsComplete(epis,superset)) Quit
+ ..... s status=$p(^TEPI(epis,1,ts,tscnt),"\",31) q:status'="A"   
+ ..... ; плательщик (на уровне набора тестов)
+ ..... s payment=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 		;VISTS_PaymentCode_DR
+ ..... s:payment="" payment=payepis
+ ..... ; проверяем ограничение по плательщику
+ ..... i PAYMENT'="*",'$D(PAYMENT(payment)) quit          
+ ..... ; VISTS_UserAuthorised DR
+ ..... s user=$p(^TEPI(epis,1,ts,tscnt),"\",6) quit:user=""       ;если была установлена причина невыполнения
+ ..... s:user="" user="?"
+ ..... Set billingitem=ts,authdate=$Piece(^TEPI(epis,1,ts,tscnt),"\",4)
+ ..... If superset'="" Set billingitem=superset,authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate(epis,superset)
+ ..... If $Data(^||Report.Amount(billingitem,epis,payment)) Quit
+ ..... Set amount=$$GetBillingItemAmount(payment,authdate,billingitem) if +amount=0 s ^test(222,payment,authdate,billingitem)=amount
+ ..... Set ^||Report.Amount(billingitem,epis,payment)=amount
+ ..... ; формируем индексы для печати выходного файла
+ ..... s @Mas@("REPORT")=$G(@Mas@("REPORT"))+1
+ ..... s @Mas@("REPORT",dep)=$g(@Mas@("REPORT",dep))+1
+ ..... s @Mas@("REPORT",dep,"Amount")=$g(@Mas@("REPORT",dep,"Amount"))+amount
+ ..... s @Mas@("REPORT-Amount")=$G(@Mas@("REPORT-Amount"))+amount
+ ..... ; Флаг "Расшифровка по наборам тестов"
+ ..... i $G(FlagTS)=1 do
+ ...... s @Mas@("REPORT",dep,"ts",billingitem)=$G(@Mas@("REPORT",dep,"ts",billingitem))+1
+ ...... s @Mas@("REPORT",dep,"ts",billingitem,"Amount")=$G(@Mas@("REPORT",dep,"ts",billingitem,"Amount"))+amount
+ ..... ; флаг "Расшифровка по плательщикам"
+ ..... i $G(FlagPayment)=1 do
+ ...... s @Mas@("REPORT-PAYMENT",payment)=$g(@Mas@("REPORT-PAYMENT",payment))+1
+ ...... s @Mas@("REPORT-PAYMENT",payment,"dep",dep)=$g(@Mas@("REPORT-PAYMENT",payment,"dep",dep))+1
+ ...... s @Mas@("REPORT-PAYMENT",payment,"Amount")=$g(@Mas@("REPORT-PAYMENT",payment,"Amount"))+amount
+ ...... s @Mas@("REPORT-PAYMENT",payment,"dep",dep,"Amount")=$g(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"Amount"))+amount
+ ...... i $G(FlagTS)=1 do
+ ....... s @Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem)=$G(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem))+1,@Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem,"Amount")=$G(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem,"Amount"))+amount
+ ..... ; флаг "Расшифровка по пациентам"
+ ..... i $G(FlagEpisode)=1 do
+ ...... s @Mas@("REPORT-EPIS",epis,"ts",billingitem,tscnt)=""
+ ...... s @Mas@("REPORT-EPIS",epis,"ts")=$G(@Mas@("REPORT-EPIS",epis,"ts"))+1
+ ...... s @Mas@("REPORT-EPIS",epis,"ts","Amount")=$G(@Mas@("REPORT-EPIS",epis,"ts","Amount"))+amount
+ ...... s @Mas@("REPORT-EPIS",epis,"pay")=payment
+ ..... ; флаг "Расшифровка по пользователям"
+ ..... i $G(FlagUser)=1 do
+ ...... s @Mas@("REPORT-USER",user,"pay",payment)=$G(@Mas@("REPORT-USER",user,"pay",payment))+1
+ ...... s @Mas@("REPORT-USER",user)=$G(@Mas@("REPORT-USER",user))+1 
+ ...... s @Mas@("REPORT-USER",user,"pay",payment,"Amount")=$G(@Mas@("REPORT-USER",user,"pay",payment,"Amount"))+amount
+ ...... s @Mas@("REPORT-USER",user,"Amount")=$G(@Mas@("REPORT-USER",user,"Amount"))+amount
+ ...... i $G(FlagTS)=1 do
+ ....... s @Mas@("REPORT-USER",user,"pay",payment,"ts",billingitem)=$G(@Mas@("REPORT-USER",user,"pay",payment,"ts",billingitem))+1 
+ ....... s @Mas@("REPORT-USER",user,"pay",payment,"ts",billingitem,"Amount")=$G(@Mas@("REPORT-USER",user,"pay",payment,"ts",billingitem,"Amount"))+amount
+ quit
+ ;------------------------------------------------
+BODY2  ; обработка данных...
+ ; поиск по дате назначения (дата передачи набора тестов)
+ ; ^TDAY(4,{EPVIS DateOfEntry},{EPVIS StatusPatient},{EPVIS VisitNumber}) 
+ Kill ^||Report.Amount
+ m ^test(111,"PAYMENT")=PAYMENT
+ i $G(FlagReport)=2 do
+ . s date=PAR1-1 f  s date=$o(^TDAY(4,date)) q:date=""  q:date>PAR2  d
+ .. s epis="" f  s epis=$o(^TDAY(4,date,0,epis)) q:epis=""  d:$D(^TEPI(epis))
+ ... ; плательщик (на уровне лаб.номера)
+ ... s payepis=$p($g(^TEPI(epis)),"\",7) 
+ ... s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+ ... ; наборы тестов для лаб.эпизода (ограничение по отделам)
+ ... s ts=$O(DEP("")) f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  do  
+ .... s dep=$e(ts,1) 
+ .... ;q:dep=""  quit:'$D(DEP(dep))
+ .... s tscnt="",cnt=0 f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d
+ ..... Set superset=$p(^TEPI(epis,1,ts,tscnt),"\",29)
+ ..... If superset'="" Set dep=$Extract(superset,1) 
+ ..... If (dep="")||('$Data(DEP(dep))) Quit 
+ ..... s status=$p(^TEPI(epis,1,ts,tscnt),"\",31) 
+ ..... ; плательщик (на уровне набора тестов)
+ ..... s payment=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 		;VISTS_PaymentCode_DR
+ ..... s:payment="" payment=payepis
+ ..... ; проверяем ограничение по плательщику
+ ..... i PAYMENT'="*",'$D(PAYMENT(payment)) quit          
+ ..... Set billingitem=ts,authdate=$Piece(^TEPI(epis,1,ts,tscnt),"\",4)
+ ..... If superset'="" Set billingitem=superset,authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate(epis,superset)
+ ..... If $Data(^||Report.Amount(billingitem,epis,payment)) Quit
+ ..... Set amount=$$GetBillingItemAmount(payment,authdate,billingitem) if +amount=0 s ^test(222,payment,authdate,billingitem)=amount
+ ..... Set ^||Report.Amount(billingitem,epis,payment)=amount
+ ..... ; ---
+ ..... ; считаем количество "НАЗНАЧЕННЫХ" + "РАЗРЕШЕННЫХ" наборы тестов
+ ..... s @Mas@("REPORT",dep)=$g(@Mas@("REPORT",dep))+1
+ ..... s @Mas@("REPORT")=$G(@Mas@("REPORT"))+1
+ ..... i ((superset="")&&(status="A"))||((superset'="")&&(##class(TCLEx.Function.SuperSet).IsComplete(epis,superset))) do 
+ ...... s @Mas@("REPORT",dep,"Exec")=$g(@Mas@("REPORT",dep,"Exec"))+1
+ ...... s @Mas@("REPORT-Exec")=$G(@Mas@("REPORT-Exec"))+1
+ ...... s @Mas@("REPORT-Exec","Amount")=$G(@Mas@("REPORT-Exec","Amount"))+amount
+ ...... s @Mas@("REPORT",dep,"Amount") = $G(@Mas@("REPORT",dep,"Amount"))+amount
+ ...... s @Mas@("REPORT-Amount")=$G(@Mas@("REPORT-Amount"))+amount
+ ..... ; Флаг "Расшифровка по наборам тестов"
+ ..... i $G(FlagTS)=1 do
+ ...... s @Mas@("REPORT",dep,"ts",billingitem)=$G(@Mas@("REPORT",dep,"ts",billingitem))+1
+ ...... s @Mas@("REPORT",dep,"ts",billingitem,"Amount")=$G(@Mas@("REPORT",dep,"ts",billingitem,"Amount"))+amount
+ ...... i status="A" s @Mas@("REPORT",dep,"ts",billingitem,"Exec")=$G(@Mas@("REPORT",dep,"ts",billingitem,"Exec"))+1,@Mas@("REPORT",dep,"ts",billingitem,"Exec-Amount")=$G(@Mas@("REPORT",dep,"ts",billingitem,"Exec-Amount"))+amount
+ ..... ; флаг "Расшифровка по плательщикам"
+ ..... i $G(FlagPayment)=1 do
+ ...... s @Mas@("REPORT-PAYMENT",payment)=$g(@Mas@("REPORT-PAYMENT",payment))+1
+ ...... s @Mas@("REPORT-PAYMENT",payment,"dep",dep)=$g(@Mas@("REPORT-PAYMENT",payment,"dep",dep))+1
+ ...... s @Mas@("REPORT-PAYMENT",payment,"Amount")=$g(@Mas@("REPORT-PAYMENT",payment,"Amount"))+amount
+ ...... s @Mas@("REPORT-PAYMENT",payment,"dep",dep,"Amount")=$g(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"Amount"))+amount
+ ...... i status="A" do
+ ....... s @Mas@("REPORT-PAYMENT",payment,"Exec")=$g(@Mas@("REPORT-PAYMENT",payment,"Exec"))+1
+ ....... s @Mas@("REPORT-PAYMENT",payment,"dep",dep,"Exec")=$g(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"Exec"))+1
+ ....... s @Mas@("REPORT-PAYMENT",payment,"Exec-Amount")=$g(@Mas@("REPORT-PAYMENT",payment,"Exec-Amount"))+amount
+ ....... s @Mas@("REPORT-PAYMENT",payment,"dep",dep,"Exec-Amount")=$g(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"Exec-Amount"))+amount
+ ...... i $G(FlagTS)=1 do
+ ....... s @Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem)=$G(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem))+1
+ ....... i status="A" s @Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem,"Exec")=$G(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem,"Exec"))+1,@Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem,"Exec-Amount")=$G(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem,"Exec-Amount"))+amount
+ ....... e  s @Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem,"Amount")=$G(@Mas@("REPORT-PAYMENT",payment,"dep",dep,"ts",billingitem,"Amount"))+amount
+ ..... ; флаг "Расшифровка по пациентам"
+ ..... i $G(FlagEpisode)=1 do
+ ...... s @Mas@("REPORT-EPIS",epis,"ts",billingitem,tscnt)=""
+ ...... s @Mas@("REPORT-EPIS",epis,"ts")=$G(@Mas@("REPORT-EPIS",epis,"ts"))+1
+ ...... s @Mas@("REPORT-EPIS",epis,"ts","Amount")=$G(@Mas@("REPORT-EPIS",epis,"ts","Amount"))+amount
+ ...... s @Mas@("REPORT-EPIS",epis,"pay")=payment
+ ...... i status="A" s @Mas@("REPORT-EPIS",epis,"ts-Exec")=$G(@Mas@("REPORT-EPIS",epis,"ts-Exec"))+1,@Mas@("REPORT-EPIS",epis,"ts-Exec-Amount")=$G(@Mas@("REPORT-EPIS",epis,"ts-Exec-Amount"))+amount
+ quit
+ ; ----------------------------------------------------- 
+XML      ; Формирование XML...
+ i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+ ; ---
+ S MasO="^TEMP($zn,$J,""XML"")"
+ S NGr1=0,dep="" f  s dep=$o(@Mas@("REPORT",dep)) q:dep=""  d
+ . S NGr1=$i(NGr1)
+ . S @MasO@("User",1,"Gr",NGr1,"NGr")=NGr1
+ . S @MasO@("User",1,"Gr",NGr1,"Name")=$P($G(^TTAB("DEP",dep)),"\",1)
+ . S @MasO@("User",1,"Gr",NGr1,"Count")=+$G(@Mas@("REPORT",dep))
+ . S @MasO@("User",1,"Gr",NGr1,"Amount")=+$G(@Mas@("REPORT",dep,"Amount"))
+ . i $G(FlagReport)=2 S @MasO@("User",1,"Gr",NGr1,"Count-Exec")=+$G(@Mas@("REPORT",dep,"Exec"))
+ . ; расшифровка кол-ва по наборам тестов
+ . i $G(FlagTS)=1 do
+ .. s NGr2=0,ts="" f  s ts=$o(@Mas@("REPORT",dep,"ts",ts)) q:ts=""  d
+ ... S NGr2=$i(NGr2)
+ ... S @MasO@("User",1,"Gr",NGr1,"GrTS",NGr2,"Name")=$e(ts_$j("",6),1,6)_$$BillingItemName(ts) 
+ ... S @MasO@("User",1,"Gr",NGr1,"GrTS",NGr2,"Count")=+$G(@Mas@("REPORT",dep,"ts",ts))
+ ... i $G(FlagReport)=2 S @MasO@("User",1,"Gr",NGr1,"GrTS",NGr2,"Count-Exec")=+$G(@Mas@("REPORT",dep,"ts",ts,"Exec")),@MasO@("User",1,"Gr",NGr1,"GrTS",NGr2,"Amount")=+$G(@Mas@("REPORT",dep,"ts",ts,"Exec-Amount"))
+ ... e  S @MasO@("User",1,"Gr",NGr1,"GrTS",NGr2,"Amount")=+$G(@Mas@("REPORT",dep,"ts",ts,"Amount"))
+ ; итоги
+ S @MasO@("User",1,"ItogoTS")=+$G(@Mas@("REPORT")), @MasO@("User",1,"ItogoTSAmount")=+$G(@Mas@("REPORT-Amount"))
+ i $G(FlagReport)=2 S @MasO@("User",1,"ItogoTS-Exec")=+$G(@Mas@("REPORT-Exec")) 
+ ; ----
+ ; флаг "Расшифровка по плательщикам"
+ i $G(FlagPayment)=1 do
+ . s NGr1=0,pay="" f  s pay=$O(@Mas@("REPORT-PAYMENT",pay)) q:pay=""  do
+ .. S NGr1=$i(NGr1)
+ .. S @MasO@("User",1,"GrPayment",NGr1,"NGr")=NGr1
+ .. S @MasO@("User",1,"GrPayment",NGr1,"Name")="("_pay_") "_$P($G(^TTAB("BI",pay)),"\",1)
+ .. S @MasO@("User",1,"GrPayment",NGr1,"Count")=+$G(@Mas@("REPORT-PAYMENT",pay))
+ .. i $G(FlagReport)=2 S @MasO@("User",1,"GrPayment",NGr1,"Count-Exec")=+$G(@Mas@("REPORT-PAYMENT",pay,"Exec")),@MasO@("User",1,"GrPayment",NGr1,"Amount")=+$G(@Mas@("REPORT-PAYMENT",pay,"Exec-Amount"))
+ .. e  S @MasO@("User",1,"GrPayment",NGr1,"Amount")=+$G(@Mas@("REPORT-PAYMENT",pay,"Amount"))
+ .. ; расшифровка кол-ва по отделам
+ .. s NNDep=0,dep="" f  s dep=$o(@Mas@("REPORT-PAYMENT",pay,"dep",dep)) q:dep=""  d
+ ... S NNDep=$i(NNDep)
+ ... S @MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"NameDep")=dep_"-"_$P($G(^TTAB("DEP",dep)),"\",1)
+ ... S @MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"Count")=+$g(@Mas@("REPORT-PAYMENT",pay,"dep",dep))
+ ... i $G(FlagReport)=2 S @MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"Count-Exec")=+$g(@Mas@("REPORT-PAYMENT",pay,"dep",dep,"Exec")),@MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"Amount")=+$g(@Mas@("REPORT-PAYMENT",pay,"dep",dep,"Exec-Amount"))
+ ... e  S @MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"Amount")=+$g(@Mas@("REPORT-PAYMENT",pay,"dep",dep,"Amount"))
+ ... ; расшифровка кол-ва по наборам тестов
+ ... i $G(FlagTS)=1 do
+ .... s NGr2=0,ts="" f  s ts=$o(@Mas@("REPORT-PAYMENT",pay,"dep",dep,"ts",ts)) q:ts=""  d
+ ..... S NGr2=$i(NGr2)
+ ..... S @MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"GrTS",NGr2,"Name")=$e(ts_$j("",6),1,6)_$$BillingItemName(ts) 
+ ..... S @MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"GrTS",NGr2,"Count")=+$G(@Mas@("REPORT-PAYMENT",pay,"dep",dep,"ts",ts))
+ ..... i $G(FlagReport)=2 S @MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"GrTS",NGr2,"Count-Exec")=+$G(@Mas@("REPORT-PAYMENT",pay,"dep",dep,"ts",ts,"Exec")),@MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"GrTS",NGr2,"Amount")=+$G(@Mas@("REPORT-PAYMENT",pay,"dep",dep,"ts",ts,"Exec-Amount"))
+ ..... e  S @MasO@("User",1,"GrPayment",NGr1,"GrDep",NNDep,"GrTS",NGr2,"Amount")=+$G(@Mas@("REPORT-PAYMENT",pay,"dep",dep,"ts",ts,"Amount"))
+ ; ----
+ ; флаг "Расшифровка по пациентам"
+ i $G(FlagEpisode)=1 do
+ . s NGr1=0,epis="" f  s epis=$O(@Mas@("REPORT-EPIS",epis)) q:epis=""  do
+ .. i $$select^LVBEPVIS(epis) quit
+ .. k VISIT m VISIT=PLIST
+ .. S NGr1=$i(NGr1)
+ .. S @MasO@("User",1,"GrEpis",NGr1,"NGr")=NGr1
+ .. S @MasO@("User",1,"GrEpis",NGr1,"Epis")=epis
+ .. S @MasO@("User",1,"GrEpis",NGr1,"FIO")=$TR($P($G(^TEPI(epis)),"\",1,2),"\"," ")
+ .. s mrn=$P($G(VISIT(65)),",",2) s:mrn="" mrn=$P($G(VISIT(20)),$C(1),1)  	 ;номер МК
+ .. S @MasO@("User",1,"GrEpis",NGr1,"MRN")=mrn
+ .. S @MasO@("User",1,"GrEpis",NGr1,"DateCol")=$TR($$extdate2^SSUTIL4($G(VISIT(12))),"/",".") 	;Дата получения 
+ .. S @MasO@("User",1,"GrEpis",NGr1,"Payment")=$P($G(VISIT(9)),$C(1),2) 	 ;плательщик
+ .. S @MasO@("User",1,"GrEpis",NGr1,"Polic")=$G(VISIT(8)) 	 				 ;полис
+ .. S @MasO@("User",1,"GrEpis",NGr1,"Categ")=$P($G(VISIT(94)),$c(1),2)       ;категория
+ .. S @MasO@("User",1,"GrEpis",NGr1,"LocPat")=$p($G(VISIT(22)),$c(1),2)		 ;местоположение пациента
+ .. S @MasO@("User",1,"GrEpis",NGr1,"Count")=+$G(@Mas@("REPORT-EPIS",epis,"ts"))
+ .. i $G(FlagReport)=2 S @MasO@("User",1,"GrEpis",NGr1,"Count-Exec")=+$G(@Mas@("REPORT-EPIS",epis,"ts-Exec")),@MasO@("User",1,"GrEpis",NGr1,"Amount")=+$G(@Mas@("REPORT-EPIS",epis,"ts-Exec-Amount"))
+ .. e  S @MasO@("User",1,"GrEpis",NGr1,"Amount")=+$G(@Mas@("REPORT-EPIS",epis,"ts","Amount"))
+ .. s TS="",ts="" f  s ts=$o(@Mas@("REPORT-EPIS",epis,"ts",ts)) q:ts=""  d
+ ... s tscnt="" f  s tscnt=$o(@Mas@("REPORT-EPIS",epis,"ts",ts,tscnt)) q:tscnt=""  d 
+ .... S TS=$S(TS="":"",1:TS_", ")_ts
+ .. S @MasO@("User",1,"GrEpis",NGr1,"TS")=TS
+ ; ----
+ ; флаг "Расшифровка по пользователям"
+ i $G(FlagUser)=1 do
+ . s NGr1=0,user="" f  s user=$O(@Mas@("REPORT-USER",user)) q:user=""  do
+ .. S NGr1=$i(NGr1)
+ .. S @MasO@("User",1,"GrUser",NGr1,"NGr")=NGr1
+ .. S @MasO@("User",1,"GrUser",NGr1,"Name")=$P($G(^SSU("SSUSR",1,user)),"^",2)_"  ("_user_")"
+ .. ; должность - тип персонала ^TTAB("PERTYP","PATH")=Врач-лаборант\P
+ .. s type=$P($G(^SSU("SSUSR",1,user)),"^",10)
+ .. S:type'="" @MasO@("User",1,"GrUser",NGr1,"TypeUser")=$P($G(^TTAB("PERTYP",type)),"\",1)
+ .. S @MasO@("User",1,"GrUser",NGr1,"Count")=+$G(@Mas@("REPORT-USER",user))
+ .. S @MasO@("User",1,"GrUser",NGr1,"Amount")=+$G(@Mas@("REPORT-USER",user,"Amount"))
+ .. s NGr2=0,pay="" f  s pay=$o(@Mas@("REPORT-USER",user,"pay",pay)) q:pay=""  d
+ ... S NGr2=$i(NGr2)
+ ... S @MasO@("User",1,"GrUser",NGr1,"GrPay",NGr2,"Name")="("_pay_") "_$P($G(^TTAB("BI",pay)),"\",1) 
+ ... S @MasO@("User",1,"GrUser",NGr1,"GrPay",NGr2,"Count")=+$G(@Mas@("REPORT-USER",user,"pay",pay))
+ ... S @MasO@("User",1,"GrUser",NGr1,"GrPay",NGr2,"Amount")=+$G(@Mas@("REPORT-USER",user,"pay",pay,"Amount"))
+ ... i $G(FlagTS)=1 do
+ .... s NGr3=0,ts="" f  s ts=$o(@Mas@("REPORT-USER",user,"pay",pay,"ts",ts)) q:ts=""  d
+ ..... S NGr3=$i(NGr3)
+ ..... S @MasO@("User",1,"GrUser",NGr1,"GrPay",NGr2,"GrTS",NGr3,"Name")=$e(ts_$j("",6),1,6)_$$BillingItemName(ts) 
+ ..... S @MasO@("User",1,"GrUser",NGr1,"GrPay",NGr2,"GrTS",NGr3,"Count")=+$G(@Mas@("REPORT-USER",user,"pay",pay,"ts",ts))
+ ..... S @MasO@("User",1,"GrUser",NGr1,"GrPay",NGr2,"GrTS",NGr3,"Amount")=+$G(@Mas@("REPORT-USER",user,"pay",pay,"ts",ts,"Amount"))
+ ; ---
+ ; входные параметры
+ s date1=$o(^TEPIi("AUTHORISED",PAR1-1)),date2=$o(^TEPIi("AUTHORISED",PAR2+1),-1)
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(date1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(date2),"/",".")
+ S @MasO@("User",1,"Payment")=$S($G(PAYMENT)="*":"* все",1:PAYMENT)
+ S @MasO@("User",1,"Department")=$S($E($G(DEP),1)="*":"* все",1:DEP)	
+ S @MasO@("User",1,"FlagTS")=+$G(FlagTS)    		; Флаг "Расшифровка по наборам тестов"
+ S @MasO@("User",1,"FlagUser")=+$G(FlagUser) 		; флаг "Расшифровка по пользоватеям"
+ S @MasO@("User",1,"FlagPayment")=+$G(FlagPayment) 	; флаг "Расшифровка по плательщикам"
+ S @MasO@("User",1,"FlagEpisode")=+$G(FlagEpisode) 	; флаг "Расшифровка по пациентам"
+ ;
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ; "Тип формирования отчета" 1-по дате выполнения"; 2-по дате назначения
+ S @MasO@("User",1,"FlagReport")=+$G(FlagReport)
+ s @MasO@("User",1,"TypeReport")=$S($G(FlagReport)=1:"выполненных",$G(FlagReport)=2:"назначенных",1:"?")
+ ; доп.настройка для таблицы "Расшифровка по пациентам"
+ S @MasO@("User",1,"FlagLocPat")=+$G(FlagLocPat)         ;Флаг "Вывести местоположение пациента"
+ S @MasO@("User",1,"FlagPayPat")=+$G(FlagPayPat)         ;Флаг "Вывести плательщик/полис пациента"
+ S @MasO@("User",1,"FlagMRNPat")=+$G(FlagMRNPat)         ;Флаг "Вывести № МК пациента"
+ S @MasO@("User",1,"FlagCategPat")=+$G(FlagCategPat)     ;Флаг "Вывести столбец Категория пациента"
+ ;
+ ;M ^zz=@MasO     ;@@@
+ ;
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS05.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ quit
+ 
+GetAmount(ts, epis, payment) [SQLCODE, Amount] PUBLIC {
+	s Amount = 0
+ &sql(SELECT CTSHA_Amount INTO :Amount FROM CT_SchedulePayCodeItems pci 
+ 	INNER JOIN CT_Schedule_PaymentCode pc ON pc.CTSHP_RowId=pci.CTSHA_ParRef 
+ 	INNER JOIN CT_PaymentCode ON CTPC_ItemSchedule_DR = CTSHP_ParRef 
+ 	INNER JOIN CT_TestSetItems ON CTTSD_BillingItem_DR = CTSHA_Item_DR 
+ 	INNER JOIN EP_VisitTestSet ON VISTS_TestSet_DR = CTTSD_ParRef 
+ 	WHERE pc.CTSHP_Date = (SELECT max(CTSHP_Date) FROM CT_Schedule_PaymentCode WHERE CTSHP_Date <= VISTS_DateOfAuthorisation AND CTSHP_PaymentCode_DR = CTPC_rowId)
+ 	AND CTPC_rowId = :payment AND VISTS_ParRef = :epis AND VISTS_TestSet_DR = :ts)
+ If (SQLCODE '= 0) set Amount = 0
+ quit Amount
+}
+
+	// Стоиммость pBillingItem для плательщика pPayment на дату авторизации pAuthDate
+GetBillingItemAmount(pPayment, pAuthDate, pBillingItem) [SQLCODE,pricedate,priceid,pPayment,pAuthDate,amount,pBillingItem ]public {
+	;Set athdate=##class(TCLEx.Function.SuperSet).AuthorisationDate(pEpisode, pSuperSet)
+	If $Get(pAuthDate)="" Quit 0
+	&sql(	
+	 	Declare C1 Cursor For
+	 	Select CTSHP_Date,CTSHP_RowID
+	 	Into :pricedate,:priceid 
+	 	From CT_Schedule_PaymentCode 
+	 	INNER JOIN CT_PaymentCode ON CT_PaymentCode.CTPC_ItemSchedule_DR = CT_Schedule_PaymentCode.CTSHP_ParRef
+	 	Where CTSHP_ParRef=:pPayment and CTSHP_Date<=:pAuthDate
+ 	)
+	Kill ^||Report.Price
+	&sql(Open C1)
+	&sql(Fetch C1)
+	While (SQLCODE = 0) {
+		If (priceid'="")&&(pricedate'="") {
+			Set ^||Report.Price(pricedate)=priceid
+		}	        
+		&sql(Fetch C1)
+	}
+	&sql(Close C1)
+	Set priceid=""
+	Set maxdate=$Order(^||Report.Price(""),-1,priceid)
+	If priceid="" Quit 0
+	Set amount=0
+	&sql(
+	 	Select CTSHA_Amount
+	 	Into :amount 
+	 	From CT_SchedulePayCodeItems
+	 	Where CTSHA_ParRef=:priceid And CTSHA_Item_DR=:pBillingItem
+ 	)
+ 	If SQLCODE'=0 Quit 0
+ 	Quit amount 
+}
+	// Имя услуги(либо набор тестов, либо супер набор) по ее коду 
+BillingItemName(pBillingItem) public {
+	If $Get(pBillingItem)="" Quit ""
+	Set result=""
+	If ##class(User.CTTestSet).%ExistsId(pBillingItem) {
+		Set testsetobj=##class(User.CTTestSet).%OpenId(pBillingItem)
+		If $IsObject(testsetobj) Set result=testsetobj.CTTSName
+	} Else {
+		Set supersetobj=##class(User.CTSuperSet).%OpenId(pBillingItem)
+		If $IsObject(supersetobj) Set result=supersetobj.CTSSDesc
+	}
+	Quit result
+}		
+]]></Routine>
+</Export>

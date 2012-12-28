@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS02" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS02 ;SPARM; Список невыполненных назначений по ПРИЧИНЕ ;LabTest;@gol;
+ q
+ ; Отчет CLNRUS02  +  CLNRUS02.xsl + DLL: CLNSPARM007.clsSTART
+ ; 
+ ; Обработка данных:
+ ; 1) идем по индексу ^TEPIi("REASON","дата причины","код причины",epis,ts,tscnt) 
+ ; 2) отбираем данные только для выбранной причины
+ ; 3) выбираем наборы тестов только для заданного отдела
+ ; 
+ ; Вид отчета:
+ ; № п/п; Дата причины ; Лаб.номер ; ФИО пациента ; Кол-во всего ; Список назначений ; Дата назначения ; Врач ; Местоположение пациента ; Плательщик
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+ ;                        
+FORM(USER) New (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)"  k @Par 
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 800 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText : 1100: 200 : 1100 : 300 : t:True"
+ s @Par@("PAR2a")="Label   : 2800: 200 : 800 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText : 3700: 200 : 1100 : 300 : t:True"
+ ; список Причин невыполнения (CT_Reason)
+ s @Par@("PAR3a")="Label   : 100 : 600 : 2000 : 300 : Причина:"
+ k PLIST s err=$$getall^LVBCTR()  
+ s cnt=0,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+ . s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR3",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
+ if cnt>1 s @Par@("PAR3","0")="* Все причины"
+ s default=$S(cnt>1:0,1:$O(@Par@("PAR3","")))
+ s @Par@("PAR3")="ComboBox: 1100 : 600 : 4000 : 300 : : True : "_default_" :List"         ;Standart
+ ; список отделов
+ s @Par@("PAR4a")="Label   : 100 : 1000 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR4")
+ s @Par@("PAR4")="ComboBox: 1100 : 1000 : 4000 : 300 : :True: "_default_" :List"         ;Standart
+ ; флаг (радио-кнопки) - тип сортировки
+ s @Par@("PAR5")="RadioButton : 100 : 1500 : 2800 : 800 :  Тип сортировки:True: 1 :List"    
+ s @Par@("PAR5",1)="Причина невыполнения"
+ s @Par@("PAR5",2)="Местоположение пациента"
+ ; строка-подсказка
+ s @Par@("PAR6a")="Label : 100 : 2500 : 5000 : 300 : ДОПОЛНИТЕЛЬНАЯ настройка для вывода полей отчета:"
+ s @Par@("PAR7")="CheckBox: 100 : 2800 : 200  : 300 : : : 1 "
+ s @Par@("PAR7a")="Label   : 500 : 2800 : 4000 : 300 : Местоположение пациента:"
+ s @Par@("PAR8")="CheckBox: 100 : 3100 : 200  : 300 : : : 0 "
+ s @Par@("PAR8a")="Label   : 500 : 3100 : 4000 : 300 : Врач:"
+ s @Par@("PAR9")="CheckBox: 100 : 3400 : 200  : 300 : : : 0 "
+ s @Par@("PAR9a")="Label   : 500 : 3400 : 4000 : 300 : Плательщик:"
+ ; флаг (радио-кнопки)
+ s @Par@("PAR10")="RadioButton : 3200 : 1500 : 2100 : 800 : Вывести для наб.тестов:True: 1 :List"    
+ s @Par@("PAR10",1)="Синоним"
+ s @Par@("PAR10",2)="Наименование"
+ ; настройка формы
+ s @Par@("form")="Список невыполненных назначений по ПРИЧИНЕ:500:300:Формиров.:Выход"
+ quit "^TEMP("_$J_")" 
+ ;------------------------------------------------
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ quit
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d BODY,XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ; Причина невыполнения (CT_Reason)
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Причиана>" q
+ k Reason
+ if PAR3="0" do     ;* Все
+ . k PLIST s err=$$getall^LVBCTR()      
+ . s cnt=0,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
+ .. s code=$P(PLIST(ind),$C(2),1) s:code'="" Reason(code)=""
+ if PAR3'="0" do  q:MSGERROR'=""
+ . i '$D(^TTAB("CTR",PAR3)) s MSGERROR="100^В Labtrake нет кода причины <"_PAR3_">" q
+ . s Reason(PAR3)=""
+ ; отдел
+ i $G(PAR4)="" s MSGERROR="100^Не определено значение <Отдел>" q
+ k DEP
+ if PAR4="0" do     ;* Все
+ . s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ if PAR4'="0" do  q:MSGERROR'=""
+ . i '$D(^TTAB("DEP",PAR4)) s MSGERROR="100^В Labtrake нет кода отдела <"_DEP_">" q
+ . s DEP(PAR4)=""
+ ; ДОПОЛНИТЕЛЬНАЯ настройка для вывода полей отчета
+ s FlagLocPat=+$G(PAR7)		; Местоположение пациент
+ s FlagDocPat=+$G(PAR8)		; Направляющий врач
+ s FlagPayment=+$G(PAR9)	; Плательщик
+ ; тип сортировки данных: 1 - Причина невыполнения; 2 - Местоположение пациента
+ s FlagReport=+$G(PAR5) s:FlagReport=0 FlagReport=1
+ s:FlagReport=2 FlagLocPat=0
+ ; Флаг "Причина невыполнения" (если сортировка по местоположению)
+ s FlagReason=$S(FlagReport=2:1,1:0) 	 	
+ ; вывести для наб.тестов ( 1 - Синоним / 2 - Наименование)
+ s FlagTypeDescTS=+$G(PAR10) s:FlagTypeDescTS=0 FlagTypeDescTS=1
+ quit
+ ;------------------------------------------------
+BODY ; обработка данных... (тип сортировки данных: 2 - Местоположение пациента)
+ s date=PAR1-1 f  s date=$o(^TEPIi("REASON",date)) q:date=""  q:date>PAR2  d
+ . s reason="" f  s reason=$o(^TEPIi("REASON",date,reason)) q:reason=""  d
+ .. ; проверка причины
+ .. i '$D(Reason(reason)) quit
+ .. s epis="" f  s epis=$o(^TEPIi("REASON",date,reason,epis)) q:epis=""  d
+ ... s loc=$P($G(^TEPI(epis)),"\",20) s:loc="" loc="?"
+ ... s sort=$S(FlagReport=2:loc,1:reason)
+ ... s (xx,ts)="" f  s ts=$o(^TEPIi("REASON",date,reason,epis,ts)) q:ts=""  d
+ .... s dept=$e(ts,1) q:dept=""  quit:'$D(DEP(dept))
+ .... s tscnt="" f  s tscnt=$o(^TEPIi("REASON",date,reason,epis,ts,tscnt)) q:tscnt=""  d
+ ..... s @Mas@("REPORT",sort,reason,date,epis,"TS",ts_"||"_tscnt)=""
+ ..... s @Mas@("REPORT",sort,reason,date,epis,"KolTS")=$G(@Mas@("REPORT",reason,date,epis,"KolTS"))+1
+ ..... s @Mas@("REPORT",sort,reason,date)=$G(@Mas@("REPORT",reason,date))+1
+ ..... s @Mas@("REPORT",sort,reason)=$G(@Mas@("REPORT",sort,reason))+1
+ ..... s @Mas@("REPORT",sort)=$G(@Mas@("REPORT",sort))+1
+ ..... s @Mas@("REPORT")=$G(@Mas@("REPORT"))+1
+ ..... ; Плательщик (на уровне лаб.номера/набора тестов)
+ ..... i +$G(FlagPayment)=1 do
+ ...... s pay=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 	;VISTS_PaymentCode_DR
+ ...... s:pay="" pay=$P($G(^TEPI(epis)),"\",7) q:pay=""
+ ...... s @Mas@("REPORT",sort,reason,date,epis,"Payment",pay)=$P($G(^TTAB("BI",pay)),"\",1)
+ ;k ^zz m ^zz=@Mas   ;@@@
+ quit
+ ;--------------------------------------------------------------------------
+XML      ; Формирование XML...
+ i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+ ;
+ S MasO="^TEMP($zn,$J,""XML"")"
+ s (NGr1,NGr2)=0
+ s sort="" f  s sort=$O(@Mas@("REPORT",sort)) q:sort=""  d
+ . s NGr1=$i(NGr1)
+ . s DescSort=$S(+$G(FlagReport)=2:$P($G(^TTAB("RH",sort)),"\",1),1:$P($G(^TTAB("CTR",sort)),"\",1))
+ . S @MasO@("User",1,"Gr",NGr1,"NGr")=NGr1
+ . S @MasO@("User",1,"Gr",NGr1,"Name")=DescSort       				;наименование поля сортировки данных
+ . S @MasO@("User",1,"Gr",NGr1,"KolTS")=+$G(@Mas@("REPORT",sort)) 	;общее кол-во
+ . ; итоги по причине невыполнения
+ . s reason="" f  s reason=$O(@Mas@("REPORT",sort,reason)) q:reason=""  d
+ .. s date="" f  s date=$o(@Mas@("REPORT",sort,reason,date)) q:date=""  d
+ ... s epis="" f  s epis=$o(@Mas@("REPORT",sort,reason,date,epis)) q:epis=""  d
+ .... i '$$select^LVBEPVIS(epis) k VISIT m VISIT=PLIST
+ .... s NGr2=$i(NGr2)
+ .... S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"NGr")=NGr2
+ .... S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"ДатаПричины")=$TR($$extdate2^SSUTIL4(date),"/",".")
+ .... S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"Эпизод")=epis   
+ .... S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"KolTS")=+$G(@Mas@("REPORT",sort,reason,date,epis,"KolTS"))                           
+ .... S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"ФИО")=$G(PLIST(3))_" "_$G(PLIST(4))
+ .... S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"ДатаНазначения")=$S($G(PLIST(10))'="":$TR($$extdate2^SSUTIL4(PLIST(10)),"/","."),1:"")
+ .... i +$G(FlagDocPat)=1 S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"Врач")=$P($G(PLIST(15)),$C(1),2)
+ .... i +$G(FlagLocPat)=1 S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"Местоположение")=$P($G(PLIST(22)),$C(1),2)
+ .... i +$G(FlagReason)=1 S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"Причина")=$P($G(^TTAB("CTR",reason)),"\",1)
+ .... ; формируем список плательщиков (на уровне лаб.номера/набора тестов)
+ .... i +$G(FlagPayment)=1 do
+ ..... s ListPay="",x="" f  s x=$O(@Mas@("REPORT",sort,reason,date,epis,"Payment",x)) q:x=""  do
+ ...... s ListPay=ListPay_$S(ListPay="":"",1:", ")_$G(@Mas@("REPORT",sort,reason,date,epis,"Payment",x))
+ ..... S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"Плательщик")=$G(ListPay)
+ .... ; формируем список наборов тестов (вывести для наб.тестов: 1 - Синоним / 2 - Наименование)
+ .... i +$G(FlagTypeDescTS)=1 do
+ ..... s (xx,rowid)="" f  s rowid=$O(@Mas@("REPORT",sort,reason,date,epis,"TS",rowid)) q:rowid=""  s ts=$P(rowid,"||",1) do:ts'=""  
+ ...... s desc=$P($G(^TTAB("TS",ts)),"\",2) s:desc="" desc=$P($G(^TTAB("TS",ts)),"\",1) s:desc="" desc=ts
+ ...... s xx=xx_$s($l(xx):", ",1:"")_desc
+ ..... S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"СписокНазначений")=xx
+ .... i +$G(FlagTypeDescTS)=2 do
+ ..... s (xx,rowid)="" f  s rowid=$O(@Mas@("REPORT",sort,reason,date,epis,"TS",rowid)) q:rowid=""  s ts=$P(rowid,"||",1) do:ts'=""  
+ ...... s desc=$P($G(^TTAB("TS",ts)),"\",1) s:desc="" desc=ts
+ ...... s xx=xx_$s($l(xx):", ",1:"")_desc
+ ..... S @MasO@("User",1,"Gr",NGr1,"Gr2",NGr2,"СписокНазначений")=xx
+ ;
+ S @MasO@("User",1,"Itogo")=+$G(@Mas@("REPORT"))
+ ;
+ ; входные параметры
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+ S @MasO@("User",1,"Reason")=$S(PAR3="0":"* Все",1:PAR3_" - "_$P($G(^TTAB("CTR",PAR3)),"\",1))
+ S @MasO@("User",1,"Department")=$S(PAR4="0":"* Все",1:PAR4_" - "_$P($G(^TTAB("DEP",PAR4)),"\",1))
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ S @MasO@("User",1,"FlagLocPat")=+$G(FlagLocPat)         ; Флаг "Вывести местоположение пациента"
+ S @MasO@("User",1,"FlagDocPat")=+$G(FlagDocPat)         ; Флаг "Вывести лечащего врача пациента"
+ S @MasO@("User",1,"FlagPayment")=+$G(FlagPayment)  	 ; Флаг "Вывести плательщика"
+ S @MasO@("User",1,"FlagReason")=+$G(FlagReason)  	 	 ; Флаг "Причина невыполнения" (если сортировка по местоположению)
+ ;
+ ;log
+ ;M ^zz("XML")=@MasO     ;@@@
+ ;
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS02.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ quit
+]]></Routine>
+</Export>

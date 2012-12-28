@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS33" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS33   ;SPARM; Статистика по группам наборов тестов (разбивка по возрастам) ;;@gol;
+ q
+ ;
+ ; Отчет CLNRUS33  +  CLNRUS33.xsl  + DLL: CLNSPARM007.clsSTART
+ ;            
+ ; Считаем кол-во выполненных исследований (входящие в выбранную группу наборов тестов)
+ ; 1) идем по индексу ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ; 2) и считаем кол-во выполненных наб.тестов за заданный период
+ ;     
+ ; + расшифровка по наборам тестов
+ ; + расшифровка по тестам
+ ; + расшифровка по пациентам
+ ;    
+ ; Используется сервисная программа ^UDFSPARM001, ^REPORTSPB
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par             
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 1300: 600 : 1100 : 300 : t:True"
+ ; список доступных отделов
+ k DEP s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP") k ^TEMP($J,"DEP")
+ ; список групп наборов тестов
+ s @Par@("PAR3a")="Label   : 100 : 1000 : 5000 : 300 : Группы наборов тестов"
+ s cnt=0,code="" f  s code=$O(^TTAB("GR",code)) q:code=""  d
+ . ; проверяем ограничение по отделам
+ . s dep=$P($G(^TTAB("GR",code)),"\",2) i dep'="" quit:'$D(DEP(dep))   ;$$ValUser^LVBCTDEP(USER,dep,1)
+ . s ok=0,ts="" f  s ts=$o(^TTAB("GR",code,"TS",ts)) q:ts=""  do
+ .. i '$$select^LVBCTTS(ts,"Y",USER) i $D(DEP($e(ts,1))) s ok=1
+ . q:'ok
+ . s @Par@("PAR3",code)=code_" - "_$P($G(^TTAB("GR",code)),"\",1) s cnt=cnt+1
+ s @Par@("PAR3")="ComboBox : 100 : 1300 : 8000 : 300 : : True: :List"     
+ ;
+ ; Флаг "Вывести список пациентов с патологическими результатами"
+ s @Par@("PAR4")="CheckBox: 4500 : 1800 : 200  : 300 : : : 0 "
+ s @Par@("PAR4a")="Label  : 4800 : 1800 : 3000 : 500 : Вывести список пациентов с патологическими результатами:"
+ ; флаг "Расшифровка по наборам тестов"
+ s @Par@("PAR5")="CheckBox: 100 : 1800 : 200  : 300 : : : 1 "
+ s @Par@("PAR5a")="Label   : 500 : 1800 : 4000 : 300 : Расшифровка по наборам тестов:"
+ ; флаг "Расшифровка по тестам"
+ s @Par@("PAR6")="CheckBox: 100 : 2100 : 200  : 300 : : : 0 "
+ s @Par@("PAR6a")="Label   : 500 : 2100 : 4000 : 300 : Расшифровка по тестам:"
+ ; флаг "Расшифровка по наборам + тестам"
+ s @Par@("PAR7")="CheckBox: 100 : 2500 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 500 : 2500 : 5000 : 300 : Расшифровка по наборам -> тестам:"
+ ; флаг "Расшифровка по тестам + наборам"
+ s @Par@("PAR8")="CheckBox: 100 : 2800 : 200  : 300 : : : 0 "
+ s @Par@("PAR8a")="Label   : 500 : 2800 : 5000 : 300 : Расшифровка по тестам -> наборам:"
+ ; флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ s @Par@("PAR9")="CheckBox: 100 : 3200 : 200  : 300 : : : 1 "
+ s @Par@("PAR9a")="Label   : 500 : 3200 : 4000 : 500 : Не считать расчетные тесты (для которых введены формулы вычисления):"
+ ; флаг "ПОСЧИТАТЬ только общеее кол-во (без разбивки по возрастам и паталогии)"
+ s @Par@("PAR10")="CheckBox: 4500 : 2500 : 200  : 300 : : : 0 "
+ s @Par@("PAR10a")="Label   : 4800 : 2500 : 3000 : 800 : ПОСЧИТАТЬ только общеее кол-во (без разбивки по возрастам и паталогии):"
+ ;
+ Set languageDefault=$Piece($Get(^CF("SM",1)),"^",10)
+ s @Par@("PAR11a")="Label   : 600 : 3500 : 450 : 300 : Язык:"
+ s @Par@("PAR11")="ComboBox: 1150 : 3500 : 5000 : 300 : :False: "_languageDefault_" :List"         ;Standart
+ ;
+ do ParLanguage^PRTCLNRUS07($name(@Par@("PAR11")))
+ ;
+ ; настройка формы
+ s @Par@("form")=" Статистика по группам наборов тестов (с разбивкой по возрастам) ("_USER_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR  ;@@@
+ k ^TEMP($J)
+ s Mas="^TEMP($J,""START"")"
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d BODY,XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ; Группы наб.тестов
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Группа наб.тестов>" q
+ ; -> формируем обратный массив (набор тестов - группы)
+ s group=PAR3,ts="" f  s ts=$o(^TTAB("GR",group,"TS",ts)) q:ts=""  do
+ . i $$select^LVBCTTS(ts,"Y",USER) quit
+ . s @Mas@("TWG",ts,group)=""
+ i '$D(@Mas@("TWG")) s MSGERROR="100^В выбранной группе """_PAR3_""" нет доступных наборов тестов" quit
+ ; ---
+ s FlagListPat=+$G(PAR4)	; Флаг "Вывести список пациентов с патологическими результатами"
+ s FlagTS=+$G(PAR5)			; флаг "Расшифровка по наборам тестов"
+ s FlagTC=+$G(PAR6)			; флаг "Расшифровка по тестам"
+ s FlagTSTC=+$G(PAR7)		; флаг "Расшифровка по наборам + тестам"
+ s FlagTCTS=+$G(PAR8)		; флаг "Расшифровка по тестам + наборам"
+ s FlagNotCalcul=+$G(PAR9)	; флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ s FlagOnlyCount=+$G(PAR10) ; флаг "ПОСЧИТАТЬ только общеее кол-во (без разбивки по возрастам и паталогии)"
+ i +$G(FlagOnlyCount)=1 s FlagListPat=0
+ quit
+ ;------------------------------------------------
+BODY  ; обработка данных...
+ ; поиск по дате разрешения (дата авторизации набора тестов)
+ s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
+ . s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d:$D(^TEPI(epis))
+ .. ; номер МК
+ .. s mrn=$P(^TEPI(epis),"\",18) q:mrn=""
+ .. s age=$P(^TEPI(epis),"\",25) s:age="" age=99
+ .. ; наборы тестов для лаб.эпизода (ограничение по отделам)
+ .. s ts=$E($O(@Mas@("TWG","")),1) f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  do:$D(@Mas@("TWG",ts))
+ ... s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
+ .... ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
+ .... s status=$p(^TEPI(epis,1,ts,tscnt),"\",31) q:status'="A"   
+ .... s vtsRID=epis_"||"_ts_"||"_tscnt
+ .... ; ---
+ .... i +$G(FlagOnlyCount)=0 do
+ ..... ; считаем по возрастам 1-взрослые; 2-дети до 17 лет; 3-дети (14-17); 4-дети(0-14); 5-дети(0-1); 6-дети(1-2); 7-дети(3-6)
+ ..... s GrAgeFor=$S(age>18:1,age<1.01:"5,2,4",age>1&(age<2.01):"6,2,4",age>2&(age<6.01):"7,2,4",age>14&(age<18):"2,3",age<14:"4,2",1:1)
+ ..... ; флаг для набора (норма/отклонение от нормы/контроль врача)
+ ..... s flag=$$Norm^UDFSPARM001(vtsRID) s:flag="" flag="?"
+ .... ; ПОСЧИТАТЬ только общеее кол-во (без разбивки по возрастам и паталогии)"
+ .... i +$G(FlagOnlyCount)=1 s GrAgeFor=1,flag="N"
+ .... ; ---
+ .... ; формируем индексы для печати выходного файла
+ .... s @Mas@("REPORT")=$G(@Mas@("REPORT"))+1
+ .... s @Mas@("REPORT","Flag",flag)=$g(@Mas@("REPORT","Flag",flag))+1
+ .... F xx=1:1:$L(GrAgeFor,",")+1  s GrAge=$p(GrAgeFor,",",xx) q:GrAge=""  do
+ ..... s @Mas@("REPORT","GrAge",GrAge)=$g(@Mas@("REPORT","GrAge",GrAge))+1
+ ..... s @Mas@("REPORT","GrAge",GrAge,"Flag",flag)=$G(@Mas@("REPORT","GrAge",GrAge,"Flag",flag))+1
+ .... ;
+ .... ; --------------- Расшифровка по наборам тестов ------------------
+ .... i $G(FlagTS)=1!(+$G(FlagTSTC)=1) do
+ ..... s @Mas@("REPORT","ts")=$g(@Mas@("REPORT","ts"))+1
+ ..... s @Mas@("REPORT","ts",ts)=$g(@Mas@("REPORT","ts",ts))+1
+ ..... s @Mas@("REPORT","ts",ts,"Flag",flag)=$G(@Mas@("REPORT","ts",ts,"Flag",flag))+1
+ ..... F xx=1:1:$L(GrAgeFor,",")+1  s GrAge=$p(GrAgeFor,",",xx) q:GrAge=""  do
+ ...... s @Mas@("REPORT","ts",ts,"GrAge",GrAge)=$g(@Mas@("REPORT","ts",ts,"GrAge",GrAge))+1
+ ...... s @Mas@("REPORT","ts",ts,"GrAge",GrAge,"Flag",flag)=$g(@Mas@("REPORT","ts",ts,"GrAge",GrAge,"Flag",flag))+1
+ .... ; 
+ .... ; --------------- Расшифровка по пациентам с патологическими результатами ------------------
+ .... i +$G(FlagListPat)=1 do:flag'="N"
+ ..... s @Mas@("REPORT","Epis",vtsRID)="GrAgeFor="_GrAgeFor_";  age="_age  ;log
+ ..... s @Mas@("REPORT","Epis",vtsRID,"Flag")=flag
+ .... ; 
+ .... ; --------------- Расшифровка по тестам ------------------
+ .... i +$G(FlagTC)=1!(+$G(FlagTSTC)=1)!(+$G(FlagTCTS)=1)!(FlagListPat=1) do
+ ..... s tc="" f  s tc=$o(^TEPI(epis,1,ts,tscnt,"DATA",tc)) q:tc=""  d
+ ...... ; флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ ...... i $G(FlagNotCalcul)=1 i $d(^TTAB("TC",tc,3,ts)) quit   
+ ...... ; результат теста
+ ...... s format=$$Format^UDFSPARM001(tc)
+ ...... s res=$P($G(^TEPI(epis,1,ts,tscnt,"DATA",tc)),"\",1)
+ ...... ; флаг для теста (норма/отклонение от нормы/контроль врача)
+ ...... i +$G(FlagOnlyCount)=0 s flagTC=$$NormTC^UDFSPARM001(vtsRID,tc,res) s:flagTC="" flagTC="N"
+ ...... i +$G(FlagOnlyCount)=1 s flagTC="N"
+ ...... ; ---
+ ...... s @Mas@("REPORT","tc")=$g(@Mas@("REPORT","tc"))+1 
+ ...... s @Mas@("REPORT","tc",tc)=$g(@Mas@("REPORT","tc",tc))+1
+ ...... s @Mas@("REPORT","tc",tc,"Flag",flagTC)=$G(@Mas@("REPORT","tc",tc,"Flag",flagTC))+1
+ ...... F xx=1:1:$L(GrAgeFor,",")+1  s GrAge=$p(GrAgeFor,",",xx) q:GrAge=""  do
+ ....... s @Mas@("REPORT","tc",tc,"GrAge",GrAge)=$g(@Mas@("REPORT","tc",tc,"GrAge",GrAge))+1
+ ....... s @Mas@("REPORT","tc",tc,"GrAge",GrAge,"Flag",flagTC)=$g(@Mas@("REPORT","tc",tc,"GrAge",GrAge,"Flag",flagTC))+1
+ ...... ; ---
+ ...... i +$G(FlagTSTC)=1 do
+ ....... s @Mas@("REPORT","ts",ts,"tc")=$g(@Mas@("REPORT","ts",ts,"tc"))+1
+ ....... s @Mas@("REPORT","ts",ts,"tc",tc)=$g(@Mas@("REPORT","ts",ts,"tc",tc))+1
+ ....... s @Mas@("REPORT","ts",ts,"tc",tc,"Flag",flagTC)=$g(@Mas@("REPORT","ts",ts,"tc",tc,"Flag",flagTC))+1
+ ....... F xx=1:1:$L(GrAgeFor,",")+1  s GrAge=$p(GrAgeFor,",",xx) q:GrAge=""  do
+ ........ s @Mas@("REPORT","ts",ts,"tc",tc,"GrAge",GrAge)=$g(@Mas@("REPORT","ts",ts,"tc",tc,"GrAge",GrAge))+1
+ ........ s @Mas@("REPORT","ts",ts,"tc",tc,"GrAge",GrAge,"Flag",flagTC)=$g(@Mas@("REPORT","ts",ts,"tc",tc,"GrAge",GrAge,"Flag",flagTC))+1
+ ...... ; ---
+ ...... i +$G(FlagTCTS)=1 do
+ ....... s @Mas@("REPORT","tc",tc,"ts")=$g(@Mas@("REPORT","tc",tc,"ts"))+1
+ ....... s @Mas@("REPORT","tc",tc,"ts",ts)=$g(@Mas@("REPORT","tc",tc,"ts",ts))+1
+ ....... s @Mas@("REPORT","tc",tc,"ts",ts,"Flag",flag)=$g(@Mas@("REPORT","tc",tc,"ts",ts,"Flag",flag))+1
+ ....... F xx=1:1:$L(GrAgeFor,",")+1  s GrAge=$p(GrAgeFor,",",xx) q:GrAge=""  do
+ ........ s @Mas@("REPORT","tc",tc,"ts",ts,"GrAge",GrAge)=$g(@Mas@("REPORT","tc",tc,"ts",ts,"GrAge",GrAge))+1
+ ........ s @Mas@("REPORT","tc",tc,"ts",ts,"GrAge",GrAge,"Flag",flag)=$g(@Mas@("REPORT","tc",tc,"ts",ts,"GrAge",GrAge,"Flag",flag))+1
+ ...... ; ---
+ ...... i +$G(FlagListPat)=1 do:flagTC'="N"
+ ....... s result=$$RESULT^UDFSPARM001(tc,format,res,,$get(PAR11),ts)
+ ....... s @Mas@("REPORT","Epis",vtsRID,"tc",tc,"result")=result
+ ....... s @Mas@("REPORT","Epis",vtsRID,"tc",tc,"Flag")=flagTC
+ ;
+ ;k ^zz m ^zz=@Mas   ;@@@
+ quit
+ ; ----------------------------------------------------- 
+XML      ; Формирование XML...
+ i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных!" quit
+ S MasO="^TEMP($J,""XML"")"
+ ; 
+ ; общие итоги по группе наборов тестов
+ Do
+ . S @MasO@("User",1,"CodeGroupTS")=PAR3
+ . S @MasO@("User",1,"NameGroupTS")=$P($G(^TTAB("GR",PAR3)),"\",1)
+ . S @MasO@("User",1,"Itog-KolTS")=+$G(@Mas@("REPORT"))
+ . S @MasO@("User",1,"Itog-KolTS-H")=+$G(@Mas@("REPORT","Flag","H"))+$G(@Mas@("REPORT","Flag","L"))
+ . S GrAge="" f  s GrAge=$o(@Mas@("REPORT","GrAge",GrAge)) q:GrAge=""  d
+ .. S @MasO@("User",1,"Itog-KolTS-"_GrAge)=+$g(@Mas@("REPORT","GrAge",GrAge))
+ ;
+ ; Флаг "Расшифровка по наборам тестов"
+ i +$G(FlagTS)=1 do
+ . s NN1=0,ts="" f  s ts=$o(@Mas@("REPORT","ts",ts)) q:ts=""  d
+ .. S NN1=$i(NN1)
+ .. S @MasO@("User",1,"GrTS",NN1,"Code")=ts
+ .. S @MasO@("User",1,"GrTS",NN1,"Name")=$P($G(^TTAB("TS",ts)),"\",1)
+ .. S @MasO@("User",1,"GrTS",NN1,"KolTS")=+$g(@Mas@("REPORT","ts",ts))
+ .. S @MasO@("User",1,"GrTS",NN1,"KolTS-H")=+$g(@Mas@("REPORT","ts",ts,"Flag","H"))+$g(@Mas@("REPORT","ts",ts,"Flag","L"))
+ .. S GrAge="" f  s GrAge=$o(@Mas@("REPORT","GrAge",GrAge)) q:GrAge=""  d
+ ... S @MasO@("User",1,"GrTS",NN1,"KolTS-"_GrAge)=+$g(@Mas@("REPORT","ts",ts,"GrAge",GrAge))
+ i '$D(@MasO@("User",1,"GrTS")) s FlagTS=0
+ ; 
+ ; Флаг "Расшифровка по тестам"
+ i +$G(FlagTC)=1 do
+ . s NN1=0,tc="" f  s tc=$o(@Mas@("REPORT","tc",tc)) q:tc=""  d
+ .. S NN1=$i(NN1)
+ .. S @MasO@("User",1,"GrTC",NN1,"Code")=tc
+ .. S @MasO@("User",1,"GrTC",NN1,"Name")=$P($G(^TTAB("TC",tc)),"\",1)
+ .. S @MasO@("User",1,"GrTC",NN1,"KolTC")=+$g(@Mas@("REPORT","tc",tc))
+ .. S @MasO@("User",1,"GrTC",NN1,"KolTC-H")=+$g(@Mas@("REPORT","tc",tc,"Flag","H"))+$g(@Mas@("REPORT","tc",tc,"Flag","L"))
+ .. S GrAge="" f  s GrAge=$o(@Mas@("REPORT","GrAge",GrAge)) q:GrAge=""  d
+ ... S @MasO@("User",1,"GrTC",NN1,"KolTC-"_GrAge)=+$g(@Mas@("REPORT","tc",tc,"GrAge",GrAge))
+ i '$D(@MasO@("User",1,"GrTC")) s FlagTC=0
+ ; 
+ ; Флаг "Расшифровка по наборам -> тестам"
+ i +$G(FlagTSTC)=1 do
+ . s (NN1,NN2)=0,ts="" f  s ts=$o(@Mas@("REPORT","ts",ts)) q:ts=""  d
+ .. S NN1=$i(NN1)
+ .. S @MasO@("User",1,"GrTSTC",NN1,"Code")=ts
+ .. S @MasO@("User",1,"GrTSTC",NN1,"Name")=$P($G(^TTAB("TS",ts)),"\",1)
+ .. S @MasO@("User",1,"GrTSTC",NN1,"KolTS")=+$g(@Mas@("REPORT","ts",ts))
+ .. S @MasO@("User",1,"GrTSTC",NN1,"KolTS-H")=+$g(@Mas@("REPORT","ts",ts,"Flag","H"))+$g(@Mas@("REPORT","ts",ts,"Flag","L"))
+ .. S GrAge="" f  s GrAge=$o(@Mas@("REPORT","GrAge",GrAge)) q:GrAge=""  d
+ ... S @MasO@("User",1,"GrTSTC",NN1,"KolTS-"_GrAge)=+$g(@Mas@("REPORT","ts",ts,"GrAge",GrAge))
+ .. s NN2=0,tc="" f  s tc=$o(@Mas@("REPORT","ts",ts,"tc",tc)) q:tc=""  d
+ ... S NN2=$i(NN2)
+ ... S @MasO@("User",1,"GrTSTC",NN1,"GrTC",NN2,"Code")=tc
+ ... S @MasO@("User",1,"GrTSTC",NN1,"GrTC",NN2,"Name")=$P($G(^TTAB("TC",tc)),"\",1)
+ ... S @MasO@("User",1,"GrTSTC",NN1,"GrTC",NN2,"KolTC")=+$g(@Mas@("REPORT","ts",ts,"tc",tc))
+ ... S @MasO@("User",1,"GrTSTC",NN1,"GrTC",NN2,"KolTC-H")=+$g(@Mas@("REPORT","ts",ts,"tc",tc,"Flag","H"))+$g(@Mas@("REPORT","ts",ts,"tc",tc,"Flag","L"))
+ ... S GrAge="" f  s GrAge=$o(@Mas@("REPORT","GrAge",GrAge)) q:GrAge=""  d
+ .... S @MasO@("User",1,"GrTSTC",NN1,"GrTC",NN2,"KolTC-"_GrAge)=+$g(@Mas@("REPORT","ts",ts,"tc",tc,"GrAge",GrAge))
+ i '$D(@MasO@("User",1,"GrTSTC")) s FlagTSTC=0
+ ;
+ ; Флаг "Расшифровка по тестам -> наборам"
+ i +$G(FlagTCTS)=1 do
+ . s (NN1,NN2)=0,tc="" f  s tc=$o(@Mas@("REPORT","tc",tc)) q:tc=""  d
+ .. S NN1=$i(NN1)
+ .. S @MasO@("User",1,"GrTCTS",NN1,"Code")=tc
+ .. S @MasO@("User",1,"GrTCTS",NN1,"Name")=$P($G(^TTAB("TC",tc)),"\",1)
+ .. S @MasO@("User",1,"GrTCTS",NN1,"KolTC")=+$g(@Mas@("REPORT","tc",tc))
+ .. S @MasO@("User",1,"GrTCTS",NN1,"KolTC-H")=+$g(@Mas@("REPORT","tc",tc,"Flag","H"))+$g(@Mas@("REPORT","tc",tc,"Flag","L"))
+ .. S GrAge="" f  s GrAge=$o(@Mas@("REPORT","GrAge",GrAge)) q:GrAge=""  d
+ ... S @MasO@("User",1,"GrTCTS",NN1,"KolTC-"_GrAge)=+$g(@Mas@("REPORT","tc",tc,"GrAge",GrAge))
+ .. s NN2=0,ts="" f  s ts=$o(@Mas@("REPORT","tc",tc,"ts",ts)) q:ts=""  d
+ ... S NN2=$i(NN2)
+ ... S @MasO@("User",1,"GrTCTS",NN1,"GrTS",NN2,"Code")=ts
+ ... S @MasO@("User",1,"GrTCTS",NN1,"GrTS",NN2,"Name")=$P($G(^TTAB("TS",ts)),"\",1)
+ ... S @MasO@("User",1,"GrTCTS",NN1,"GrTS",NN2,"KolTS")=+$g(@Mas@("REPORT","tc",tc,"ts",ts))
+ ... S @MasO@("User",1,"GrTCTS",NN1,"GrTS",NN2,"KolTS-H")=+$g(@Mas@("REPORT","tc",tc,"ts",ts,"Flag","H"))+$g(@Mas@("REPORT","tc",tc,"ts",ts,"Flag","L"))
+ ... S GrAge="" f  s GrAge=$o(@Mas@("REPORT","GrAge",GrAge)) q:GrAge=""  d
+ .... S @MasO@("User",1,"GrTCTS",NN1,"GrTS",NN2,"KolTS-"_GrAge)=+$g(@Mas@("REPORT","tc",tc,"ts",ts,"GrAge",GrAge))
+ i '$D(@MasO@("User",1,"GrTCTS")) s FlagTCTS=0
+ ;
+ ; Флаг "Вывести список пациентов с патологическими результатами"
+ i +$G(FlagListPat)=1 do
+ . s NN1=0 s vtsRID="" f  s vtsRID=$O(@Mas@("REPORT","Epis",vtsRID)) q:vtsRID=""  do
+ .. s epis=$P(vtsRID,"||",1) q:epis=""
+ .. s flag=$G(@Mas@("REPORT","Epis",vtsRID,"Flag")) d:flag'="N"
+ ... ;информация о пациенте (об образце)
+ ... k PLIST i '$$select^LVBEPVIS(epis) k VISIT m VISIT=PLIST
+ ... s NN1=$i(NN1)
+ ... S @MasO@("User",1,"ListPat",NN1,"NGr")=NN1
+ ... S @MasO@("User",1,"ListPat",NN1,"Epis")=epis
+ ... S @MasO@("User",1,"ListPat",NN1,"MRN")=$P($G(VISIT(20)),$C(1))
+ ... S @MasO@("User",1,"ListPat",NN1,"Name")=$$NameFormat^LVBCOM03("PT","",VISIT(4),VISIT(3))
+ ... S @MasO@("User",1,"ListPat",NN1,"Age")=$p(VISIT(26),$c(1)) 
+ ... S @MasO@("User",1,"ListPat",NN1,"Sex")=$p(VISIT(5),$c(1)) 
+ ... S @MasO@("User",1,"ListPat",NN1,"DateCol")=$TR($$extdate2^SSUTIL4(VISIT(12)),"/",".")
+ ... S @MasO@("User",1,"ListPat",NN1,"NameTS")=$P(vtsRID,"||",2)_" - "_$P($G(^TTAB("TS",$P(vtsRID,"||",2))),"\",1)
+ ... ; собираем рез-ты для набора тестов в одну строку
+ ... s String=""
+ ... s tc="" f  s tc=$O(@Mas@("REPORT","Epis",vtsRID,"tc",tc)) q:tc=""  do
+ .... s result=$G(@Mas@("REPORT","Epis",vtsRID,"tc",tc,"result")) q:result=""
+ .... s syn=$P(^TTAB("TC",tc),"\",13) s:syn="" syn=$P(^TTAB("TC",tc),"\",1)
+ .... S String=$E($S(String="":"",1:String_"; ")_tc_" ("_syn_") = "_result,1,512)
+ ... S @MasO@("User",1,"ListPat",NN1,"ResultTS")=String
+ i '$D(@MasO@("User",1,"ListPat")) s FlagListPat=0
+ ;
+ ;шапка
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+ S @MasO@("User",1,"GroupTS")=$S($E($G(PAR3),1)="*":"* все",1:"["_PAR3_"] "_$P($G(^TTAB("GR",PAR3)),"\",1))
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ;
+ s @MasO@("User",1,"FlagListPat")=+$G(FlagListPat)	; Флаг "Вывести список пациентов с патологическими результатами"
+ s @MasO@("User",1,"FlagTS")=+$G(FlagTS)			; флаг "Расшифровка по наборам тестов"
+ s @MasO@("User",1,"FlagTC")=+$G(FlagTC)			; флаг "Расшифровка по тестам"
+ s @MasO@("User",1,"FlagTSTC")=+$G(FlagTSTC)		; флаг "Расшифровка по наборам -> тестам"
+ s @MasO@("User",1,"FlagTCTS")=+$G(FlagTCTS)		; флаг "Расшифровка по тестам -> наборам" 
+ s @MasO@("User",1,"FlagOnlyCount")=+$G(FlagOnlyCount) ; флаг "ПОСЧИТАТЬ только общеее кол-во (без разбивки по возрастам и паталогии)"
+ s @MasO@("User",1,"ColCount")=$S(+$G(FlagOnlyCount)=0:10,1:2)
+ ;
+ ;k ^zz M ^zz=@MasO     ;@@@
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS33.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ;
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_"^WINWORD"  ;^EXCEL"  ;^EXPLORER"
+ quit
+]]></Routine>
+</Export>
