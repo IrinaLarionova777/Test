@@ -20,7 +20,6 @@ err
 	}
 	quit
 
-
  // по коду теста для анализатора получить соответсвующую строку epis||ts||tscnt в эпизоде 
 getRowIdTestSet(mi,epis,testcodeAnal) public {
 	// определяем код теста ЛИС
@@ -37,28 +36,105 @@ getRowIdTestSet(mi,epis,testcodeAnal) public {
     }
     quit rowid
 }
- // Записать данные о заказе в класс TCLEx.Data.MIFInfoEpisode, TCLEx.Data.MIFInfoEpisodeTests
-setMIFOrder(mi,epis,test,info) public 
-{
-	TSTART
-	//TCLEx.Data.MIFInfoEpisode
-	set idepis=mi_"||"_epis
-	if ##class(TCLEx.Data.MIFInfoEpisode).%ExistsId(idepis) {
-	  	set objepis=##class(TCLEx.Data.MIFInfoEpisode).%OpenId(idepis)
-  	}
-	else {
-	    set objepis=##class(TCLEx.Data.MIFInfoEpisode).%New()	
-	}
-  	set id=mi_"||"_epis_"||"_test
-  	if ##class(TCLEx.Data.MIFInfoEpisodeTest).%ExistsId(id) {
-	  	set objepisodetest=##class(TCLEx.Data.MIFInfoEpisodeTest).%OpenId(id)
-  	}
-	else {
-	    set objepisodetest=##class(TCLEx.Data.MIFInfoEpisodeTest).%New()	
-	}
+ 
+ /*
+  // Пробежать по всем отправленным тестам и записать данные о заказе в класс TCLEx.Data.MIFInfoEpisode, TCLEx.Data.MIFInfoEpisodeTests
+writeInfoOrder(mi,epis,suffix) public {
 	
-	
+	set ok=1
+	try {
+		set suffix=$get(suffix)
+		set info=$lb(+$h,$piece($h,",",2))
+		set test=""
+	    for {
+		    set test=$order(^TMP("MIF-SINGLE",$j,mi,epis_suffix,test)) if test="" quit
+		    set ok=$$setMIFinfo(mi,epis,test,info)
+		}
+	    }
+     catch(exception) {
+	     set ok="0"_$c(1)_$System.Status.GetErrorText(exception.AsStatus())  
+     }	
+     quit ok
+     
 }
+
+ // Записать данные о заказе в класс TCLEx.Data.MIFInfoEpisode, TCLEx.Data.MIFInfoEpisodeTests
+setMIFinfo(mi,epis,test,info) public 
+{
+  set ok=1
+  try {
+	set idepis=mi_"||"_epis
+  	set objepis=##class(TCLEx.Data.MIFInfoEpisode).%OpenId(idepis)
+  	set idtest=mi_"||"_epis_"||"_test
+	set objepistest=##class(TCLEx.Data.MIFInfoEpisodeTest).%OpenId(idtest)
+  	
+	set dateOrder=$li(info,1)
+	set timeOrder=$li(info,2)
+	set dateResult=$li(info,3)
+	set timeResult=$li(info,4)	
+	
+	if (dateOrder'="")||(timeOrder'="")||(dateResult'="")||(timeResult'="") {
+		set createepis=0,createepistest=0
+		if '$IsObject(objepis) {
+			kill PLIST
+			set PLIST(1)=mi_"||"_epis
+			set PLIST(2)=mi
+			set PLIST(3)=epis
+			set PLIST(4)=dateOrder
+			set PLIST(5)=timeOrder
+			set PLIST(6)=dateResult
+			set PLIST(7)=timeResult
+		    &sql(INSERT INTO TCLEx_Data.MIF_InfoEpisode VALUES :PLIST())
+		    if SQLCODE'=0 $$$ThrowOnError($$$ERROR($$$GeneralError,$get(%msg)))	
+		    set createepis=1
+		}
+	    if '$IsObject(objepistest) {
+		    set PLIST(0)=mi_"||"_epis
+		    set PLIST(1)=mi_"||"_epis_"||"_test
+			set PLIST(2)=test
+			set PLIST(3)=dateOrder
+			set PLIST(4)=timeOrder
+			set PLIST(5)=dateResult
+			set PLIST(6)=timeResult
+		    &sql(INSERT INTO TCLEx_Data.MIF_InfoEpisodeTest VALUES :PLIST())   
+		    if SQLCODE'=0 $$$ThrowOnError($$$ERROR($$$GeneralError,$get(%msg)))
+		    set createepistest=1
+	    }
+	    if (createepistest=0) {
+			kill PLIST
+		    &sql(SELECT * INTO :PLIST() FROM TCLEx_Data.MIF_InfoEpisodeTest WHERE MIFinfoTest_RowId=:idepistest)
+		    if dateOrder'="" set PLIST(3)=dateOrder,PLIST(4)=timeOrder
+		    if dateResult'="" set PLIST(5)=dateResult,PLIST(6)=timeResult
+		    &sql(UPDATE TCLEx_Data.MIF_InfoEpisodeTest VALUES :PLIST() WHERE MIFinfoTest_RowId=:idepistest)
+		    if SQLCODE'=0 $$$ThrowOnError($$$ERROR($$$GeneralError,$get(%msg)))
+		}
+		if (createepis=0) {
+			kill PLIST
+		    &sql(SELECT * INTO :PLIST() FROM TCLEx_Data.MIF_InfoEpisode WHERE MIFinfo_RowId=:idepis)
+		    if SQLCODE'=0 $$$ThrowOnError($$$ERROR($$$GeneralError,$get(%msg)))
+		    if dateOrder>PLIST(4) {
+			    set PLIST(4)=dateOrder,PLIST(5)=timeOrder
+		    }
+		    if (dateOrder=PLIST(4))&&(timeOrder>PLIST(5)) {
+			    set PLIST(5)=timeOrder
+		    }
+		    if dateResult>PLIST(6) {
+			    set PLIST(6)=dateResult,PLIST(7)=timeResult
+		    }
+		    if (dateResult=PLIST(6))&&(timeResult>PLIST(7)) {
+			    set PLIST(7)=timeResult
+		    }
+		    &sql(UPDATE TCLEx_Data.MIF_InfoEpisode VALUES :PLIST() WHERE MIFinfo_RowId=:idepis)
+		    if SQLCODE'=0 $$$ThrowOnError($$$ERROR($$$GeneralError),$get(%msg))
+		}
+	}
+  }
+  catch(exception) {
+	  set ok="0"_$c(1)_$System.Status.GetErrorText(exception.AsStatus())  
+  }	
+  quit ok
+	
+}*/
 
 ]]></Routine>
 </Export>
