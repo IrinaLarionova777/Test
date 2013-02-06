@@ -88,6 +88,7 @@
       set fileStamp=$piece(params,$char(0),15)
 	  set fileFaximile=$piece(params,$char(0),16)
       
+       
       set $piece(params,$char(0),14)=""
       set $piece(params,$char(0),15)=""
       set $piece(params,$char(0),16)=""
@@ -236,6 +237,8 @@
           $$$ThrowStatus(error)   
      }
      
+     set $piece(params,$char(0),21)="" // нет фио авторизовавшего врача при формировании файла почему-то
+     
      set nameFile=..getNameFileResult(epis,testset,tscnt,languageLetter)_".pdf"
      
       // формирование файла с фио+др и с Logo
@@ -246,8 +249,10 @@
       }
       set $piece(params,$char(0),12)=1 // переводить fileBody doc to pdf (делаем только один раз)
       set $piece(params,$char(0),11)="" // есть фио+др
-      $$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult))
-      Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_fileResult,1,1)
+      
+      $$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult,1))
+      set filesize=0 if fileResult'="" set filesize=##class(%File).GetFileSize(fileResult)
+      Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_fileResult_" ("_filesize_" байт)",1,1)
 
       // формирование файла без фио+др
       set fileResult=$$ImpersonalPDFResultDir^Settings.Reports()_"\"_nameFile
@@ -259,10 +264,11 @@
       set $piece(params,$char(0),3)=""
       set $piece(params,$char(0),6)=""
 	  set $piece(params,$char(0),11)="1" // нет фио+др
-	  set $piece(params,$char(0),21)="" // нет фио авторизовавшего врача при формировании файла почему-то
-	  
-      $$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult))
-      Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_fileResult,1,1)
+	  	  
+	  //s ^test("params1")=params
+      $$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult,1))
+      set filesize=0 if fileResult'="" set filesize=##class(%File).GetFileSize(fileResult)
+      Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_fileResult_" ("_filesize_" байт)",1,1)
      
    } catch(exception)
   {
@@ -274,14 +280,16 @@
 
 <Method name="CreateReportWordToPDF">
 <Description>
-формирование файла pdf</Description>
+формирование файла pdf
+flagCreateLockFile - 0/1 - флаг создания пустого lck файла</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>epis:%String,testsetid:%String,params:%String,language:%String,fileResult:%String</FormalSpec>
+<FormalSpec>epis:%String,testsetid:%String,params:%String,language:%String,fileResult:%String,flagCreateLockFile:%Boolean</FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
     //if $get(epis)="" quit Quit $$$ERROR($$$GeneralError,"Не указан номер эпизода") 
     //if '$d(^TEPI(epis)) quit Quit $$$ERROR($$$GeneralError,"Не существует эпизода с номером "_epis)
     set language=$get(language,1)
+    set flagCreateLockFile=$get(flagCreateLockFile,0)
     if $get(params)="" Quit $$$ERROR($$$GeneralError,"НЕ заданы параметры для печати: эпизод="_$get(epis)_" testset="_testsetid)
     set ok=$$$OK
     try {
@@ -301,6 +309,15 @@
 	    
 	    set $piece(params,$char(0),17)=..getPathToOpenOfficeForJava()
         
+        // create lock file
+        if flagCreateLockFile=1 {
+	        set fileLockName=##class(TCLEx.Report.ResultForm).GetNameLockFile(fileResult)
+	        set ok=##class(TCLEx.Report.ResultForm).CreateEmptyFile(fileLockName)
+	        If 'ok {
+		       $$$ThrowOnError($System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось создать lck файл "_fileLockName_"."),ok))
+	        }
+      	}
+        
 	    // формирование файла PDF
 	    //set ^test("word","params","fileBody")=$get(fileBody)
 	    //set ^test("word","params","fileResult")=$get(fileResult)
@@ -311,11 +328,15 @@
 	    //set ^test("word","params","fileStamp")=$get(fileStamp)
 	    $$$ThrowOnError(..startCreatePDFfromWordEMC(fileBody, fileResult, params, languageLetter, fileLogo, fileFaximile, fileStamp))
 	    
-
+	    // delete lock file
+	    if flagCreateLockFile=1 {
+		    set ok=##class(%File).Delete(fileLockName)
+	        if 'ok $$$ThrowOnError($System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_"."),ok))
+	    }
     } 
     catch(exception) {
 	    set ok=exception.AsStatus()
-	    s ^logError("word",$i(^logError("word")),$h)=ok
+	    //s ^logError("word",$i(^logError("word")),$h)=ok
 	}
 	    
     Quit ok
@@ -357,7 +378,7 @@
         set dep=$extract(testset,1)
         kill ^||EMC.Vals     
 	    Do ##class(TCLEx.Report.PCLEMC).CreateValuesBuf(epis,,dep,language,$Name(^||EMC.Vals))
-	    m ^test("pp")=^||EMC.Vals
+	    //m ^test("pp")=^||EMC.Vals
 	    
 	    set $piece(params,$char(0),1)=$get(^||EMC.Vals("CompanyName"))
 	    set $piece(params,$char(0),2)=epis
@@ -372,8 +393,16 @@
 	    
 	    Set doctor=$Get(^||EMC.Vals("TS_AuthorisedDoctorId"))
 	    Set doctoralias=$$DoctorAlias^Settings.Reports(doctor)
-	    Set doctorAuthName=$get(^||EMC.Vals("TS_AuthorisedDoctor")) //$$DoctorName^Settings.Reports(doctor,language)
-	    set $piece(params,$char(0),21)=doctorAuthName
+	    Set doctorAuthName=$get(^||EMC.Vals("TS_AuthorisedDoctor")) 
+	    
+	    // печатать авторизовавшего врача только для гистолигии и цитологии
+	    if ##class(TCLEx.Report.ZenEMC).printDoctorAuth(dep) set $piece(params,$char(0),21)=doctorAuthName
+	    
+	    // Печатаем Accession Number (N образца) только для WORD-результатов (гистология)
+	    set spisAccNumbers=""
+	    if ##class(TCLEx.Function.Episode).GetAccessionNumbers(epis,testset,.x) set spisAccNumbers=x
+        set $piece(params,$char(0),22)=spisAccNumbers
+        if spisAccNumbers'="" s ^test("word","spisAccNumbers",epis)=spisAccNumbers
 	    
 	      // строка внизу - типатип отчета	    
 	    set str=""
@@ -418,6 +447,7 @@
 	    set $piece(params,$char(0),14)=fileLogo
 	    set $piece(params,$char(0),15)=fileStamp
 	    set $piece(params,$char(0),16)=fileFaximile
+	    //s ^test("params")=params
 	    
 	} 
     catch(exception) {
