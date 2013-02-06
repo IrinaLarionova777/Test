@@ -2,7 +2,6 @@
 <Export generator="Cache" version="24">
 <Routine name="PRTCLNRUS05birlab" type="MAC" languagemode="0"><![CDATA[
 PRTCLNRUS05birlab ;SPARM; Деятельность лаборатории (по плательщикам) ;
- ; цены по данным из BirLab
  q
  ; Отчет CLNRUS05  +  CLNRUS05.xsl  + DLL: CLNSPARM007.clsSTART
  ;            
@@ -101,13 +100,22 @@ START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR)
  s Mas="^TEMP($zn,$J)" k @Mas
  s MSGERROR=""            
  d INIT i $g(MSGERROR)'="" quit MSGERROR
+ set boundDate=$zdh("01/12/2012",4),okCreateTempGlob=0
  set refIndex=$name(^||inv)
+ if PAR1<boundDate {
+	 do CreateIndex(refIndex) ;инверсии к CT_Schedule_PaymentCode 
+	 set okCreateTempGlob=1
+ }
 
+ //kill ^test("compare","05birlab"),^test("compare","05ras")
+ 
+ 
  i $G(FlagReport)=1 do BODY1	;поиск по дате разрешения (дата авторизации набора тестов)
  i $G(FlagReport)=2 do BODY2	;поиск по дате назначения (дата передачи набора тестов)
  d XML
  k ^TEMP($zn,$J),^TEMP($j)
  Set ^xxxTimeTest($zn,$I(^xxxTimeTest($zn)))=$ZH-oldtime
+ s ^test("MSGERROR")=$g(MSGERROR)
  q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
  ;------------------------------------------------
 INIT ; инициализация входных параметров
@@ -158,6 +166,27 @@ INIT ; инициализация входных параметров
  ;s ^zz("INIT")="PAR1="_PAR1_"  PAR2="_PAR2_"  PAR3="_PAR3_"  PAR4="_PAR4_"; PAR5="_PAR5_"; PAR6="_PAR6   ;@@@
  quit
  ;
+ ;инверсии к CT_Schedule_PaymentCode
+CreateIndex(pRef)
+ if $get(pRef)="" quit 
+ kill @pRef
+ set pricelist=""
+ for {
+    set pricelist=$order(^TSCH(pricelist)) if pricelist="" quit
+ 	set payment=""
+ 	for {
+	   set payment=$order(^TSCH(pricelist,"AMOUNT",payment)) if payment="" quit
+	   if $data(@pRef@(payment)) set koefcito=+@pRef@(payment)
+	   else  Set koefcito=$$CitoCoefficient^Settings.Billing(payment) set @pRef@(payment)=koefcito 
+	   set pricedate=""
+	   for {
+	       set pricedate=$order(^TSCH(pricelist,"AMOUNT",payment,pricedate)) if pricedate="" quit
+	       set @pRef@(payment,pricedate,pricelist)=""
+	   }
+ 	} 
+ }
+ quit
+
  ;------------------------------
 BODY1  ; обработка данных...
  ; поиск по дате разрешения (дата авторизации набора тестов)
@@ -203,14 +232,49 @@ BODY1  ; обработка данных...
 	                     Set billingitem=superset
 	                     If $Data(^||Report.Amount(billingitem,epis,payment)) continue
 	                     if '##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) continue
-	                     set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate(epis,superset)
-	                     ;if authdate<PAR1||(authdate>PAR2) continue
+	                     set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
+	                     if authdate<PAR1||(authdate>PAR2) continue
 	                     Set ^||Report.Amount(billingitem,epis,payment)="" 
                      }
-                     Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error) 
-                     //if billingitem="H055" s ^test("05","testH055",epis_"/"_billingitem)=authdate_"/"_amount
-                     //s ^test("05","price",epis,billingitem)=amount
-                     //if error'="" set ^test("05","error",epis,billingitem)=error
+                     // расчет цены по старому биллингу
+                     if (authdate<boundDate)&&(okCreateTempGlob=1) {
+	                     Set amount=$$GetBillingItemAmount(payment,epis,authdate,billingitem,cito)
+                     }
+                     // расчет цены по новому биллингу 
+                     else {
+	                     Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error) 
+                     }
+
+                    /*
+                     set ^test("compare","05birlab",epis,ts,tscnt)=amount_$c(1)_$c(1)_cito
+                     if +amount'=+$get(^test("compare","05a",epis,ts,tscnt)) {
+	                    set key111=payment
+	                    set key222=epis_"/"_billingitem_"/"_tscnt
+	                    set amount05a=+$get(^test("compare","05a",epis,billingitem,tscnt))
+	                    set ras=amount-amount05a
+	                    if $data(^test("compare","nodate",epis,billingitem)) {
+		                    s ^test("compare","05ras","nodate",key111,key222)=amount_$c(1)_amount05a_$c(1)_$c(1)_payment
+		                    s ^test("compare","05ras","nodate",key111)=$get(^test("compare","05ras","nodate",key111))+ras
+	                    }
+	                    elseif $data(^test("compare","nopricedate",epis,billingitem)) {
+		                    s ^test("compare","05ras","nopricedate",key111,key222)=amount_$c(1)_amount05a_$c(1)_$c(1)_payment
+		                    s ^test("compare","05ras","nopricedate",key111)=$get(^test("compare","05ras","nopricedate",key111))+ras
+	                    }
+	                    elseif $data(^test("compare","nopriceid",epis,billingitem)) {
+		                    s ^test("compare","05ras","nopriceid",key111,key222)=amount_$c(1)_amount05a_$c(1)_$c(1)_payment
+		                    s ^test("compare","05ras","nopricedate",key111)=$get(^test("compare","05ras","nopricedate",key111))+ras
+	                    }
+                        elseif $data(^test("compare","noprice",epis,billingitem)) {
+	                        s ^test("compare","05ras","noprice",key111,key222)=amount_$c(1)_amount05a_$c(1)_$c(1)_payment
+	                        s ^test("compare","05ras","noprice",key111)=$get(^test("compare","05ras","noprice",key111))+ras
+                        }
+                        else  {
+	                        s ^test("compare","05ras","unknown",key111,key222)=amount_$c(1)_amount05a_$c(1)_$c(1)_payment
+	                        s ^test("compare","05ras","unknown",key111)=$get(^test("compare","05ras","unknown",key111))+ras
+                        }
+                        s ^test("compare","05ras","total")=$get(^test("compare","05ras","total"))+ras
+                     }
+                     */ 
                      
                      ; формируем индексы для печати выходного файла
                      s @Mas@("REPORT")=$G(@Mas@("REPORT"))+1
@@ -295,10 +359,18 @@ BODY2  ; обработка данных...
 	                 Set billingitem=superset
                      If $Data(^||Report.Amount(billingitem,epis,payment)) continue
                      Set ^||Report.Amount(billingitem,epis,payment)=""
-                     set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate(epis,superset)
+                     set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
                  }
-                 Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error) 
-                 //if error'="" set ^test("05","error",epis,billingitem)=error
+                 // расчет цены по старому биллингу
+                     if (authdate<boundDate)&&(okCreateTempGlob=1) {
+	                     Set amount=$$GetBillingItemAmount(payment,epis,authdate,billingitem,cito)
+                     }
+                     // расчет цены по новому биллингу 
+                     else {
+	                     Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error) 
+	                     //if error'="" set ^test("05","error",epis,billingitem)=error
+                     }
+
                  ; ---
                  ; считаем количество "НАЗНАЧЕННЫХ" + "РАЗРЕШЕННЫХ" наборы тестов
                  s @Mas@("REPORT",dep)=$g(@Mas@("REPORT",dep))+1
@@ -472,6 +544,26 @@ XML      ; Формирование XML...
  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
  s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
  quit
+
+	// Стоиммость pBillingItem для плательщика pPayer по эпизоду pEpis на дату авторизации pAuthDate
+GetBillingItemAmount(pPayer,pEpis, pAuthDate, pBillingItem, pCito) public 
+{
+	set ^test("compare","price05aBeg",pEpis,pBillingItem)=pPayer_$c(1)_pAuthDate
+	If $Get(pAuthDate)="" s ^test("compare","nodate",pEpis,pBillingItem)=pPayer Quit 0
+	set pricedate=$order(^||inv(pPayer,pAuthDate+0.5),-1)
+	if pricedate="" set ^test("compare","nopricedate",pEpis,pBillingItem)=pPayer_$c(1)_pAuthDate Quit 0
+	set priceid=$order(^||inv(pPayer,pricedate,"")) 
+	if priceid="" set ^test("compare","nopriceid",pEpis,pBillingItem)=pPayer_$c(1)_pAuthDate Quit 0
+	if '$data(^TSCH(priceid,"AMOUNT",pPayer,pricedate,pBillingItem)) set ^test("compare","noprice",pEpis,pBillingItem)=pPayer_$c(1)_priceid
+	set ^test("compare","price05a",pEpis,pBillingItem)=pPayer_$c(1)_pricedate_$c(1)_priceid
+	set amount=$piece($get(^TSCH(priceid,"AMOUNT",pPayer,pricedate,pBillingItem)),"\",1) 
+
+ 	Set koef=1
+ 	If pCito="U" Set koef=+^||inv(pPayer)
+	
+ 	Quit koef*amount 
+}
+ 
 
 	// Имя услуги(либо набор тестов, либо супер набор) по ее коду 
 BillingItemName(pBillingItem) public {

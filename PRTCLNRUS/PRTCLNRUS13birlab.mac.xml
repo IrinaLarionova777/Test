@@ -143,7 +143,12 @@ INIT ; инициализация входных параметров
  ;------------------------------------------------
 BODY  ; обработка данных...
  ;
- do CreateIndex^PRTCLNRUS05a($name(^||inv)) ;инверсии к CT_Schedule_PaymentCode 
+ set boundDate=$zdh("01/12/2012",4),okCreateTempGlob=0
+ set refIndex=$name(^||inv)
+ if PAR1<boundDate {
+	 do CreateIndex^PRTCLNRUS05birlab(refIndex) ;инверсии к CT_Schedule_PaymentCode 
+	 set okCreateTempGlob=1
+ }
  ;
  ;new amount
  Kill ^||Report.Amount ; ***
@@ -152,10 +157,6 @@ BODY  ; обработка данных...
  set date=PAR1-1 
  for {
 	 set date=$o(^TEPIi("AUTHORISED",date)) quit:date=""  quit:date>PAR2 
-     s dateOUT=$$extdate2^SSUTIL4(date)  ;dd/mm/yy
-     ; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2) / по ДНЯМ (3) / по неделям (4) / по кварталам (5)
-     set key=$case(FlagReport, 1: $p(dateOUT,"/",3)_$p(dateOUT,"/",2), 3:$p(dateOUT,"/",3)_$p(dateOUT,"/",2)_$p(dateOUT,"/",1), 4:$$GetMonday(date), 5:$$GetQuarter(date), :$p(dateOUT,"/",3))
-     s:key="" key=" "
      ; --- наборы тестов --- для лаб.эпизода (ограничение по отделам)
      s epis="" 
      for {
@@ -190,13 +191,25 @@ BODY  ; обработка данных...
 	                 Set billingitem=superset
 	                 If $Data(^||Report.Amount(billingitem,epis,payment)) continue
                      If '##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) continue
-                     Set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate(epis,superset)
-                     ;if authdate<PAR1||(authdate>PAR2) continue
+                     Set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
+                     if authdate<PAR1||(authdate>PAR2) continue
                      Set ^||Report.Amount(billingitem,epis,payment)=""
                  }
-                 //Set amount=$$GetBillingItemAmount^PRTCLNRUS05a(payment,epis,authdate,billingitem,cito)
-                 Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error)
                  
+                 s dateOUT=$$extdate2^SSUTIL4(authdate)  ;dd/mm/yy
+                 ; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2) / по ДНЯМ (3) / по неделям (4) / по кварталам (5)
+                 set key=$case(FlagReport, 1: $p(dateOUT,"/",3)_$p(dateOUT,"/",2), 3:$p(dateOUT,"/",3)_$p(dateOUT,"/",2)_$p(dateOUT,"/",1), 4:$$GetMonday(date), 5:$$GetQuarter(date), :$p(dateOUT,"/",3))
+                 s:key="" key=" "
+                             
+                 // расчет цены по старому биллингу
+                 if (authdate<boundDate)&&(okCreateTempGlob=1) {
+	                  Set amount=$$GetBillingItemAmount^PRTCLNRUS05birlab(payment,epis,authdate,billingitem,cito)
+                 }
+                 // расчет цены по новому биллингу 
+                 else {
+	                  Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error) 
+                 }
+                                  
                  s Ndept=$P($G(^TTAB("DEP",dept)),"\",3) s:Ndept="" Ndept=999   ;номер последов. печати отдела 
                  if FlagGr=1 {
                     ; формируем индексы для построения динамического заголовка таблицы (года)
