@@ -39,6 +39,14 @@
 			Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
 			Quit
 		}
+		// extra fields for User.HOSHospitalPatients - in User.HOSHospitalPatientsExtra
+		Set hosppatextraobj=..EMEDOrder2HospitalPatientExtra(pOrderObj)					// Добавляем/обновляем User.HOSHospitalPatientsExtra
+		Set ok=hosppatextraobj.%Save()
+		If 'ok {
+			Set errstr="Не удалось сохранить объект User.HOSHospitalPatientsExtra ("_$$Status2Str^KSUTIL1(ok)_")!"
+			Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
+			Quit
+		}
 		Set ok=..DeleteExistingHospitalPatientTestSets(hosppatobj.%Id())
 		If 'ok {
 			Set errstr="Не удалось удалить существующие записи в User.HOSHospitalPatientвTSet ("_$$Status2Str^KSUTIL1(ok)_")!"
@@ -296,8 +304,8 @@ ID эпизода ЛИС. Пусто, если эпизода еще нет</Des
 	Set obj.HOSPAdmissionDate=$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfRequest)
 	Set obj.HOSPTransDate=$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfRequest)
 	
-	Set obj.EPVISDateOfCollection="" //$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfCollection)
-	Set obj.EPVISTimeOfCollection=$$TimeStamp2Secunds^KSUTIL1(pOrderObj.DateTimeOfCollection)
+	//Set obj.EPVISDateOfCollection="" //$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfCollection)
+	//Set obj.EPVISTimeOfCollection=$$TimeStamp2Secunds^KSUTIL1(pOrderObj.DateTimeOfCollection)
 	Set obj.HOSPSurname=pOrderObj.Surname
 	Set obj.HOSPGivenName=pOrderObj.Name
 	Set obj.HOSPExtraName1=pOrderObj.FartherName
@@ -314,14 +322,43 @@ ID эпизода ЛИС. Пусто, если эпизода еще нет</Des
 		Do obj.HOSPLocationDRSetObjectId(hospcode)
 	} Else {
 		Do obj.HOSPLocationDRSetObjectId("")
-	}		
+	}
+	/*		
+	If (pOrderObj.Cito=1) {
+		Do obj.EPVISPriorityCodeDRSetObjectId("U")
+	} Else {
+		Do obj.EPVISPriorityCodeDRSetObjectId("")
+	}
+	*/	
+	//Set obj.EPVISExtra1=pOrderObj.PlaceOfCollection
+	Do obj.HOSPDoctorReferringDRSetObjectId(..GetDoctorCodeForOrder(pOrderObj))
+	Quit obj
+]]></Implementation>
+</Method>
+
+<Method name="EMEDOrder2HospitalPatientExtra">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrderObj:TCLEx.Object.EMEDOrder</FormalSpec>
+<ReturnType>User.HOSHospitalPatientsExtra</ReturnType>
+<Implementation><![CDATA[
+	Set obj=##class(User.HOSHospitalPatientsExtra).%OpenId("L||L||"_pOrderObj.RequestId)
+	If '$IsObject(obj) {
+		Set obj=##class(User.HOSHospitalPatientsExtra).%New()
+		set obj.HOSPHospitalCodeDR="L"
+		Set obj.HOSPDebtorNumber="L"
+		Set obj.HOSPVisit=pOrderObj.RequestId
+	}
+		
+	Set obj.EPVISDateOfCollection="" //$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfCollection)
+	Set obj.EPVISTimeOfCollection=$$TimeStamp2Secunds^KSUTIL1(pOrderObj.DateTimeOfCollection)
+	
 	If (pOrderObj.Cito=1) {
 		Do obj.EPVISPriorityCodeDRSetObjectId("U")
 	} Else {
 		Do obj.EPVISPriorityCodeDRSetObjectId("")
 	}	
 	Set obj.EPVISExtra1=pOrderObj.PlaceOfCollection
-	Do obj.HOSPDoctorReferringDRSetObjectId(..GetDoctorCodeForOrder(pOrderObj))
+	
 	Quit obj
 ]]></Implementation>
 </Method>
@@ -505,6 +542,12 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 	Set ok=##class(User.HOSHospitalPatients).%DeleteId(hosppatid)
 	If 'ok {
 		Set errstr="Не удалось удалить объект User.HOSHospitalPatients ("_$$Status2Str^KSUTIL1(ok)_")!"
+		Do ##class(dbo.TCLRequest).UpdateStatus(pRequestId,2,errstr)
+		Quit
+	} 
+	Set ok=##class(User.HOSHospitalPatientsExtra).%DeleteId(hosppatid)
+	If 'ok {
+		Set errstr="Не удалось удалить объект User.HOSHospitalPatientsExtra ("_$$Status2Str^KSUTIL1(ok)_")!"
 		Do ##class(dbo.TCLRequest).UpdateStatus(pRequestId,2,errstr)
 		Quit
 	} 
@@ -922,7 +965,8 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 								Continue
 							}	
 						}
-						set doctoridold=doctorid
+						//
+						set doctoridold=doctorid					
 						Set doctorid=##class(TCLEx.Function.EMED).OfficialDoctor(doctorid,testset)
 						Set userobj=##class(User.SSUser).%OpenId(doctorid,0)
 						If $IsObject(userobj) {
@@ -934,7 +978,7 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 						if doctoridold'=doctorid {
 							set doctorAuthorised=##class(dbo.TCLRequest).GetDoctorAuthorised(requestid)
 							if doctorAuthorised'="" set authdoctor=doctorAuthorised	
-						}
+						}	
 					}	
 					Set ok=##class(dbo.TCLRequest).UpdateStatus2Authorized(requestid,authdoctor)
 				} ElseIf status=7 {							// Набор тестов удален в ЛИС или установлена причина по которой его не будут делать
@@ -977,14 +1021,18 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 <FormalSpec>pRequestId:%String,pTestSetRequestId:%String,pTestSet:%String,pTestSetId:%String</FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
+	s ^test("ir",5)=pRequestId_"*"_pTestSetRequestId_"*"_pTestSet_"*"_pTestSetId
 	Set ok=##class(dbo.TCLRequestTestData).DeleteTestSetData(pTestSetRequestId)
 	If 'ok Quit ok
 	Kill ^||EMED.TestOrder,^||EMED.TestSetDataId
 	Do ##class(TCLEx.Function.TestSet).TemplateTestOrder(pTestSet,$Name(^||EMED.TestOrder))
 	Do ##class(TCLEx.Function.TestSet).TestSetDataIdOrder(pTestSetId,$Name(^||EMED.TestOrder),$Name(^||EMED.TestSetDataId))
 	Kill ^||EMED.EMEDTest
+	m ^test("ir",1)=^||EMED.TestOrder
+	m ^test("ir",2)=^||EMED.TestSetDataId
 	Set ok=##class(dbo.confeprtcl).CreateTestBuffer(pTestSet,$NA(^||EMED.EMEDTest))
 	If 'ok Quit ok
+	m ^test("ir",3)=^||EMED.EMEDTest
 	Set n="",testsetok=1
 	For  {
 		Set n=$Order(^||EMED.TestSetDataId(n))
@@ -996,6 +1044,8 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 			Kill ^||EMED.TestSetData
 			Do ##class(TCLEx.Function.TestSet).GetResultInfo(testdataid,,$Name(^||EMED.TestSetData))
 			Set testcode=$Get(^||EMED.TestSetData(testdataid,"Code"))
+			m ^test("ir",6,testdataid)=^||EMED.TestSetData
+			s ^test("ir",7,testdataid)=testcode_"*"_$Data(^||EMED.EMEDTest(testcode))
 			If '$Data(^||EMED.EMEDTest(testcode)) Continue
 			Set test=$Get(^||EMED.TestSetData(testdataid,"Description"))
 			Set result=$Get(^||EMED.TestSetData(testdataid,"Value"))
