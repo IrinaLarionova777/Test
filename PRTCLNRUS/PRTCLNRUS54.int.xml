@@ -36,8 +36,7 @@ FORM(USER) new (USER) s USER=$G(USER)
  ;
  ; настройка формы
  s @Par@("form")="Отчет для анализа работы прибора:500:300:Формиров.:Выход"
- m ^test("par")=@Par
- q "^TEMP("_$J_")" 
+ q Par //"^TEMP("_$J_")" 
  ;==================================================================================================================
  ; Формирование отчета согласно заданным критериям (передаются из формы VB)
  ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
@@ -45,7 +44,6 @@ FORM(USER) new (USER) s USER=$G(USER)
  ;             100^сообщение об ошибке
  ; 
 START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
- s ^test("par")=PAR
  i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
  ;
  ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
@@ -53,7 +51,7 @@ START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR)
  s Mas="^TEMP($zn,$J)" k @Mas
  s MSGERROR=""            
  d INIT i $g(MSGERROR)'="" quit MSGERROR
- g XML
+ g Report
  ;------------------------------------------------
 INIT ; инициализация входных параметров
  New mas,str,str1,str2,i,j,pay
@@ -66,110 +64,278 @@ INIT ; инициализация входных параметров
  i $G(PAR3)="" s MSGERROR="100^Не определено значение <Прибор>" q
  quit
  
-XML   ; обработка данных и формирование XML ...
+ ; обработка данных и формирование XML ...
+XML(pDateFrom,pDateTo,devices,MasXML) public
+{  
+  set ok=1
+  try {
 
-  s Mas="^TEMP($zn,$J)" k @Mas
-  S MasXML="^TEMP($zn,$J,""XML"")" kill @MasXML
+      set @MasXML@("User",1,"DateFrom")=$TR($$extdate2^SSUTIL4(pDateFrom),"/",".")
+      set @MasXML@("User",1,"DateTo")=$TR($$extdate2^SSUTIL4(pDateTo),"/",".")
+  
+      do GetData($get(pDateFrom),$get(pDateTo),.devices,$na(@MasXML@("Data")))
 
-  kill devices set devices(PAR3)="" 
-  
-  set @MasXML@("User",1,"DateFrom")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
-  set @MasXML@("User",1,"DateTo")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
-  
-  set PAR1=PAR1-0.5
-  
-  set mi=""
-  for {
-	  set mi=$order(devices(mi)) if mi="" quit
-	  set devicename=$piece($get(^TMIF(mi)),"\",1)
-	  kill @MasXML@("Data")
-	  set material=""
+	  kill @MasXML@("Data2")
+	  set mi=""
 	  for {
+		  set mi=$order(@MasXML@("Data",mi)) if mi="" quit
+		  set testcode=""
+          for {
+	          set testcode=$order(@MasXML@("Data",mi,testcode)) if testcode="" quit 
+	          set testcodeAnal=$piece($get(^TMIF(mi,2,testcode)),"\",1) 
+	          set testname=$piece($get(^TTAB("TC",testcode)),"\",1)
+	          set key=testname_$char(1)_testcodeAnal_$char(1)_testcode
+	          merge @MasXML@("Data2",mi,key)=@MasXML@("Data",mi,testcode)
+          }
+      }
+      kill @MasXML@("Data")
+  
+      set nn=0
+      set mi=""
+      for {
+	      set mi=$order(@MasXML@("Data2",mi)) if mi="" quit
+	      set devicename=$piece($get(^TMIF(mi)),"\",1)
+          set test=""
+          for {
+	         set test=$order(@MasXML@("Data2",mi,test)) if test="" quit 
+	         set testcodeAnal=$piece(test,$char(1),2)
+	         set testname=$piece(test,$char(1),1)
+	         set material=""
+	         for {
+		         set material=$order(@MasXML@("Data2",mi,test,material)) if material="" quit
+		         set materialName=$piece($get(^TTQC(material)),"\",1)
+		         set lot=""
+		         for {
+			        set lot=$order(@MasXML@("Data2",mi,test,material,lot)) if lot="" quit
+			        set lotname=$piece($get(^TTQC(material,"LOT",lot)),"\",1)
+			        set level=""
+			        for {
+				        set level=$order(@MasXML@("Data2",mi,test,material,lot,level)) if level="" quit
+				        set levelname=$piece($get(^TTQC(material,"LOT",lot,"LEVEL",level)),"\",1)
+				        set datetime=""
+				        for {
+					        set datetime=$order(@MasXML@("Data2",mi,test,material,lot,level,datetime),1,record) if datetime="" quit
+					        set nn=nn+1
+	                        set @MasXML@("User",1,"QC",nn,"Device")=$zstrip(devicename,"<>W")
+	                        set @MasXML@("User",1,"QC",nn,"TestName")=$zstrip(testname,"<>W")
+	                        set @MasXML@("User",1,"QC",nn,"TestCode")=$zstrip(testcodeAnal,"<>W")
+	                        set @MasXML@("User",1,"QC",nn,"Material")=$zstrip(materialName,"<>W")
+	                        set @MasXML@("User",1,"QC",nn,"LotCode")=$zstrip(lot,"<>W")
+	                        set @MasXML@("User",1,"QC",nn,"LotName")=$zstrip(lotname,"<>W")
+	                        set @MasXML@("User",1,"QC",nn,"Level")=$zstrip(level,"<>W")
+	                        set @MasXML@("User",1,"QC",nn,"LevelName")=$zstrip(levelname,"<>W")
+	                        set date=$tr($zdate($piece(datetime,$char(1),1),4),"/",".")
+	                        set time=$ztime($piece(datetime,$char(1),2),2)
+	                        set time=+$piece(time,":",1)_":"_$piece(time,":",2)  // так как надо 8:05, а не 08.05
+	                        set @MasXML@("User",1,"QC",nn,"DateTime")=date_" "_time
+	                        set @MasXML@("User",1,"QC",nn,"Result")=$zstrip(record,"<>W")
+	                        set @MasXML@("User",1,"QC",nn,"Odd")=$select(nn#2'=0:"1",1:"0")
+				        }
+				  }
+			  }
+		  }
+	    }  
+	  }
+	  k ^test("ttt") m ^test("ttt")=@MasXML
+      kill @MasXML@("Data2")
+  } catch(exception) {
+	  set ok=exception.AsStatus()
+  }
+  quit ok
+}
+ 	
+Report
+  S MasXML="^TEMP($zn,$J,""XML"")" kill @MasXML
+  
+  kill devices set devices(PAR3)=""
+  set ok=$$XML(PAR1,PAR2,.devices, $na(@MasXML))
+  if 'ok quit "100^Ошибка:"_$system.Status.GetErrorText(ok)
+  ;log
+  //k ^zz M ^zz("XML")=@MasXML     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($na(@MasXML),"CLNRUS54.xsl",USER)
+  kill @MasXML
+  k ^TEMP($zn,$J),^TEMP($j)   
+  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  quit "0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"  
+
+GetData(pDateFrom,pDateTo,pDevices,pGlb) public
+
+  set pDateFrom=pDateFrom-0.5
+  kill @pGlb
+  set material=""
+  for {
 		  set material=$order(^TTQC(material)) if material="" quit
 		  set lot=""
 		  for {
 			  set lot=$order(^TTQC(material,"LOT",lot)) if lot="" quit
-			  set testcode=""
+			  set mi=""
 			  for {
-				  set testcode=$order(^TTQC(material,"LOT",lot,"TYPE","M",mi,"TEST",testcode)) if testcode="" quit
-				  set level=""
-				  for {
-					  set level=$order(^TTQC(material,"LOT",lot,"TYPE","M",mi,"TEST",testcode,"DATA",level)) if level="" quit
-					  set date=PAR1
-					  for {
-						  set date=$order(^TTQC(material,"LOT",lot,"TYPE","M",mi,"TEST",testcode,"DATA",level,date)) if date=""||(date>PAR2) quit  
-						  set num=""
-						  for {
-							  set num=$order(^TTQC(material,"LOT",lot,"TYPE","M",mi,"TEST",testcode,"DATA",level,date,num),1,record) if num="" quit
-							  set time=$piece(record,"\",4),result=$piece(record,"\",1)
-							  set @MasXML@("Data",testcode,material,lot,level,date_$char(1)_time_$char(1)_num)=result
-							    
+				  set mi=$order(^TTQC(material,"LOT",lot,"TYPE","M",mi)) if mi="" quit
+				  if ($data(pDevices)>1) if '$data(pDevices(mi)) continue
+			      set testcode=""
+			      for {
+				      set testcode=$order(^TTQC(material,"LOT",lot,"TYPE","M",mi,"TEST",testcode)) if testcode="" quit
+				      set level=""
+				      for {
+					      set level=$order(^TTQC(material,"LOT",lot,"TYPE","M",mi,"TEST",testcode,"DATA",level)) if level="" quit
+					      set date=pDateFrom
+					      for {
+						      set date=$order(^TTQC(material,"LOT",lot,"TYPE","M",mi,"TEST",testcode,"DATA",level,date)) if date=""||(date>pDateTo) quit  
+						      set num=""
+						      for {
+							     set num=$order(^TTQC(material,"LOT",lot,"TYPE","M",mi,"TEST",testcode,"DATA",level,date,num),1,record) if num="" quit
+							     set time=$piece(record,"\",4),result=$piece(record,"\",1)
+							     set result=$$FormatResult(result)
+							     set @pGlb@(mi,testcode,material,lot,level,date_$char(1)_time_$char(1)_num)=result
+						      }  
 						  }
 					  }
 				  }  
 			  }
 		  }
 	  }
-	  kill @MasXML@("Data2")
-      set testcode=""
-      for {
-	      set testcode=$order(@MasXML@("Data",testcode)) if testcode="" quit 
-	      set testcodeAnal=$piece($get(^TMIF(mi,2,testcode)),"\",1) 
-	      set testname=$piece($get(^TTAB("TC",testcode)),"\",1)
-	      set key=testname_$char(1)_testcodeAnal_$char(1)_testcode
-	      merge @MasXML@("Data2",key)=@MasXML@("Data",testcode)
-      }
+ quit	   
+ 
+CreateFile(filereal)
+ set ok=1
+ try {
+	 set date=+$h
+     set pDateFrom=date-1
+     set pDateTo=date-1
+     set glb=$na(^||xml)
+     // данные
+     set ok=$$XML(pDateFrom,pDateTo,"",glb)
+     if 'ok quit
+     //kill ^test("fff") m ^test("fff")=@glb
+     if '$data(@glb@("User",1,"QC")) set ok=$$Error^%apiOBJ(5001,"Нет данных за "_$zd($h-1,4)) quit
+     
+     // создание файла во временной директории
+     set filename=$$GetFileName(pDateFrom)
+     
+     set pathArcFile=$$GetPathArcFile()
+     if pathArcFile="" set ok=$$Error^%apiOBJ(5001,"Не указан путь к архивным файлам.") quit  
+     if '##class(%File).DirectoryExists(pathArcFile) {
+	    set ok=##class(%File).CreateDirectory(pathArcFile)
+	    if 'ok set ok=$$Error^%apiOBJ(5001,"Не удалось создать директорию "_pathArcFile_".") quit    
+     }
+     
+     set pathRealFile=$$GetPathRealFile()
+     if pathRealFile="" set ok=$$Error^%apiOBJ(5001,"Не указан путь к файлам для Unity.") quit  
+     if '##class(%File).DirectoryExists(pathRealFile) {
+	    set ok=$$Error^%apiOBJ(5001,"Не существует директория "_pathRealFile_".") quit    
+     }
+     
+     set filearc=pathArcFile_"\"_filename_".tmp" // файл во временной директории с расширением tmp
+     Set filearc=$$ArchiveFileName^KSUTIL1(filearc)
+     set dir=pathRealFile_"\"
+	 set filetmp=dir_filename_".tmp" // файл во рабочей директории с расширением tmp
+	 set filereal=dir_filename_".csv" // файл во рабочей директории с расширением csv
+	 
+	 if ##class(%File).Exists(filetmp) {
+		//set ok=$$Error^%apiOBJ(5001,"Файл "_filereal_" уже существует.") quit 
+		set ok=##class(%File).Delete(filetmp)
+		if 'ok set ok=$$Error^%apiOBJ(5001,"Не удалось удалить уже существующий файл "_filetmp_".") quit 
+	 }
+	 
+	 if ##class(%File).Exists(filereal) {
+		//set ok=$$Error^%apiOBJ(5001,"Файл "_filereal_" уже существует.") quit 
+		set ok=##class(%File).Delete(filereal)
+		if 'ok set ok=$$Error^%apiOBJ(5001,"Не удалось удалить уже существующий файл "_filereal_".") quit 
+	 }
+	 
+     //Set file=##class(%File).%New(filearc) 
+	 //set ok=file.Open("WSN")
+	 //if 'ok quit
+	 Set stream=##class(%FileCharacterStream).%New()
+	 Set stream.TranslateTable="CP1251"  
+	 Set stream.Filename=filearc
+	 //Set ok=stream.MoveToEnd()
+	 
+	 set nn=""
+     for {
+	     set nn=$order(@glb@("User",1,"QC",nn)) if nn="" quit
+	     set devicename=$get(@glb@("User",1,"QC",nn,"Device"))
+	     set testname=$get(@glb@("User",1,"QC",nn,"TestName"))
+	     set testcodeAnal=$get(@glb@("User",1,"QC",nn,"TestCode"))
+	     set materialName=$get(@glb@("User",1,"QC",nn,"Material"))
+	     set lot=$get(@glb@("User",1,"QC",nn,"LotCode"))
+	     set lotname=$get(@glb@("User",1,"QC",nn,"LotName"))
+	     set level=$get(@glb@("User",1,"QC",nn,"Level"))
+	     set levelname=$get(@glb@("User",1,"QC",nn,"LevelName"))
+	     set datetime=$get(@glb@("User",1,"QC",nn,"DateTime"))
+	     set result=$get(@glb@("User",1,"QC",nn,"Result"))
+	     set record=devicename_";"_testname_";"_testcodeAnal_";"_materialName_";"_lot_";"_lotname_";"_level_";"_levelname_";"_datetime_";"_result
+		 //set ok=file.WriteLine(record)
+		 Set ok=stream.WriteLine(record)
+		 if 'ok quit
+	 }
+	 if 'ok quit
+	 
+	 //set ok=file.%Save()  
+	 Set ok=stream.SaveStream()
+	 if 'ok quit
+	 Set stream=""
+	 
+	 // копирование файла из временной директории в рабочую
+	 Set ok=##class(%File).CopyFile(filearc,filetmp) 
+	 if 'ok set ok=$$Error^%apiOBJ(5001,"Не удалось скопировать файл "_filearc_" в файл "_filetmp_".") quit
+	 Set ok=##class(%File).Rename(filetmp,filereal)
+	 if 'ok set ok=$$Error^%apiOBJ(5001,"Не удалось переименовать файл "_filetmp_" в файл "_filereal_".") quit
+	 
+     
+ } catch(exeption) {
+	 set ok=exeption.AsStatus()
+	 Set stream=""
+	 /*
+	 if ($get(file)'="")&&(IsObject(file)) {
+		 do file.Close()
+	 }*/
+ }
+ if $get(glb)'="" kill @glb 
+ 
+ quit ok
+ 
+FormatResult(result)
+ new p1,p2,len,i,pp
+ if $isvalidnum(result) {
+	 set p1=$piece(result,".",1),p2=$piece(result,".",2)
+	 // .23->0.23 0.20->0.2, 1.0->1
+     if (+p2'=0) {
+	     set len=$length(p2)
+	     for i=len:-1:1 set pp=$extract(p2,i) quit:pp'="0"  set p2=$extract(p2,1,len-1)
+	     set result=$select(p1="":"0."_p2,p1="-":"-0."_p2,p2'="":p1_"."_p2,1:result)
+     }
+     if +p2=0 set result=+p1
+ }
+ set result=$tr(result,".",",")
+ quit result
+ 
+GetFileName(date)
+ quit "lis_"_$zd(date,8) 
+
+GetPathArcFile() 
+ quit $get(^Settings("Unity","pathArcFile"))
    
-      kill @MasXML@("Data")
-  
-      set test="",nn=0
-      for {
-	    set test=$order(@MasXML@("Data2",test)) if test="" quit 
-	    set testcodeAnal=$piece(test,$char(1),2)
-	    set testname=$piece(test,$char(1),1)
-	    set material=""
-	    for {
-		  set material=$order(@MasXML@("Data2",test,material)) if material="" quit
-		  set materialName=$piece($get(^TTQC(material)),"\",1)
-		  set lot=""
-		  for {
-			  set lot=$order(@MasXML@("Data2",test,material,lot)) if lot="" quit
-			  set lotname=$piece($get(^TTQC(material,"LOT",lot)),"\",1)
-			  set level=""
-			  for {
-				  set level=$order(@MasXML@("Data2",test,material,lot,level)) if level="" quit
-				  set levelname=$piece($get(^TTQC(material,"LOT",lot,"LEVEL",level)),"\",1)
-				  set datetime=""
-				  for {
-					  set datetime=$order(@MasXML@("Data2",test,material,lot,level,datetime),1,record) if datetime="" quit
-					  set nn=nn+1
-	                  set @MasXML@("User",1,"QC",nn,"Device")=devicename
-	                  set @MasXML@("User",1,"QC",nn,"TestName")=testname
-	                  set @MasXML@("User",1,"QC",nn,"TestCode")=testcodeAnal
-	                  set @MasXML@("User",1,"QC",nn,"Material")=materialName
-	                  set @MasXML@("User",1,"QC",nn,"LotCode")=lot
-	                  set @MasXML@("User",1,"QC",nn,"LotName")=lotname
-	                  set @MasXML@("User",1,"QC",nn,"Level")=level
-	                  set @MasXML@("User",1,"QC",nn,"LevelName")=levelname
-	                  set @MasXML@("User",1,"QC",nn,"DateTime")=$zdate($piece(datetime,$char(1),1),4)_" "_$ztime($piece(datetime,$char(1),2))
-	                  set @MasXML@("User",1,"QC",nn,"Result")=record
-	                  set @MasXML@("User",1,"QC",nn,"Odd")=$select(nn#2'=0:"1",1:"0")
-				  }
-			  }
-		  }
-	    }  
-	  }
+GetPathRealFile()
+ quit $get(^Settings("Unity","pathRealFile"))   
+   
+LogMessage(pMessage) public
+{
+	if $get(pMessage)="" quit
+	;
+	Set logdir=$ZUtil(12)_"LIS"
+	Set fullpath=$ZUtil(12)_"LIS"_"\"_"unity.log"
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.TranslateTable="CP1251"  
+	Set stream.Filename=fullpath
+	Set ok=stream.MoveToEnd()
+	If ok Set ok=stream.WriteLine(pMessage)
+	If ok Set ok=stream.SaveStream()
+	If 'ok Quit
+	Set stream=""
 
-  }
-  kill @MasXML@("Data2")	
-  ;log
-  k ^zz M ^zz("XML")=@MasXML     ;@@@
-  ;
-  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS54.xsl",USER)
-  i $E(%Ret)="*" q "100^Ошибка:"_$E(%Ret,2,$L(%Ret)) 
-  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
-  k ^TEMP($zn,$J),^TEMP($j)
-  quit "0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"  
-
+}  
 ]]></Routine>
 </Export>
