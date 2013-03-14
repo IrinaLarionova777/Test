@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFortho" type="INT" languagemode="0"><![CDATA[
+MIFortho(mi) // ORTHO AutoVue® Innova - Russion Burdenko 
+    //(полный цикл через файлы : query-request-result)
+  	New (mi)
+	Set mi=$Get(mi) 
+	If '$Length(mi) Quit
+	Kill ^TMIF(mi,10) 
+	Set $ZTrap="err^MIF000"
+	If $$select^LVBMIMP(mi) q
+	For j=1:1:PLIST Set @("par"_j)=PLIST(j)
+	;
+	Set basedir=PLIST(12) if basedir="" set basedir=PLIST(20)
+	if basedir="" set basedir="C:\temp\ortho"
+	set len=$length(basedir)
+	if $tr($extract(basedir,len),"/","\")="\" set basedir=$extract(basedir,1,len-1)
+
+	If '##class(%File).DirectoryExists(basedir) {
+		Do message^MIF000(mi,"Instrument's directory is unavailable") 
+		Quit
+	}	
+
+	Set indir=$$GetDirInput(basedir) // директория для файлов Device->LIS
+	Set outdir=$$GetDirOutput(basedir)  // директория для файлов LIS-Device
+	Set archivdirin=$$GetDirArchiveInput(basedir)
+	Set archivdirout=$$GetDirArchiveOutput(basedir)
+	Set errdir=$$GetDirError(basedir)
+
+    for dir=indir,outdir,archivdirin,archivdirout,errdir {
+	    If '##class(%File).DirectoryExists(dir) {
+		    if '##class(%File).CreateDirectory(dir) {
+			    Do message^MIF000(mi,"Can not create directory "_dir) quit
+		    }
+	    }
+    }
+	If $$start^MIF000() Quit
+ 	Do trace^MIF000(mi,"Started job="_$Job,"DEBUG")
+ 	;
+	For  {  
+		Do Main(mi,basedir) 
+		If $$stop^MIF000() Quit
+	}
+ 	Do trace^MIF000(mi,"Stopped job="_$Job,"DEBUG")
+	Quit
+ 
+Main(mi,pBaseDir) [par10,par11] public 
+{
+ 	Set oldtime=$ZHorolog
+ 	Do LoadFilesFromAnalisator(mi,pBaseDir)
+	Set delta=($ZHorolog-oldtime)\1
+	If delta<15 Hang 15-delta 
+} 
+
+ // Чтение файлов с запросами (query) и результатами от прибора 
+LoadFilesFromAnalisator(mi,pBaseDir) [par10,par11] public 
+{
+	set pInDir=$$GetDirInput(pBaseDir)
+	Set rs=##class(%ResultSet).%New("%File:FileSet")
+	Set ok=rs.Execute(pInDir,"*.*")  
+	If 'ok Quit
+	While rs.%Next() { 
+ 		Do ReadFileFromAnalisator(mi,$Get(rs.Data("Name")),pBaseDir) 
+	}
+}
+ // Чтение одного файла из прибора и и его обработка
+ReadFileFromAnalisator(mi,pFileName,pBaseDir) [par10,par11] public 
+{
+	set pArchivDir=$$GetDirArchiveInput(pBaseDir)
+	set pErrDir=$$GetDirError(pBaseDir)
+	// переносим файл в директорию pArchivDir
+	Set dir=$zconvert(##class(%File).GetDirectory(pFileName),"L")  
+ 	Set name=$Piece($zconvert(pFileName,"L"),dir,2)
+ 	Set newname=pArchivDir_"\"_name
+ 	Set newname=$$ArchiveFileName^KSUTIL1(newname)
+	Set ok=##class(%File).Rename(pFileName,newname)
+	if 'ok Do trace^MIF000(mi,"не удалось перенести файл "_pFileName_" в директорию "_pArchivDir,"H<--M") quit
+
+    try {
+	    
+	set (sample,epis,surname,result,date,time,QC)="" 
+
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=newname
+	Set stream.TranslateTable="CP1251"
+ 	While 'stream.AtEnd {
+		Set record=stream.ReadLine()
+		if record="" continue
+		do trace^MIF000(mi,record,"H<--M")
+		set typerecord=$extract(record,1)
+		; head record
+        if typerecord="H" {
+           set nameMachine=$piece(record,"|",5)  
+           continue
+        }
+        ; query record
+        if typerecord="Q" {
+	       set epis=$piece($piece(record,"|",3),"^",2)
+	       if $length(epis) set ^TMP($zname,$job,"ENQ",epis)="" 
+           continue
+        }    
+        ; patient record
+        if typerecord="P" {
+           do Last(mi,sample,epis,surname,result,date,time,QC) 
+           set (sample,epis,surname,result,date,time,QC)=""
+           set surname=$translate($translate($piece(record,"|",6),""),"^"," ") 
+           continue
+        }
+        ; order record
+        if typerecord="O" {
+	        do Last(mi,sample,epis,surname,result,date,time,QC) 
+            set (sample,epis,surname,result,date,time,QC)=""
+	        set epis=$translate($piece($piece(record,"|",3),"^",1)," ") 
+	        if '$length(epis) set epis=$translate($piece($piece(record,"|",4),"^",1)," ")
+	        //set QC=$translate($piece(record,"|",12)," ") 
+            //if QC="Q" set QC="Y"
+            continue
+        }
+        ; result record
+        if typerecord="R" {
+           ; strip trailing spaces
+           set typeresult=$piece(record,"|",9)
+           if typeresult="X" continue  // X test canceled or in error
+           set test=$piece(record,"|",3) set test=$$DeleteLeftAndRightSpaces^KSUTIL1(test)
+           set res=$translate($piece(record,"|",4),", ","."),flag=$translate($piece(record,"|",7)," ")
+           if flag="N" set flag="" ; normal flag
+           
+           if $length(res),$isvalidnum(res) set res=+res // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
+           if $length(test),$length(res) set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
+           ; date and time
+           if $length($translate($piece(record,"|",13)," ")) {
+	         set datetime=$piece(record,"|",13)
+	         set date=$$intdate^SSUTIL4($extract(datetime,5,6)_"/"_$extract(datetime,7,8)_"/"_$extract(datetime,1,4))
+             set time=($extract(datetime,9,10)*3600)+($extract(datetime,11,12)*60)
+           }
+           continue
+        }
+        ; last record
+        if typerecord="L" {
+	       do Last(mi,sample,epis,surname,result,date,time,QC) 
+	       continue
+        }
+ 	}
+    } 
+    catch(exception) 
+    {
+	  set ok=exception.AsStatus()	  
+    }
+ 	Set stream=""  
+ 	If (ok) {
+		Do trace^MIF000(mi,"Done file "_newname,"H<--M")
+  	} Else {
+		Do trace^MIF000(mi,"Error during processing file "_newname,"H<--M")
+	 	Set ok2=##class(%File).Rename(newname,pErrDir_"\"_name)
+    	If ok2 {
+	    	Do trace^MIF000(mi,"Renamed file "_newname_" to "_pErrDir_"\"_name,"H<--M")
+        } Else {
+		    Do trace^MIF000(mi,"Error during renaming file "_newname_" to "_pErrDir_"\"_name,"H<--M")
+  	    }		
+   	}
+   	
+  	// если был запрос, то формируем ответный файл
+  	if $data(^TMP($zname,$job,"ENQ")) do CreateOrders(mi,pBaseDir)
+  	quit
+}
+	
+ // write result
+Last(mi,sample,epis,surname,result,date,time,QC) public {
+    do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"DEBUG")
+    if epis?1.99AN,$length(result) {
+ 	   do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+    }
+    set (sample,epis,surname,result,date,time,QC)=""
+    quit
+ }
+ 
+CreateOrders(mi,pBaseDir) 
+{
+    set epis=""
+    for {
+	    set epis=$order(^TMIF(mi,10,epis)) quit:epis="" 
+	    do CreateFileOrder(mi,epis,pBaseDir)
+    }
+    set epis="" 
+    for {
+	    set epis=$order(^TMP($zname,$job,"ENQ",epis)) quit:epis="" 
+        do scanone^MIF000(mi,epis)
+        if $$select^LVBEPVIS(epis,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
+        set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
+        set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8)
+        set priorityEpis="" if PLIST(17)'="" if $$seldata^LVBCTPR(PLIST(17),4)="Y" set priorityEpis="S" // STAT
+        // header record
+        set line=$order(^TMIF(mi,10,epis,""),-1)+1
+        set ^TMIF(mi,10,epis,line)="H|\^&|||LIS||||||||||" 
+        // patient record
+        set line=$order(^TMIF(mi,10,epis,""),-1)+1
+        set ^TMIF(mi,10,epis,line)="P|1|"_epis_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"|"_birthday_"|"_"|"_sex_"|" 
+     
+        // order records
+        set tc="",tests="" 
+        for {
+	        set tc=$order(^TMP("MIF-SINGLE",$job,mi,epis,tc)) if tc="" quit
+	        set priority=priorityEpis
+	        if priority="" {
+		       set refEpisode=$$getRowIdTestSet^MIF000dop(mi,epis,tc) if refEpisode="" continue
+	           set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
+	           set rec=$get(^TEPI(epis,1,testset,tscnt))
+	           set priority=$piece(rec,"\",10)
+	           if priority'="" if $$seldata^LVBCTPR(priority,4)="Y" set priorityEpis="S" // STAT
+	        }
+	        if priority="" set priority="N"
+	        
+	        set tests=$select(tests'="":"^",1:"")_tc
+        }
+        set line=$order(^TMIF(mi,10,epis,""),-1)+1
+        set sampletype="aaa"
+        set ^TMIF(mi,10,epis,line)="O|1"_"|"_epis_"||^^^"_tests_"|"_priorityEpis_"||||||||||"_sampletype_"|"
+        // terminate record
+        set line=$order(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="L|1|"
+        kill ^TMP($zname,$job,"ENQ",epis)
+        do CreateFileOrder(mi,epis,pBaseDir)
+ }
+ quit
+}
+
+CreateFileOrder(mi,epis,pBaseDir) 
+{
+ Set dirout=$$GetDirOutput(pBaseDir)
+ Set archivdirout=$$GetDirArchiveOutput(pBaseDir)
+ 
+ set filename=dirout_"\"_$$GetFileName()_".txt" 
+ if ##class(%File).Exists(filename) {
+	 do trace^MIF000(mi,"Файл "_filename_" существует. Не удалось сделать заказ по эпизоду "_epis,"DEBUG")
+	 quit
+ }
+ set ok=1
+ try {
+	  // создание файла в директории archivdirout
+	 set filearc=archivdirout_"\"_$$GetFileName()_".txt" 
+     Set filearc=$$ArchiveFileName^KSUTIL1(filearc)
+     //Set file=##class(%File).%New(filearc)
+	 //set ok=file.Open("WSN")
+	 //if 'ok quit
+	 Set stream=##class(%FileCharacterStream).%New()
+	 Set stream.TranslateTable="CP1251"  
+	 Set stream.Filename=filearc
+	 
+	 set line=""
+	 for {
+		 set line=$order(^TMIF(mi,10,epis,line),1,record) if line="" quit
+		 if record="" continue
+		 set ok=file.WriteLine(record)
+		 if 'ok quit
+	 }
+	 if 'ok quit
+	 //set ok=file.%Save()
+	 Set ok=stream.SaveStream()
+	 Set stream=""
+	 if 'ok quit
+	 
+	 // копирование файла в output c расширением tmp
+	 set filenametmp=dirout_"\"_$$GetFileName()_".tmp"
+	 Set ok=##class(%File).CopyFile(filearc,filenametmp) 
+	 Set ok=##class(%File).Rename(filenametmp,filename)
+ 
+ }
+ catch(exception) 
+ {
+	  set ok=exception.AsStatus()	  
+ }
+ if ok {
+	 kill ^TMIF(mi,10,epis)
+	 do trace^MIF000(mi," По эпизоду "_epis_" создан файл "_filename,"DEBUG")
+	 
+ } else {
+	 do trace^MIF000(mi,"Не удалось сделать заказ по эпизоду "_epis,"DEBUG")
+	 do trace^MIF000(mi,"Ошибка "_$System.Status.GetErrorText(ok),"DEBUG")
+
+ }	
+	
+ quit 
+}
+ 
+ // директория для файлов LIS->Device 
+GetDirOutput(basedir) 
+{
+	quit "\\O05485\lan\dnl"
+    //quit basedir_"\Output" 
+}
+ 
+ // директория для файлов LIS->Device (archive) 
+GetDirArchiveOutput(basedir) 
+{
+	quit "C:\Laboratory\Instruments\Innova\Output"
+ quit basedir_"\Output" 
+}
+ 
+ // директория для файлов Device->LIS 
+GetDirInput(basedir) 
+{
+	quit "\\O05485\lan\upl"
+	//quit "C:\temp\2"
+    //quit basedir_"\Input" 
+}
+
+ // директория для файлов with error
+GetDirError(basedir) 
+{
+ quit basedir_"\error" 
+}
+ 
+ // директория для файлов Device->LIS (archive) 
+GetDirArchiveInput(basedir) 
+{
+	quit "C:\Laboratory\Instruments\Innova\Input"
+ quit basedir_"\Input" 
+} 
+ // имя файла LIS->Analisator 
+GetFileName() 
+{
+ quit "lis"_$zd(+$h,8)_$tr($zt($p($h,",",2),1),":","")  
+}
+]]></Routine>
+</Export>

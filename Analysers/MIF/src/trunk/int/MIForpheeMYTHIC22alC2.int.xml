@@ -1,0 +1,420 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIForpheeMYTHIC22alC2" type="INT" languagemode="0"><![CDATA[
+MIForpheeMYTHIC22alC2(mi) ; ABX Orphee MYTHIC 22AL (protokol C2) (Russion Burdenko)
+ // protokol C2 , with scatter plot and histogramms
+ // доп прога MIFpentra60dop
+ //type for ScatterPlot =3 $p(^TMIF(mi,1,epis,"PLOT","DIFF",0),"\",6)=3
+ //type for Histogram =3 $p(^TMIF(mi,1,epis,"PLOT",codeHistogram,0),"\",2)=3
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ if $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(15)
+ s lf=$c(10),cr=$c(13),soh=$c(1)
+ set delim=";"
+ set (result,epis)=""
+ if $$start^MIF000() q
+ set flagErrorWithEndProcess=0
+ d traceWithZTS^MIF000dop(mi,"Started job="_$j,"DEBUG")
+ set num=""
+ //set threasholdsStruct="NoL/NoN/NoE/LN/RN/LL/AL/LMU/LMD/LMN/MN/RM/NL/NE/RMN"
+ 
+ set tcpadr=$get(^TMIF(mi,"TCP"))
+ set (sample,epis,surname,result,date,time,QC)=""
+ for {
+	 if tcpadr'="" {
+		 do Main
+	 } else {
+		 do MainWithCatchError
+	 }
+	 if $$stop^MIF000() d traceWithZTS^MIF000dop(mi,"stop","DEBUG") quit
+	 if $get(flagErrorWithEndProcess)=1 d traceWithZTS^MIF000dop(mi,"stop by error "_$ze,"DEBUG") quit
+ }
+ close par4
+ quit
+ 
+ // Такая обработка ошибок
+ // Если ошибка READ (клиент может закрыть соединение или по таймауту ), то закрываем этот процесс (set flagErrorWithEndProcess=1) и запускаем драйвер снова
+ // В случае остальных ошибок просто закрываем этот процесс
+MainWithCatchError
+ try {
+	read *R:10
+    //if $c(R)'=enq d traceWithZTS^MIF000dop(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+    if R=-1 quit
+    do receiveSTX
+ } catch {
+	 do err2^MIF000dop  // временно с $zts
+	 //do err^MIF000
+	 set flagErrorWithEndProcess=1
+	 if $find($ze,"<READ>")&&($get(mi)'="") {
+		set programname=$piece($get(^TMIF(mi)),"\",3)
+		    if programname'="" {
+			      x "job ^"_programname
+		          do trace^MIF000(mi,"Autostarting...","DEBUG")
+		          quit
+		    }
+	 }
+ }  
+ quit
+ 
+Main 
+ read *R:10
+ ;i $c(R)'=enq d traceWithZTS^MIF000dop(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ if R=-1 quit
+ //i $char(R)'=stx quit
+ do receiveSTX
+ quit
+ 
+ ;обработка полученного от прибора ENQ
+receiveSTX 
+ //do traceWithZTS^MIF000dop(mi,"STX","H<--M")
+ set record=$$read^MIF000("",cr) if '$length(record) quit
+ do traceWithZTS^MIF000dop(mi,record,"H<--M")
+ set ok=1
+ set instrument=$piece(record,delim,1)
+ 
+ if $extract(instrument,1,4)'="22AL" {
+	 set ok=0
+	 do traceWithZTS^MIF000dop(mi,"Begin of record does not equal ""22AL""","H<--M") 
+ }
+ 
+ // check record validity
+ /*set len=$length(record,delim)
+ set csDeclare=$piece(record,delim,len)
+ set csFact=$$CheckSum($piece(record,delim,5,len-1))
+ if csDeclare'=csFact {
+	 set ok=0 
+	 do traceWithZTS^MIF000dop(mi,"Declare checksum="_lengthDeclare_" Fact checksum="_lengthFact,"DEBUG") 
+ }
+ */
+ 
+ set command=$translate($piece(record,delim,3)," ","")
+ 
+ if command="CONNECT" {
+    set version=$piece(record,delim,6)
+    if ok=1 do Send("ACK_CONNECT"_delim_version) if 1
+    else  do Send("NAK_CONNECT"_delim_version)
+    quit
+ }
+ 
+ if command="RESULT_READY" {
+    //set version=$piece(record,delim,6)
+    if ok=1 do Send("ACK_RESULT_READY") if 1
+    else  do Send("NAK_RESULT_READY")
+    quit
+ }
+ if command="RESULT" {
+   set recordForCheckSum=""
+   kill datares
+   for {
+	   set record=$$read^MIF000("",cr) if '$length(record) quit
+	   do traceWithZTS^MIF000dop(mi,record,"H<--M2")
+	   set command=$piece(record,delim,1) //$translate($piece(record,delim,1)," ","")
+	   if (command="RTYPE")||(command="RACK")||(command="POS")||(command="BIRTH")||(command="SEX")||(command="PRESC")||(command="LOCAT")||(command="FIRSTNAME")||(command="DRAW DATE")||(command="DRAW TIME")||(command="PATIENT COMMENT")||(command="INFO") {
+		   set recordForCheckSum=recordForCheckSum_record
+	   }
+	   if command="END_RESULT" {
+		   set len=$length(recordForCheckSum)
+		   if $extract(recordForCheckSum,len)=cr set recordForCheckSum=$extract(recordForCheckSum,1,len-1)
+		   set csDeclare=$piece(record,delim,2)
+           set csFact=$$CheckSum(recordForCheckSum)
+           do traceWithZTS^MIF000dop(mi,"recordForCheckSum="_recordForCheckSum_" Declare checksum="_csDeclare_" Fact checksum="_csFact,"DEBUG")
+           set ok=1
+           do traceWithZTS^MIF000dop(mi,"Declare checksum="_csDeclare_" Fact checksum="_csFact,"DEBUG")
+           /*
+           if csDeclare'=csFact {
+	           set ok=0 
+	           do traceWithZTS^MIF000dop(mi,"Declare checksum="_csDeclare_" Fact checksum="_csFact,"DEBUG") 
+           }*/
+           if ok=1 {
+	           do Send("ACK_RESULT"_delim_"OK"_delim) 
+	           do saveResults()
+           } else {
+	           do Send("NAK_RESULT")
+           }
+           quit
+	   }
+	   set datares($increment(datares))=record
+   }
+   quit
+ }
+ 
+saveResults()
+ set (sample,epis,surname,result,date,time,QC)=""
+ set nn="",ok=1
+ for {
+	 set nn=$order(datares(nn)) if nn="" quit
+	 set record=datares(nn)
+	 do traceWithZTS^MIF000dop(mi,"see datares ="_record,"DEBUG") 
+	 set command=$piece(record,delim,1) 
+	 if command="DATE" {
+		 set date=$piece(record,delim,2)
+		 if date'="" set date=$zdateh(date)
+	 }
+	 if command="TIME" {
+		 set time=$piece(record,delim,2)
+		 if time'="" set time=$ztimeh(time)
+	 }
+	 if command="MODE" {
+		 set mode=$piece(record,delim,2)
+		 if (mode'="NORMAL")&&(mode'="QC") set ok=0 quit
+		 if mode="QC" set QC="Y"
+	 }
+	 
+	 if command="SID" {
+ 	     set epis=$piece(record,delim,2)
+		 //if (epis="") set ok=0 quit
+	 } 
+
+	 if command="SEQ" {
+		 set episseq=$piece(record,delim,2)
+	 }
+	 
+	 if (command'="")&&($data(^TMIF(mi,3,command))) {
+		 set res=$$DeleteLeftAndRightSpaces^KSUTIL1($piece(record,delim,2))
+		 if $isvalidnum(res) set res=+res
+		 set flagA=$piece(record,delim,3)
+		 set flagB=$piece(record,delim,4)
+	     if $data(^TMIF(mi,"3",command)) set result=result_command_$c(par10)_res_$c(par10)_flagA_$select((flagA'="")||(flagB'=""):"^",1:"")_flagB_$c(par11)
+	 }
+	 /*
+	 //LMNE MATRIX
+	 if command="LMNE MATRIX" {
+		 set epis=$piece(record,delim,2)
+		 set bitmap0=$e(subrecord,3,$length(subrecord)),test="DIFF" 
+	     do scatPlot^MIFpentra60dop(bitmap0,test)
+	 }
+
+   
+     // histogramm
+     if identificator="W"!(identificator="X")!(identificator="Y")!(identificator="Z") {
+	     set histogram=$e(subrecord,3,$length(subrecord)) set test=$select(identificator="W":"C",identificator="X":"RBCH",identificator="Y":"PLTH",identificator="Z":"S",1:"")
+	     if $length(histogram)=128 do histogram^MIFpentra60dop(histogram,test)
+     } */
+     
+ }
+ 
+ if ok=1 {
+	 if epis="" set epis=$get(episseq)
+	 if $l(epis),$l(result) {
+		 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+		 do traceWithZTS^MIF000dop(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time_" QC="_QC,"DEBUG") 
+	 }
+ }
+ /*
+ set result=""
+ if $data(ScatRes) {
+	 set test="" set result=""
+	 if $data(ScatRes("DIFF"))&&('$data(ScatRes("DIFF",0))) {
+		 set typeReport="3"
+	    //set ScatRes("DIFF",0)="024 027 050 035 118 "_typeReport_" 031 069 073 100 069 100 118 029 077 051"	
+	    set $piece(ScatRes("DIFF",0)," ",6)=typeReport	 
+	 }
+	 for {
+		 set test=$order(ScatRes(test)) if test="" quit
+		 if $order(ScatRes(test,""),-1)=0&&($order(ScatRes(test,""))=0) kill ScatRes(test) continue
+		 if $data(ScatRes(test))&&('$data(ScatRes(test,0))) {
+			 set typeHistogram=3
+			 set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_$char(20)_typeHistogram_$c(par11)
+		 }
+		 set x="" 
+		 for {
+			 set x=$order(ScatRes(test,x)) if x="" quit
+			 set result=result_ScatRes(test,x)
+		 }
+	 }
+     if $length(result) d filesp^MIF000(mi,sample,epis,result)
+ }*/
+ quit
+
+Send(str) ; send string to instrument
+ //set str=str_cr //,chsum=$$CHSUM(str)
+ //write str,chsum,cr,lf,*-3 
+ write str,cr,lf,*-3 
+ do traceWithZTS^MIF000dop(mi,str,"H-->M")
+ ;for j=1:1:6 {
+ ;	 read *R:1 
+ ;	 quit:($char(R)=ack)!($char(R)=eot)
+ ;	 //d traceWithZTS^MIF000dop(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
+ ;}
+ ;if $char(R)=ack do traceWithZTS^MIF000dop(mi,"ACK","H<--M") quit 0
+ ;if $char(R)=eot do traceWithZTS^MIF000dop(mi,"EOT","H<--M") quit 1
+ ;do traceWithZTS^MIF000dop(mi,R,"H<--M")
+ quit 
+
+ // с использованием битовых строк Cache (Так как длинные данные предполагаются)
+CheckSum(pucData) ; calculate check sum
+ kill ausCrcTab1
+ set ausCrcTab1(0) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("0000"))) 
+ set ausCrcTab1(1) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("CC01")))
+ set ausCrcTab1(2) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("D801")))
+ set ausCrcTab1(3) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("1400")))
+ set ausCrcTab1(4) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("F001")))
+ set ausCrcTab1(5) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("3C00")))
+ set ausCrcTab1(6) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("2800")))
+ set ausCrcTab1(7) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("E401")))
+ set ausCrcTab1(8) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("A001")))
+ set ausCrcTab1(9) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("6C00")))
+ set ausCrcTab1(10) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("7800")))
+ set ausCrcTab1(11) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("B401")))
+ set ausCrcTab1(12) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("5000")))
+ set ausCrcTab1(13) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("9C01")))
+ set ausCrcTab1(14) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("8801")))
+ set ausCrcTab1(15) =##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($zhex("4400")))
+
+ set usAcc1 = ##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit(65535)) //0xFFFF;
+ set bitstr15=##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit(15))
+ set lSize=$length(pucData)
+ set nn=0
+ while ( lSize > 0 )
+ {
+	 set nn=nn+1
+	 set input=##class(Utility.Bit).BitToBitString(##class(Utility.Bit).DecimalToBit($a($extract(pucData,nn))))
+     /* gestion par quartet du calcul */
+     //usAcc1 = ausCrcTab1[(*pucData ^ usAcc1) & 15] ^ (usAcc1 >> 4);
+     //usAcc1 = ausCrcTab1[((*pucData >> 4) ^ usAcc1) & 15] ^ (usAcc1 >> 4);
+     set pr0=##class(Utility.Bit).BitLogicAdjust(input,usAcc1,"^") //$bitlogic(input ^ usAcc1)
+     set pr1=##class(Utility.Bit).BitLogicAdjust(pr0,bitstr15,"&") //$bitlogic(pr0 & bitstr15)
+     set pr1=##class(Utility.Bit).BitToDecimal(##class(Utility.Bit).BitStringToBit(pr1))
+     set pr2=##class(Utility.Bit).ShiftRightBitString(usAcc1,4)
+       
+     set usAcc1 = ##class(Utility.Bit).BitLogicAdjust(ausCrcTab1(pr1),pr2,"^") //$bitlogic(ausCrcTab1(pr1) ^ pr2)
+        
+     set pr1=##class(Utility.Bit).ShiftRightBitString(input,4)
+     set pr1=##class(Utility.Bit).BitLogicAdjust(pr1,usAcc1,"^")  //$bitlogic(pr1^usAcc1)
+     set pr1=##class(Utility.Bit).BitLogicAdjust(pr1,bitstr15,"&")  //$bitlogic(pr1 & bitstr15)
+     set pr1=##class(Utility.Bit).BitToDecimal(##class(Utility.Bit).BitStringToBit(pr1))
+     set pr2=##class(Utility.Bit).ShiftRightBitString(usAcc1,4)
+     set usAcc1 = ##class(Utility.Bit).BitLogicAdjust(ausCrcTab1(pr1),pr2,"^") //$bitlogic(ausCrcTab1(pr1) ^ pr2)
+       
+     set lSize=lSize-1
+ }
+ set usAcc1=##class(Utility.Bit).BitToDecimal(##class(Utility.Bit).BitStringToBit(usAcc1))
+ //set usAcc1=$zhex(usAcc1)
+ quit usAcc1
+ 
+
+
+ // с использованием строк, в ко орых записаны бинарные числа
+CheckSum2(pucData) ; calculate check sum
+ kill ausCrcTab1
+ set ausCrcTab1(0) =##class(Utility.Bit).DecimalToBit($zhex("0000")) 
+ set ausCrcTab1(1) =##class(Utility.Bit).DecimalToBit($zhex("CC01"))
+ set ausCrcTab1(2) =##class(Utility.Bit).DecimalToBit($zhex("D801"))
+ set ausCrcTab1(3) =##class(Utility.Bit).DecimalToBit($zhex("1400"))
+ set ausCrcTab1(4) =##class(Utility.Bit).DecimalToBit($zhex("F001"))
+ set ausCrcTab1(5) =##class(Utility.Bit).DecimalToBit($zhex("3C00"))
+ set ausCrcTab1(6) =##class(Utility.Bit).DecimalToBit($zhex("2800"))
+ set ausCrcTab1(7) =##class(Utility.Bit).DecimalToBit($zhex("E401"))
+ set ausCrcTab1(8) =##class(Utility.Bit).DecimalToBit($zhex("A001"))
+ set ausCrcTab1(9) =##class(Utility.Bit).DecimalToBit($zhex("6C00"))
+ set ausCrcTab1(10) =##class(Utility.Bit).DecimalToBit($zhex("7800"))
+ set ausCrcTab1(11) =##class(Utility.Bit).DecimalToBit($zhex("B401"))
+ set ausCrcTab1(12) =##class(Utility.Bit).DecimalToBit($zhex("5000"))
+ set ausCrcTab1(13) =##class(Utility.Bit).DecimalToBit($zhex("9C01"))
+ set ausCrcTab1(14) =##class(Utility.Bit).DecimalToBit($zhex("8801"))
+ set ausCrcTab1(15) =##class(Utility.Bit).DecimalToBit($zhex("4400"))
+
+ set usAcc1 = ##class(Utility.Bit).DecimalToBit(65535) //0xFFFF;
+ set bitstr15=##class(Utility.Bit).DecimalToBit(15)
+ set lSize=$length(pucData)
+ set nn=0
+ while ( lSize > 0 )
+ {
+	 set nn=nn+1
+	 set input=##class(Utility.Bit).DecimalToBit($a($extract(pucData,nn)))
+     /* gestion par quartet du calcul */
+     //usAcc1 = ausCrcTab1[(*pucData ^ usAcc1) & 15] ^ (usAcc1 >> 4);
+     //usAcc1 = ausCrcTab1[((*pucData >> 4) ^ usAcc1) & 15] ^ (usAcc1 >> 4);
+     set pr0=##class(Utility.Bit).BitXOR(input, usAcc1)
+     set pr1=##class(Utility.Bit).BitAND(pr0, bitstr15)
+     set pr1=##class(Utility.Bit).BitToDecimal(pr1)
+       
+     set usAcc1 = ##class(Utility.Bit).BitXOR(ausCrcTab1(pr1), ##class(Utility.Bit).ShiftRight(usAcc1,4))
+         
+     set pr1=##class(Utility.Bit).BitAND(##class(Utility.Bit).BitXOR(##class(Utility.Bit).ShiftRight(input,4), usAcc1), bitstr15)
+     set pr1=##class(Utility.Bit).BitToDecimal(pr1)
+     set usAcc1 = ##class(Utility.Bit).BitXOR(ausCrcTab1(pr1), ##class(Utility.Bit).ShiftRight(usAcc1,4))
+       
+     set lSize=lSize-1
+ }
+ set usAcc1=##class(Utility.Bit).BitToDecimal(usAcc1)
+ //set usAcc1=$zhex(usAcc1)
+ quit usAcc1
+ 
+ // преобразование данных для рисунка LMNE MATRIX 
+transLMNEmatrix(bitmapSource)
+   if $get(bitmapSource)="" quit ""
+   set bitmapDest=""
+   /*
+   set len=$length(bitmapSource)
+   set pp="",i=0,count=0
+   for i=1:1:len {
+   	   set pp=$extract(bitmapSource,i)
+   	   if pp="T" quit
+	   if (pp=$char(10))||(pp=$char(13))||(pp=";") {
+		   set count=count+1
+		   continue
+	   }
+	   set ppup=$zcvt(pp,"U")
+	   if (ppup="U")||(ppup="Z") {
+		   set num="",skip=0
+		   for j=(i+1):1:len {
+			   set skip=skip+1
+			   set ppp=$extract(bitmapSource,j)
+			   if ppp=";" set count=count+1 quit  
+			   set num=num_ppp
+		   }    
+		   set i=i+skip
+		   set numdec=$zh(num)
+		   if numdec>0 {
+			   for j=1:1:numdec {
+				   set bitmapDest=bitmapDest_$select(ppup="U":"ff",ppup="Z":"00",1:"")   
+			   }
+		   }
+		   continue
+	   } 
+	   set bitmapDest=bitmapDest_$translate($j(pp,2)," ","0")
+   }*/
+   set pp="",i=0,count=0
+   for i=1:1:$length(bitmapSource,";") {
+   	   set pp=$piece(bitmapSource,";",i)
+   	   if pp="T" quit
+   	   if pp="" continue 
+	   set firstletter=$zcvt($extract(pp,1),"U")
+	   if (firstletter="U")||(firstletter="Z") {
+		   set num=$extract(pp,2,$length(pp))
+           set numdec=0
+           if num'="" set numdec=$zh(num)		  
+		   if numdec>0 {
+			   set count=count+numdec
+			   for j=1:1:numdec {
+			      set bitmapDest=bitmapDest_$select(firstletter="U":"ff",firstletter="Z":"00",1:"")   
+			   }
+		   }
+		   continue
+	   } 
+	   set bitmapDest=bitmapDest_$translate($j(pp,2)," ","0")
+	   set count=count+1
+   }
+ quit bitmapDest
+ 
+test()
+  set bitmapSource="Z1f;1;Za;80;Z1f;10;Z14;1;Zb;40;Z3;1;Z19;1;Z15;1;Z8;20;Z2f;2;Z16;1;Z1b;40;Z3;1;Zf;1;Z1f;1;Zc;40;Z2;1;Z14;2;Z15;81;Z8;10;Z4;80;Z1b;2;Z5;10;Z22;1;Zc;8;0;8;Zd;40;20;Z10;80;Z9;90;Z4;1;Z13;1;Z9;1;0;58;0;40;0;1;Z9;2;Z2;40;c0;Zc;82;48;Ze;12;2;40;4;0;1;"
+  set bitmapSource=bitmapSource_";Z9;40;15;20;4;10;4;Za;20;10;48;64;Z2;1;Z6;1;Z3;6;2;30;Z2;1;Z3;40;Z5;4;12;81;98;a0;40;40;Z9;2;60;11;4;68;0;1;Za;4e;58;25;50;80;1;Z6;2;20;0;81;f2;a;a8;86;Z8;10;8;0;44;1;7c;b3;52;c;Z9;1;8;1;6a;fe;7f;4;1;Z8;10;31;64;ef;fb;ce;a0;Z9;8;1;eb;7f;97;62;"
+  set bitmapSource=bitmapSource_";51;Z9;46;4;d9;ef;9f;63;40;8;Z8;21;42;a3;U2;be;20;Z7;10;0;4;4e;3f;ef;fd;U1;8;81;Z9;2;77;U3;70;Z8;4;1;9;bf;bf;U1;9c;dc;Z8;80;0;2;57;U2;f7;a0;81;Z7;1;46;25;U2;fd;7f;d4;Z6;1;0;80;0;23;e3;U2;7f;d0;Z7;4;0;2;d3;eb;U2;fe;c0;41;Z5;10;Z2;1;43;7e;f7;U1;fd;"
+  set bitmapSource=bitmapSource_";c0;1;Z9;2b;7f;U2;f6;a1;Z9;28;4b;7f;U2;fe;28;Z6;80;Z3;18;9f;U2;fe;c8;Z5;2;Z3;1;2d;U3;fc;e8;Z9;1;6c;U3;de;4d;Z5;42;Z3;3;8b;U3;fb;a0;Z8;1;8;26;bf;U2;f7;Z4;10;0;8;1;Z3;f7;bf;U2;fd;c0;Z9;1b;13;U3;f7;a0;Z5;2;40;Z3;af;U3;f1;c0;Z3;1;Z5;3;1f;U4;c4;Z5;10;"
+  set bitmapSource=bitmapSource_";Z4;17;U3;ac;Z6;a;Z3;2;a7;7f;U2;e0;40;Z5;40;Z2;10;2;1f;U3;e8;40;1;Z4;4;Z3;43;ed;U3;ed;Z6;14;Z4;17;U2;f7;d8;8;Z5;90;0;20;20;0;37;bf;U2;80;Za;1;93;U3;10;2;1;Z4;1;20;0;60;8;2c;U2;ba;40;Za;e0;4b;U3;c8;Z6;c;0;4;Z2;57;U2;fe;Z7;1;Z3;2;3e;7f;U1;d7;a0;"
+  set bitmapSource=bitmapSource_";Z6;10;80;0;18;1;29;U2;f6;20;Z6;8;Z4;17;7f;U1;98;e0;Z6;40;82;30;Z2;6b;U1;fe;fb;83;Z7;c0;Z3;85;bf;fd;62;80;Z5;20;27;8;Z2;3;87;f3;U1;b1;1;Z6;24;8;Z2;2;1a;8f;ed;a4;10;Z6;25;Z3;10;b9;fb;be;20;0;80;Z5;32;Z4;1b;7e;80;20;0;80;Z5;4;11;40;1;4;11;2c;64;"
+  set bitmapSource=bitmapSource_";80;44;Z6;3e;40;0;1;8;af;dd;8a;89;20;Z5;2;c;14;2;Z2;1;a0;44;24;a0;Z6;25;0;42;Z2;7;46;2;28;20;Z5;4;1d;80;Z2;4;2c;40;14;59;82;Z6;e;0;50;5;2;2;0;32;2c;20;80;Z4;4;e;88;0;20;Z2;15;31;39;2;1;10;Z2;4;0;4;40;Z2;1;0;80;43;4;54;80;Z3;4;80;e;a0;40;10;24;"
+  set bitmapSource=bitmapSource_";40;41;3c;c8;14;10;Z4;20;8b;Z3;40;0;3;9d;7f;48;10;Z3;10;0;86;98;Z2;40;0;2;32;d7;d8;4;Z4;3;db;Z2;10;4;2;9;8b;U1;c;Z5;20;7;Z3;64;84;8;7f;bc;a2;Z6;5e;c0;2;4;16;c;17;57;f7;12;Z6;b0;0;30;3;8;0;95;df;f7;80;Z4;1;2;be;2;44;88;ca;4;26;97;f0;20;Z5;1;74;"
+  set bitmapSource=bitmapSource_";80;b1;a1;21;18;5e;3c;e4;Z6;9b;f4;0;91;25;94;43;8f;e7;9f;Z5;7;28;f8;42;37;86;6c;0;d;e9;9c;2;Z5;99;25;43;ab;9b;8c;1a;dc;64;28;1;Z4;1;56;a;20;bf;78;a6;14;8f;b;21;Z5;4;8b;60;9;fe;fc;2;32;29;80;80;Z5;6;d3;81;3;1f;ef;21;a0;0;40;Z6;4;78;a0;1d;U1;bf;"
+  set bitmapSource=bitmapSource_";40;c;40;62;0;80;Z4;4;c4;12;37;U1;be;40;0;13;4;3;Z5;e;99;80;1f;ee;66;Za;12;52;0;f;dd;fe;Z2;2;Z8;84;22;e;e6;e4;Za;1;44;0;24;c8;a8;0;2;0;80;Z7;10;1;0;a2;20;10;Z3;4;Z6;10;0;10;18;Z4;40;Z7;2;40;20;Z15;40;Z16;4;Zf;2;Z18;80;Z24;T"
+  set bitmapDest=$$transLMNEmatrix(bitmapSource)
+  write !,bitmapDest,!
+  w "length of bitmapSource=",$length(bitmapSource),!
+  w "length of bitmapDest=",$length(bitmapDest),!
+  quit 
+]]></Routine>
+</Export>

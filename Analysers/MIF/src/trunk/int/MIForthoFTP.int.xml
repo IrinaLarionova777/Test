@@ -1,0 +1,445 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIForthoFTP" type="INT" languagemode="0"><![CDATA[
+MIForthoFTP(mi) // ORTHO AutoVue® Innova - Russion Burdenko 
+    //(полный цикл через ftp : query-request-result)
+	New (mi)
+	Set mi=$Get(mi) 
+	If '$Length(mi) Quit
+	Kill ^TMIF(mi,10) 
+	Set $ZTrap="err^MIF000"
+	If $$select^LVBMIMP(mi) q
+	For j=1:1:PLIST Set @("par"_j)=PLIST(j)
+	;
+ 	Set basedir=PLIST(12) if basedir="" set basedir=PLIST(20)
+	if basedir="" set basedir="C:\temp\ortho"
+	set len=$length(basedir)
+	if $tr($extract(basedir,len),"/","\")="\" set basedir=$extract(basedir,1,len-1)
+
+	If '##class(%File).DirectoryExists(basedir) {
+		Do message^MIF000(mi,"Instrument's directory is unavailable") 
+		Quit
+	}	
+
+	Set indir=$$GetDirInput(basedir) // директория для файлов Device->LIS
+	Set outdir=$$GetDirOutput(basedir)  // директория для файлов LIS-Device
+	Set archivdirin=$$GetDirArchiveInput(basedir)
+	Set archivdirout=$$GetDirArchiveOutput(basedir)
+	Set errdirin=$$GetDirErrorInput(basedir)
+    Set errdirout=$$GetDirErrorOutput(basedir)
+ 
+    for dir=indir,outdir,archivdirin,archivdirout,errdirin,errdirout {
+	    If '##class(%File).DirectoryExists(dir) {
+		    if '##class(%File).CreateDirectory(dir) {
+			    Do message^MIF000(mi,"Can not create directory "_dir) quit
+		    }
+	    }
+    }
+ 
+	If $$start^MIF000() Quit
+ 	Do trace^MIF000(mi,"Started job="_$Job,"DEBUG")
+ 	;
+	For  {  
+		Do Main(mi,basedir) 
+		If $$stop^MIF000() Quit
+	}
+ 	Do trace^MIF000(mi,"Stopped job="_$Job,"DEBUG")
+	Quit
+ 
+Main(mi,pBaseDir) [par10] public {
+ 	Set oldtime=$ZHorolog
+ 	Do LoadFilesResultsFromFTP(mi,pBaseDir)
+	Set delta=($ZHorolog-oldtime)\1
+	If delta<15 Hang 15-delta 
+} 
+
+ // Чтение файлов с результатами из прибора ( ftrp->input) и запись результатов в базу
+LoadFilesResultsFromFTP(mi,pBaseDir) [mi,par10] public {
+	set r=$char(0)
+	set pInDir=$$GetDirInput(pBaseDir)
+	
+	// get ftp parameters
+	if '$$getFtpParameters(.server,.user,.password,.portFtp,.dirFtp,.modeFtp) do trace^MIF000(mi,"Не определены параметры ftp соединения","H<--H") quit
+	// open ftp
+	set ret=##class(TCLEx.Function.Ftp).OpenFtpDir(server,user,password,portFtp,modeFtp,dirFtp,,.ftp) 
+	if +ret=0 do trace^MIF000(mi,$piece(ret,r,2),"H<--H") quit
+    // read list of files from ftp   
+    kill fileArray 
+    set ret=##class(TCLEx.Function.Ftp).GetList(.ftp,.fileArray) 
+    if +ret=0 do trace^MIF000(mi,$piece(ret,r,2),"H<--H") quit 
+    if '$d(fileArray) quit  // протоколировать?
+	
+	// перенесем все имеющиеся файлы с ftp в pInDir
+	kill moveFiles
+	s file="" 
+	for {
+		set file=fileArray.Next(file) if file="" quit
+		set namefile=fileArray.GetAt(file) 
+		//s ^test("ftp2","file1")=namefile
+		if $zconvert($extract(namefile,1,3),"U")'="LIS" continue
+		if $zconvert($piece(namefile,".",$length(namefile,".")),"U")'="UPL" continue
+		set flDelFile=1
+		set ok=##class(TCLEx.Function.Ftp).GetFileFromFtp0(ftp, namefile, pInDir, flDelFile)
+		if ok {
+			set moveFiles(pInDir_"\"_namefile)=""
+			do trace^MIF000(mi,"Успешно перенесен файл "_namefile_" c ftp в "_pInDir,"H<--H")
+		} else {
+			do trace^MIF000(mi,$piece(ret,r,2),"H<--H") 
+		}
+	}
+	// close ftp
+	d ##class(TCLEx.Function.Ftp).CloseFtp(.ftp)
+	//m ^test("ftp2","files")=moveFiles
+	
+	// чтение данных из файлов
+	set file=""
+	for {
+		set file=$order(moveFiles(file)) if file="" quit
+		if ##class(%File).Exists(file) {
+			Do LoadResultsFromFile(mi,file,pBaseDir) 
+		}
+	}
+}
+ // Чтение одного файла с результатами из прибора и запись результатов в базу
+LoadResultsFromFile(mi,pFileName,pBaseDir) [mi,par10,par11] public {
+	
+ 	set pArchivDir=$$GetDirArchiveInput(pBaseDir)
+	set pErrDir=$$GetDirErrorInput(pBaseDir)
+
+	Set testid=""
+	Kill ^||results,^||datetime
+	Set ok=1,delimeter=";"
+    
+    try {
+	    
+	set (sample,epis,surname,result,date,time,QC)="" 
+
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=pFileName
+	Set stream.TranslateTable="CP1251"
+ 	While 'stream.AtEnd {
+		Set record=stream.ReadLine()
+		if record="" continue
+		do trace^MIF000(mi,record,"H<--M")
+		set typerecord=$extract(record,1)
+		; head record
+        if typerecord="H" {
+           set nameMachine=$piece(record,"|",5)  
+           continue
+        }
+        ; query record
+        if typerecord="Q" {
+	       set epis=$piece($piece(record,"|",3),"^",2)
+	       if $length(epis) set ^TMP($zname,$job,"ENQ",epis)="" 
+           continue
+        }    
+        ; patient record
+        if typerecord="P" {
+           do Last(mi,sample,epis,surname,result,date,time,QC) 
+           set (sample,epis,surname,result,date,time,QC)=""
+           set surname=$translate($translate($piece(record,"|",6),""),"^"," ") 
+           continue
+        }
+        ; order record
+        if typerecord="O" {
+	        do Last(mi,sample,epis,surname,result,date,time,QC) 
+            set (sample,epis,surname,result,date,time,QC)=""
+	        set epis=$translate($piece($piece(record,"|",3),"^",1)," ") 
+	        if '$length(epis) set epis=$translate($piece($piece(record,"|",4),"^",1)," ")
+	        //set QC=$translate($piece(record,"|",12)," ") 
+            //if QC="Q" set QC="Y"
+            continue
+        }
+        ; result record
+        if typerecord="R" {
+           ; strip trailing spaces
+           set typeresult=$piece(record,"|",9)
+           if typeresult="X" continue  // X test canceled or in error
+           set test=$piece(record,"|",3) set test=$$DeleteLeftAndRightSpaces^KSUTIL1(test)
+           set res=$translate($piece(record,"|",4),", ","."),flag=$translate($piece(record,"|",7)," ")
+           if flag="N" set flag="" ; normal flag
+           
+           if $length(res),$isvalidnum(res) set res=+res // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
+           if $length(test),$length(res) set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
+           ; date and time
+           if $length($translate($piece(record,"|",13)," ")) {
+	         set datetime=$piece(record,"|",13)
+	         set date=$$intdate^SSUTIL4($extract(datetime,5,6)_"/"_$extract(datetime,7,8)_"/"_$extract(datetime,1,4))
+             set time=($extract(datetime,9,10)*3600)+($extract(datetime,11,12)*60)
+           }
+           continue
+        }
+        ; last record
+        if typerecord="L" {
+	       do Last(mi,sample,epis,surname,result,date,time,QC) 
+	       continue
+        }
+ 	}
+    } 
+    catch(exception) 
+    {
+	  set ok=exception.AsStatus()	  
+    }
+ 	Set stream=""  
+ 	set namefile=##class(%File).GetFilename(pFileName)
+ 	If (ok) {
+		Do trace^MIF000(mi,"Успешно прочитан файл "_pFileName,"H<--M")
+		set fileArchive=pArchivDir_"\"_namefile
+ 	    Set fileArchive=$$ArchiveFileName^KSUTIL1(fileArchive)
+	 	Set ok2=##class(%File).Rename(pFileName,fileArchive)
+    	If ok2 {
+	    	Do trace^MIF000(mi,"Renamed file "_pFileName_" to "_fileArchive,"H<--M")
+        } Else {
+		    Do trace^MIF000(mi,"Error during renaming file "_pFileName_" to "_fileArchive,"H<--M")
+  	    }	
+  	} Else {
+		Do trace^MIF000(mi,"Error during processing file "_pFileName,"H<--M")
+	 	Set fileArchiveError=pErrDir_"\"_namefile
+ 	    Set fileArchiveError=$$ArchiveFileName^KSUTIL1(fileArchiveError)
+	 	Set ok2=##class(%File).Rename(pFileName,fileArchiveError)
+    	If ok2 {
+	    	Do trace^MIF000(mi,"Renamed file "_pFileName_" to "_fileArchiveError,"H<--M")
+        } Else {
+		    Do trace^MIF000(mi,"Error during renaming file "_pFileName_" to "_fileArchiveError,"H<--M")
+  	    }
+   	}
+   	
+  	// если был запрос, то формируем ответный файл
+  	if $data(^TMP($zname,$job,"ENQ")) {
+	  	do CreateOrders(mi,pBaseDir)
+	  	do UploadFilesToFTP(mi,pBaseDir)
+  	}
+  	quit
+}
+
+ // write result
+Last(mi,sample,epis,surname,result,date,time,QC) public {
+    do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"DEBUG")
+    if epis?1.99AN,$length(result) {
+ 	   do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+    }
+    set (sample,epis,surname,result,date,time,QC)=""
+    quit
+ }
+ 
+CreateOrders(mi,pBaseDir) 
+{
+    set epis=""
+    for {
+	    set epis=$order(^TMIF(mi,10,epis)) quit:epis="" 
+	    do CreateFileOrder(mi,epis,pBaseDir)
+    }
+    set epis="" 
+    for {
+	    set epis=$order(^TMP($zname,$job,"ENQ",epis)) quit:epis="" 
+        do scanone^MIF000(mi,epis)
+        if $$select^LVBEPVIS(epis,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
+        set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
+        set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8)
+        set priorityEpis="" if PLIST(17)'="" if $$seldata^LVBCTPR(PLIST(17),4)="Y" set priorityEpis="S" // STAT
+        // header record
+        set line=$order(^TMIF(mi,10,epis,""),-1)+1
+        set ^TMIF(mi,10,epis,line)="H|\^&|||LIS||||||||||" 
+        // patient record
+        set line=$order(^TMIF(mi,10,epis,""),-1)+1
+        set ^TMIF(mi,10,epis,line)="P|1|"_epis_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"|"_birthday_"|"_"|"_sex_"|" 
+     
+        // order records
+        set tc="",tests="" 
+        for {
+	        set tc=$order(^TMP("MIF-SINGLE",$job,mi,epis,tc)) if tc="" quit
+	        set priority=priorityEpis
+	        if priority="" {
+		       set refEpisode=$$getRowIdTestSet^MIF000dop(mi,epis,tc) if refEpisode="" continue
+	           set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
+	           set rec=$get(^TEPI(epis,1,testset,tscnt))
+	           set priority=$piece(rec,"\",10)
+	           if priority'="" if $$seldata^LVBCTPR(priority,4)="Y" set priorityEpis="S" // STAT
+	        }
+	        if priority="" set priority="N"
+	        
+	        set tests=$select(tests'="":"^",1:"")_tc
+        }
+        set line=$order(^TMIF(mi,10,epis,""),-1)+1
+        set sampletype="aaa"
+        set ^TMIF(mi,10,epis,line)="O|1"_"|"_epis_"||^^^"_tests_"|"_priorityEpis_"||||||||||"_sampletype_"|"
+        // terminate record
+        set line=$order(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="L|1|"
+        kill ^TMP($zname,$job,"ENQ",epis)
+        do CreateFileOrder(mi,epis,pBaseDir)
+ }
+ quit
+}
+
+CreateFileOrder(mi,epis,pBaseDir) 
+{
+ Set dirout=$$GetDirOutput(pBaseDir)
+ Set archivdirout=$$GetDirArchiveOutput(pBaseDir)
+ 
+ set filename=dirout_"\"_$$GetFileName()_".txt" 
+ if ##class(%File).Exists(filename) {
+	 do trace^MIF000(mi,"Файл "_filename_" существует. Не удалось сделать заказ по эпизоду "_epis,"DEBUG")
+	 quit
+ }
+ set ok=1
+ try {
+	  // создание файла в директории archivdirout
+	 set filearc=archivdirout_"\"_$$GetFileName()_".txt" 
+     Set filearc=$$ArchiveFileName^KSUTIL1(filearc)
+     //Set file=##class(%File).%New(filearc)
+	 //set ok=file.Open("WSN")
+	 //if 'ok quit
+	 Set stream=##class(%FileCharacterStream).%New()
+	 Set stream.TranslateTable="CP1251"  
+	 Set stream.Filename=filearc
+	 
+	 set line=""
+	 for {
+		 set line=$order(^TMIF(mi,10,epis,line),1,record) if line="" quit
+		 if record="" continue
+		 set ok=file.WriteLine(record)
+		 if 'ok quit
+	 }
+	 if 'ok quit
+	 //set ok=file.%Save()
+	 Set ok=stream.SaveStream()
+	 Set stream=""
+	 if 'ok quit
+	 
+	 // копирование файла в output c расширением tmp
+	 set filenametmp=dirout_"\"_$$GetFileName()_".tmp"
+	 Set ok=##class(%File).CopyFile(filearc,filenametmp) 
+	 
+	 //перенос файла с ...\output -> ftp
+	 
+	 Set ok=##class(%File).Rename(filenametmp,filename)
+ 
+ }
+ catch(exception) 
+ {
+	  set ok=exception.AsStatus()	  
+ }
+ if ok {
+	 kill ^TMIF(mi,10,epis)
+	 do trace^MIF000(mi," По эпизоду "_epis_" создан файл "_filename,"DEBUG")
+	 
+ } else {
+	 do trace^MIF000(mi,"Не удалось сделать заказ по эпизоду "_epis,"DEBUG")
+	 do trace^MIF000(mi,"Ошибка "_$System.Status.GetErrorText(ok),"DEBUG")
+
+ }	
+	
+ quit 
+}
+
+ // Перенос файлов с запросами orders из \output -> ftp
+UploadFilesToFTP(mi,pBaseDir) [mi,par10] public {
+	set r=$char(0)
+	set pOutDir=$$GetDirOutput(pBaseDir)
+	set pArchivDir=$$GetDirArchiveOutput(pBaseDir)
+	set pErrDir=$$GetDirErrorOutput(pBaseDir)
+	
+	// get ftp parameters
+	if '$$getFtpParameters(.server,.user,.password,.portFtp,.dirFtp,.modeFtp) do trace^MIF000(mi,"Не определены параметры ftp соединения","H<--H") quit
+	// open ftp
+	set ret=##class(TCLEx.Function.Ftp).OpenFtpDir(server,user,password,portFtp,modeFtp,dirFtp,,.ftp) 
+	if +ret=0 do trace^MIF000(mi,$piece(ret,r,2),"H<--H") quit
+    // read list of files from output   
+
+	Set rs=##class(%ResultSet).%New("%File:FileSet")
+	Set ok=rs.Execute(pOutDir,"*.dln")  
+	If 'ok do trace^MIF000(mi,"Не удалось прочитать список файлов на "_pOutDir,"H<--H") Quit
+	While rs.%Next() { 
+		set namefile=$Get(rs.Data("Name"))
+		set ret=##class(TCLEx.Function.Ftp).CopyFileToFtp(ftp, namefile, pOutDir, 0)
+		// в случае ошибки file \output->\error\output
+		if +ret=0 {
+			do trace^MIF000(mi,$piece(ret,r,2),"H<--H") 
+			Set fileArchiveError=$$GetDirErrorOutput(pBaseDir)_"\"_namefile
+ 	        Set fileArchiveError=$$ArchiveFileName^KSUTIL1(fileArchiveError)
+			Set ok=##class(%File).Rename(pOutDir_"\"_namefile,fileArchiveError)
+    	    If ok {
+	    	    Do trace^MIF000(mi,"Renamed file "_pOutDir_"\"_namefile_" to "_fileArchiveError,"H<--M")
+            } Else {
+		        Do trace^MIF000(mi,"Error during renaming file "_pOutDir_"\"_namefile_" to "_fileArchiveError,"H<--M")
+  	        }
+
+			continue
+		}
+		// в случае ok file \output->\archive\output
+		else  {
+			do trace^MIF000(mi,"Успешно выложен файл "_namefile_" из "_pOutDir_" на ftp","H<--H") continue
+			Set fileArchive=$$GetDirArchiveOutput(pBaseDir)_"\"_namefile
+ 	        Set fileArchive=$$ArchiveFileName^KSUTIL1(fileArchive)
+			Set ok=##class(%File).Rename(pOutDir_"\"_namefile,fileArchive)
+    	    If ok {
+	    	    Do trace^MIF000(mi,"Renamed file "_pOutDir_"\"_namefile_" to "_fileArchive,"H<--M")
+            } Else {
+		        Do trace^MIF000(mi,"Error during renaming file "_pOutDir_"\"_namefile_" to "_fileArchive,"H<--M")
+  	        }
+		}
+	}
+	// close ftp
+	d ##class(TCLEx.Function.Ftp).CloseFtp(.ftp)
+	m ^test("ftp","files")=moveFiles
+	
+}
+
+
+getFtpParameters(server,user,password,portFtp,dirFtp,modeFtp) {
+	set server="nsi-lis.nsi.ru"
+	set user="cobas_ftp_user"
+	set password="Ftp$access"
+	set portFtp=21
+	set dirFtp="" 
+	set modeFtp=0
+	/*
+	set server="ftp.emcmos.ru"
+	set user="laborw"
+	set password="labo#$%"
+	set portFtp=21
+	set dirFtp="temp\test" 
+	set modeFtp=0
+	*/
+	quit 1
+ }		
+ 	
+ // директория для файлов LIS->Device 
+GetDirOutput(basedir) 
+{
+    quit basedir_"\Output" 
+}
+ // директория для файлов Device->LIS 
+GetDirInput(basedir) 
+{
+    quit basedir_"\Input" 
+} 
+ // директория для файлов LIS->Device (archive) 
+GetDirArchiveOutput(basedir) 
+{
+ quit basedir_"\Archive\Output" 
+}
+ // директория для файлов Device->LIS (archive) 
+GetDirArchiveInput(basedir) 
+{
+ quit basedir_"\Archive\Input" 
+}  
+ // директория для файлов with error
+GetDirErrorOutput(basedir) 
+{
+ quit basedir_"\Error\Output" 
+}
+ // директория для файлов with error
+GetDirErrorInput(basedir) 
+{
+ quit basedir_"\Error\Input" 
+} 
+ // имя файла LIS->Analisator 
+GetFileName() 
+{
+ quit "lis"_$zd(+$h,8)_$tr($zt($p($h,",",2),1),":","")  
+}	
+
+
+]]></Routine>
+</Export>

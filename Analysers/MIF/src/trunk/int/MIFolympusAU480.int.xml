@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFolympusAU480" type="INT" languagemode="0" generated="1"><![CDATA[
+MIFolympusAU480(mi) ;  OLYMPUS AU480 (Bi-Directional) (Russion EMC)
+ set mi=$get(mi) if '$length(mi) quit
+ kill ^TMIF(mi,10) set $ztrap="err^MIF000dop"
+ if $$select^LVBMIMP(mi) quit
+ for j=1:1:PLIST set @("par"_j)=PLIST(j)
+ set stx=$char(2),etx=$char(3),ack=$char(6),nak=$char(15),etb=$char(23)
+ set (sample,epis,surname,result,date,time,QC)=""
+ if $$start^MIF000() quit
+ do trace^MIF000(mi,"Started job="_$job,"DEBUG")
+ set compiled=$listget(^rINDEX($zname,"OBJ"),1)
+ for  {
+	 do Main 
+	 if $$stop^MIF000() quit
+	 if $lg(^rINDEX($zn,"OBJ"))'=compiled ztrap "EDIT" // эмуляция ошибки EDIT, если программа-драйвер изменилась
+ }
+ close par4
+ do trace^MIF000(mi,"Stopped job="_$job,"DEBUG")
+ quit
+Main 
+ NEW mainrecord,nrecord,nn
+ set mainrecord=$$read^MIF000(stx,etb_","_etx) 
+ quit:'$length(mainrecord)
+ do trace^MIF000(mi,mainrecord,"H<--M")
+ do ACK
+ Set nrecord=$LENGTH(mainrecord,stx)
+ For nn=1:1:nrecord {
+ 	Set record=$PIECE(mainrecord,stx,nn)
+ 	If '$Length(record) CONTINUE
+ 	Do SubMain
+ }	 
+ QUIT
+SubMain
+ ; process host query
+ if $extract(record,1,2)="R " {
+	 kill ^TMIF(mi,10)
+     ; create order to send to instrument
+     set str="S "_$extract(record,3,25)_"    E"
+     Set containernumber=+$extract(record,14,25)
+     Set epis=$$Episode4Container^KSMIF000(containernumber)
+     If epis="" Quit
+     set tg="" set sampid=$extract(record,12),samptype=$extract(record,9)
+     if sampid="0",samptype=" " set tg=sampid
+     if sampid="E" set tg=sampid
+     if samptype="U" set tg=samptype
+     do scanone^MIF000(mi,epis,"")
+     set (tc,tcx)="" 
+     if $data(^TMP("MIF-SINGLE",$job,mi,epis)) {
+	     Set i="" 
+         For {
+	         Set i=$Order(^TMP("MIF-SINGLE",$job,mi,epis,i)) Quit:i=""  
+	         If (epis'=containernumber)&&('$$IsTestCode4Container^KSMIF000(containernumber,mi,i,samptype)) continue
+             Set tc=i
+             If $Extract(tc,$Length(tc))="U" Set tc=$Extract(tc,1,$Length(tc)-1)
+             If $Extract(tc,$Length(tc))="Z" Set tc=$Extract(tc,1,$Length(tc)-1)
+             Set tcx=tcx_tc
+         }
+     }
+     kill ^TMP("MIF-SINGLE",$job,mi,epis)
+     set str=str_tcx set line=$order(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)=str
+     if $data(^TMIF(mi,10)) do SEND kill ^TMIF(mi,10)
+ }
+ ; process result record
+ if $extract(record,1,2)="D "!($extract(record,1,2)="d ")!($extract(record,1,2)="DQ")!($extract(record,1,2)="DH")!($extract(record,1,2)="dH") {
+	 for i=1:1:$length(record,etb) {
+		 set rec=$piece(record,etb,i)
+		 if rec="" continue
+		 set:$extract(rec)=$char(2) rec=$piece(rec,stx,2)
+         set (sample,epis,surname,result,date,time,QC)=""
+         Set containernumber=+$Translate($Extract(rec,14,25)," ")
+         Set epis=$$Episode4Container^KSMIF000(containernumber)
+         SET samptype=$extract(rec,9),xrec=$extract(rec,31,999) ; 12 digit epis
+         for {
+	         set res=$extract(xrec,1,14) 
+             set xrec=$extract(xrec,15,999)
+             Set samptype=$Select(samptype="U":"U",1:"")
+             If epis'=containernumber {
+	             Set conttype=$$ContainerType4Container^KSMIF000(epis,containernumber)
+	             If conttype="T051" Set samptype="Z" ; Глюкоза с нагрузкой...
+             }
+             set x1=$translate($extract(res,1,3)," ")_samptype,x2=$translate($extract(res,4,12)," "),x3=$translate($extract(res,13,14)," ")
+             ; strip flags
+             set x3=$translate(x3,"1234567FGHLNPrpx","")
+             set result=result_x1_$char(par10)_x2_$char(par10)_x3_$char(par11)
+             if $length(xrec)<14 quit
+         }
+	 }
+     ; extract QC details
+     //if $extract(record,1,2)="DQ"
+     if $length(epis),$length(result) do file^MIF000(mi,sample,epis,surname,result,date,time,QC) 
+ } 
+ quit
+ ; send 'ack' to instrument
+ACK write ack,*-3
+ do trace^MIF000(mi,"ACK","H-->M")
+ quit
+ ; send string to instrument
+SEND 
+ hang 1 ; Olympus need little delay to be read recieve orders 
+ set x="" 
+ for {
+	 set x=$order(^TMIF(mi,10,x)) quit:x="" 
+	 set str=^(x) 
+	 for i=1:1:2 {
+		 quit:ok
+		 set ok=""
+		 write stx,str,etx,*-3 do trace^MIF000(mi,str,"H-->M")
+		 read *a:5 do trace^MIF000(mi,$select($char(a)=ack:"ACK",$char(a)=nak:"NAK",1:$char(a)),"H<--M")
+		 if $char(a)=ack set ok=1
+	 }
+ }
+ quit
+]]></Routine>
+</Export>
