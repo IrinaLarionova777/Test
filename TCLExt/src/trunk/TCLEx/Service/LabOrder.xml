@@ -35,7 +35,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 		If 'ok Quit ok
 	}
 	;
-	Set ok=..InsertTestSets(pOrder.EpisId,pOrder.TestSets,pOrder.Specimens,pOrder.Containers)
+	Set ok=..InsertTestSets2(pOrder.EpisId,pOrder.TestSets,pOrder.Specimens,pOrder.Containers)
 	Quit $$$OK
 ]]></Implementation>
 </Method>
@@ -111,6 +111,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 	Set PLIST(83)=pOrder.PolicySeries 			;EPVIS_Extra10
 	Set PLIST(114)=pOrder.PolicyNumber 			;EPVIS_Extra11
 	Set PLIST(115)=pOrder.Pasport	 			;EPVIS_Extra12
+	Set PLIST(117)="WebER"	 					;EPVIS_Extra14 - Признак, что заказ добавлен из WebER
 
 	;Set PLIST(32)=pOrder.Diagnosis 			;???
 	;Set PLIST(33)=pOrder.Antibiotics 			;??
@@ -169,11 +170,266 @@ Namespace. Change this to the namespace used by the web service.</Description>
 		Set PLIST(40)=..ReferralLaboratory4TestSet(testset)			// VISTS_MoveToReferralLab_DR
 		Set SQLCODE=$$insert^LVBVISTS(pEpisode)
 		Set SQLCODE=$Piece(SQLCODE,$Char(1),1)
-		If SQLCODE'=0 Set err="SQLCODE="_SQLCODE_",TestSet="_testset
+		If SQLCODE=0 {
+			Do Actions^LVBCOM13(%ROWID)
+		} Else {
+			Set err="SQLCODE="_SQLCODE_",TestSet="_testset
+		}		
 		If err'="" Quit
 	}	
 	If err'="" Quit $$$ERROR($$$GeneralError,"Не удалось добавить запись в таблицу SQLUser.EP_VisitTestSet ("_err_")!")
 	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="InsertTestSets2">
+<Description>
+Добавление заказанных тестов в эпизод
+с проверкой Actions</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode,pTestSets:%String,pSpecimens:%String,pContainers:%String</FormalSpec>
+<PublicList>SQLCODE,PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set addsupersets=..SuperSetSummaryTestSets(pTestSets)
+	If (addsupersets'="") {
+		Set pTestSets=pTestSets_","_addsupersets
+	}
+	// Проверяем наличие actions на замену и добавление наборов тестов  и выполняем их
+	set ok=..TestActionsReplaceAddTestSet(pEpisode,.pTestSets,pSpecimens,pContainers)
+	
+	Set ok=$$$OK
+	kill inputDataForTSCheckLVBVIS7 // входящий массив PLIST для вызова $$TScheck^LVBVIS7
+	Set cnt=$Length(pTestSets,",")
+	For i=1:1:cnt {
+		set ok=..FillPLISTforVisitTestSet(pEpisode, pTestSets, pSpecimens, pContainers,i)
+		if 'ok quit
+		set rowid=PLIST(0)_"||"_PLIST(3)_"||"_PLIST(2)  
+		Set SQLCODE=$$insert^LVBVISTS(pEpisode)
+		Set SQLCODE=$Piece(SQLCODE,$Char(1),1)
+		If SQLCODE'=0 Set ok=$$$ERROR($$$GeneralError,"SQLCODE="_SQLCODE_",TestSet="_rowid) quit
+		// Проверяем наличие actions SD and SF и выполняем их
+		set err=..ActionsTestSet(rowid,.inputDataForTSCheckLVBVIS7)
+	}	
+	If 'ok set ok=$$$ERROR($$$GeneralError,"Не удалось добавить запись в таблицу SQLUser.EP_VisitTestSet ("_$SYSTEM.Status.GetErrorText(ok)_")!")
+	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="FillPLISTforVisitTestSet">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode,pTestSets:%String,pSpecimens:%String,pContainers:%String,pNum:%Integer</FormalSpec>
+<PublicList>PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		Set testsetstr=$Piece(pTestSets,",",pNum)
+		set flagAddTestSetByAction=$piece(testsetstr,$char(1),2) // флаг, что набор тестов добавлен по Action
+		set testsetstr=$piece(testsetstr,$char(1),1)
+ 		Set testset=$Piece(testsetstr,":",1)
+		Set superset=$Piece(testsetstr,":",2)
+		If testset="" quit
+		set tscnt=$Order(^TEPI(pEpisode,1,testset,""),-1)+1
+		Kill PLIST
+		Set PLIST(0)=pEpisode										// ID
+		Set PLIST(2)=tscnt		                                    // VISTS_TestSetCounter
+		Set PLIST(3)=testset										// VISTS_TestSet_DR
+		Set PLIST(32)=superset										// VISTS_SuperSet_DR
+		Set specimenstr=$Piece(pSpecimens,",",pNum)
+		If $Length(specimenstr,";")>1 {
+			Set specimenstr=""
+		}	
+		Set PLIST(47)=specimenstr									// VISTS_SpecimenType_DR
+		Set containerstr=$Piece(pContainers,",",pNum)
+		If $Length(containerstr,";")=1 {							// Если 1 контейнер
+			Set containerstr=$Piece(containerstr,":",1)				// то не нужен тип контейнера 
+			If containerstr=pEpisode Set containerstr=""			// Если номер эпизода совпалает с номером контейнера, то не нужно дополнительное значение
+		}	
+		Set PLIST(48)=containerstr									// VISTS_SpecimenNo
+		Set horolog=$Horolog
+		Set PLIST(24)=+horolog										// VISTS_DateOfCreation
+		Set PLIST(25)=$Piece(horolog,",",2)							// VISTS_TimeOfCreation
+		Set PLIST(29)=..LaboratoryCode()
+		Set PLIST(40)=..ReferralLaboratory4TestSet(testset)			// VISTS_MoveToReferralLab_DR
+		if flagAddTestSetByAction="Y" set PLIST(83)="Y"             // VISTS_AddedByAction
+		set PLIST=$order(PLIST(""),-1)	
+	} 
+	catch(exception) 
+	{
+		set ok=exception.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="TestActionsReplaceAddTestSet">
+<Description>
+Проверка есть ли действия (actions) с Action Type=Replace TestSet (TR0), Add TestSet(TA0) and Action=Test Set Add (TA) (0 обозначает - No prompt)
+и выполнение этих действий </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,&pTestSets:%String,pSpecimens:%String,pContainers:%String,flagRecurs:%Integer=0]]></FormalSpec>
+<PublicList>SQLCODE,PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		// строка "EPVIS" для входящего PLIST для функции $$TScheck^LVBVIS7
+		set SQLCODE=$$select^LVBEPVIS(pEpisode)
+		If +SQLCODE'=0 Set ok=$$$ERROR($$$GeneralError,"select^LVBEPVIS: SQLCODE="_SQLCODE_",episode="_pEpisode) quit 
+		set strepis="" for j=1:1:PLIST set strepis=strepis_PLIST(j)_$char(28)
+	    
+		Set allcnt=$Length(pTestSets,",")
+		set testcnt=0
+	    while (testcnt'>allcnt) {
+		    set testcnt=testcnt+1  
+		    set ok=..FillPLISTforVisitTestSet(pEpisode, pTestSets, pSpecimens, pContainers,testcnt)
+		    if 'ok continue
+		    set rowid=PLIST(0)_"||"_PLIST(3)_"||"_PLIST(2)
+		    set flagAddTestSetByAction=$get(PLIST(83))
+		    //if flagAddTestSetByAction="Y" continue  // по рекурсии не добавляем и не заменяем наборы тестов
+		    set strtestset="" for j=1:1:PLIST set strtestset=strtestset_$piece($get(PLIST(j))_$char(28),$char(1),1)
+		    
+		    // функция $$TScheck^LVBVIS7 проверяет условия срабатываения действий и возвращает действия, которые надо выполнить 
+		    kill PLIST
+		    set PLIST(1)="EPVIS"_$char(1)_strepis
+		    set PLIST(2)="VISTS"_$char(1)_strtestset
+		    set PLIST=$order(PLIST(""),-1)
+		    set SQLCODE=$$TScheck^LVBVIS7(rowid,"TA","","A","")
+		    If +SQLCODE'=0 {
+			    Set ok=$$$ERROR($$$GeneralError,"TScheck^LVBVIS7: SQLCODE="_SQLCODE_",rowid="_rowid)
+			    continue
+		    }
+		    
+			// выполнение действий
+			kill actions merge actions=PLIST
+			set flagReplaceTestSet=0
+		    for j=1:1:actions {
+		        set rec=$get(actions(j))
+		        set typeAction=$piece(rec,$char(1),1)
+		        // TR0-Replace Test Set, TA0- Test Set Add, SD - Set Data, SF - Set Field
+		        if (typeAction="TR0")||(typeAction="TA0") {
+			        set testsetnew=$piece($piece(rec,$char(1),2),$char(2),1)
+			        if testsetnew="" continue
+			        if '$data(^TTAB("TS",testsetnew)) continue
+			        if typeAction="TR0" {
+				        if $find(pTestSets,testsetnew)'=0 continue  // если набор тестов уже есть, то не заменяем на него
+				        set $piece(pTestSets,",",testcnt)=testsetnew 
+				        set flagReplaceTestSet=1
+				        continue
+			        }
+			        if typeAction="TA0" {
+				        if $find(pTestSets,testsetnew)'=0 continue  // если набор тестов уже есть, то не добавляем его
+				        set pTestSets=pTestSets_","_testsetnew_$char(1)_"Y"
+				        set allcnt=allcnt+1
+				        continue
+			        }
+		        }
+		    }
+		    if flagReplaceTestSet=1 set testcnt=testcnt-1 // для нового набора тестов тоже надо проверть actions => не увеличиваем счетчик
+		}
+	}
+	catch (exeption) 
+	{
+		set ok=exeption.AsStatus()
+	}
+    //if 'ok s ^testError($i(^testError))=ok
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="ActionsTestSet">
+<Description>
+Проверка есть ли действия (actions) с Action Type= Set Data (SD), Set Field (SF) and Action=Test Set Add (TA) (0 обозначает - No prompt)
+и выполнение этих действий </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pRowidVisitTestSet:%String,&inputDataForTSCheck:%String]]></FormalSpec>
+<PublicList>SQLCODE,PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		set epis=$piece(pRowidVisitTestSet,"||",1)
+		// строим входящий PLIST для функции $$TScheck^LVBVIS7
+		if '$data(inputDataForTSCheck) {
+			// строка EPVIS
+		    set SQLCODE=$$select^LVBEPVIS(epis)
+		    If +SQLCODE'=0 {
+			   set ok=$$$ERROR($$$GeneralError,"select^LVBEPVIS: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
+			   quit
+		    } 
+		    set ss="" for i=1:1:PLIST set ss=ss_$get(PLIST(i))_$char(28)
+	        if $tr(ss,$char(28),"")'="" set inputDataForTSCheck($order(inputDataForTSCheck(""),-1)+1)="EPVIS"_$char(1)_ss
+		}
+		if '$data(inputDataForTSCheck) quit
+	    // строки VISTS
+	    set SQLCODE=$$select^LVBVISTS(pRowidVisitTestSet)
+	    if +SQLCODE'=0 {
+		    Set ok=$$$ERROR($$$GeneralError,"select^LVBVISTS: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
+		    quit
+	    }
+	    set ss="" for i=1:1:PLIST set ss=ss_$piece($get(PLIST(i)),$char(1),1)_$char(28)
+	    if $tr(ss,$char(28),"")'="" set inputDataForTSCheck($order(inputDataForTSCheck(""),-1)+1)="VISTS"_$char(1)_ss           
+		if $order(inputDataForTSCheck(""),-1)<2 quit
+		
+	    // функция $$TScheck^LVBVIS7 проверяет условия срабатываения действий и возвращает действия, которые надо выполнить 
+	    kill PLIST m PLIST=inputDataForTSCheck
+	    set PLIST=$order(PLIST(""),-1)
+		set SQLCODE=$$TScheck^LVBVIS7(pRowidVisitTestSet,"TA","","A","")
+		If +SQLCODE'=0 {
+			Set ok=$$$ERROR($$$GeneralError,"TScheck^LVBVIS7: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
+			quit
+		}
+		kill actions m actions=PLIST
+		// выполнение действий
+		for i=1:1:actions {
+		    set rec=$get(actions(i))
+		    set typeAction=$piece(rec,$char(1),1)
+		    // TR0-Replace Test Set, TA0- Test Set Add, SD - Set Data, SF - Set Field
+		    if (typeAction'="SD")&&(typeAction'="SF") continue
+		    // изменение указанного поля (Set Field)
+		    if typeAction="SF" {
+			    set numChangeField=$piece(rec,$char(1),6)
+			    if numChangeField'>0 {
+				    set ok=$$$ERROR($$$GeneralError,"Некорректное поле для изменения "_numChangeField) 
+				    continue
+			    }
+			    set value=$piece(rec,$char(1),2)
+			    if numChangeField="" continue
+			    set SQLCODE=$$select^LVBVISTS(pRowidVisitTestSet)
+			    if +SQLCODE'=0 {
+				    Set ok=$$$ERROR($$$GeneralError,"select^LVBVISTS: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
+				    continue
+			    }
+			    if numChangeField>$get(PLIST) {
+				    set ok=$$$ERROR($$$GeneralError,"Некорректное поле для изменения "_numChangeField)
+				    quit
+			    }
+			    set PLIST(numChangeField)=value
+			    set str="" for jj=1:1:PLIST set str=str_$piece($get(PLIST(jj)),$char(1),1)_$c(2)
+			    kill PLIST
+			    set PLIST(1)=str
+			    set PLIST=$order(PLIST(""),-1)
+			    set err=$$save^LVBVISTS($piece(pRowidVisitTestSet,"||",1)) 
+		    }
+		    // ввод данных по указанному тесту (Set Data)
+		    elseif typeAction="SD" {
+			    set value=$piece(rec,$char(1),2)
+			    set test=$piece(rec,$char(1),6)
+			    if '$data(^TTAB("TC",test)) continue
+			    kill PLIST
+			    set rowid=pRowidVisitTestSet_"||"_test
+			    set PLIST(1)=rowid_"\"_test_"\"_value
+			    set PLIST=$order(PLIST(""),-1)
+			    if $$save^LVBVIS4(rowid,"E")
+		    }
+		}
+	}
+	catch (exeption) 
+	{
+		set ok=exeption.AsStatus()
+	} 
+	quit ok
 ]]></Implementation>
 </Method>
 
@@ -218,7 +474,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 <Implementation><![CDATA[
 	Set laboratory=""
 	&sql(
-		Select CTTSK_Value  Into :laboratory from SQLUser.CT_TestSetActions where CTTSK_ParRef=:pTestSet and CTTSK_FieldToSet=40
+		Select CTTSK_Value  Into :laboratory from SQLUser.CT_TestSetActions where CTTSK_ParRef=:pTestSet and CTTSK_FieldToSet=40 and CTTSK_ActiveFlag='Y'
 	)
 	Quit laboratory
 ]]></Implementation>
