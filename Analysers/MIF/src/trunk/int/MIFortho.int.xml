@@ -3,6 +3,9 @@
 <Routine name="MIFortho" type="INT" languagemode="0"><![CDATA[
 MIFortho(mi) // ORTHO AutoVue® Innova - Russion Burdenko 
     //(полный цикл через файлы : query-request-result)
+    // так как на компьютере прибора не удается дать доступ к папке какому-нибудь доменному юзеру (под которым бы работало cache), то
+    // для получения результатов с прибора запускается cmd файл C:\Laboratory\Instruments\Innova\copyfiles1.cmd 
+    // для отрпавки заданий на прибор запускается фал C:\Laboratory\Instruments\Innova\copyfiles2.cmd  
   	New (mi)
 	Set mi=$Get(mi) 
 	If '$Length(mi) Quit
@@ -12,7 +15,10 @@ MIFortho(mi) // ORTHO AutoVue® Innova - Russion Burdenko
 	For j=1:1:PLIST Set @("par"_j)=PLIST(j)
 	;
 	Set basedir=PLIST(12) if basedir="" set basedir=PLIST(20)
-	if basedir="" set basedir="C:\temp\ortho"
+	if basedir="" {
+		Do message^MIF000(mi,"Не указана директория") quit
+		quit
+	}
 	set len=$length(basedir)
 	if $tr($extract(basedir,len),"/","\")="\" set basedir=$extract(basedir,1,len-1)
 
@@ -25,15 +31,29 @@ MIFortho(mi) // ORTHO AutoVue® Innova - Russion Burdenko
 	Set outdir=$$GetDirOutput(basedir)  // директория для файлов LIS-Device
 	Set archivdirin=$$GetDirArchiveInput(basedir)
 	Set archivdirout=$$GetDirArchiveOutput(basedir)
-	Set errdir=$$GetDirError(basedir)
+	Set errdirin=$$GetDirErrorInput(basedir)
+	Set errdirout=$$GetDirErrorOutput(basedir)
 
-    for dir=indir,outdir,archivdirin,archivdirout,errdir {
+    for dir=indir,outdir,archivdirin,archivdirout,errdirin,errdirout {
 	    If '##class(%File).DirectoryExists(dir) {
 		    if '##class(%File).CreateDirectory(dir) {
-			    Do message^MIF000(mi,"Can not create directory "_dir) quit
+			    Do message^MIF000(mi,"Can not create directory "_$tr(dir,"\","/")) quit
 		    }
 	    }
     }
+      
+    // Проверка существования bat файла для копирования файлов с \\O05485\lan в папку input
+    set filecmd1=$$GetCmdFile1(basedir)
+    if '##class(%File).Exists(filecmd1) {
+	    Do message^MIF000(mi,"Нет bat файла для копирования файлов с прибора в папку input "_filecmd1) quit
+    }
+    
+    // Проверка существования bat файла для копирования файлов с output in \\O05485\lan 
+    set filecmd2=$$GetCmdFile2(basedir)
+    if '##class(%File).Exists(filecmd2) {
+	    Do message^MIF000(mi,"Нет bat файла для копирования файлов с папки output в папку прибора "_filecmd2) quit
+    }
+      
 	If $$start^MIF000() Quit
  	Do trace^MIF000(mi,"Started job="_$Job,"DEBUG")
  	;
@@ -56,6 +76,13 @@ Main(mi,pBaseDir) [par10,par11] public
 LoadFilesFromAnalisator(mi,pBaseDir) [par10,par11] public 
 {
 	set pInDir=$$GetDirInput(pBaseDir)
+	
+	//копирование файлов из папки анализатора \\O05485\lan в папку input
+	set filecmd1=$$GetCmdFile1(pBaseDir)
+	set notok=$zf(-1,filecmd1)
+	if notok quit
+	//s ^test("innova","ok1",$i(^test("innova","ok1")))=notok
+	
 	Set rs=##class(%ResultSet).%New("%File:FileSet")
 	Set ok=rs.Execute(pInDir,"*.*")  
 	If 'ok Quit
@@ -67,13 +94,14 @@ LoadFilesFromAnalisator(mi,pBaseDir) [par10,par11] public
 ReadFileFromAnalisator(mi,pFileName,pBaseDir) [par10,par11] public 
 {
 	set pArchivDir=$$GetDirArchiveInput(pBaseDir)
-	set pErrDir=$$GetDirError(pBaseDir)
+	set pErrDir=$$GetDirErrorInput(pBaseDir)
 	// переносим файл в директорию pArchivDir
 	Set dir=$zconvert(##class(%File).GetDirectory(pFileName),"L")  
  	Set name=$Piece($zconvert(pFileName,"L"),dir,2)
- 	Set newname=pArchivDir_"\"_name
- 	Set newname=$$ArchiveFileName^KSUTIL1(newname)
-	Set ok=##class(%File).Rename(pFileName,newname)
+ 	Set archivename=pArchivDir_"\"_name
+ 	Set archivename=$$ArchiveFileName^KSUTIL1(archivename)
+ 	
+	Set ok=##class(%File).Rename(pFileName,archivename)
 	if 'ok Do trace^MIF000(mi,"не удалось перенести файл "_pFileName_" в директорию "_pArchivDir,"H<--M") quit
 
     try {
@@ -81,7 +109,7 @@ ReadFileFromAnalisator(mi,pFileName,pBaseDir) [par10,par11] public
 	set (sample,epis,surname,result,date,time,QC)="" 
 
 	Set stream=##class(%FileCharacterStream).%New()
-	Set stream.Filename=newname
+	Set stream.Filename=archivename
 	Set stream.TranslateTable="CP1251"
  	While 'stream.AtEnd {
 		Set record=stream.ReadLine()
@@ -148,14 +176,14 @@ ReadFileFromAnalisator(mi,pFileName,pBaseDir) [par10,par11] public
     }
  	Set stream=""  
  	If (ok) {
-		Do trace^MIF000(mi,"Done file "_newname,"H<--M")
+		Do trace^MIF000(mi,"Done file "_archivename,"H<--M")
   	} Else {
-		Do trace^MIF000(mi,"Error during processing file "_newname,"H<--M")
-	 	Set ok2=##class(%File).Rename(newname,pErrDir_"\"_name)
+		Do trace^MIF000(mi,"Error during processing file "_archivename,"H<--M")
+	 	Set ok2=##class(%File).Rename(archivename,pErrDir_"\"_name)
     	If ok2 {
-	    	Do trace^MIF000(mi,"Renamed file "_newname_" to "_pErrDir_"\"_name,"H<--M")
+	    	Do trace^MIF000(mi,"Renamed file "_archivename_" to "_pErrDir_"\"_name,"H<--M")
         } Else {
-		    Do trace^MIF000(mi,"Error during renaming file "_newname_" to "_pErrDir_"\"_name,"H<--M")
+		    Do trace^MIF000(mi,"Error during renaming file "_archivename_" to "_pErrDir_"\"_name,"H<--M")
   	    }		
    	}
    	
@@ -228,7 +256,7 @@ CreateFileOrder(mi,epis,pBaseDir)
  Set dirout=$$GetDirOutput(pBaseDir)
  Set archivdirout=$$GetDirArchiveOutput(pBaseDir)
  
- set filename=dirout_"\"_$$GetFileName()_".txt" 
+ set filename=dirout_"\"_$$GetFileName()_".dnl" 
  if ##class(%File).Exists(filename) {
 	 do trace^MIF000(mi,"Файл "_filename_" существует. Не удалось сделать заказ по эпизоду "_epis,"DEBUG")
 	 quit
@@ -236,7 +264,7 @@ CreateFileOrder(mi,epis,pBaseDir)
  set ok=1
  try {
 	  // создание файла в директории archivdirout
-	 set filearc=archivdirout_"\"_$$GetFileName()_".txt" 
+	 set filearc=archivdirout_"\"_$$GetFileName()_".dnl" 
      Set filearc=$$ArchiveFileName^KSUTIL1(filearc)
      //Set file=##class(%File).%New(filearc)
 	 //set ok=file.Open("WSN")
@@ -272,10 +300,35 @@ CreateFileOrder(mi,epis,pBaseDir)
 	 kill ^TMIF(mi,10,epis)
 	 do trace^MIF000(mi," По эпизоду "_epis_" создан файл "_filename,"DEBUG")
 	 
+	 //копирование файлов с output в папку прибора \\O05485\lan 
+	 set filecmd2=$$GetCmdFile2(pBaseDir)
+	 set notok=$zf(-1,filecmd2)
+	 if notok {
+		do trace^MIF000(mi," Не удалось скопировать файлы из папки output в папку прибора","DEBUG") 
+		if ##class(%File).Exists(filename) {
+			set fileErr=$$GetDirErrorOutput(pBaseDir)_"\"_$$GetFileName()_".dnl"
+		    Set ok=##class(%File).Rename(filename,fileErr)	
+		    if 'ok {
+			   do trace^MIF000(mi," Не удалось перенести файл "_filename_" в "_fileErr,"DEBUG") 
+			   //set ok=##class(%File).Delete(filename)
+		    }
+		}
+	    quit
+	 }
+	 
+	 
  } else {
 	 do trace^MIF000(mi,"Не удалось сделать заказ по эпизоду "_epis,"DEBUG")
 	 do trace^MIF000(mi,"Ошибка "_$System.Status.GetErrorText(ok),"DEBUG")
-
+	 // если уже есть файл, то прененосим в папку error
+	 if ($get(filename)'="")&&(##class(%File).Exists(filename)) {
+			set fileErr=$$GetDirErrorOutput(pBaseDir)_"\"_$$GetFileName()_".dnl"
+		    Set ok=##class(%File).Rename(filename,fileErr)	
+		    if 'ok {
+			   do trace^MIF000(mi," Не удалось перенести файл "_filename_" в "_fileErr,"DEBUG") 
+			   //set ok=##class(%File).Delete(filename)
+		    }
+		}
  }	
 	
  quit 
@@ -284,41 +337,52 @@ CreateFileOrder(mi,epis,pBaseDir)
  // директория для файлов LIS->Device 
 GetDirOutput(basedir) 
 {
-	quit "\\O05485\lan\dnl"
-    //quit basedir_"\Output" 
+    quit basedir_"\Output" 
 }
  
  // директория для файлов LIS->Device (archive) 
 GetDirArchiveOutput(basedir) 
 {
-	quit "C:\Laboratory\Instruments\Innova\Output"
- quit basedir_"\Output" 
+ quit basedir_"\Archive\Output" 
 }
  
  // директория для файлов Device->LIS 
 GetDirInput(basedir) 
 {
-	quit "\\O05485\lan\upl"
-	//quit "C:\temp\2"
-    //quit basedir_"\Input" 
+    quit basedir_"\Input" 
 }
 
  // директория для файлов with error
-GetDirError(basedir) 
+GetDirErrorInput(basedir) 
 {
- quit basedir_"\error" 
+ quit basedir_"\Input\error" 
 }
  
+ // директория для файлов with error
+GetDirErrorOutput(basedir) 
+{
+ quit basedir_"\Output\error" 
+}
+
  // директория для файлов Device->LIS (archive) 
 GetDirArchiveInput(basedir) 
 {
-	quit "C:\Laboratory\Instruments\Innova\Input"
- quit basedir_"\Input" 
-} 
+ quit basedir_"\Archive\Input" 
+}
+ 
  // имя файла LIS->Analisator 
 GetFileName() 
 {
  quit "lis"_$zd(+$h,8)_$tr($zt($p($h,",",2),1),":","")  
 }
+
+ //bat файла для копирования файлов с \\O05485\lan в папку input
+GetCmdFile1(basedir)
+ quit basedir_"\copyfiles1.cmd" 
+ 
+ //bat файла для копирования файлов с output в папку прибора \\O05485\lan (user=OCD)
+GetCmdFile2(basedir)
+ quit basedir_"\copyfiles2.cmd" 
+  
 ]]></Routine>
 </Export>
