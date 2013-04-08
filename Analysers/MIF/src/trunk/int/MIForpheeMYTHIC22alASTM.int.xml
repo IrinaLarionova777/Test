@@ -2,9 +2,12 @@
 <Export generator="Cache" version="24">
 <Routine name="MIForpheeMYTHIC22alASTM" type="INT" languagemode="0"><![CDATA[
 MIForpheeMYTHIC22alASTM(mi) ; ABX Orphee MYTHIC 22AL (protokol ASTM) (Russion Burdenko)
+ //ошибка "READ" (то есть "DISCONNECT"), поэтому Ping каждые 30 сек
+ // если в Ping на наше ENQ ответ ENQ, то пытаемся получить данные с прибора
+ // с протоколом C2 (MIForpheeMYTHIC22alС2) (result+histogramm+scatter plot) не получилось работать - не очень понятно, как там делать Ping, ну и не пробовали даже
  set mi=$get(mi) if '$length(mi) quit
  kill ^TMIF(mi,10) 
- //set $ztrap="err^MIF000dop"
+ set $ztrap="err^MIF000"
  if $$select^LVBMIMP(mi) quit
  for j=1:1:PLIST set @("par"_j)=PLIST(j)
  set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21)
@@ -12,11 +15,16 @@ MIForpheeMYTHIC22alASTM(mi) ; ABX Orphee MYTHIC 22AL (protokol ASTM) (Russion Bu
  if $$start^MIF000() quit
  do trace^MIF000(mi,"Started job="_$job,"DEBUG")
  //set compiled=$listget(^rINDEX($zname,"OBJ"),1)
+ set nameMachine="",nameLIS=""
+ set lasttime=$h*100000+$piece($h,",",2)
  for {
-	 do Main 
+	 do Main
+	 set curtime=$h*100000+$piece($h,",",2)
+	 if (curtime-lasttime)>30 do Ping set lasttime=$h*100000+$piece($h,",",2)
 	 if $$stop^MIF000() quit
-	 //if $listget(^rINDEX($zname,"OBJ"))'=compiled ztrap "EDIT" // эмуляция ошибки EDIT, если программа-драйвер изменилась
  }
+ c par4
+
  close par4
  quit
 Main 
@@ -25,6 +33,7 @@ Main
  if $char(R)'=enq quit
  set nameMachine="",nameLIS=""
  do receiveENQ
+ set lasttime=$h*100000+$piece($h,",",2)
  quit
  ;обработка полученного от прибора ENQ
 receiveENQ
@@ -69,9 +78,9 @@ receiveENQ
      }
      ; order record
      if typerecord="O" {
-	     ;set epis=$translate($piece($piece(record,"|",3),"^",1)," ")
+	     set epis=$translate($piece($piece(record,"|",3),"^",1)," ")
 	     ;if '$length(epis) set epis=$translate($piece($piece(record,"|",4),"^",1)," ")
-	     set epis=$translate($piece(record,"|",4)," ","")
+	     if epis="" set epis=$translate($piece(record,"|",4)," ","")
 	     ;set QC=$translate($piece(record,"|",12)," ") 
          ;if QC="Q" set QC="Y"
          continue
@@ -106,7 +115,7 @@ receiveENQ
  quit
 Last ; file result if exists
  do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"H<--H")
- if epis?1.99AN,$length(result) {
+ if $get(epis)'="",$length(result) {
  	 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
  }
  set (sample,epis,surname,result,date,time,QC)=""
@@ -178,19 +187,22 @@ Send(epis) ; send list of orders if exists
  if x="" kill ^TMIF(mi,10,epis)
  do EOT
  quit
-SEND(str) ; send string to instrument
+ 
+SEND(str,flagNoComment) ; send string to instrument
+ set flagNoComment=$get(flagNoComment)
  set str=str_cr_etx,chsum=$$CHSUM(str)
  write stx,str,chsum,cr,lf,*-3 
- do trace^MIF000(mi,str_chsum,"H-->M")
+ if flagNoComment="" do trace^MIF000(mi,str_chsum,"H-->M")
  for j=1:1:6 {
 	 read *R:1 
 	 quit:($char(R)=ack)!($char(R)=eot)
 	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
  }
- if $char(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
- if $char(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
- do trace^MIF000(mi,R,"H<--M")
+ if $char(R)=ack do:flagNoComment="" trace^MIF000(mi,"ACK","H<--M") quit 0
+ if $char(R)=eot do:flagNoComment="" trace^MIF000(mi,"EOT","H<--M") quit 1
+ if flagNoComment="" do trace^MIF000(mi,R,"H<--M")
  quit 2
+ 
 CHSUM(x) ; calculate check sum
  new (x) 
  set z=0 for y=1:1:$length(x) set z=z+$ascii(x,y)
@@ -200,5 +212,25 @@ ACK write ack,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
 NAK write nak,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
 EOT write eot,*-3 do trace^MIF000(mi,"EOT","H-->M") quit
 ENQ write enq,*-3 do trace^MIF000(mi,"ENQ","H-->M") quit
+
+Ping ; send ENQ чтобы не терять связи 
+ //w enq,*-3 
+ do ENQ 
+ for j=1:1:10 read *R:1 if $c(R)=ack!($c(R)=enq) quit
+ // если получено enq, то предполагаем, что прибор хочет нам что-то послать и начинаем слушать его
+ if $c(R)=enq {
+	 do receiveENQ
+	 //do trace^MIF000(mi,"ENQ","H<--M") 
+	 quit
+ }
+ if $c(R)'=ack do trace^MIF000(mi,R,"H<--M") do EOT quit //do EOT quit
+ if $$SEND($$getHeadRecord()) //quit:$$SEND($$getHeadRecord(),1)
+ //3L|1|N
+ //if $$SEND("3L|0|N") 
+ //w eot,*-3 
+ do EOT
+ quit
+getHeadRecord()
+  quit "1H|\^&|||LIS_ID|||||ORPHEE AL22||P|E 1394-97|"_$Translate($ZDateTime($Horolog,8)," :")
 ]]></Routine>
 </Export>
