@@ -14,9 +14,11 @@ MIForpheeMYTHIC22alC2(mi) ; ABX Orphee MYTHIC 22AL (protokol C2) (Russion Burden
  s lf=$c(10),cr=$c(13),soh=$c(1)
  set delim=";"
  set (result,epis)=""
+ hang 2
  if $$start^MIF000() q
  set flagErrorWithEndProcess=0
- d traceWithZTS^MIF000dop(mi,"Started job="_$j,"DEBUG")
+ d trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ set lasttime=$piece($h,",",2)
  set num=""
  //set threasholdsStruct="NoL/NoN/NoE/LN/RN/LL/AL/LMU/LMD/LMN/MN/RM/NL/NE/RMN"
  
@@ -28,8 +30,10 @@ MIForpheeMYTHIC22alC2(mi) ; ABX Orphee MYTHIC 22AL (protokol C2) (Russion Burden
 	 } else {
 		 do MainWithCatchError
 	 }
-	 if $$stop^MIF000() d traceWithZTS^MIF000dop(mi,"stop","DEBUG") quit
-	 if $get(flagErrorWithEndProcess)=1 d traceWithZTS^MIF000dop(mi,"stop by error "_$ze,"DEBUG") quit
+	 set curtime=$piece($h,",",2)
+	 //if (curtime-lasttime)>30 do Ping set lasttime=$piece($h,",",2)
+	 if $get(flagErrorWithEndProcess)=1 d trace^MIF000(mi,"stop by error "_$ze,"DEBUG") quit
+	 if $$stop^MIF000() d trace^MIF000(mi,"stop","DEBUG") quit
  }
  close par4
  quit
@@ -40,14 +44,17 @@ MIForpheeMYTHIC22alC2(mi) ; ABX Orphee MYTHIC 22AL (protokol C2) (Russion Burden
 MainWithCatchError
  try {
 	read *R:10
-    //if $c(R)'=enq d traceWithZTS^MIF000dop(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+    //d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
     if R=-1 quit
     do receiveSTX
+    set lasttime=$piece($h,",",2)
  } catch {
-	 do err2^MIF000dop  // временно с $zts
-	 //do err^MIF000
+	 //do err2^MIF000dop  // временно с $zts
+	 do err^MIF000
+	 
 	 set flagErrorWithEndProcess=1
-	 if $find($ze,"<READ>")&&($get(mi)'="") {
+	 
+	 if (($find($ze,"<READ>"))||($find($ze,"<DISCONNECT>")))&&($get(mi)'="") {
 		set programname=$piece($get(^TMIF(mi)),"\",3)
 		    if programname'="" {
 			      x "job ^"_programname
@@ -55,28 +62,30 @@ MainWithCatchError
 		          quit
 		    }
 	 }
+	 
  }  
  quit
  
 Main 
  read *R:10
- ;i $c(R)'=enq d traceWithZTS^MIF000dop(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ //d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
  if R=-1 quit
  //i $char(R)'=stx quit
  do receiveSTX
+ set lasttime=$piece($h,",",2)
  quit
  
  ;обработка полученного от прибора ENQ
 receiveSTX 
- //do traceWithZTS^MIF000dop(mi,"STX","H<--M")
+ //do trace^MIF000(mi,"STX","H<--M")
  set record=$$read^MIF000("",cr) if '$length(record) quit
- do traceWithZTS^MIF000dop(mi,record,"H<--M")
+ do trace^MIF000(mi,record,"H<--M")
  set ok=1
  set instrument=$piece(record,delim,1)
  
  if $extract(instrument,1,4)'="22AL" {
 	 set ok=0
-	 do traceWithZTS^MIF000dop(mi,"Begin of record does not equal ""22AL""","H<--M") 
+	 do trace^MIF000(mi,"Begin of record does not equal ""22AL""","H<--M") 
  }
  
  // check record validity
@@ -85,7 +94,7 @@ receiveSTX
  set csFact=$$CheckSum($piece(record,delim,5,len-1))
  if csDeclare'=csFact {
 	 set ok=0 
-	 do traceWithZTS^MIF000dop(mi,"Declare checksum="_lengthDeclare_" Fact checksum="_lengthFact,"DEBUG") 
+	 do trace^MIF000(mi,"Declare checksum="_lengthDeclare_" Fact checksum="_lengthFact,"DEBUG") 
  }
  */
  
@@ -109,7 +118,7 @@ receiveSTX
    kill datares
    for {
 	   set record=$$read^MIF000("",cr) if '$length(record) quit
-	   do traceWithZTS^MIF000dop(mi,record,"H<--M2")
+	   do trace^MIF000(mi,record,"H<--M2")
 	   set command=$piece(record,delim,1) //$translate($piece(record,delim,1)," ","")
 	   if (command="RTYPE")||(command="RACK")||(command="POS")||(command="BIRTH")||(command="SEX")||(command="PRESC")||(command="LOCAT")||(command="FIRSTNAME")||(command="DRAW DATE")||(command="DRAW TIME")||(command="PATIENT COMMENT")||(command="INFO") {
 		   set recordForCheckSum=recordForCheckSum_record
@@ -119,13 +128,13 @@ receiveSTX
 		   if $extract(recordForCheckSum,len)=cr set recordForCheckSum=$extract(recordForCheckSum,1,len-1)
 		   set csDeclare=$piece(record,delim,2)
            set csFact=$$CheckSum(recordForCheckSum)
-           do traceWithZTS^MIF000dop(mi,"recordForCheckSum="_recordForCheckSum_" Declare checksum="_csDeclare_" Fact checksum="_csFact,"DEBUG")
+           do trace^MIF000(mi,"recordForCheckSum="_recordForCheckSum_" Declare checksum="_csDeclare_" Fact checksum="_csFact,"DEBUG")
            set ok=1
-           do traceWithZTS^MIF000dop(mi,"Declare checksum="_csDeclare_" Fact checksum="_csFact,"DEBUG")
+           do trace^MIF000(mi,"Declare checksum2="_csDeclare_" Fact checksum2="_csFact,"DEBUG")
            /*
            if csDeclare'=csFact {
 	           set ok=0 
-	           do traceWithZTS^MIF000dop(mi,"Declare checksum="_csDeclare_" Fact checksum="_csFact,"DEBUG") 
+	           do trace^MIF000(mi,"Declare checksum="_csDeclare_" Fact checksum="_csFact,"DEBUG") 
            }*/
            if ok=1 {
 	           do Send("ACK_RESULT"_delim_"OK"_delim) 
@@ -146,11 +155,11 @@ saveResults()
  for {
 	 set nn=$order(datares(nn)) if nn="" quit
 	 set record=datares(nn)
-	 do traceWithZTS^MIF000dop(mi,"see datares ="_record,"DEBUG") 
+	 do trace^MIF000(mi,"see datares ="_record,"DEBUG") 
 	 set command=$piece(record,delim,1) 
 	 if command="DATE" {
 		 set date=$piece(record,delim,2)
-		 if date'="" set date=$zdateh(date)
+		 if date'="" set date=$zdateh(date,4)
 	 }
 	 if command="TIME" {
 		 set time=$piece(record,delim,2)
@@ -184,65 +193,112 @@ saveResults()
 		 set epis=$piece(record,delim,2)
 		 set bitmap0=$e(subrecord,3,$length(subrecord)),test="DIFF" 
 	     do scatPlot^MIFpentra60dop(bitmap0,test)
-	 }
+	 }*/
 
    
-     // histogramm
-     if identificator="W"!(identificator="X")!(identificator="Y")!(identificator="Z") {
-	     set histogram=$e(subrecord,3,$length(subrecord)) set test=$select(identificator="W":"C",identificator="X":"RBCH",identificator="Y":"PLTH",identificator="Z":"S",1:"")
-	     if $length(histogram)=128 do histogram^MIFpentra60dop(histogram,test)
-     } */
-     
+        // histogramm
+     if $zconvert($piece(command," ",2),"U")="CURVE" {
+	  set test=$zconvert($piece(command," ",1),"U")
+	  set test=$select(test="WBC":"C",test="RBC":"RBCH",test="PLT":"PLTH",1:"")
+	  if test'="" {
+		  set histogram=$piece(record,delim,2,$length(record,delim)) 
+	      set len=$length(histogram)
+	      if $extract(histogram,len)=delim set histogram=$extract(histogram,1,len-1)
+	      if $length(histogram,delim)=128 {
+             set str=""
+             for j=1:1:$length(histogram,delim) {
+	            set pp=$piece(histogram,delim,j)
+	            if pp="" continue
+	            set sym=pp
+	            //set sym=$a($extract(histogram,j))
+	            //if sym'<32 set sym=sym-32
+	            //else  set sym=0
+	            set str=str_$translate($j($zhex(+sym),2)," ","0")
+             }
+             set ScatRes(test,1)=test_$c(par10)_"1"_$c(par10)_str_$c(par11) 
+	      }
+	  }
+     }
+    // threshholds for histogramm
+    if $zconvert($piece(command," ",2),"U")="THRESHOLDS" {
+	  set test=$zconvert($piece(command," ",1),"U")
+	  set test=$select(test="WBC":"C",test="RBC":"RBCH",test="PLT":"PLTH",1:"")
+	  if test'="" {
+		  set threshholds=$piece(record,delim,2,$length(record,delim))
+		  set len=$length(threshholds)
+	      if $extract(threshholds,len)=delim set threshholds=$extract(threshholds,1,len-1)
+	      set len=$length(threshholds,";")
+	      set str=""
+	      for j=1:1:len {
+		      set pp=$piece(threshholds,";",j)
+		      set pp=$translate($j(pp,3)," ","0")
+		      set str=str_$select(str'="":$char(20),1:"")_pp
+	      }
+	      if (test'="")&&(str'="") {
+		      set typeHistogram=3
+	          set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_$char(20)_typeHistogram_$char(20)_str_$c(par11)
+          }   
+	  }
+	  
+  }
  }
- 
+
  if ok=1 {
 	 if epis="" set epis=$get(episseq)
 	 if $l(epis),$l(result) {
 		 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
-		 do traceWithZTS^MIF000dop(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time_" QC="_QC,"DEBUG") 
+		 do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time_" QC="_QC,"DEBUG") 
 	 }
- }
- /*
- set result=""
- if $data(ScatRes) {
-	 set test="" set result=""
-	 if $data(ScatRes("DIFF"))&&('$data(ScatRes("DIFF",0))) {
-		 set typeReport="3"
-	    //set ScatRes("DIFF",0)="024 027 050 035 118 "_typeReport_" 031 069 073 100 069 100 118 029 077 051"	
-	    set $piece(ScatRes("DIFF",0)," ",6)=typeReport	 
-	 }
-	 for {
-		 set test=$order(ScatRes(test)) if test="" quit
-		 if $order(ScatRes(test,""),-1)=0&&($order(ScatRes(test,""))=0) kill ScatRes(test) continue
-		 if $data(ScatRes(test))&&('$data(ScatRes(test,0))) {
-			 set typeHistogram=3
-			 set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_$char(20)_typeHistogram_$c(par11)
-		 }
-		 set x="" 
-		 for {
+	 // histogramms and scatter plot
+	 set result=""
+     if $data(ScatRes) {
+	    set test="" set result=""
+	    /*
+	    if $data(ScatRes("DIFF"))&&('$data(ScatRes("DIFF",0))) {
+		    set typeReport="3"
+	       //set ScatRes("DIFF",0)="024 027 050 035 118 "_typeReport_" 031 069 073 100 069 100 118 029 077 051"	
+	       set $piece(ScatRes("DIFF",0)," ",6)=typeReport	 
+	    }*/
+	    for {
+		   set test=$order(ScatRes(test)) if test="" quit
+		   if $order(ScatRes(test,""),-1)=0&&($order(ScatRes(test,""))=0) kill ScatRes(test) continue
+		   if test="DIFF" continue
+		   if $data(ScatRes(test))&&('$data(ScatRes(test,0))) {
+			  set typeHistogram=3
+			  set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_$char(20)_typeHistogram_$c(par11)
+		   }
+		   set x="" 
+		   for {
 			 set x=$order(ScatRes(test,x)) if x="" quit
 			 set result=result_ScatRes(test,x)
-		 }
-	 }
-     if $length(result) d filesp^MIF000(mi,sample,epis,result)
- }*/
+		   }
+	    }
+        if $length(result) d filesp^MIF000(mi,sample,epis,result)
+      }
+	 
+ }
+ 
  quit
 
 Send(str) ; send string to instrument
  //set str=str_cr //,chsum=$$CHSUM(str)
  //write str,chsum,cr,lf,*-3 
  write str,cr,lf,*-3 
- do traceWithZTS^MIF000dop(mi,str,"H-->M")
+ do trace^MIF000(mi,str,"H-->M")
  ;for j=1:1:6 {
  ;	 read *R:1 
  ;	 quit:($char(R)=ack)!($char(R)=eot)
- ;	 //d traceWithZTS^MIF000dop(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
+ ;	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
  ;}
- ;if $char(R)=ack do traceWithZTS^MIF000dop(mi,"ACK","H<--M") quit 0
- ;if $char(R)=eot do traceWithZTS^MIF000dop(mi,"EOT","H<--M") quit 1
- ;do traceWithZTS^MIF000dop(mi,R,"H<--M")
+ ;if $char(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
+ ;if $char(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
+ ;do trace^MIF000(mi,R,"H<--M")
  quit 
 
+Ping()
+ set version="9"
+ do Send("CONNECT"_delim_version)
+ quit
  // с использованием битовых строк Cache (Так как длинные данные предполагаются)
 CheckSum(pucData) ; calculate check sum
  kill ausCrcTab1
@@ -416,5 +472,92 @@ test()
   w "length of bitmapSource=",$length(bitmapSource),!
   w "length of bitmapDest=",$length(bitmapDest),!
   quit 
+  
+testHist()
+ set mi="SWING",epis=111,sample=""
+ if $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(15)
+ s lf=$c(10),cr=$c(13),soh=$c(1)
+ 
+ 
+ kill ScatRes
+ set delim=";"
+ set record="WBC CURVE;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;12;34;68;108;149;173;177;180;189;201;205;197;186;178;177;186;193;192;190;189;188;188;189;189;183;175;170;174;182;181;179;182;183;182;183;185;194;207;208;203;202;208;217;220;218;207;194;194;205;215;216;209;200;193;187;177;169;166;159;147;138;136;136;131;119;113;112;108;98;88;85;82;75;67;63;61;60;60;57;55;52;47;42;39;38;39;40;40;37;33;30;31;32;30;28;28;26;24;22;22;23;23;21;19;19;22;26;30;30;"
+ //WBC THRESHOLDS;32;49;0;
+ //set string="0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;12;34;68;108;149;173;177;180;189;201;205;197;186;178;177;186;193;192;190;189;188;188;189;189;183;175;170;174;182;181;179;182;183;182;183;185;194;207;208;203;202;208;217;220;218;207;194;194;205;215;216;209;200;193;187;177;169;166;159;147;138;136;136;131;119;113;112;108;98;88;85;82;75;67;63;61;60;60;57;55;52;47;42;39;38;39;40;40;37;33;30;31;32;30;28;28;26;24;22;22;23;23;21;19;19;22;26;30;30;"    
+ set command=$piece(record,delim,1)
+ if $zconvert($piece(command," ",2),"U")="CURVE" {
+	  set test=$zconvert($piece(command," ",1),"U")
+	  if test="WBC" set test="C"
+	  if test'="" {
+		  set histogram=$piece(record,delim,2,$length(record,delim)) 
+	      set len=$length(histogram)
+	      if $extract(histogram,len)=delim set histogram=$extract(histogram,1,len-1)
+	      if $length(histogram,delim)=128 {
+             set str=""
+             for j=1:1:$length(histogram,delim) {
+	            set pp=$piece(histogram,delim,j)
+	            if pp="" continue
+	            set sym=pp
+	            //set sym=$a($extract(histogram,j))
+	            //if sym'<32 set sym=sym-32
+	            //else  set sym=0
+	            set str=str_$translate($j($zhex(+sym),2)," ","0")
+             }
+             set ScatRes(test,1)=test_$c(par10)_"1"_$c(par10)_str_$c(par11) 
+	      }
+	  }
+  }
+  set record="WBC THRESHOLDS;32;49;0;"
+  set command=$piece(record,delim,1)
+  if $zconvert($piece(command," ",2),"U")="THRESHOLDS" {
+	  set test=$zconvert($piece(command," ",1),"U")
+	  if test="WBC" set test="C"
+	  if test'="" {
+		  set threshholds=$piece(record,delim,2,$length(record,delim))
+		  set len=$length(threshholds)
+	      if $extract(threshholds,len)=delim set threshholds=$extract(threshholds,1,len-1)
+	      set len=$length(threshholds,";")
+	      set str=""
+	      for j=1:1:len {
+		      set pp=$piece(threshholds,";",j)
+		      set pp=$translate($j(pp,3)," ","0")
+		      set str=str_$select(str'="":$char(20),1:"")_pp
+	      }
+	      if (test'="")&&(str'="") {
+		      set typeHistogram=3
+	          set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_$char(20)_typeHistogram_$char(20)_str_$c(par11)
+          }   
+	  }
+  }
+      
+      
+ set result=""
+ if $data(ScatRes) {
+	 set test="" set result=""
+	 /*
+	 if $data(ScatRes("DIFF"))&&('$data(ScatRes("DIFF",0))) {
+		 set typeReport="3"
+	    //set ScatRes("DIFF",0)="024 027 050 035 118 "_typeReport_" 031 069 073 100 069 100 118 029 077 051"	
+	    set $piece(ScatRes("DIFF",0)," ",6)=typeReport	 
+	 }*/
+	 for {
+		 set test=$order(ScatRes(test)) if test="" quit
+		 if test="DIFF" continue
+		 if $order(ScatRes(test,""),-1)=0&&($order(ScatRes(test,""))=0) kill ScatRes(test) continue
+		 if $data(ScatRes(test))&&('$data(ScatRes(test,0))) {
+			 set typeHistogram=3
+			 set ScatRes(test,0)=test_$c(par10)_"0"_$c(par10)_$char(20)_typeHistogram_$c(par11)
+		 }
+		 set x="" 
+		 for {
+			 set x=$order(ScatRes(test,x)) if x="" quit
+			 set result=result_ScatRes(test,x)
+		 }
+	 }
+     if $length(result) b  d filesp^MIF000(mi,sample,epis,result)
+ }   
+  quit  
 ]]></Routine>
 </Export>
