@@ -70,7 +70,6 @@
 	} 
 	else {
 	  set rec=$get(^||TMP($j,"query",item))
-	  //set ^test(111,$i(^test(111)))=item
 	  //ROWSPEC = "date:%String,total:%Float,mean:%Float,median:%Float,val90:%Float,totalI:%Float,meanI:%Float,medianI:%Float,val90I:%Float"
 	  set $li(Row,1)=$piece(rec,$char(1),1)
 	  set result=$piece(rec,$char(1),2)
@@ -84,7 +83,6 @@
 	  set $li(Row,7)=$piece(result,"\",2)
 	  set $li(Row,8)=$piece(result,"\",3)
 	  set $li(Row,9)=$piece(result,"\",4)
-	  //set ^test(111,item)=Row
 	  set $li(qHandle,1)=item
 	  set AtEnd=0
 	}
@@ -106,17 +104,23 @@
 ]]></Implementation>
 </Method>
 
+<UDLText name="T">
+<Content><![CDATA[
+// pTestGroup Не используется (до вызова этой функциии учше из групп сразу создать pTestSet)
+
+]]></Content>
+</UDLText>
+
 <Method name="getData">
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pPatientLocations:%String,pPatientType:%String,pDateFrom:%String,pDateTo:%String,pTestSet:%String,pTestGroup:%String,pPatientLocationType:%String</FormalSpec>
+<FormalSpec><![CDATA[pPatientLocations:%String,pPatientType:%String,pDateFrom:%String,pDateTo:%String,&pTestSet:%String,pTestGroup:%String,pPatientLocationType:%String]]></FormalSpec>
 <PublicList>PLIST</PublicList>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
- ; check dates - 1. collection
- ;               6. received
  set ret=$$$OK
  try {
  kill ^||TMP($j)
+ /*
  ; check authorised date
  set date=pDateFrom-1,cnt=0,total=0 
  for {
@@ -126,7 +130,25 @@
 	 for {
 	    set epis=$order(^TEPIi("AUTHORISED",date,epis))
 	    if epis="" quit
-	    // обработка эпизода
+	    */
+ kill ^||TMP($j)
+ 
+ set index=4 //^TDAY( 4, {EPVIS_DateOfEntry}, {EPVIS_StatusPatient}, {EPVIS_VisitNumber} )
+   set date=pDateFrom-1 
+   for {
+	set date=$order(^TDAY(index,date)) 
+	if date=""||(date>pDateTo) quit
+	set status=""
+	for {
+	  set status=$order(^TDAY(index,date,status))
+	  if status="" quit
+	  set epis=""
+	  for {
+		set epis=$order(^TDAY(index,date,status,epis))
+		if epis="" quit
+		if $data(^||TMP($j,"epis",epis)) continue
+		set ^||TMP($j,"epis",epis)=""
+		// обработка эпизода
 	    if $$select^LVBEPVIS(epis,"Y") continue
 	    merge VISIT=PLIST kill PLIST
         if $l(pPatientLocations) {
@@ -137,41 +159,52 @@
 	        if VISIT(93)="" continue
 	        if VISIT(93)'=""&&((","_pPatientType_",")'[(","_VISIT(93)_",")) continue 
         } 
-        if $l(pPatientLocationType),'$$select^LVBCTHOS(VISIT(22),"Y"),PLIST(19)'=pPatientLocationType continue
-        // date begin
-        //set collected=VISIT(12)_","_VISIT(13)
-               if (VISIT(12)'="")&&(VISIT(13)'="") {
-	               set received=VISIT(12)_","_VISIT(13) // collection
-               } elseif (VISIT(61)'="")&&(VISIT(62)'="") {
-	               set received=VISIT(61)_","_VISIT(62)  // recieve
-               }  elseif (VISIT(10)'="")&&(VISIT(11)'="") { 
-	               set received=VISIT(10)_","_VISIT(11) // enter
-               }
-        if +$piece(received,",")=0||(+$piece(received,",",2)=0) continue 
-        set time1=(+received*86400)+$piece(received,",",2)
+        if $l(pPatientLocationType)&&('$$select^LVBCTHOS(VISIT(22),"Y"))&&(PLIST(19)'=pPatientLocationType) continue
+        // datetime begin for TAT
+        set time1=""
         set ts="" 
         for {
-	       set ts=$order(^TEPI(epis,1,ts)) if ts="" quit
-	       if $l(pTestSet),pTestSet'=ts  continue
-           if $l(pTestGroup),'$data(^TTAB("GR",pTestGroup,"TS",ts)) continue
+	       set ts=$order(^TEPI(epis,1,ts)) if ts=""||(time1=0) quit
+           if $data(pTestSet),'$data(pTestSet(ts)) continue
+           if time1="" {
+	           // datetime begin for TAT
+               set time1=..GetDateStartForTAT(.VISIT)
+               if +time1=0 continue 
+           }
            set seq=""
            for {
 	           set seq=$order(^TEPI(epis,1,ts,seq)) if seq="" quit
 	           set rec=^(seq)
-              
-               set authorised=$piece(rec,"\",4)_","_($p(rec,"\",5)*60) 
-               if +$piece(authorised,",")=0||(+$piece(authorised,",",2)=0) continue 
-               set time2=(+authorised*86400)+$piece(authorised,",",2)
+               set dateAuthorised=$piece(rec,"\",4)
+               set timeAuthorised=$piece(rec,"\",5)
+               if +dateAuthorised=0||(+timeAuthorised=0) continue 
+               set time2=(+dateAuthorised*86400)+(timeAuthorised*60)
                set delta=time2-time1
                set group=date
                set key=$i(cnt)
-               set ^||TMP($j,"Process",group,key)=received_"\"_authorised_"\"_delta
+               set ^||TMP($j,"Process",group,key)=epis_"\\"_delta
                set ^||TMP($j,"Sort",group,delta,key)=""
                set ^||TMP($j,"SortI",delta,key)=""
-           }
-        }  
+           }	    
+       }  
 	 }
- }    
+	 set ret=..proceedGetData()
+	 if 'ret quit
+	}
+ }
+ } catch(exception)
+  {
+	  set ret=exception.AsStatus()
+  }	
+  quit ret
+]]></Implementation>
+</Method>
+
+<Method name="proceedGetData">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ set ret=$$$OK
+ try { 	    
  ; calculate totals	
  set group=""
  for {
@@ -184,13 +217,17 @@
 		 set total=total+delta
 	 }
      ; calculate mean
-     set (mean,median,percentile)=""
+     set (mean,median,percentile75,percentile90)=""
      // mean
      if tot'=0 {
 	 	 set mean=total/tot
      }
      ; calculate median
-     set parity=tot#2,tot10=$j(tot/10,0,0)+1,tot0=tot\2,tot1=(tot+1)\2,tot2=(tot+2)\2
+     set parity=tot#2
+     set tot10=$j(tot/10,0,0)+1  // for calculation 90th percentile
+     set tot15=$j(tot/4,0,0)+1 // for calculation 75th percentile
+     set tot0=tot\2,tot1=(tot+1)\2,tot2=(tot+2)\2 // for calculation median
+     // median
      set delta="",cnt=0,stop=0
      for {
 	     set delta=$order(^||TMP($j,"Sort",group,delta)) if delta=""!(stop=1) quit
@@ -204,21 +241,25 @@
 	     }
 	     if stop=1 quit
       }
-      ;  calculate 90th percentile
-      set delta="",cnt=0,stop=0
+      ;  calculate 75th percentile, 90th percentile
+      set delta="",cnt=0,stop75=0,stop90=0
       for {
-	      set delta=$order(^||TMP($j,"Sort",group,delta),-1) if delta=""!(stop=1) quit
+	      set delta=$order(^||TMP($j,"Sort",group,delta),-1) if delta=""||((stop75=1)&&(stop90=1)) quit
           set npp=""
           for {
               set npp=$order(^||TMP($j,"Sort",group,delta,npp)) if npp="" quit 
 	          set cnt=cnt+1
-              if tot10=cnt set stop=1,percentile=delta quit 
+              if tot10=cnt set stop90=1,percentile90=delta 
+              if tot15=cnt set stop75=1,percentile75=delta  
+              if (stop75=1)&&(stop90=1) quit
 	      }
       }
-      set ^||TMP($j,"Report",group)=tot_"\"_(mean\60)_"\"_(median\60)_"\"_(percentile\60)_"\"_total
+      set ^||TMP($j,"Report",group)=tot_"\"_(mean\60)_"\"_(median\60)_"\"_(percentile90\60)_"\"_total_"\"_(percentile75\60)
  }
+ if '$data(^||TMP($j,"Report")) quit
+ 
  // считаем итоговые величины
- set (mean,median,percentile)=""
+ set (mean,median,percentile75,percentile90)=""
  set group="",tot=0,total=0
  for {
 	 set group=$order(^||TMP($j,"Report",group)) if group="" quit
@@ -231,7 +272,10 @@
 	  set mean=total/tot
  }
  ; calculate median
- set parity=tot#2,tot10=$j(tot/10,0,0)+1,tot0=tot\2,tot1=(tot+1)\2,tot2=(tot+2)\2
+ set parity=tot#2
+ set tot10=$j(tot/10,0,0)+1  // for calculation 90th percentile
+ set tot15=$j(tot/4,0,0)+1 // for calculation 75th percentile
+ set tot0=tot\2,tot1=(tot+1)\2,tot2=(tot+2)\2 // for calculation median
  set delta="",cnt=0,stop=0
  for {
 	     set delta=$order(^||TMP($j,"SortI",delta)) if delta=""!(stop=1) quit
@@ -246,23 +290,52 @@
          if stop=1 quit
   }
   ;  calculate 90th percentile
-  set delta="",cnt=0,stop=0
+  set delta="",cnt=0,stop75=0,stop90=0
   for {
-	      set delta=$order(^||TMP($j,"SortI",delta),-1) if delta=""!(stop=1) quit
+	      set delta=$order(^||TMP($j,"SortI",delta),-1) if delta=""||((stop75=1)&&(stop90=1)) quit
           set npp=""
           for {
               set npp=$order(^||TMP($j,"SortI",delta,npp)) if npp="" quit 
 	          set cnt=cnt+1
-              if tot10=cnt set stop=1,percentile=delta quit 
+              if tot10=cnt set stop90=1,percentile90=delta 
+              if tot15=cnt set stop75=1,percentile75=delta  
+              if (stop75=1)&&(stop90=1) quit 
 	      }
   }
-  set ^||TMP($j,"Report")=tot_"\"_(mean\60)_"\"_(median\60)_"\"_(percentile\60)_"\"_total
+  if +tot'=0 {
+	  set ^||TMP($j,"Report")=tot_"\"_(mean\60)_"\"_(median\60)_"\"_(percentile90\60)_"\"_total_"\"_(percentile75\60)
+  }
  //k ^test("dataZEN") m ^test("dataZEN")=^||TMP		 
  } catch(exception)
   {
 	  set ret=exception.AsStatus()
   }	
   quit ret
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Получить дату начала отчета ТАТ по данным из PLIST EPVisitNumber
+
+]]></Content>
+</UDLText>
+
+<Method name="GetDateStartForTAT">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pVisitData:%String]]></FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+		set returnValue=0
+		set str=""
+		if (pVisitData(12)'="")&&(pVisitData(13)'="") {
+	        set returnValue=(pVisitData(12)*86400)+pVisitData(13) // date of collection
+        } elseif (pVisitData(61)'="")&&(pVisitData(62)'="") {
+	        set returnValue=(pVisitData(61)*86400)+pVisitData(62)  // date of recieve
+        }  elseif (pVisitData(10)'="")&&(pVisitData(11)'="") { 
+	        set returnValue=(pVisitData(10)*86400)+pVisitData(11) // date of enter
+        }
+        quit returnValue
 ]]></Implementation>
 </Method>
 
@@ -306,9 +379,30 @@ Method workEpis(pEpisode As %String, date As %Integer) [ PublicList = PLIST ]
 ]]></Content>
 </UDLText>
 
-<Method name="getData2">
+<UDLText name="T">
+<Content><![CDATA[
+// Получение данных о ТАТ по рабочим группам наборов тестов (Code Tables-TestSet-Work Group TestSet)
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Ищем эпизоды, в которых есть все наборы тестов из группы, начальное время - время первого сбора материала (или регистрации) в группе
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+// конечное время - время авторизации последнеего набора тестов 
+
+]]></Content>
+</UDLText>
+
+<Method name="getDataGroup">
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pPatientLocations:%String,pPatientType:%String,pDateFrom:%String,pDateTo:%String,pTestSet:%String,pTestGroup:%String,pPatientLocationType:%String</FormalSpec>
+<FormalSpec><![CDATA[pPatientLocations:%String,pPatientType:%String,pDateFrom:%String,pDateTo:%String,&pTestSet:%String,pPatientLocationType:%String]]></FormalSpec>
 <PublicList>PLIST</PublicList>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
@@ -317,232 +411,85 @@ Method workEpis(pEpisode As %String, date As %Integer) [ PublicList = PLIST ]
  set ret=$$$OK
  try {
  kill ^||TMP($j)
- /*
- for index=1,6 {
-     set date=pDateFrom-1 
-     for {
-	     set date=$order(^TDAY(index,date)) 
-	     if date=""||(date>pDateTo) quit
-	     set status=""
-	     for {
-		     set status=$order(^TDAY(index,date,status))
-		     if status="" quit
-		     set epis=""
-		     for {
-			     set epis=$order(^TDAY(index,date,status,epis))
-			     if epis="" quit
-			     //if $data(^||TMP($j,"epis",epis)) continue
-			     set ^||TMP($j,"epis",epis)=""
-			     $$$ThrowOnError(..workEpis(epis,date))
-		     }
-	     }
-     }
- }
- */
- ; check authorised date
+ 
+ set index=4 //^TDAY( 4, {EPVIS_DateOfEntry}, {EPVIS_StatusPatient}, {EPVIS_VisitNumber} ) 
  set date=pDateFrom-1 
  for {
-     set date=$order(^TEPIi("AUTHORISED",date)) 
-     if date=""||(date>pDateTo) quit
-     set epis=""
-	 for {
-	     set epis=$order(^TEPIi("AUTHORISED",date,epis))
-	     if epis="" quit
-	     //if $data(^||TMP($j,"epis",epis)) continue
+	set date=$order(^TDAY(index,date)) if date=""||(date>pDateTo) quit
+	set status=""
+	for {
+	  set status=$order(^TDAY(index,date,status))
+	  if status="" quit
+	  set epis=""
+	  for {
+		 set epis=$order(^TDAY(index,date,status,epis))
+		 if epis="" quit
+         // рассмотрение на уровне epis
+	     if $data(^||TMP($j,"epis",epis)) continue
 		 set ^||TMP($j,"epis",epis)=""
-	     //$$$ThrowOnError(..workEpis(epis,date))
 	     // обработка эпизода
 	     if $$select^LVBEPVIS(epis,"Y") continue
-	    merge VISIT=PLIST kill PLIST
-        if $l(pPatientLocations),(","_pPatientLocations_",")'[(","_VISIT(22)_",") continue  // Hospital code DR
-        if $l(pPatientType),(","_pPatientType_",")'[(","_VISIT(93)_",") continue  
-        if $l(pPatientLocationType),'$$select^LVBCTHOS(VISIT(22),"Y"),PLIST(19)'=pPatientLocationType continue
-        set ts="" 
-        for {
-	       set ts=$order(^TEPI(epis,1,ts)) if ts="" quit
-	       if $l(pTestSet),pTestSet'=ts  continue
-           if $l(pTestGroup),'$data(^TTAB("GR",pTestGroup,"TS",ts)) continue
-           set seq=""
-           for {
-	           set seq=$order(^TEPI(epis,1,ts,seq)) if seq="" quit
-	           set rec=^(seq)
-               //set collected=VISIT(12)_","_VISIT(13)
-               if (VISIT(12)'="")&&(VISIT(13)'="") {
-	               set received=VISIT(12)_","_VISIT(13) // collection
-               } elseif (VISIT(61)'="")&&(VISIT(62)'="") {
-	               set received=VISIT(61)_","_VISIT(62)  // recieve
-               }  elseif (VISIT(10)'="")&&(VISIT(11)'="") { 
-	               set received=VISIT(10)_","_VISIT(11) // enter
-               }
-               set authorised=$piece(rec,"\",4)_","_($p(rec,"\",5)*60) set:authorised=",0" authorised=""
-               set hospitalCodeDR=$select(VISIT(22)="":" ",1:VISIT(22))
-               set hospitalCodeDR=1  // не будем делить по местоположению пациента
-               set patientType=$select(VISIT(93)="":" ",1:VISIT(93))
-               set patientType=1 //не будем делить по типу пациента 
-               //set ^||TMP($j,"Process",hospitalCodeDR,date,patientType,pEpisode,ts,seq)=collected_"\"_received_"\"_authorised
-               set ^||TMP($j,"Process",hospitalCodeDR,date,patientType,epis,ts,seq)=""_"\"_received_"\"_authorised
-           }
-        }  
+	     merge VISIT=PLIST kill PLIST
+	     
+	     if $l(pPatientLocations) {
+	        if VISIT(22)="" continue
+	        if VISIT(22)'=""&&((","_pPatientLocations_",")'[(","_VISIT(22)_",")) continue  // Hospital code DR
+         }
+         if $l(pPatientType) {
+	        if VISIT(93)="" continue
+	        if VISIT(93)'=""&&((","_pPatientType_",")'[(","_VISIT(93)_",")) continue 
+         } 
+         if $l(pPatientLocationType)&&('$$select^LVBCTHOS(VISIT(22),"Y"))&&(PLIST(19)'=pPatientLocationType) continue
+
+         // проверяем, есть ли в эпизоде все наборы тестов из pTestSet(ts) и все ли авторизованы
+         set ts="",flagAllTestSet=1
+         kill temp
+         for {
+	        set ts=$order(pTestSet(ts)) if ts="" quit
+	        if '$data(^TEPI(epis,1,ts)) {
+		        set flagAllTestSet=0
+		        quit
+	        }
+		    set tscnt=""
+            for {
+	           set tscnt=$order(^TEPI(epis,1,ts,tscnt)) if tscnt="" quit
+	           set rec=^(tscnt)
+	           set dateAuthorised=$piece(rec,"\",4)
+	           /*
+	           if (dateAuthorised<pDateFrom)||(dateAuthorised>pDateTo) {
+		          set flagAllTestSet=0
+		          quit 
+	           }*/
+	           set timeAuthorised=$p(rec,"\",5) 
+	           if (+dateAuthorised'=0)&&(+timeAuthorised'=0) {
+		          set valAuthorised=(dateAuthorised*86400)+(timeAuthorised*60)
+	              set temp(valAuthorised)=dateAuthorised
+	           } else {
+		           set flagAllTestSet=0
+		           quit
+	           }
+            }
+         }
+         if flagAllTestSet=1 {
+	        set datetime2=$order(temp(""),-1)
+	        if datetime2="" quit
+	        set dateAuthorised=temp(datetime2)
+	        set datetime1=..GetDateStartForTAT(.VISIT)  // datetime begin for TAT
+            set datetime2=$order(temp(""),-1)           // datetime end for TAT
+            set delta=datetime2-datetime1
+            set group=date // дата регистрации эпизода
+            set key=$i(cnt)
+            set ^||TMP($j,"Process",group,key)=epis_"\\"_delta
+            set ^||TMP($j,"Sort",group,delta,key)=""
+            set ^||TMP($j,"SortI",delta,key)=""
+         }
 	 }
- }    
- ; check delta's - received & collected
- ;               - authorised & received
- set loc="" 
- for {
-	 set loc=$order(^||TMP($j,"Process",loc)) i loc="" quit
-	 set date="" 
-	 for {
-		 set date=$order(^||TMP($j,"Process",loc,date)) if date="" quit
-		 set ptype="" 
-		 for {
-			 set ptype=$order(^||TMP($j,"Process",loc,date,ptype)) if ptype="" quit
-			 set epis=""
-			 for {
-				 set epis=$order(^||TMP($j,"Process",loc,date,ptype,epis)) if epis="" quit
-				 set ts="" 
-				 for {
-					 set ts=$order(^||TMP($j,"Process",loc,date,ptype,epis,ts)) if ts="" quit
-					 set seq="" 
-					 for {
-						 set seq=$order(^||TMP($j,"Process",loc,date,ptype,epis,ts,seq)) if seq="" quit
-						 set detail=^(seq)
-						 //set coll=$p(detail,"\",1)
-						 set recd=$p(detail,"\",2)
-						 set auth=$p(detail,"\",3)
-						 //set collected=($p(coll,",")*86400)+$p(coll,",",2)
-						 set received=($p(recd,",")*86400)+$p(recd,",",2)
-						 set:auth="" auth=$h
-						 set authorised=($p(auth,",")*86400)+$p(auth,",",2)
-						 set cnt=$i(^||TMP($j,"Delta",loc,date,ptype,ts,"Count"))
-						 set ^||TMP($j,"Delta",loc,date,ptype,ts,"Count",cnt,"AR")=(authorised-received)
-						 //set ^||TMP($j,"Delta",loc,date,ptype,ts,"Count",cnt,"RC")=(received-collected)
-						 
-					 }
-				 }
-			 }
-		 }
-	 }	 
- }
- ; calculate totals	 
- set loc="" 
- for {
-	 set loc=$order(^||TMP($j,"Delta",loc)) if loc="" quit
-	 set date="" 
-	 for {
-		 set date=$order(^||TMP($j,"Delta",loc,date)) if date="" quit
-		 set ptype="" 
-		 for {
-			 set ptype=$order(^||TMP($j,"Delta",loc,date,ptype)) if ptype="" quit
-			 set ts="",npp=0 
-			 for {
-				 set ts=$order(^||TMP($j,"Delta",loc,date,ptype,ts)) if ts="" quit
-				 set (totalRC,totalAR,tot,cnt)="" 
-				 for {
-					 set cnt=$order(^||TMP($j,"Delta",loc,date,ptype,ts,"Count",cnt)) if cnt="" quit
-					 //set RC=^||TMP($j,"Delta",loc,date,ptype,ts,"Count",cnt,"RC")
-					 set AR=^||TMP($j,"Delta",loc,date,ptype,ts,"Count",cnt,"AR")
-					 //set totalRC=totalRC+RC
-					 set totalAR=totalAR+AR
-					 set tot=tot+1
-					 //set ^||TMP($j,"Sort",loc,date,ptype,ts,"RC",RC,cnt)=""
-					 set ^||TMP($j,"Sort",loc,date,ptype,ts,"AR",AR,cnt)=""
-					 set ^||TMP($j,"SortI",ts,AR,$i(npp))=""
-				 }
-				 ; calculate mean
-				 set (meanRC,meanAR,medianRC,medianAR,percentileRC,percentileAR)=""
-				 if tot {
-					 //set meanRC=totalRC/tot
-					 set meanAR=totalAR/tot
-				 }
-				 set strResult=tot_"\\"_(meanRC\60)_"\\\"_(meanAR\60)
-				 ; calculate median
-				 set parity=tot#2,tot10=$j(tot/10,0,0)+1,tot0=tot\2,tot1=(tot+1)\2,tot2=(tot+2)\2
-				 for node="RC","AR" {
-					 set (cnt,stop,x1)="" set median=""
-				     for {
-					     set x1=$order(^||TMP($j,"Sort",loc,date,ptype,ts,node,x1)) 
-					     if x1="" quit  
-					     set x2="" 
-					     for {
-						     set x2=$order(^||TMP($j,"Sort",loc,date,ptype,ts,node,x1,x2)) 
-						     if x2=""||(stop=1) quit
-						     set cnt=cnt+1
-						     if parity'=0,tot1=cnt set stop=1,median=x1 //^||TMP($j,"Delta",loc,date,ptype,ts,"Count",x2,node) 
-						     if parity=0,tot0=cnt set median=x1 //^||TMP($j,"Delta",loc,date,ptype,ts,"Count",x2,node)
-						     if parity=0,tot2=cnt set stop=1,median=(median+x1)/2 quit //(median+^||TMP($j,"Delta",loc,date,ptype,ts,"Count",x2,node))/2 quit
-					     }
-					     if stop=1 quit
-				     }
-                     ; calculate 90th percentile
-                     set (cnt,stop,x1)="" set percentile=""
-                     for {
-	                     set x1=$order(^||TMP($j,"Sort",loc,date,ptype,ts,node,x1),-1) 
-	                     if x1="" quit
-	                     set x2="" 
-	                     for {
-		                     set x2=$order(^||TMP($j,"Sort",loc,date,ptype,ts,node,x1,x2),-1) 
-		                     if x2="" quit  
-		                     set cnt=cnt+1
-		                     if tot10=cnt set stop=1,percentile=x1 quit //^||TMP($j,"Delta",loc,date,ptype,ts,"Count",x2,node) quit
-	                     }
-	                     if stop=1 quit    
-                     }
-                     set $piece(strResult,"\",$select(node="RC":2,1:5))=(median\60)
-                     set $piece(strResult,"\",$select(node="RC":4,1:7))=(percentile\60)
-				 }
-				 set ^||TMP($j,"Report",loc,date,ptype,ts)=strResult
-			 }
-		 }
-	 }
- }
- // считаем итоговые величины
- set ts=""  //^||TMP($j,"SortI",ts,AR,$i(npp))
- for {
-    set ts=$order(^||TMP($j,"SortI",ts)) if ts="" quit
-    set time="",totaltime=0,tot=0
-    for {
-	    set time=$order(^||TMP($j,"SortI",ts,time)) if time="" quit
-	    set count=$order(^||TMP($j,"SortI",ts,time,""),-1)
-	    set totaltime=totaltime+(time*count)
-	    set tot=tot+count
-    }
-    ; calculate mean
-	set (mean,median,percentile)=""
-	if tot {
-			 set mean=totaltime/tot
 	}
-	set strResult=tot_"\\"_(mean\60)
-    ; calculate median
-	set parity=tot#2,tot10=$j(tot/10,0,0)+1,tot0=tot\2,tot1=(tot+1)\2,tot2=(tot+2)\2
-    set (cnt,stop,time)="" set median=""
-	for {
-	     set time=$order(^||TMP($j,"SortI",ts,time)) if time="" quit  
-		 set npp="" 
-	     for {
-		     set npp=$order(^||TMP($j,"SortI",ts,time,npp)) if npp=""||(stop=1) quit
-			 set cnt=cnt+1
-			 if parity'=0,tot1=cnt set stop=1,median=time
-			 if parity=0,tot0=cnt set median=time
-			 if parity=0,tot2=cnt set stop=1,median=(median+time)/2 quit
-		 }
-		 if stop=1 quit
-	}
-    ; calculate 90th percentile
-    set (cnt,stop,time)="" set percentile=""
-	for {
-	     set time=$order(^||TMP($j,"SortI",ts,time)) if time=""!(stop=1) quit  
-		 set npp="" 
-	     for {
-		     set npp=$order(^||TMP($j,"SortI",ts,time,npp)) if npp=""||(stop=1) quit
-			 set cnt=cnt+1
-			 if tot10=cnt set stop=1,percentile=time quit
-		 }
-		 if stop=1 quit
-	}
-   	set ^||TMP($j,"ReportI",ts)=tot_"\"_(mean\60)_"\"_(median\60)_"\"_(percentile\60) 
  }
- 
- //k ^test("dataZEN") m ^test("dataZEN")=^||TMP		 
+ //k ^test(11) m ^test(11)=^||TMP($j) 
+ set ret=..proceedGetData()
+	 if 'ret quit
+     
  } catch(exception)
   {
 	  set ret=exception.AsStatus()
