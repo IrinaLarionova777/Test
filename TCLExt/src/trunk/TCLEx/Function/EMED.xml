@@ -39,14 +39,6 @@
 			Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
 			Quit
 		}
-		// extra fields for User.HOSHospitalPatients - in User.HOSHospitalPatientsExtra
-		Set hosppatextraobj=..EMEDOrder2HospitalPatientExtra(pOrderObj)					// Добавляем/обновляем User.HOSHospitalPatientsExtra
-		Set ok=hosppatextraobj.%Save()
-		If 'ok {
-			Set errstr="Не удалось сохранить объект User.HOSHospitalPatientsExtra ("_$$Status2Str^KSUTIL1(ok)_")!"
-			Do ##class(dbo.TCLRequest).UpdateStatus(requestid,2,errstr)
-			Quit
-		}
 		Set ok=..DeleteExistingHospitalPatientTestSets(hosppatobj.%Id())
 		If 'ok {
 			Set errstr="Не удалось удалить существующие записи в User.HOSHospitalPatientвTSet ("_$$Status2Str^KSUTIL1(ok)_")!"
@@ -304,8 +296,8 @@ ID эпизода ЛИС. Пусто, если эпизода еще нет</Des
 	Set obj.HOSPAdmissionDate=$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfRequest)
 	Set obj.HOSPTransDate=$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfRequest)
 	
-	//Set obj.EPVISDateOfCollection="" //$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfCollection)
-	//Set obj.EPVISTimeOfCollection=$$TimeStamp2Secunds^KSUTIL1(pOrderObj.DateTimeOfCollection)
+	Set obj.EPVISDateOfCollection="" //$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfCollection)
+	Set obj.EPVISTimeOfCollection=$$TimeStamp2Secunds^KSUTIL1(pOrderObj.DateTimeOfCollection)
 	Set obj.HOSPSurname=pOrderObj.Surname
 	Set obj.HOSPGivenName=pOrderObj.Name
 	Set obj.HOSPExtraName1=pOrderObj.FartherName
@@ -322,43 +314,14 @@ ID эпизода ЛИС. Пусто, если эпизода еще нет</Des
 		Do obj.HOSPLocationDRSetObjectId(hospcode)
 	} Else {
 		Do obj.HOSPLocationDRSetObjectId("")
-	}
-	/*		
-	If (pOrderObj.Cito=1) {
-		Do obj.EPVISPriorityCodeDRSetObjectId("U")
-	} Else {
-		Do obj.EPVISPriorityCodeDRSetObjectId("")
-	}
-	*/	
-	//Set obj.EPVISExtra1=pOrderObj.PlaceOfCollection
-	Do obj.HOSPDoctorReferringDRSetObjectId(..GetDoctorCodeForOrder(pOrderObj))
-	Quit obj
-]]></Implementation>
-</Method>
-
-<Method name="EMEDOrder2HospitalPatientExtra">
-<ClassMethod>1</ClassMethod>
-<FormalSpec>pOrderObj:TCLEx.Object.EMEDOrder</FormalSpec>
-<ReturnType>User.HOSHospitalPatientsExtra</ReturnType>
-<Implementation><![CDATA[
-	Set obj=##class(User.HOSHospitalPatientsExtra).%OpenId("L||L||"_pOrderObj.RequestId)
-	If '$IsObject(obj) {
-		Set obj=##class(User.HOSHospitalPatientsExtra).%New()
-		set obj.HOSPHospitalCodeDR="L"
-		Set obj.HOSPDebtorNumber="L"
-		Set obj.HOSPVisit=pOrderObj.RequestId
-	}
-		
-	Set obj.EPVISDateOfCollection="" //$$TimeStamp2Horolog^KSUTIL1(pOrderObj.DateTimeOfCollection)
-	Set obj.EPVISTimeOfCollection=$$TimeStamp2Secunds^KSUTIL1(pOrderObj.DateTimeOfCollection)
-	
+	}		
 	If (pOrderObj.Cito=1) {
 		Do obj.EPVISPriorityCodeDRSetObjectId("U")
 	} Else {
 		Do obj.EPVISPriorityCodeDRSetObjectId("")
 	}	
 	Set obj.EPVISExtra1=pOrderObj.PlaceOfCollection
-	
+	Do obj.HOSPDoctorReferringDRSetObjectId(..GetDoctorCodeForOrder(pOrderObj))
 	Quit obj
 ]]></Implementation>
 </Method>
@@ -545,12 +508,6 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 		Do ##class(dbo.TCLRequest).UpdateStatus(pRequestId,2,errstr)
 		Quit
 	} 
-	Set ok=##class(User.HOSHospitalPatientsExtra).%DeleteId(hosppatid)
-	If 'ok {
-		Set errstr="Не удалось удалить объект User.HOSHospitalPatientsExtra ("_$$Status2Str^KSUTIL1(ok)_")!"
-		Do ##class(dbo.TCLRequest).UpdateStatus(pRequestId,2,errstr)
-		Quit
-	} 
 	Do ##class(dbo.TCLRequest).UpdateStatus(pRequestId,8)
 ]]></Implementation>
 </Method>
@@ -661,7 +618,7 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 	If testset="" Quit
 	If pTrigger="AfterInsert" {
 		Set datetimeofcreation=$Get(pValues(24))_","_(60*$Get(pValues(25)))
-		Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,5,$ListBuild(datetimeofcreation))		// 5 - заказ передан в ЛИС
+		Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,5,$ListBuild(datetimeofcreation,""))		// 5 - заказ передан в ЛИС
 	} ElseIf pTrigger="AfterDelete" {
 		Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,7,$ListBuild("",testset))									// 7 - заказ отменен в ЛИС
 	} ElseIf pTrigger="AfterUpdate" {
@@ -671,14 +628,17 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 			}	
 			Set datetimeofauth=$Get(pValues(7))_","_(60*$Get(pValues(8)))
 			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,6,$ListBuild(datetimeofauth,$Get(pValues(9)),testset))
-		} ElseIf ..IsTestSetCanceled(pEpisode,pTestSetId,.pValues,.pOldValues){				// Отмена набора тестов
+		} ElseIf ..IsTestSetCanceled(pEpisode,pTestSetId,.pValues,.pOldValues){				// Отмена набора тестов впервые
 			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,7,$ListBuild($Get(pValues(58)),testset))
+		} ElseIf ..IsTestSetCanceledReasonChange(pEpisode,pTestSetId,.pValues,.pOldValues){				// Отмена набора тестов изменилась
+			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,7,$ListBuild($Get(pValues(58)),testset,$get(pOldValues(58))))	
 		} ElseIf (..IsTestSetUndoOfAuthorization(pEpisode,pTestSetId,.pValues,.pOldValues)) {		// Деавторизация набора тестов
 			Set datetimeofcreation=$Get(pValues(24))_","_(60*$Get(pValues(25)))
 			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,10,$ListBuild(datetimeofcreation))	
 		} ElseIf (..IsTestSetUndoOfCancelation(pEpisode,pTestSetId,.pValues,.pOldValues)) {		// Анулирование отмены набора тестов
 			Set datetimeofcreation=$Get(pValues(24))_","_(60*$Get(pValues(25)))
-			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,5,$ListBuild(datetimeofcreation))	
+			set ^test("ir",pEpisode,pTestSetId)=$get(pOldValues(58))
+			Do ..LogRequestStatus(episoderequestid,pTestSetRequestId,pEpisode,testset,pTestSetId,5,$ListBuild(datetimeofcreation,$get(pOldValues(58))))	
 		}	
 	}
 	If (pTrigger="AfterInsert")||(pTrigger="AfterDelete") {			// Меняем число наборов тестов в эпизоде
@@ -715,7 +675,8 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 <Method name="IsTestSetCanceled">
 <Description>
 Была ли отмена  набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues
-Для EMC не являются настоящей причиной отмены причины с CTRBillable="Y" (например, 	Дозаказ и Материал ожидается, т.е. это как бы откладывание набора тестов)</Description>
+Для EMC не являются настоящей причиной отмены причины с CTRBillable="Y" (например, 	Дозаказ и Материал ожидается, т.е. это как бы откладывание набора тестов)
+Случай когда причины отмены не было</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
 <Implementation><![CDATA[
@@ -737,6 +698,35 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 	}
 	If (oldreason="")||(notreason)  Quit 1							// а также старой причины отмены не должно быть или у нее было CTRBillable="Y"
 	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="IsTestSetCanceledReasonChange">
+<Description>
+Была ли отмена  набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues
+Для EMC не являются настоящей причиной отмены причины с CTRBillable="Y" (например, 	Дозаказ и Материал ожидается, т.е. это как бы откладывание набора тестов)
+Случай когда причина отмены изменилась</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pTestSetId="") Quit 0
+	;
+	Set reason=$Get(pValues(58))
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(reason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}	
+	If (reason="")||(notreason)  Quit 0								// Новая причина должна быть и у этой причины отмены не должно быть CTRBillable="Y"
+	//
+	Set oldreason=$Get(pOldValues(58))							 
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(oldreason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}
+	If (oldreason="")||(notreason)  Quit 0							// Старая причина должна быть и у этой причины отмены не должно быть CTRBillable="Y"
+	Quit 1
 ]]></Implementation>
 </Method>
 
@@ -865,6 +855,7 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 						Set datetimeofcreation=$ListGet(testsetextravals,1)
 					}	
 					Set ok=##class(dbo.TCLRequestTestSet).UpdateStatus2CreateEpisode(requestguid,testset,datetimeofcreation)
+
 				} ElseIf testsetstatus=6 {							// Набор тестов авторизован в ЛИС
 					// Проверяем входит ли набор тестов в группу печати (информация о его авторизации будет передаваться только при авторизации всех наборов тестов группы печати)
 					Set reportgroup=##class(TCLEx.Function.TestSet).ReportGroup(testset)
@@ -918,12 +909,12 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 						
 					}
 				} ElseIf testsetstatus=7 {							// Набор тестов удален в ЛИС или установлена причина по которой его не будут делать
-					Set reason="Набор тестов удален"
+					Set reason="Набор тестов удален."
 					If testsetextravals'="" {
 						Set reasoncode=$ListGet(testsetextravals,1)
 						Set reasonobj=##class(User.CTReason).%OpenId(reasoncode,0)
 						If $IsObject(reasonobj) {
-							Set reason="Набор тестов отменен. Причина отмены - "_reasonobj.CTRDescription
+							Set reason="Набор тестов отменен. Причина отмены - "_reasonobj.CTRDescription_"."
 						}
 					}	
 					Set ok=##class(dbo.TCLRequestTestSet).UpdateStatus2Canceled(requestguid,testset,reason)
@@ -947,10 +938,24 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 				}	
 				If status=5 {
 					Set datetimeofcreation=horolog
+					set oldreasoncode="",oldreasontext=""
+					
 					If extravals'="" {
 						Set datetimeofcreation=$ListGet(extravals,1)
-					}	
-					Set ok=##class(dbo.TCLRequest).UpdateStatus2CreateEpisode(requestid,epis,datetimeofcreation)
+						if $ll(extravals)>1 {
+							set oldreasoncode=$ListGet(extravals,2)
+							set oldreasontext=..GetReasonText(oldreasoncode)
+						}
+					}
+					// Анулирование отмены набора тестов (статус 5)	
+					if oldreasontext'="" {
+						Set ok=##class(dbo.TCLRequest).UpdateStatus2UndoOfCancelationTestSet(requestid, epis, datetimeofcreation, oldreasontext)
+					}
+					// Создан эпизод в ЛИС (статус 5)
+					else {
+						Set ok=##class(dbo.TCLRequest).UpdateStatus2CreateEpisode(requestid,epis,datetimeofcreation)
+					}
+					
 				} ElseIf status=6 {
 					Set authdoctor=""
 					If extravals'="" {
@@ -983,27 +988,47 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 					Set ok=##class(dbo.TCLRequest).UpdateStatus2Authorized(requestid,authdoctor)
 				} ElseIf status=7 {							// Набор тестов удален в ЛИС или установлена причина по которой его не будут делать
 					Set reason="Набор тестов удален."
+					set reasontextold=""
 					If extravals'="" {
 						set reasontext=""
 						Set reasoncode=$ListGet(extravals,1)
+						set reasontext=..GetReasonText(reasoncode)
+						if $ll(extravals)>2 {
+						  set reasoncodeold=$ListGet(extravals,3)	
+						  set reasontextold=..GetReasonText(reasoncodeold)
+						} 
+						/*
 						Set reasonobj=##class(User.CTReason).%OpenId(reasoncode,0)
 						If $IsObject(reasonobj) {
-							Set reasontext=" Причина отмены - "_reasonobj.CTRDescription
-						}
+							//Set reasontext=" Причина отмены - "_reasonobj.CTRDescription
+						    Set reasontext=reasonobj.CTRDescription
+							//if reasontext'="" set reasontext=reasontext_"."
+
+						}*/
 						Set testsetcode=$ListGet(extravals,2)
 						if testsetcode'="" {
 							Set testsetobj=##class(User.CTTestSet).%OpenId(testsetcode,0)
 							If $IsObject(testsetobj) {
-							   Set reason="Набор тестов """_testsetobj.CTTSName_""""_$select(reasontext'="":" отменен."_reasontext,1:" удален.")
+								if reasontext'="" {
+									set reason=reasontext
+								} else {
+									Set reason="Набор тестов """_testsetobj.CTTSName_""""_" удален." //."
+								}
+							   //Set reason="Набор тестов """_testsetobj.CTTSName_""""_$select(reasontext'="":" отменен."_reasontext,1:" удален.")
 							}
 						}
-					}	
-					Set ok=##class(dbo.TCLRequest).UpdateStatus2Canceled(requestid,reason)
+					}
+					if (reasontextold="")||(reasontext="") {
+						Set ok=##class(dbo.TCLRequest).UpdateStatus2Canceled(requestid,reason)
+					} else {
+						Set ok=##class(dbo.TCLRequest).UpdateStatus2CanceledChange(requestid,reason,reasontextold)
+					}
 				} ElseIf  status=10 {
 					Set ok=##class(dbo.TCLRequest).UpdateStatus2CancelationOfAuthorization(requestid)
 				}	
 				If ok {
 					set ^TCLExLog("RequestStatus",requestid,horolog)=$get(^TCLEx("RequestStatus",requestid,horolog))
+					//m ^TCLEx("RequestStatusLogNew",requestid,horolog)=^TCLEx("RequestStatus",requestid,horolog)
 					Kill ^TCLEx("RequestStatus",requestid,horolog)
 				}		
 			} Else {
@@ -1021,18 +1046,14 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 <FormalSpec>pRequestId:%String,pTestSetRequestId:%String,pTestSet:%String,pTestSetId:%String</FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-	s ^test("ir",5)=pRequestId_"*"_pTestSetRequestId_"*"_pTestSet_"*"_pTestSetId
 	Set ok=##class(dbo.TCLRequestTestData).DeleteTestSetData(pTestSetRequestId)
 	If 'ok Quit ok
 	Kill ^||EMED.TestOrder,^||EMED.TestSetDataId
 	Do ##class(TCLEx.Function.TestSet).TemplateTestOrder(pTestSet,$Name(^||EMED.TestOrder))
 	Do ##class(TCLEx.Function.TestSet).TestSetDataIdOrder(pTestSetId,$Name(^||EMED.TestOrder),$Name(^||EMED.TestSetDataId))
 	Kill ^||EMED.EMEDTest
-	m ^test("ir",1)=^||EMED.TestOrder
-	m ^test("ir",2)=^||EMED.TestSetDataId
 	Set ok=##class(dbo.confeprtcl).CreateTestBuffer(pTestSet,$NA(^||EMED.EMEDTest))
 	If 'ok Quit ok
-	m ^test("ir",3)=^||EMED.EMEDTest
 	Set n="",testsetok=1
 	For  {
 		Set n=$Order(^||EMED.TestSetDataId(n))
@@ -1044,8 +1065,6 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 			Kill ^||EMED.TestSetData
 			Do ##class(TCLEx.Function.TestSet).GetResultInfo(testdataid,,$Name(^||EMED.TestSetData))
 			Set testcode=$Get(^||EMED.TestSetData(testdataid,"Code"))
-			m ^test("ir",6,testdataid)=^||EMED.TestSetData
-			s ^test("ir",7,testdataid)=testcode_"*"_$Data(^||EMED.EMEDTest(testcode))
 			If '$Data(^||EMED.EMEDTest(testcode)) Continue
 			Set test=$Get(^||EMED.TestSetData(testdataid,"Description"))
 			Set result=$Get(^||EMED.TestSetData(testdataid,"Value"))
@@ -1067,10 +1086,10 @@ ClassMethod UpdateDepartment(pDepartmentCode As %String, pDepartment As %String)
 				Set range=maxrange
 			}					
 			Set refrangestatus=$Get(^||EMED.TestSetData(testdataid,"Flag"))
-			Set emedragngestatus=2
+			Set emedragngestatus=7 // если норма не определена, то статус 7
 			If (refrangestatus="L") {
 				Set emedragngestatus=1
-			} ElseIf(refrangestatus="N") {
+			} ElseIf((refrangestatus="N")&&(range'=""))  {
 				Set emedragngestatus=2
 			} ElseIf(refrangestatus="H") {
 				Set emedragngestatus=3
@@ -1329,6 +1348,23 @@ pReportGroupGlb - возвращаемый глобал с данными гру
 		}
 		Set @pReportGroupGlb@(reportgroup)=done	
 	}
+]]></Implementation>
+</Method>
+
+<Method name="GetReasonText">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReasoncode:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if $get(pReasoncode)="" quit ""
+	set reasontext=""
+	Set reasonobj=##class(User.CTReason).%OpenId(pReasoncode,0)
+	If $IsObject(reasonobj) {
+		//Set reasontext=" Причина отмены - "_reasonobj.CTRDescription
+	    Set reasontext=reasonobj.CTRDescription
+	    if reasontext'="" set reasontext=reasontext_"."
+	}
+	quit reasontext
 ]]></Implementation>
 </Method>
 </Class>
