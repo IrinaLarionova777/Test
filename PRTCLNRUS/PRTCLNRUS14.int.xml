@@ -19,7 +19,8 @@ FORM(USER) new (USER) s USER=$G(USER)
  ;
  ; список контрольных материалов
  s @Par@("PAR3a")="Label   : 100 : 1100 : 1100 : 500 : Контрольный материал:"
- k PLIST s err=$$getall^LVBQCM("")  
+ //k PLIST s err=$$getall^LVBQCM("")  // ver 6.9
+ k PLIST s err=$$getall^LVBCTQCAM  // ver 2012
  s cnt=0,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
  . s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR3",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=cnt+1
  if cnt>1 s @Par@("PAR3","0")="* Все контрольные материалы"
@@ -68,7 +69,7 @@ START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR)
  s Mas="^TEMP($zn,$J)" k @Mas
  s MSGERROR=""            
  d INIT i $g(MSGERROR)'="" quit MSGERROR
- d BODY,XML
+ d BODY2012,XML
  k ^TEMP($zn,$J),^TEMP($j)
  q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
  ;------------------------------------------------
@@ -84,7 +85,8 @@ INIT ; инициализация входных параметров
  i $G(PAR3)="" s MSGERROR="100^Не определено значение <Контрольный материал>" q
  k QCMaterial
  if PAR3="0" do     ;* Все
- . k PLIST s err=$$getall^LVBQCM("")      
+ . ;k PLIST s err=$$getall^LVBQCM("") //ver 6.9
+ . k PLIST s err=$$getall^LVBCTQCAM  // ver 2012     
  . s cnt=0,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
  .. s code=$P(PLIST(ind),$C(2),1) s:code'="" QCMaterial(code)=""
  else  do  q:MSGERROR'=""
@@ -116,7 +118,7 @@ INIT ; инициализация входных параметров
  s FlagDetailTC=+$G(PAR7)
  quit
  ;------------------------------------------------
-BODY  ; обработка данных...
+BODY69  ; обработка данных...
  s DRange=PAR1_"/"_PAR2
  s QCMaterial="" f  s QCMaterial=$O(QCMaterial(QCMaterial)) q:QCMaterial=""  do
  . s lot="" f  s lot=$o(^TTQC(QCMaterial,"LOT",lot)) q:lot=""  d
@@ -137,6 +139,71 @@ BODY  ; обработка данных...
  ..... m @Mas@("REPORT",QCMaterial,lot,type,wm,"Svod")=MasSvodQC
  ;m ^zz=@Mas   ;@@@
  q
+BODY2012 
+ set pDateFrom=PAR1,pDateTo=PAR2
+ m ^test("rpt14","TCcode")=TCcode
+ m ^test("rpt14","QCMaterial")=QCMaterial
+ s ^test("rpt14")=pDateFrom_"*"_pDateTo
+ set pDateFrom=pDateFrom-0.5
+  set group=""
+  for {
+		  set group=$order(^TQCA("GROUP",group)) if group="" quit
+		  // Test Area and Analisator
+		  set recGroup=$get(^TTAB("CTQC-G",group))
+		  set area=$piece(recGroup,"\",2) //if area'="M" continue // M-Mashines
+		  set mi=$piece(recGroup,"\",3) if mi="" continue
+		  set QCtype=""
+		   for {
+			  set QCtype=$order(^TQCA("GROUP",group,"RUN",QCtype)) if QCtype="" quit
+			  set testcode=""
+		      for {
+			      set testcode=$order(^TQCA("GROUP",group,"RUN",QCtype,testcode)) if testcode="" quit
+			      if '$data(TCcode(testcode)) continue
+			      set date=pDateFrom
+			      for {
+				      set date=$order(^TQCA("GROUP",group,"RUN",QCtype,testcode,"DATE",date)) if date=""||(date>pDateTo) quit  
+				      set num=""
+				      for {
+					      set num=$order(^TQCA("GROUP",group,"RUN",QCtype,testcode,"DATE",date,"RUNNUMBER",num)) if num="" quit
+					      set ind=0
+					      set level=""
+					      for {
+						      set level=$order(^TQCA("GROUP",group,"RUN",QCtype,testcode,"DATE",date,"RUNNUMBER",num,"LEVEL",level),1,record) if level="" quit
+						      set time=$piece(record,"\",6),result=$piece(record,"\",1)
+						      // определение материала
+						      set dateStart=$order(^TQCA("GROUP",group,"LINK",QCtype,"LEVEL",level,"DATE",date+0.5),-1)
+						      if dateStart="" continue
+						      set materialLotLevel=$piece($get(^TQCA("GROUP",group,"LINK",QCtype,"LEVEL",level,"DATE",dateStart)),"\",1)
+						      if materialLotLevel="" quit 
+                              set material=$piece(materialLotLevel,"||",1)
+                              if '$data(QCMaterial(material)) continue
+                              set lot=$piece(materialLotLevel,"||",2)
+                              //set recRes=$get(^TQCA("GROUP",group,"LINK",QCtype,"LEVEL",level,"DATE",dateStart,"ITEM",testcode))
+						      //set result=$$FormatResult(result)
+						      s ind=$i(ind)
+						      s key=date_$C(1)_ind_$char(1)_group_$char(1)_QCtype_$c(1)_dateStart  // не знаю, куда прицепить group,QCtype
+                              m @Mas@("REPORT",material,lot,area,mi,"TEST",testcode,date,key,level)=^TQCA("GROUP",group,"RUN",QCtype,testcode,"DATE",date,"RUNNUMBER",num,"LEVEL",level)
+						      
+						      s MasSvodQC("Test",testcode,"Level",level,"DescLevel")=level
+        			      }
+					  }  
+				  }
+		      }
+		      ; Вывести сводные данные по тесту (Фиксир.ср., SD и т.д.)
+              if +$G(FlagDetailTC) {
+	              k MasSvodQC
+	              if $get(material)'="",$get(lot)'="" {
+		              if $data(@Mas@("REPORT",material,lot,area,mi,"TEST")) { 
+	                     i $$SvodTC2012(group,QCtype,area,pDateFrom,pDateTo)
+	                     if $data(MasSvodQC) m @Mas@("REPORT",material,lot,area,mi,"Svod")=MasSvodQC
+		              }
+	              }
+              }
+		   }
+	  }
+	  m ^test("rpt14","data")=@Mas
+ quit	   
+ 
  ;--------------------------------------------------------------------------
 XML      ; Формирование XML...
  i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
@@ -181,6 +248,9 @@ XML      ; Формирование XML...
  ..... ; дата выполнения кк
  ..... s NGr2=0,date="" f  s date=$o(@Mas@("REPORT",QCMaterial,lot,type,wm,"TEST",ti,date)) q:date=""  d
  ...... s run="" f  s run=$o(@Mas@("REPORT",QCMaterial,lot,type,wm,"TEST",ti,date,run)) q:run=""  d
+ ....... s group=$piece(run,$char(1),3)
+ ....... s QCtype=$piece(run,$char(1),4)
+ ....... s dateStart=$piece(run,$char(1),5)
  ....... s NGr2=$i(NGr2)
  ....... S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Data",NGr2,"Date")=$TR($$extdate2^SSUTIL4(date),"/",".") 
  ....... ; уровни
@@ -203,8 +273,11 @@ XML      ; Формирование XML...
  ......... m @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Level",level)=MasSvodQC("Test",ti,"Level",level)
  ........ ; ---
  ........ i +$G(FlagZScore)=1 do
- ......... s FixedMean=+$P($G(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level)),"\",1)
- ......... s FixedSD=+$P($G(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level)),"\",2) q:FixedSD=0
+ ......... ;s FixedMean=+$P($G(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level)),"\",1) // ver 6.9
+ ......... ;s FixedSD=+$P($G(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level)),"\",2) q:FixedSD=0 // ver 6.9
+ ......... set recRes=$get(^TQCA("GROUP",group,"LINK",QCtype,"LEVEL",level,"DATE",dateStart,"ITEM",ti))
+ ......... s FixedMean=+$P(recRes,"\",1) // ver 2012
+ ......... s FixedSD=+$P(recRes,"\",2) q:FixedSD=0 // ver 2012
  ......... s ZScore=(+$p(str,"\",1)-FixedMean)/FixedSD
  ......... i $E(FormatTC,1)="N" s ZScore=$$FormNum^UDFSPARM001(ZScore,FormatTCLen)
  ......... S @MasO@("User",1,"Gr",NGr,"Test",NGr1,"Data",NGr2,"ZScore-"_level)=ZScore
@@ -265,5 +338,47 @@ SvodTC(material,lot,type,wsmach,tg,DRange) ;достаем сводные дан
  .. s MasSvodQC("Test",tc,"Level",level,"Count")=$P($G(PLIST(lev)),$C(27),14) 
  i $$close^LVBQCMTL3()
  q ""
+ 
+ ;------------
+SvodTC2012(group,QCtype,area,pDateFrom,pDateTo) ;достаем сводные данные по тесту (Фиксир.среднее, SD и т.д.)
+ New (group,QCtype,area,pDateFrom,pDateTo,MasSvodQC,PLIST) 
+ 
+ ; PLIST - 1.RowID
+ ;         2.Test Item
+ ;         4,5,6.Level(1,2,3...)
+ ;         4.1.[Date Range]Mean
+ ;         4.2.[Date Range]SD
+ ;         4.3.[Date Range]CV
+ ;         4.4.[Date Range]No of points
+ ;         4.5.Fixed Mean
+ ;         4.6.Fixed SD
+ ;         4.7.[Date Range]sum of values	(temporary)
+ ;         4.8.[Date Range]sum of squares	(temporary)
+ ;         4.11.[Total]Mean
+ ;         4.12.[Total]SD
+ ;         4.13.[Total]CV
+ ;         4.14.[Total]No of points
+ ;         4.17.[Total]sum of values		 (temporary)
+ ;         4.18.[Total]sum of squares		 (temporary)
+ ;
+ set user="",grRID=group_"||"_QCtype
+ i $$open^LVBQCACOM08(user,"","","",area,pDateFrom,pDateFrom,"","",grRID)
+ f cnt=1:1 q:$$fetch^LVBQCACOM08(user,"","","",area,pDateFrom,pDateFrom,"","",grRID)  d
+ . s tc=$P($G(PLIST(2)),$C(1),1) q:tc=""
+ . s FormatTC=$$Format^UDFSPARM001(tc)
+ . s FormatTCLen=+$E(FormatTC,2,$l(FormatTC)) s:FormatTCLen<2 FormatTCLen=2
+ . f lev=4,5,6  s level=lev-3 do
+ .. //s SVstr=$G(^TTQC(material,"LOT",lot,"TYPE",type,wsmach,"TEST",tc,"DATA",level)) ???
+ .. ;m MasSvodQC("Test",tc,"LevelPLIST",level)=PLIST
+ .. s MasSvodQC("Test",tc,"Level",level,"DescLevel")=level
+ .. s MasSvodQC("Test",tc,"Level",level,"FixedMean")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),5),FormatTCLen)
+ .. s MasSvodQC("Test",tc,"Level",level,"FixedSD")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),6),FormatTCLen)
+ .. s MasSvodQC("Test",tc,"Level",level,"FloatingMean")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),11),3)
+ .. s MasSvodQC("Test",tc,"Level",level,"FloatingSD")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),12),3)
+ .. //s MasSvodQC("Test",tc,"Level",level,"CalcType")=$S($p(SVstr,"\",5)="FX":"Фиксированный",1:"Плавающий") ????
+ .. s MasSvodQC("Test",tc,"Level",level,"CV")=$$FormNum^UDFSPARM001($P($G(PLIST(lev)),$C(27),13),2)
+ .. s MasSvodQC("Test",tc,"Level",level,"Count")=$P($G(PLIST(lev)),$C(27),14) 
+ i $$close^LVBQCACOM08()
+ q "" 
 ]]></Routine>
 </Export>

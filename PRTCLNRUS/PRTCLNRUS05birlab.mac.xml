@@ -44,7 +44,7 @@ FORM(USER) new (USER) s USER=$G(USER)
  ;k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
  ;s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
  ;. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR3",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
- kill @Par@("PAR3") do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR3")))
+ kill @Par@("PAR3") set sc=##class(BiRLab.Function.Report).GetPayersAll($name(@Par@("PAR3")))  //do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR3")))
  s @Par@("PAR3","0")="* Все плательщики"
  s @Par@("PAR3")="ListBox : 100 : 1800 : 5900 : 3000 : :True: 0 : Checkbox  "   
  ; 
@@ -108,14 +108,13 @@ START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR)
  }
 
  //kill ^test("compare","05birlab"),^test("compare","05ras")
- 
- 
+
  i $G(FlagReport)=1 do BODY1	;поиск по дате разрешения (дата авторизации набора тестов)
  i $G(FlagReport)=2 do BODY2	;поиск по дате назначения (дата передачи набора тестов)
  d XML
  k ^TEMP($zn,$J),^TEMP($j)
  Set ^xxxTimeTest($zn,$I(^xxxTimeTest($zn)))=$ZH-oldtime
- s ^test("MSGERROR")=$g(MSGERROR)
+ //s ^test("MSGERROR")=$g(MSGERROR)
  q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
  ;------------------------------------------------
 INIT ; инициализация входных параметров
@@ -200,8 +199,23 @@ BODY1  ; обработка данных...
 		 for {
 			 set epis=$order(^TEPIi("AUTHORISED",date,epis)) quit:epis=""  if '$data(^TEPI(epis)) continue
 			 set rec=$get(^TEPI(epis))
-             ; плательщик (на уровне лаб.номера)
-             set payepis=$piece(rec,"\",7) set:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+			 
+			 ; плательщик (на уровне лаб.номера)
+			 set payment=""
+			 // при использовании BiRLab плательщик определяется по коду ЛПУ (и только на уровне EPVisitNumber) (поле EPVIS_PaymentCode_DR пусто)
+			 set hospitalcode=$piece(rec,"\",20)
+			 set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
+			 // для эпизодов, которые были до внедрения BiRLab
+             set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
+             
+             set flagBiRLab=0 
+             if (payepis="")&&(payepisnew'="") {
+	            set flagBiRLab=1
+	            set payment=payepisnew
+	            if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+             }
+             if payepis="" set payepis="?"  ;если был зарегистрирован через LT
+	        
              set cito=$piece(rec,"\",15) 
              ; наборы тестов для лаб.эпизода (ограничение по отделам)
              s ts=$Order(DEP("")) 
@@ -218,11 +232,15 @@ BODY1  ; обработка данных...
                      If dep=""||('$Data(DEP(dep))) continue
                      ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
                      set status=$p(rects,"\",31) if status'="A" continue
-                     ; плательщик (на уровне набора тестов)
-                     set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
-                     set:payment="" payment=payepis
-                     ; проверяем ограничение по плательщику
-                     if PAYMENT'="*",'$D(PAYMENT(payment)) continue          
+                     
+                     if flagBiRLab=0 {
+	                     ; плательщик (на уровне набора тестов)
+                         set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                         set:payment="" payment=payepis
+                         ; проверяем ограничение по плательщику
+                         if PAYMENT'="*",'$D(PAYMENT(payment)) continue          
+                     }
+                     
                      ; VISTS_UserAuthorised DR
                      set user=$p(rects,"\",6) if user="" continue       ;если была установлена причина невыполнения
                      ;s:user="" user="?"
@@ -242,7 +260,7 @@ BODY1  ; обработка данных...
                      }
                      // расчет цены по новому биллингу 
                      else {
-	                     Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error) 
+	                     Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error,payment,tscnt) 
                      }
 
                     /*
@@ -333,7 +351,22 @@ BODY2  ; обработка данных...
 		 set epis=$order(^TDAY(4,date,0,epis)) quit:epis=""  if '$Data(^TEPI(epis)) continue
 		 set rec=$get(^TEPI(epis))
          ; плательщик (на уровне лаб.номера)
-         s payepis=$p(rec,"\",7) s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+         //s payepis=$p(rec,"\",7) s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+   		     set payment=""
+			 // при использовании BiRLab плательщик определяется по коду ЛПУ (и только на уровне EPVisitNumber) (поле EPVIS_PaymentCode_DR пусто)
+			 set hospitalcode=$piece(rec,"\",20)
+			 set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
+			 // для эпизодов, которые были до внедрения BiRLab
+             set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
+             
+             set flagBiRLab=0 
+             if (payepis="")&&(payepisnew'="") {
+	            set flagBiRLab=1
+	            set payment=payepisnew
+	            if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+             }
+             if payepis="" set payepis="?"  ;если был зарегистрирован через LT
+           
          set cito=$piece(rec,"\",15) 
          ; наборы тестов для лаб.эпизода (ограничение по отделам)
          set ts=$O(DEP("")) 
@@ -348,11 +381,21 @@ BODY2  ; обработка данных...
                  If superset'="" Set dep=$Extract(superset,1) 
                  If (dep="")||('$Data(DEP(dep))) continue 
                  s status=$p(rects,"\",31) 
+                 
                  ; плательщик (на уровне набора тестов)
-                 s payment=$piece(rects,"\",23) 		;VISTS_PaymentCode_DR
-                 s:payment="" payment=payepis
+                 //s payment=$piece(rects,"\",23) 		;VISTS_PaymentCode_DR
+                 //s:payment="" payment=payepis
                  ; проверяем ограничение по плательщику
-                 if PAYMENT'="*",'$D(PAYMENT(payment)) continue  
+                 //if PAYMENT'="*",'$D(PAYMENT(payment)) continue  
+                 
+                 if flagBiRLab=0 {
+	                     ; плательщик (на уровне набора тестов)
+                         set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                         set:payment="" payment=payepis
+                         ; проверяем ограничение по плательщику
+                         if PAYMENT'="*",'$D(PAYMENT(payment)) continue          
+                  }
+                 
                  ;set supressbilling=$piece(rects,"\",34) if supressbilling="Y" continue      
                  Set billingitem=ts,authdate=$Piece(rects,"\",4)
                  If superset'="" {
@@ -367,7 +410,7 @@ BODY2  ; обработка данных...
                      }
                      // расчет цены по новому биллингу 
                      else {
-	                     Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error) 
+	                     Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error,payment,tscnt) 
 	                     //if error'="" set ^test("05","error",epis,billingitem)=error
                      }
 
@@ -548,14 +591,14 @@ XML      ; Формирование XML...
 	// Стоиммость pBillingItem для плательщика pPayer по эпизоду pEpis на дату авторизации pAuthDate
 GetBillingItemAmount(pPayer,pEpis, pAuthDate, pBillingItem, pCito) public 
 {
-	set ^test("compare","price05aBeg",pEpis,pBillingItem)=pPayer_$c(1)_pAuthDate
-	If $Get(pAuthDate)="" s ^test("compare","nodate",pEpis,pBillingItem)=pPayer Quit 0
+	//set ^test("compare","price05aBeg",pEpis,pBillingItem)=pPayer_$c(1)_pAuthDate
+	If $Get(pAuthDate)=""  Quit 0  //s ^test("compare","nodate",pEpis,pBillingItem)=pPayer Quit 0
 	set pricedate=$order(^||inv(pPayer,pAuthDate+0.5),-1)
-	if pricedate="" set ^test("compare","nopricedate",pEpis,pBillingItem)=pPayer_$c(1)_pAuthDate Quit 0
+	if pricedate="" Quit 0  //set ^test("compare","nopricedate",pEpis,pBillingItem)=pPayer_$c(1)_pAuthDate Quit 0
 	set priceid=$order(^||inv(pPayer,pricedate,"")) 
-	if priceid="" set ^test("compare","nopriceid",pEpis,pBillingItem)=pPayer_$c(1)_pAuthDate Quit 0
-	if '$data(^TSCH(priceid,"AMOUNT",pPayer,pricedate,pBillingItem)) set ^test("compare","noprice",pEpis,pBillingItem)=pPayer_$c(1)_priceid
-	set ^test("compare","price05a",pEpis,pBillingItem)=pPayer_$c(1)_pricedate_$c(1)_priceid
+	if priceid="" Quit 0  //set ^test("compare","nopriceid",pEpis,pBillingItem)=pPayer_$c(1)_pAuthDate Quit 0
+	if '$data(^TSCH(priceid,"AMOUNT",pPayer,pricedate,pBillingItem)) //set ^test("compare","noprice",pEpis,pBillingItem)=pPayer_$c(1)_priceid
+	//set ^test("compare","price05a",pEpis,pBillingItem)=pPayer_$c(1)_pricedate_$c(1)_priceid
 	set amount=$piece($get(^TSCH(priceid,"AMOUNT",pPayer,pricedate,pBillingItem)),"\",1) 
 
  	Set koef=1

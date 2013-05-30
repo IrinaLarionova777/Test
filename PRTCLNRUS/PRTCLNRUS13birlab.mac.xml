@@ -66,7 +66,7 @@ FORM(USER) new (USER) s USER=$G(USER)
 	;k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
 	;s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
 	;. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR10",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
-	kill @Par@("PAR10") do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR10")))
+	kill @Par@("PAR10") set sc=##class(BiRLab.Function.Report).GetPayersAll($name(@Par@("PAR10"))) //do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR10")))
 	s @Par@("PAR10","0")="* Все плательщики"
 	s @Par@("PAR10")="ListBox : 100 : 3400 : 5900 : 3000 : :True: 0 : Checkbox  "   
  ;
@@ -149,6 +149,8 @@ BODY  ; обработка данных...
 	 do CreateIndex^PRTCLNRUS05birlab(refIndex) ;инверсии к CT_Schedule_PaymentCode 
 	 set okCreateTempGlob=1
  }
+ s ^test("FlagDetailsTS")=$g(FlagDetailsTS)
+ 
  ;
  ;new amount
  Kill ^||Report.Amount ; ***
@@ -163,7 +165,22 @@ BODY  ; обработка данных...
 	     set epis=$o(^TEPIi("AUTHORISED",date,epis)) quit:epis=""  
 	     set rec=$get(^TEPI(epis))
           ;  плательщик (на уровне лаб.номера)
-         s payepis=$p(rec,"\",7) s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+         //s payepis=$p(rec,"\",7) s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+             set payment=""
+			 // при использовании BiRLab плательщик определяется по коду ЛПУ (и только на уровне EPVisitNumber) (поле EPVIS_PaymentCode_DR пусто)
+			 set hospitalcode=$piece(rec,"\",20)
+			 set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
+			 // для эпизодов, которые были до внедрения BiRLab
+             set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
+             
+             set flagBiRLab=0 
+             if (payepis="")&&(payepisnew'="") {
+	            set flagBiRLab=1
+	            set payment=payepisnew
+	            if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+             }
+             if payepis="" set payepis="?"  ;если был зарегистрирован через LT
+        
          set cito=$piece(rec,"\",15)
          s ts=""
          for {
@@ -179,10 +196,19 @@ BODY  ; обработка данных...
                  ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
                  s status=$p(rects,"\",31) if status'="A" continue 
                   ;     плательщик (на уровне набора тестов)
-                 s payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
-                 s:payment="" payment=payepis
+                 //s payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                 //s:payment="" payment=payepis
                  ; проверяем ограничение по плательщику
-                 if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+                 //if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+                 
+                 if flagBiRLab=0 {
+	                     ; плательщик (на уровне набора тестов)
+                         set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                         set:payment="" payment=payepis
+                         ; проверяем ограничение по плательщику
+                         if PAYMENT'="*",'$D(PAYMENT(payment)) continue          
+                  }
+                                 
                  ;бесплатно
                  ;set supressbilling=$piece(rects,"\",34) if supressbilling="Y" continue
                  ;
@@ -207,7 +233,7 @@ BODY  ; обработка данных...
                  }
                  // расчет цены по новому биллингу 
                  else {
-	                  Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error) 
+	                  Set amount=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error,payment,tscnt) 
                  }
                                   
                  s Ndept=$P($G(^TTAB("DEP",dept)),"\",3) s:Ndept="" Ndept=999   ;номер последов. печати отдела 
