@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="CLNRUS" type="INT" languagemode="0"><![CDATA[
+CLNRUS
+ ; Функции, используемые при внедрении в России
+ ; Client Specific Routine for implementations in Russia
+	
+RangesPrintFlag(item)[vtsRID] public 
+ ; Функция для использования в вычисляемых тестах.
+ ; Возвращает флаг, по которому настраивается печать автокомментариев. Используется для гормонов.
+ ; Function for using in test set calculations.
+ ; Returns flag for printing autocomments. Is used for hormon test sets.
+{ 
+	Set epis=$p(vtsRID,"||")
+	Set episobj=##class(User.EPVisitNumber).%OpenId(epis)
+	If '$IsObject(episobj) Quit "N"
+	; returns 1 if pregnancy and phase of the cycle are not specified
+	; returns 2 if pregnancy is specified but number of weeks is not specified
+	If (episobj.EPVISPregnant'="Y")&&(episobj.EPVISClinicalConditionsDR="") Quit 1	
+	If (episobj.EPVISPregnant="Y")&&(episobj.EPVISPregnantNumberOfWeeks="") Quit 2		
+	Quit "N"
+} 
+
+CheckEntryTime(timefrom,timetill)[VTS,timefrom,timetill] public
+ ; Функция для использования в Действиях по наборам тестов.
+ ; Проверяет, попадает ли Время ввода результата в заданные временные рамки.
+ ; Function for using with Test Set Actions.
+ ; Checks whether the test set Entry Time is in the ranges.
+{
+	new (timefrom,timetill,VTS)
+	Set testsetobj = ##class(User.EPVisitTestSet).%OpenId(VTS)
+	If '$IsObject(testsetobj) Quit "N"
+	Set timeEntry = testsetobj.VISTSTimeOfEntry  
+	set tfrom = timefrom*60
+	set ttill = timetill*60
+	if (tfrom >= ttill) && ((timeEntry >= tfrom) || (timeEntry <= ttill)) Quit "Y"
+	if (tfrom < ttill) && (timeEntry >= tfrom) && (timeEntry <= ttill) Quit "Y"
+	Quit "N" 
+}
+
+CheckEntryDate(testsetid) public 
+ ; Функция для использования в Действиях по наборам тестов.
+ ; Проверяет, соответствует ли Дата ввода результата хотя бы одной дате из классификатора Календарь.
+ ; Function for using with Test Set Actions.
+ ; Checks whether the test set Entry Date is in CT Calendar.
+{ 
+	Set testsetobj = ##class(User.EPVisitTestSet).%OpenId(testsetid)
+	If '$IsObject(testsetobj) Quit ""
+	Set dateEntry = testsetobj.VISTSDateOfEntry  
+	If $data(^TTAB("CTC",dateEntry)) Quit "Y"
+	Quit "N"	
+} 
+
+VisitNrNotEqualHospitalNr(visitid)[PLIST] public 
+ ; Функция для использования в Действиях при регистрации.
+ ; Проверяет, совпадает ли Номер Эпизода с Номером из госпитальной системы.
+ ; Function for Patient Entry Actions.
+ ; Checks whether the Episode Number is equal to Hospital Number.
+{ 
+	If $Get(visitid) = "" Quit ""
+	Set hospepis = $Piece($Get(^TMP("LVBVIS7",$Job,"TScheck","EPVIS",visitid,65)),",",1)
+	If (hospepis '= "") && (visitid '= hospepis) Quit "Y"
+	Quit "N"
+}
+
+LogAllTMP4Job(pJob) public {
+	Set rtn=""
+	For  {
+		Set rtn=$Order(^TMP(rtn))
+		If rtn="" Quit
+		If '$Data(^TMP(rtn,pJob)) Continue
+		Set ^XXX($I(^XXX))="^TMP("_rtn_",$j)"
+		Merge ^XXX($I(^XXX))=^TMP(rtn,$j)
+	}	
+}
+
+dummy(testsetid)
+	Quit
+
+ ; Функция для использования в вычисляемых тестах.
+ ; Input: stringTestCode - строка кодов тестов
+ ;        delimeter - разделитель в возвращаемой строке
+ ; Output: строка результатов заданных тестов через разделитель delimeter
+ ; Особенности:
+ ; Если в сигнатуре функции встречается имя теста, то оно заменяется на результат этого теста, но при этом возникают две спасительные переменные: 
+ ; param - список кодов тестов через "^" (первый символ "^"), data - список результатов этих тестов через "^" (первый символ "^")
+ ; Пробелы в сигнатуре функии удаляются (Шаблон набора тестов-(Меню) Вычисление) 	
+ConcatenationResults(stringTestCode,delimeter) [vtsRID,param,data] public {
+ if ($get(param)="")||($get(data)="") quit ""
+ if $get(delimeter)="" set delimeter=" "
+ set stringResults=""
+ for i=1:1:$length(param,"^") {
+	    set testcode=$piece(param,"^",i) if testcode="" continue
+	    set result=$piece(data,"^",i) 
+		if result'="" set stringResults=stringResults_$select(stringResults'="":delimeter,1:"")_$$RESULT^UDFSPARM001(testcode,"",result,,,,1)
+ }
+ quit stringResults
+}	
+
+ // КОС (газы крови)
+ // по полю, полученному из EMED Параметр 1 надо попытаться потставить наш стандартный комментарий
+ // item=48 
+funcKOC(pTestcode,pItem) [vtsRID,param] public 
+{
+ s item=$g(item),epis=$p(vtsRID,"||"),testcode=$piece($get(param),"^",2)
+ set valfromepis=$zstrip($$seldata^LVBEPVIS(epis,pItem),"=<>W")
+ set valfromepisU=$zcvt(valfromepis,"U")
+ set codeSC="",selcode=""
+ if $get(testcode)'="" {
+	 for {
+	    set codeSC=$order(^TTAB("TC",testcode,2,codeSC)) if codeSC="" quit
+	    set name=$get(^TTAB("TC",testcode,2,codeSC,"T",1))
+	    if $zcvt(name,"U")=valfromepisU {
+		  set selcode=codeSC 
+		  quit
+	    }
+     }
+ }
+ quit $select(selcode'="":selcode,1:valfromepis)
+ }
+]]></Routine>
+</Export>
