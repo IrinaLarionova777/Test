@@ -120,7 +120,6 @@
  set ret=$$$OK
  try {
  kill ^||TMP($j)
- /*
  ; check authorised date
  set date=pDateFrom-1,cnt=0,total=0 
  for {
@@ -130,25 +129,7 @@
 	 for {
 	    set epis=$order(^TEPIi("AUTHORISED",date,epis))
 	    if epis="" quit
-	    */
- kill ^||TMP($j)
- 
- set index=4 //^TDAY( 4, {EPVIS_DateOfEntry}, {EPVIS_StatusPatient}, {EPVIS_VisitNumber} )
-   set date=pDateFrom-1 
-   for {
-	set date=$order(^TDAY(index,date)) 
-	if date=""||(date>pDateTo) quit
-	set status=""
-	for {
-	  set status=$order(^TDAY(index,date,status))
-	  if status="" quit
-	  set epis=""
-	  for {
-		set epis=$order(^TDAY(index,date,status,epis))
-		if epis="" quit
-		if $data(^||TMP($j,"epis",epis)) continue
-		set ^||TMP($j,"epis",epis)=""
-		// обработка эпизода
+	    // обработка эпизода
 	    if $$select^LVBEPVIS(epis,"Y") continue
 	    merge VISIT=PLIST kill PLIST
         if $l(pPatientLocations) {
@@ -164,7 +145,7 @@
         set time1=""
         set ts="" 
         for {
-	       set ts=$order(^TEPI(epis,1,ts)) if ts=""||(time1=0) quit
+	       set ts=$order(^TEPIi("AUTHORISED",date,epis,ts)) if ts=""||(time1=0) quit
            if $data(pTestSet),'$data(pTestSet(ts)) continue
            if time1="" {
 	           // datetime begin for TAT
@@ -180,18 +161,17 @@
                if +dateAuthorised=0||(+timeAuthorised=0) continue 
                set time2=(+dateAuthorised*86400)+(timeAuthorised*60)
                set delta=time2-time1
-               set group=date
+               set group=dateAuthorised
                set key=$i(cnt)
                set ^||TMP($j,"Process",group,key)=epis_"\\"_delta
                set ^||TMP($j,"Sort",group,delta,key)=""
                set ^||TMP($j,"SortI",delta,key)=""
-           }	    
-       }  
+           }
+        }  
 	 }
 	 set ret=..proceedGetData()
 	 if 'ret quit
-	}
- }
+ } 
  } catch(exception)
   {
 	  set ret=exception.AsStatus()
@@ -411,22 +391,41 @@ Method workEpis(pEpisode As %String, date As %Integer) [ PublicList = PLIST ]
  set ret=$$$OK
  try {
  kill ^||TMP($j)
- 
- set index=4 //^TDAY( 4, {EPVIS_DateOfEntry}, {EPVIS_StatusPatient}, {EPVIS_VisitNumber} ) 
+ /*
+ for index=1,6 {
+     set date=pDateFrom-1 
+     for {
+	     set date=$order(^TDAY(index,date)) 
+	     if date=""||(date>pDateTo) quit
+	     set status=""
+	     for {
+		     set status=$order(^TDAY(index,date,status))
+		     if status="" quit
+		     set epis=""
+		     for {
+			     set epis=$order(^TDAY(index,date,status,epis))
+			     if epis="" quit
+			     //if $data(^||TMP($j,"epis",epis)) continue
+			     set ^||TMP($j,"epis",epis)=""
+			     $$$ThrowOnError(..workEpis(epis,date))
+		     }
+	     }
+     }
+ }
+ */
+ ; check authorised date
  set date=pDateFrom-1 
  for {
-	set date=$order(^TDAY(index,date)) if date=""||(date>pDateTo) quit
-	set status=""
-	for {
-	  set status=$order(^TDAY(index,date,status))
-	  if status="" quit
-	  set epis=""
-	  for {
-		 set epis=$order(^TDAY(index,date,status,epis))
-		 if epis="" quit
-         // рассмотрение на уровне epis
+     set date=$order(^TEPIi("AUTHORISED",date)) 
+     if date=""||(date>pDateTo) quit
+     set epis=""
+	 for {
+	     set epis=$order(^TEPIi("AUTHORISED",date,epis))
+	     if epis="" quit
+	     // рассмотрение на уровне epis
 	     if $data(^||TMP($j,"epis",epis)) continue
 		 set ^||TMP($j,"epis",epis)=""
+	     //$$$ThrowOnError(..workEpis(epis,date))
 	     // обработка эпизода
 	     if $$select^LVBEPVIS(epis,"Y") continue
 	     merge VISIT=PLIST kill PLIST
@@ -455,11 +454,10 @@ Method workEpis(pEpisode As %String, date As %Integer) [ PublicList = PLIST ]
 	           set tscnt=$order(^TEPI(epis,1,ts,tscnt)) if tscnt="" quit
 	           set rec=^(tscnt)
 	           set dateAuthorised=$piece(rec,"\",4)
-	           /*
 	           if (dateAuthorised<pDateFrom)||(dateAuthorised>pDateTo) {
 		          set flagAllTestSet=0
 		          quit 
-	           }*/
+	           }
 	           set timeAuthorised=$p(rec,"\",5) 
 	           if (+dateAuthorised'=0)&&(+timeAuthorised'=0) {
 		          set valAuthorised=(dateAuthorised*86400)+(timeAuthorised*60)
@@ -477,14 +475,13 @@ Method workEpis(pEpisode As %String, date As %Integer) [ PublicList = PLIST ]
 	        set datetime1=..GetDateStartForTAT(.VISIT)  // datetime begin for TAT
             set datetime2=$order(temp(""),-1)           // datetime end for TAT
             set delta=datetime2-datetime1
-            set group=date // дата регистрации эпизода
+            set group=dateAuthorised // дата авторизации
             set key=$i(cnt)
             set ^||TMP($j,"Process",group,key)=epis_"\\"_delta
             set ^||TMP($j,"Sort",group,delta,key)=""
             set ^||TMP($j,"SortI",delta,key)=""
          }
 	 }
-	}
  }
  //k ^test(11) m ^test(11)=^||TMP($j) 
  set ret=..proceedGetData()
