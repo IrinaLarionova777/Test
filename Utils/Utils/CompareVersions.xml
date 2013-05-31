@@ -1,0 +1,1099 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="Utils.CompareVersions">
+<Description>
+Поиск и выгрузка в ^CompareVersions(namespaceEtalon_"/"_namespaceWork) программ (mac,inc,int), классов и ^SS, которые изменились в сравнении с namespaceEtalon 
+или появились как новые
+^CompareVersions(namespaceEtalon_"/"_namespaceWork)) 
+   ,"not in "_namespaceWork - элементы, которых нет в рабочей базе, но есть в эталонной, что странно
+   ,"not in "_namespaceEtalon  - элементы, которых нет в эталонной базе, но есть в рабочей 
+       ,"list" - просто списком (для выгрузки в файл)
+       ,"package" - по package (для удобного просмотра)
+   ,"diff","prg",nameprog,label,номер строки относительно label, namespace)=text - различающиеся строкм и в программах 
+   ,"diff","cls",nameclass,"properties",nameproperty,namespace)=$lb(...)
+   ,"diff","cls",nameclass,"triggers",nametrigger,namespace)=$lb(...)
+   ,"diff","cls",nameclass,"methods",namemethod,namespace)=</Description>
+<Super>%RegisteredObject</Super>
+<TimeCreated>62752,55703.307143</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+// $zh($zla($extract(^rOBJ(rtn),1,4)) - crc object code
+
+]]></Content>
+</UDLText>
+
+<Method name="CompareNS">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespaceEtalon:%String,namespaceWork:%String</FormalSpec>
+<PublicList>glb1,glb2,refInfoAboutClass,refresult,glbobj1,glbobj2</PublicList>
+<Implementation><![CDATA[
+ 	try {
+ set namespaceEtalon=$zcvt(namespaceEtalon,"U")
+ set namespaceWork=$zcvt(namespaceWork,"U")	 	
+ kill ^||vsp
+ set nscurr=$zu(5)
+ set exec="set refresult=$na(^|"""_nscurr_"""|CompareVersions("""_namespaceEtalon_"-"_namespaceWork_"""))" x exec
+ kill @refresult
+ set refexclude=$name(@refresult@("Excludes"))
+ set refInfoAboutClass=$na(@refresult@("InfoAboutClass")) 
+ set refInfoAboutPrg=$na(@refresult@("InfoAboutPrg"))
+ do ..Excludes(refexclude)
+ set refresult=$name(@refresult@(namespaceEtalon_"/"_namespaceWork))
+ for type="mac","inc","cls","int" {
+	 write !,"Compare "_type
+	 if type="cls" {
+		 for ns=namespaceEtalon,namespaceWork {
+		    zn ns
+		    Set result = ##class(%ResultSet).%New("%Dictionary.ClassDefinition:Summary")
+            Do result.Execute()
+            While (result.Next()) {
+                set classname=result.Data("Name")
+                if ..testExclude(classname,refexclude) continue // test exclude
+	            write !,"class=",classname," ",ns //if ns=namespaceEtalon r aa 
+                if '$data(^||vsp(type,classname)) set ^||vsp(type,classname)=""
+                $$$ThrowOnError(..getInfoAboutClass(ns,classname,refInfoAboutClass))
+            }
+		 }
+		 zn nscurr
+		 $$$ThrowOnError(..CompareClasses(namespaceEtalon,namespaceWork,refInfoAboutClass,refresult))
+	 }
+	 if type="cls" continue
+	 set exec="set glbobj1=$na(^|"""_namespaceEtalon_"""|rOBJ)" x exec
+     set exec="set glbobj2=$na(^|"""_namespaceWork_"""|rOBJ)" x exec
+	 if type="mac" {
+		 set exec="set glb1=$na(^|"""_namespaceEtalon_"""|rMAC)" x exec
+         set exec="set glb2=$na(^|"""_namespaceWork_"""|rMAC)" x exec
+	 }
+     elseif type="inc" {
+		 set exec="set glb1=$na(^|"""_namespaceEtalon_"""|rINC)" x exec
+         set exec="set glb2=$na(^|"""_namespaceWork_"""|rINC)" x exec
+     } 
+     elseif type="int" {
+		 set exec="set glb1=$na(^|"""_namespaceEtalon_"""|ROUTINE)" x exec
+         set exec="set glb2=$na(^|"""_namespaceWork_"""|ROUTINE)" x exec
+     }    
+     set id=""
+     for {
+        set id=$order(@glb1@(id)) if id="" quit
+        if ..testExclude(id,refexclude) continue // test exclude
+        if type="int"&&(..testExcludeINT(id)) continue
+        write !,id
+        set ^||vsp(type,id)=""
+        if '$data(@glb2@(id))&&('$data(@glbobj2@(id))) {
+	        do ..setNewItem(id,$name(@refresult@("not in "_namespaceWork)),type)
+	        continue
+        }
+        $$$ThrowOnError(..getInfoAboutPRG(namespaceEtalon,namespaceWork,id,type,refInfoAboutPrg))
+        $$$ThrowOnError(..ComparePRG(namespaceEtalon,namespaceWork,id,type,refInfoAboutPrg,refresult))
+     }  	
+     set id=""
+     for {
+        set id=$order(@glb2@(id)) if id="" quit
+        if $data(^||vsp(type,id)) continue
+        if ..testExclude(id,refexclude) continue // test exclude
+        if type="int"&&(..testExcludeINT(id)) continue
+        write !,id
+        if '$data(@glb1@(id))&&('$data(@glbobj1@(id))) {
+    	    do ..setNewItem(id,$name(@refresult@("not in "_namespaceEtalon)),type)
+	        continue
+        }
+        $$$ThrowOnError(..ComparePRG(namespaceEtalon,namespaceWork,id,type,refresult))
+     }  	
+ }
+ // ^SS
+ $$$ThrowOnError(..CompareSS(namespaceEtalon, namespaceWork,refresult))
+ 
+ } catch(exception) {
+ 	  do $system.OBJ.DisplayError(exception.AsStatus())
+ }
+]]></Implementation>
+</Method>
+
+<Method name="getInfoAboutPRG">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace1:%String,namespace2:%String,prg:%String,type:%String,refInfoAboutPRG:%String</FormalSpec>
+<PublicList>glb1,glb2</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ret=$$$OK
+  try {	
+     if type="mac" {
+		 set exec="set glb1=$na(^|"""_namespace1_"""|rMAC)" x exec
+         set exec="set glb2=$na(^|"""_namespace2_"""|rMAC)" x exec
+	 }
+     elseif type="inc" {
+		 set exec="set glb1=$na(^|"""_namespace1_"""|rINC)" x exec
+         set exec="set glb2=$na(^|"""_namespace2_"""|rINC)" x exec
+     } 
+     elseif type="int" {
+		 set exec="set glb1=$na(^|"""_namespace1_"""|ROUTINE)" x exec
+         set exec="set glb2=$na(^|"""_namespace2_"""|ROUTINE)" x exec
+     }
+     // parse prg
+     for ns=namespace1,namespace2 {
+	     set refinfo=$na(@refInfoAboutPRG@(prg,ns))
+         set i="",currlabel=prg,num=0
+         set glb=$select(ns=namespace1:glb1,1:glb2)
+         for {
+	         set i=$order(@glb@(prg,0,i)) if i="" quit
+	         set str1=$get(@glb@(prg,0,i))
+	         if i="SIZE"||(i="LANG") {
+		         set @refinfo@(i)=str1
+		         continue
+	         }
+	         //if $tr(str1," ","")="" continue
+	         set text=str1
+	         set pp=$extract(str1,1)
+	         if (pp'=" ")&&(pp'="") {
+		         set label=$piece(str1," ",1)
+		         set text=$piece(str1," ",2,$length(str1," "))
+		         if $find(label,"(") {
+			         set label=$piece(label,"(",1)
+			         set text=$piece(label,"(",2)_" "_text
+		         }
+		         set currlabel=label 
+		         set num=0
+		         set @refinfo@("text",currlabel,num)=text
+		         continue
+	         }
+	         set num=num+1
+	         set @refinfo@("text",currlabel,num)=text
+         }
+     }
+  } 
+  catch(exception) 
+  {
+     set ret=exception.AsStatus()
+  }
+  quit ret
+]]></Implementation>
+</Method>
+
+<Method name="ComparePRG">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace1:%String,namespace2:%String,prg:%String,type:%String,refInfoAboutPrg:%String,refresult:%String</FormalSpec>
+<PublicList>glb1,glb2</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ret=$$$OK
+  try {	
+     set label=""
+     for {
+	     set label=$order(@refInfoAboutPrg@(prg,namespace1,"text",label)) if label="" quit
+	     set i=""
+	     for {
+		     set i=$order(@refInfoAboutPrg@(prg,namespace1,"text",label,i)) if i="" quit
+		     set str1=$get(@refInfoAboutPrg@(prg,namespace1,"text",label,i))
+		     set str2=$get(@refInfoAboutPrg@(prg,namespace2,"text",label,i))
+             if $zstrip(str1,">"," ")=$zstrip(str2,">"," ") continue
+	         set @refresult@("diff","prg",prg_"."_type,label,i)=""
+	         set @refresult@("diff","prg",prg_"."_type,label,i,namespace1)=str1 
+	         set @refresult@("diff","prg",prg_"."_type,label,i,namespace2)=str2 
+         }
+     }
+     set label=""
+     for {
+	     set label=$order(@refInfoAboutPrg@(prg,namespace2,"text",label)) if label="" quit
+	     set i=""
+	     for {
+		     set i=$order(@refInfoAboutPrg@(prg,namespace2,"text",label,i)) if i="" quit
+		     if $data(@refresult@("diff","prg",prg_"."_type,label,i)) continue
+		     set str1=$get(@refInfoAboutPrg@(prg,namespace1,"text",label,i))
+		     set str2=$get(@refInfoAboutPrg@(prg,namespace2,"text",label,i))
+             if $zstrip(str1,">"," ")=$zstrip(str2,">"," ") continue
+	         set @refresult@("diff","prg",prg_"."_type,label,i)=""
+	         set @refresult@("diff","prg",prg_"."_type,label,i,namespace1)=str1 
+	         set @refresult@("diff","prg",prg_"."_type,label,i,namespace2)=str2 
+         }
+     }
+  } 
+  catch(exception) 
+  {
+     set ret=exception.AsStatus()
+  }
+  quit ret
+]]></Implementation>
+</Method>
+
+<Method name="getInfoAboutClass">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace:%String,classname:%String,refInfoAboutClass:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ret=$$$OK
+  try {
+	 set ref=$name(@refInfoAboutClass@(classname))
+	 set @ref@("ns",namespace)=""
+	 Set classobj = ##class(%Dictionary.ClassDefinition).%OpenId(classname)
+	 if '$IsObject(classobj) quit
+	 ;if $e(propname,1)="%" continue
+	 ;if $e(propname,1,8)="Activate" continue
+	 ;if $e(propname,1,3)="csp" continue
+	 ;if $e(propname,1,4)="CSPX" continue
+	 ;if $e(classname,1,4)'="User" continue
+	 // Properties
+	 Set keyobj="" 
+	 For  {
+			Set obj=classobj.Properties.GetNext(.keyobj) if keyobj="" Quit
+			If '$IsObject(obj) Continue
+			set list=$lb(obj.Description,+obj.SqlColumnNumber,obj.InitialExpression,obj.Cardinality,obj.Collection,obj.Inverse,+obj.Relationship,+obj.Required,obj.SqlComputeCode,obj.SqlFieldName,+obj.SqlComputed,obj.Type) 
+			set @ref@("properties",obj.Name,namespace)=list
+	 }
+	 // Methods 
+	 Set keyobj="" 
+	 For  {
+			Set obj=classobj.Methods.GetNext(.keyobj) if keyobj="" Quit
+			If '$IsObject(obj) Continue
+			set @ref@("methods",obj.%Id(),namespace)=obj.Name
+	 }
+	 // Triggers 
+	 Set keyobj="" 
+	 For  {
+			Set obj=classobj.Triggers.GetNext(.keyobj) if keyobj="" Quit
+			If '$IsObject(obj) Continue
+			set list=$lb(obj.Code,obj.Description,$zcvt(obj.Event,"U"),obj.Language,obj.Name,obj.SqlName)
+			set @ref@("triggers",obj.%Id(),namespace)=list
+	 }
+	 // Storages
+	 Set keystorobj="" 
+	 For  {
+			Set storobj=classobj.Storages.GetNext(.keystorobj) if keystorobj="" Quit
+			If '$IsObject(storobj) Continue
+			set storagename=storobj.Name
+			set keymap=""
+			for {
+				set map=storobj.SQLMaps.GetNext(.keymap) if keymap="" quit
+				set mapname=map.Name
+				//if $e(mapname,1,5)="Index" continue
+				//set mapCounter=mapCounter+1 if mapCounter>1 b  
+				set globName=map.Global
+				set @ref@("storage",namespace,storagename,mapname)=$lb(globName)
+				set keysubscript=""
+				for {
+					set subscript=map.Subscripts.GetNext(.keysubscript) if keysubscript="" quit
+					set subscriptNum=subscript.Name
+				    if subscript="" continue 
+				    set @ref@("storage",namespace,storagename,mapname,"subscripts",subscriptNum)=$lb(subscript.Expression)
+				    set @ref@("storagemap",storagename,mapname,namespace,"subscripts",subscriptNum)=$lb(subscript.Expression)
+				}
+				set keymapdata=""
+				for {
+					set mapdata=map.Data.GetNext(.keymapdata) if keymapdata="" quit
+					set piece=mapdata.Piece
+					set node=mapdata.Node
+					if piece'="",node="" {
+						set @ref@("storage",namespace,storagename,mapname,"properties","root",piece)=$lb(mapdata.Name,mapdata.Delimiter)	
+					}
+					if piece="",node'="" {
+						set @ref@("storage",namespace,storagename,mapname,"properties",node)=$lb(mapdata.Name,mapdata.Delimiter)	
+					}
+					if piece'="",node'="" {
+						set @ref@("storage",namespace,storagename,mapname,"properties",node,piece)=$lb(mapdata.Name,mapdata.Delimiter)	
+					}
+				}
+			}    
+	 }
+  } 
+  catch(exception) 
+  {
+     set ret=exception.AsStatus()
+  }
+  quit ret
+]]></Implementation>
+</Method>
+
+<Method name="CompareClasses">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace1:%String,namespace2:%String,refInfoAboutClass:%String,refresult:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ret=$$$OK
+  set nscurr=$zu(5)
+  try {
+	set classname=""
+	for {
+		set classname=$order(@refInfoAboutClass@(classname))  if classname="" quit
+		//w !,"classname=",classname r aa
+		set find=1
+		for ns=namespace1,namespace2 {
+			if '$data(@refInfoAboutClass@(classname,"ns",ns)) {
+				do ..setNewItem(classname,$name(@refresult@("not in "_ns)),"cls")
+				set find=0
+			    quit
+		    }
+		}
+        if find=0 continue
+        // properties
+		set prop="" 
+		for {
+		  set prop=$order(@refInfoAboutClass@(classname,"properties",prop)) if prop="" quit
+		  set info1=$get(@refInfoAboutClass@(classname,"properties",prop,namespace1))	
+		  set info2=$get(@refInfoAboutClass@(classname,"properties",prop,namespace2))	
+		  if info1=info2 continue
+		  set @refresult@("diff","cls2","properties",classname_".cls",prop)=""
+		  set @refresult@("diff","cls",classname_".cls","properties",prop,namespace1)=info1
+		  set @refresult@("diff","cls",classname_".cls","properties",prop,namespace2)=info2
+    	}
+    	// triggers
+		set trig="" 
+		for {
+		  set trig=$order(@refInfoAboutClass@(classname,"triggers",trig)) if trig="" quit
+		  set info1=$get(@refInfoAboutClass@(classname,"triggers",trig,namespace1))	
+		  set info2=$get(@refInfoAboutClass@(classname,"triggers",trig,namespace2))	
+		  if info1=info2 continue
+		  set @refresult@("diff","cls2","triggers",classname_".cls",trig)=""
+		  set @refresult@("diff","cls",classname_".cls","triggers",trig,namespace1)=info1
+		  set @refresult@("diff","cls",classname_".cls","triggers",trig,namespace2)=info2
+    	}
+    	// methods
+    	set method="" 
+		for {
+		  set method=$order(@refInfoAboutClass@(classname,"methods",method)) if method="" quit
+		  set namemethod=$piece(method,"||",2)
+		  set find=1
+		  for ns=namespace1,namespace2 {
+			if '$data(@refInfoAboutClass@(classname,"methods",method,ns)) {
+				do ..setNewItem(classname_"."_namemethod,$name(@refresult@("not in "_ns)),"method")
+				set find=0
+			    quit
+		    }
+		  }
+		  if find=0 continue
+          zn nscurr
+		  $$$ThrowOnError(..CompareMethods(namespace1,namespace2,method,refresult))
+		}
+		// storage
+		set storage=""
+		for {
+			set storage=$order(@refInfoAboutClass@(classname,"storage",storage)) if storage="" quit
+			set find=1
+		    for ns=namespace1,namespace2 {
+			if '$data(@refInfoAboutClass@(classname,"storage",storage,ns)) {
+				do ..setNewItem(classname_"."_"storage_"_storage,$name(@refresult@("not in "_ns)),"storage")
+				set find=0
+			    quit
+		    }
+		  }
+		} 
+		// storage - map
+		//@ref@("storagemap",storagename,mapname,namespace,"subscripts",subscriptNum)
+		set storage=""
+		for {
+			set storage=$order(@refInfoAboutClass@(classname,"storagemap",storage)) if storage="" quit
+			set map=""
+			for {
+				set map=$order(@refInfoAboutClass@(classname,"storagemap",storage,map)) if map="" quit
+				set find=1
+		        for ns=namespace1,namespace2 {
+			        if '$data(@refInfoAboutClass@(classname,"storagemap",storage,map,ns)) {
+				        set @refresult@("diff","cls2","staragemap",classname_".cls",storage_"."_map)="not in "_ns
+				       do ..setNewItem(classname_"."_"storagemap_"_storage_"_"_map,$name(@refresult@("not in "_ns)),"storagemap")
+				       set find=0
+			           quit
+		            }
+		        }
+		        if find=0 continue
+                zn nscurr
+                set subscript=""
+                for {
+	               set subscript=$order(@refInfoAboutClass@(classname,"storagemap",storage,map,namespace1,"subscripts",subscript)) if subscript="" quit
+	               set subscript1=$get(@refInfoAboutClass@(classname,"storagemap",storage,map,namespace1,"subscripts",subscript)) 
+	               set subscript2=$get(@refInfoAboutClass@(classname,"storagemap",storage,map,namespace2,"subscripts",subscript))
+	               if subscript1'=subscript2 set find=0 quit
+                }
+                if find=1 {
+	                set subscript=""
+                    for {
+	                    set subscript=$order(@refInfoAboutClass@(classname,"storagemap",storage,map,namespace2,"subscripts",subscript)) if subscript="" quit
+	                    set subscript1=$get(@refInfoAboutClass@(classname,"storagemap",storage,map,namespace1,"subscripts",subscript)) 
+	                    set subscript2=$get(@refInfoAboutClass@(classname,"storagemap",storage,map,namespace2,"subscripts",subscript))
+	                    if subscript1'=subscript2 set find=0 quit
+                    }
+                }
+                if find=0 {
+	                set @refresult@("diff","cls2","staragemap",classname_".cls",storage_"."_map)="diff"
+	                set @refresult@("diff","cls",classname_".cls","staragemap",storage_"."_map)=""
+	                merge @refresult@("diff","cls2","staragemap",classname_".cls",storage_"."_map,namespace1)=@refInfoAboutClass@(classname,"storagemap",storage,map,namespace1,"subscripts")
+	                merge @refresult@("diff","cls2","staragemap",classname_".cls",storage_"."_map,namespace2)=@refInfoAboutClass@(classname,"storagemap",storage,map,namespace2,"subscripts")
+	                continue
+                }
+		     }
+		} 
+	}
+  } 
+  catch(exception) 
+  {
+     set ret=exception.AsStatus()
+     if $get(nscurr) zn nscurr
+  }
+  quit ret
+]]></Implementation>
+</Method>
+
+<Method name="CompareSS">
+<Description>
+compare ^SS</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespaceEtalon:%String,namespaceWork:%String,refresult:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ret=$$$OK	
+  set nscurr=$zu(5)
+  try {
+	zn namespaceEtalon
+    set id=$name(^SS)
+    for {
+       set id=$query(@id) if id=""||($extract(id,1,3)'="^SS") quit
+       set ^||vsp("globSS",id)=""
+       set bodyEtalon=$get(@id)
+       zn namespaceWork
+       set bodyWork=$get(@id)
+       if bodyEtalon=bodyWork continue
+       set key=..trans(id)
+       set @refresult@("diff","^SS",key)=""
+       set @refresult@("diff","^SS",key,namespaceEtalon)=bodyEtalon
+       set @refresult@("diff","^SS",key,namespaceWork)=bodyWork
+     }
+    zn namespaceWork
+    set id=$name(^SS)
+    for {
+       set id=$query(@id) if id=""||($extract(id,1,3)'="^SS") quit
+       if $data(^||vsp("globSS",id)) continue
+       set bodyWork=$get(@id)
+       zn namespaceEtalon
+       set bodyEtalon=$get(@id)
+       if bodyEtalon=bodyWork continue
+       set key=..trans(id)
+       set @refresult@("diff","^SS",key)=""
+       set @refresult@("diff","^SS",key,namespaceEtalon)=bodyEtalon
+       set @refresult@("diff","^SS",key,namespaceWork)=bodyWork
+     }
+  } 
+  catch(exception) 
+  {
+     set ret=exception.AsStatus()
+     if $get(nscurr)'="" zn nscurr
+  }
+  zn nscurr
+  quit ret
+]]></Implementation>
+</Method>
+
+<Method name="CompareMethods">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespace1:%String,namespace2:%String,methodid:%String,refresult:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ret=$$$OK
+	set nscurr=$zu(5)
+	try {
+		zn namespace1
+		set methobj=##class(%Dictionary.MethodDefinition).%OpenId(methodid)
+		if '$IsObject(methobj) $$$ThrowOnError($$$ERROR($$$GeneralError,"Method "_methodid_": in "_namespace1_" не существует"))
+		set stream1=methobj.Implementation
+		zn namespace2
+		kill methobj
+		set methobj=##class(%Dictionary.MethodDefinition).%OpenId(methodid)
+		if '$IsObject(methobj) $$$ThrowOnError($$$ERROR($$$GeneralError,"Method "_methodid_": in "_namespace2_" не существует"))
+		set stream2=methobj.Implementation 
+		zn nscurr
+		set ref=$name(@refresult@("diff","cls",$piece(methodid,"||",1)_".cls","methods",$piece(methodid,"||",2)))
+		set num=0
+		set size1=stream1.Size
+		set size2=stream2.Size
+		//if 'stream1.MoveTo(1) $$$ThrowOnError($$$ERROR($$$GeneralError,"Не удалось перейти в начало метода "_methodid_": in "_namespace1))  
+		//if 'stream2.MoveTo(1) $$$ThrowOnError($$$ERROR($$$GeneralError,"Не удалось перейти в начало метода "_methodid_": in "_namespace2))  
+		if size1'<size2 {
+			while 'stream1.AtEnd  {
+			  set num=num+1
+			  set line1=stream1.ReadLine()	
+			  set line2=stream2.ReadLine()
+			  if line1=line2 continue
+			  set @refresult@("diff","cls2","methods",$piece(methodid,"||",1)_".cls",$piece(methodid,"||",2))=""
+              set @ref@(num,namespace1)=line1
+              set @ref@(num,namespace2)=line2
+		    }
+		}
+		else {
+			while 'stream2.AtEnd  {
+			  set num=num+1
+			  set line1=stream1.ReadLine()	
+			  set line2=stream2.ReadLine()
+			  if line1=line2 continue
+			  set @refresult@("diff","cls2","methods",$piece(methodid,"||",1)_".cls",$piece(methodid,"||",2))=""
+              set @ref@(num,namespace1)=line1
+              set @ref@(num,namespace2)=line2
+		    }
+		}
+	} 
+    catch(exception) 
+    {
+       set ret=exception.AsStatus()
+       if $get(nscurr)'="" zn nscurr
+    }
+    zn nscurr
+    quit ret
+]]></Implementation>
+</Method>
+
+<Method name="setNewItem">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>name:%String,ref:%String,type:%String</FormalSpec>
+<Implementation><![CDATA[
+	set len=$length(name,".")
+	set refpackage=$name(@ref@("package"))
+	if len>1 {
+		   for i=1:1:len-1 {
+	    	  set pp=$piece(name,".",i)
+	    	  set refpackage=$name(@refpackage@(pp))
+	       }
+	}
+	set pp=$select(len>1:$piece(name,".",len),1:name)    
+	set @refpackage@(pp_"."_type)=""
+	set reflist=$name(@ref@("list"))
+	set @reflist@(name_"."_type)=""
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// 1 - исключать из рассмотрения, 0 - нет
+
+]]></Content>
+</UDLText>
+
+<Method name="testExclude">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>prg,ref</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	set ret=0
+	//if $e(prg,1,1)="%" b   
+	set exc=""
+    for {
+	        set exc=$order(@ref@(exc)) if exc=""||(ret=1) quit
+	        set template=^(exc)
+	        set len=$length(exc)
+	        if template="*" if $extract(prg,1,len)=exc set ret=1 quit
+	        if template="" if prg=exc set ret=1 quit    
+    }
+    quit ret
+]]></Implementation>
+</Method>
+
+<Method name="testExcludeINT">
+<Description>
+1 - exclude, 0 - not exclude</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>prg:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+    if ($data(^||vsp("mac",prg)))||($data(^||vsp("cls",prg))) quit 1
+	set len=$length(prg,".")
+	if len>1 {
+	        set nameclass=$piece(prg,".",1,len-1)
+	        if nameclass'=""&&($data(^||vsp("cls",nameclass))) quit 1
+	}
+    quit 0
+]]></Implementation>
+</Method>
+
+<Method name="Excludes">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>ref:%String</FormalSpec>
+<Implementation><![CDATA[
+ kill @ref
+ set @ref@("Ens.")="*"
+ set @ref@("EnsLib.")="*"
+ set @ref@("EnsPortal.")="*"
+ set @ref@("Activate.")="*"
+ set @ref@("%")="*"
+ set @ref@("CSPX.")="*"
+ set @ref@("SyncTool.")="*"
+]]></Implementation>
+</Method>
+
+<Method name="trans">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>str:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+  set strnew=""
+  for i=1:1:$length(str) {
+	 set pp=$extract(str,i)
+	 if pp'="""" set strnew=strnew_pp 
+	 else  set strnew=strnew_""""_pp
+  }
+  quit strnew
+]]></Implementation>
+</Method>
+
+<Method name="CompareGLB">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>refglob1:%String,refglob2:%String,refresult:%String</FormalSpec>
+<Implementation><![CDATA[
+	kill @refresult
+ set id=refglob1,len=$length(refglob1)-1
+ for {
+    set id=$query(@id) if id=""||($extract(id,1,len)'=$extract(refglob1,1,len)) quit
+    set ref=$na(@refglob2)
+    set ppp=$extract(id,len+1,$length(id)-1)
+    for ii=1:1:$length(ppp,",") {
+	    set pp=$piece(ppp,",",ii) if pp="" continue 
+	    set ref=$name(@ref@($zstrip(pp,"<>","""")))	
+    }
+    write !,ref
+    //w !,$data(ref) r aa
+    if '$data(@ref) {
+	   set @refresult@("not exist",ref)=""     
+    }
+    if $data(@ref) {
+	   set @refresult@("exist",ref)=""     
+    }
+ }
+ /*	
+ set id=refglob2,len=$length(refglob2)-1
+ for {
+    set id=$query(@id) if id=""||($extract(id,1,len)'=$extract(refglob2,1,len)) quit
+    set ref=$na(@refglob1)
+    set ppp=$extract(id,len+1,$length(id)-1)
+    for ii=1:1:$length(ppp,",") {
+	    set pp=$piece(ppp,",",ii) if pp="" continue 
+	    set ref=$name(@ref@($zstrip(pp,"<>","""")))	 
+    }
+    write !,ref 
+    if '$data(@ref) {
+	   set @refresult@("not exist",ref)=""   
+    }
+ }*/
+]]></Implementation>
+</Method>
+
+<Method name="ExportNewElements">
+<Description>
+Export all new classes, routines
+flagOnlyFile=1 - все выгружать в один файл,0 - в отдельные файлы (тогда pathfile - это путь)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>namespaceEtalon:%String,namespaceWork:%String,pathfile:%String,flagOnlyFile:%Boolean</FormalSpec>
+<Implementation><![CDATA[
+  set nscurr=$zu(5)
+  try {	
+      set namespaceEtalon=$zcvt(namespaceEtalon,"U")
+      set namespaceWork=$zcvt(namespaceWork,"U")	 	
+      if $get(flagOnlyFile)="" set flagOnlyFile=1
+      if $get(file)="" set file=$select(flagOnlyFile=1:"c:\temp\newprg.xml",1:"c:\temp\")
+      // если export в отдельные файлы, то чистим директорию
+      if flagOnlyFile=0 {
+	      set pathfile=pathfile_$select($extract($tr(pathfile,"/","\"),$length(pathfile))'="\":"\",1:"")
+	      if ##class(%File).DirectoryExists(pathfile) {
+		       Set rs=##class(%ResultSet).%New("%File:FileSet")
+	           $$$ThrowOnError(rs.Execute(pathfile,"*.*"))  
+               While rs.%Next() {
+		          do ##class(%File).Delete($Get(rs.Data("Name"))) 
+               }
+	      }
+	      else {
+		     do ##class(%File).CreateDirectoryChain(pathfile) 
+	      }
+      }
+      // если экспорт в один файл, то удаляем файл
+      else {
+	      do ##class(%File).Delete(pathfile)
+      }
+
+      set ref=$na(^CompareVersions(namespaceEtalon_"/"_namespaceWork,"not in "_namespaceEtalon,"list"))
+      if flagOnlyFile=1 {
+         kill items
+         set id=""
+         for {
+	      set id=$order(@ref@(id)) if id="" quit
+	      set items(id)=""
+         }
+         zn namespaceWork
+         $$$ThrowOnError(..CreateExportFile(pathfile,.items))
+         zn nscurr
+      }
+      else {
+	     set id=""
+         for {
+  	      set id=$order(@ref@(id)) if id="" quit
+	      kill items set items(id)=""
+          zn namespaceWork
+          $$$ThrowOnError(..CreateExportFile(pathfile_id_".xml",.items))
+          zn nscurr   
+         }
+      }
+  } catch(exception) {
+	  if $get(nscurr)'="" zn nscurr
+	  do $system.OBJ.DisplayError(exception.AsStatus())
+  }
+  zn nscurr
+  quit
+]]></Implementation>
+</Method>
+
+<Method name="CreateExportFile">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>fileName:%String,items:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ret=$$$OK
+ try {
+	  if ##class(%File).Exists(fileName) do ##class(%File).Delete(fileName)
+	  kill errorlog
+	  write !,"Export if file "_fileName
+      do $System.OBJ.Export(.items,fileName,"",.errorlog)
+      if $data(errorlog) zw errorlog
+ } catch(exception) {
+	  //do $system.OBJ.DisplayError(exception.AsStatus())
+	  set ret=exception.AsStatus()
+ }
+  quit ret
+]]></Implementation>
+</Method>
+
+<Method name="ImportNewElements">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>path:%String</FormalSpec>
+<Implementation><![CDATA[
+ try {
+	 kill ^logError("loadNewElements")
+	 if $get(path)="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Укажите директорию"))
+	 if '##class(%File).DirectoryExists(path) $$$ThrowOnError($$$ERROR($$$GeneralError,"Нет директории "_path))
+	 set pathTemp=path_$select($extract($tr(path,"/","\"),$length(path))'="\":"\",1:"")_"temp"
+	 if ##class(%File).DirectoryExists(pathTemp) {
+		 Set rs=##class(%ResultSet).%New("%File:FileSet")
+	     $$$ThrowOnError(rs.Execute(pathTemp,"*.*"))  
+         While rs.%Next() {
+		    do ##class(%File).Delete($Get(rs.Data("Name"))) 
+         }
+	 }
+	 else {
+		 do ##class(%File).CreateDirectory(pathTemp) 
+	 }
+	 
+	 Set rs=##class(%ResultSet).%New("%File:FileSet")
+	 $$$ThrowOnError(rs.Execute(path,"*.*"))  
+     While rs.%Next() { 
+ 		$$$ThrowOnError(..TestFile($Get(rs.Data("Name")),pathTemp))
+	 }
+	 // load
+	 kill errorlog
+	 do $system.OBJ.ImportDir(pathTemp,"*.*","adilc",.errorlog)
+	 set id=""
+	 for {
+		 set id=$order(errorlog(id)) if id="" quit
+		 do ..log($get(errorlog(id)))
+	 }
+		
+ } catch(exception) {
+	  set status=exception.AsStatus()
+	  set errortext=$System.Status.GetErrorText(status)
+	  do $system.OBJ.DisplayError(status)
+	  do ..log(errortext)
+ }
+ write "Лог в ^logError(""loadNewElements"")",!
+]]></Implementation>
+</Method>
+
+<Method name="TestFile">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>file:%String,pathTemp:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ret=$$$OK
+ try {
+	 write file,!
+	 set filename=##class(%File).GetFilename(file)
+	 set element=$piece(filename,".",1,$length(filename,".")-1)
+	 set len=$length(element,".")
+	 set elementname=$piece(element,".",1,len-1)
+	 set type=$piece(element,".",len)
+	 // проверяем - если элемент уже существует в базе, то не импортить
+	 if type="cls" {
+	     set obj=##class(%Dictionary.ClassDefinition).%OpenId(elementname)	
+	     if $IsObject(obj) {
+		     set text="Class "_element_" уже существует"
+		     write text,!
+		     do ..log(text) 
+		     quit
+	     }
+	     set obj=##class(%Dictionary.CompiledClass).%OpenId(elementname)	
+	     if $IsObject(obj) {
+		     set text="Class "_element_" уже существует"
+		     write text,!
+		     do ..log(text) 
+		     quit
+	     }
+	 }
+	 if type="mac" {
+		 if $data(^rMAC(elementname)) {
+			 set text="Программа "_element_" уже существует"
+			 write text,!
+			 do ..log(text) 
+			 quit
+		 }
+	 }
+	 if type="inc" {
+		 if $data(^rINC(elementname)) {
+			 set text="Программа "_element_" уже существует"
+			 write text,!
+			 do ..log(text) 
+			 quit
+		 }
+	 }
+	 if type="int" {
+		 if $data(^ROUTINE(elementname)) {
+			 set text="Программа "_element_" уже существует"
+			 write text,!
+			 do ..log(text) 
+			 quit
+		 }
+	 
+	 }
+	 // copy
+	 //Set pathfile=##class(%File).GetDirectory(file,pathTemp) 
+   	 do ##class(%File).Rename(file,pathTemp_"\"_filename)
+	 
+ }
+ catch(exception) 
+    {
+       set ret=exception.AsStatus()
+    }
+ quit ret
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Идем по клиентским программам (перечислены в глобали) и проверяем наличие их в данной области (включая obj)
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+// для проверки, не накрылись ли какие-нибудь клиентские программы программами из дистрибутива (маловероятно, конечно)
+
+]]></Content>
+</UDLText>
+
+<Method name="test1">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>glob:%String</FormalSpec>
+<Implementation><![CDATA[
+	try {
+	    set id=""
+	       for {
+		      set id=$order(@glob@(id)) if id="" quit
+		      set len=$length(id,".")
+		      set type=$zcvt($piece(id,".",len),"D")
+		      set name=$piece(id,".",1,len-1) 
+		      if name="" write !,"Error :"_id continue
+		      if type="mac" {
+			      if ('$data(^rMAC(name)))&&('$data(^rOBJ(name))) continue
+		      }
+		      elseif type="inc" 
+		      {
+			      if '$data(^rINC(name)) continue
+		      }			      
+		      elseif type="int" 
+		      {
+			      if ('$data(^ROUTINE(name)))&&('$data(^rOBJ(name))) continue
+		      }			      
+		      elseif type="cls" {
+			      if ('##class(%Dictionary.ClassDefinition).%Exists(name))&&('##class(%Dictionary.CompiledClass).%Exists(name))	continue
+		      }
+		      elseif type="method" {
+			     set namemethod=$piece(name,".",len-1)
+			     set classname=$piece(name,1,len-2)
+			     if '##class(%Dictionary.MethodDefinition).%OpenId(classname_"||"_namemethod) continue
+		      }
+		      write !,id_" exists"
+	     }
+    } catch(exception) {
+	     set status=exception.AsStatus()
+	     do $system.OBJ.DisplayError(status)
+ }
+]]></Implementation>
+</Method>
+
+<Method name="log">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>errortext:%String</FormalSpec>
+<Implementation><![CDATA[	set ^logError("loadNewElements",$i(^logError("loadNewElements")))=errortext
+]]></Implementation>
+</Method>
+
+<Method name="FindNodesNoTrans">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	kill ^Translate2012("needtraknsall")
+ set vbe=""
+ for {
+     set vbe=$order(^SS("SSVBE",vbe),1,vals) if vbe="" quit
+     if $data(^SS("SSVBE",vbe,"TRANS",20)) continue
+     write !,vbe,": ",vals
+     set ^Translate2012("needtraknsall","SSVBE",vbe)=vals_$c(1)
+ }
+ w !,"-------------------------------------------------------------"
+ set vbm=""
+ for {
+     set vbm=$order(^SS("VBM",0,vbm),1,vals) if vbm="" quit
+     if $data(^SSLAN("VBM",0,vbm,20)) continue	 
+     write !,vbm,": ",vals
+     set ^Translate2012("needtraknsall","VBM",vbm)=vals_$c(1)
+ }
+]]></Implementation>
+</Method>
+
+<Method name="CompareLanguages">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>path1,path2,numEtalon</FormalSpec>
+<Implementation><![CDATA[
+  set ref=$name(^test("compLang"))
+  kill @ref
+  if $get(numEtalon)="" set numEtalon=0
+  if $get(path1)="" write !,"Задайте аргумент path1" quit 
+  if $get(path2)="" write !,"Задайте аргумент path2" quit 
+  if '##class(%File).DirectoryExists(path1)	write !,"Директории "_path1_" не существует." quit 
+  if '##class(%File).DirectoryExists(path2)	write !,"Директории "_path2_" не существует." quit 
+  
+  Set rs=##class(%ResultSet).%New("%File:FileSet")
+  Set ok=rs.Execute(path1,"*.ini")  
+  if 'ok Quit
+  While rs.%Next() { 
+        set file=$Get(rs.Data("Name"))
+        write !,file
+        set key=1
+ 		if file'="" Do ..LoadWordsFromFile(file,ref,key,(numEtalon=key)) 
+  }
+  
+  Set ok=rs.Execute(path2,"*.ini")  
+  if 'ok Quit
+  While rs.%Next() { 
+        set file=$Get(rs.Data("Name"))
+        write !,file
+        set key=2
+ 		if file'="" Do ..LoadWordsFromFile(file,ref,key,(numEtalon=key)) 
+  }
+  
+  // compare with etalon
+  set key=$select(numEtalon=1:2,numEtalon=2:1,1:0)
+  if key'=0 {
+	  set file=""
+      for {
+	     set file=$order(@ref@("word",file)) if file="" quit
+         set word=""
+         for {
+		    set word=$order(@ref@("word",file,key,word)) if word="" quit
+		    set rus=$get(@ref@("word",file,key,word))
+		    ;set etalonstr=$get(@ref@("etalon",word))
+		    ;set rusEtalon=$piece(etalonstr,$char(1),2)
+		    ;set rus=$tr(rus,"&","")
+		    set et="",ok=0
+		    for {
+			    set et=$order(@ref@("etalon",word,1,et)) if et="" quit
+			    set et=rus set ok=1 quit
+		    }
+		    if ok=1 continue
+			set @ref@("compEtalon",file,key,word)=rus
+		    merge @ref@("compEtalon",file,key,word,"et")=@ref@("etalon",word)
+	     }  
+      }
+  }
+  
+  // compare path1 path2
+  set file=""
+  for {
+	  set file=$order(@ref@("word",file)) if file="" quit
+	  set word=""
+	  for {
+		  set word=$order(@ref@("word",file,1,word)) if word="" quit
+		  set rus1=$get(@ref@("word",file,1,word))
+		  set rus2=$get(@ref@("word",file,2,word))
+		  if rus1=rus2 continue
+		  set @ref@("comp",file,word)=rus1_$char(1)_rus2
+	  }  
+	  set word=""
+	  for {
+		  set word=$order(@ref@("word",file,2,word)) if word="" quit
+		  set rus1=$get(@ref@("word",file,1,word))
+		  set rus2=$get(@ref@("word",file,2,word))
+		  if rus1=rus2 continue
+		  if $data(@ref@("comp",file,word)) continue
+		  set @ref@("comp",file,word)=rus1_$char(1)_rus2
+		   
+		  //if $data(@ref@("compEtalon",file,key,word)) merge @ref@("comp",file,word,"compEtalon")=@ref@("etalon",word)
+		  if $data(@ref@("etalon",word)) merge @ref@("comp",file,word,"compEtalon")=@ref@("etalon",word,0)
+		  
+		  set worddop=$zstrip($piece(word,"(",1),"<>W")
+		  if worddop'=word {
+			  if $data(@ref@("etalon",worddop)) merge @ref@("comp",file,word,"compEtalonDop",worddop)=@ref@("etalon",worddop)
+		  }
+		  set worddop=$extract(worddop,1,$length(worddop)-1)
+		  if worddop'=word {
+			  if $data(@ref@("etalon",worddop)) merge @ref@("comp",file,word,"compEtalonDop2",worddop)=@ref@("etalon",worddop)
+		  }
+		  
+		  
+	  }  
+  }
+  
+   // different translations
+         set word=""
+         for {
+		    set word=$order(@ref@("etalon",word)) if word="" quit
+		    set etalonstr=$get(@ref@("etalon",word))
+		    if $order(@ref@("etalon",word,1,""))=$order(@ref@("etalon",word,1,""),-1) continue
+		    merge @ref@("diff",word)=@ref@("etalon",word)
+         }
+  
+  write !,"Данные в "_ref
+]]></Implementation>
+</Method>
+
+<Method name="LoadWordsFromFile">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>file,glob,key,flagEtalon</FormalSpec>
+<Implementation><![CDATA[
+	Set dir=$zconvert(##class(%File).GetDirectory(file),"L")  
+ 	Set namefile=$Piece($zconvert(file,"L"),dir,2)
+    Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=file
+	Set stream.TranslateTable="CP1251"
+ 	While 'stream.AtEnd {
+		Set line=stream.ReadLine()
+		if line="" continue	
+		set eng=$zstrip($piece(line,"~",1),"<>W")
+    	set len=$l(eng)
+		if $e(eng,len-2,len)="..." set eng=$e(eng,1,len-3)
+		if $extract(eng,1)="[" continue
+		set eng=$tr(eng,"&","")
+		if eng="" continue 
+
+		set rus=$zstrip($piece(line,"~",2),"<>W")
+		set rus=$tr(rus,"&","")
+		set len=$l(rus)
+		if $e(rus,len-2,len)="..." set rus=$e(rus,1,len-3)
+		
+		if eng'="" set @glob@("word",namefile,key,eng)=rus
+		//if namefile="lrentryenq.ini" b  
+		if flagEtalon=1 {
+			//if $e(end,1,9)="Clear (4)" b  
+			set @glob@("etalon",eng,0,namefile)=rus
+			if rus'="" set @glob@("etalon",eng,1,rus)=namefile
+		}
+ 	}
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// end class 
+
+]]></Content>
+</UDLText>
+</Class>
+</Export>
