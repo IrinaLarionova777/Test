@@ -1,0 +1,750 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="KSUTIL1" type="INT" languagemode="0"><![CDATA[
+KSUTIL1
+ ; pFormat:
+ ; 1 - без форматирования (Иванов Иван Иванович)
+ ; 2 - фамилия + инициалы (Иванов И.И.)
+ ; pSurName - Фамилия, pName - Имя ,pPatrName - Отчество
+NameFormat(pFormat,pSurName,pName,pPatrName) public {
+	Set pFormat=$Get(pFormat,1)
+	Set pSurName=$Get(pSurName)
+	Set pName=$Get(pName)
+	Set pPatrName=$Get(pPatrName)
+	;
+	Set result=""
+	If pFormat=1 {
+		Set result=$Get(pSurName)
+		If $Length(pName) Set result=result_" "_pName
+		If $Length(pPatrName) Set result=result_" "_pPatrName
+	} ElseIf pFormat=2 {
+		Set result=$Get(pSurName)
+		If $Length(pName) Set result=result_" "_$Extract(pName,1,1)_"."
+		If $Length(pPatrName) Set result=result_" "_$Extract(pPatrName,1,1)_"."
+	}	
+	Quit result
+}
+ ; Фамилия, Имя через передаваемый разделитель
+SurnameName(pSurname,pName,pDelim) public {
+	Set pDelim=$Get(pDelim,",")
+	Set res=pSurname
+	If res'="",pName'="" Set res=res_pDelim
+	If pName'="" Set res=res_pName
+	Quit res
+}
+
+Date2Horolog(pDate) public {
+	If pDate="" Quit ""
+	If $Length(pDate)'=10 Quit ""
+	Set pDate=$Translate(pDate,".","/")
+	If $Length(pDate,"/")'=3 Quit ""
+	Quit $ZDateH(pDate,4)
+}
+Horolog2Date(pDateH) public {
+	If pDateH="" Quit ""
+	Set result=$$SafeZDate(pDateH,4)
+	Quit $Translate(result,"/",".")
+}
+SafeZDate(pDateH,pFormat) public {
+	Try {
+		Set result=$ZDate(pDateH,pFormat)
+	} Catch {
+		Set result=""
+	}
+	Quit result		
+}
+	// Безопасный вызов $ZDateH
+	// Параметры:
+	// pDate - значение дата
+	// pFormat - формат даты
+	// Возвращаемое значение:
+	// Дата в формате $Horolog
+SafeZDateH(pDate,pFormat) public {
+	Try {
+		Set result=$ZDateH(pDate,pFormat)
+	} Catch {
+		Set result=""
+	}
+	Quit result		
+}
+
+	// Безопасный вызов $ZDateTime
+	// Параметры:
+	// pDateTime - значение дата-времени в формате $Horolog
+	// pDateFormat - формат даты
+	// pTimeFormat - формат времени
+	// Возвращаемое значение:
+	// Преобразованное $ZDateTime(pDateTime,pDateFormat,pTimeFormat) значение
+SafeZDateTime(pDateTime,pDateFormat,pTimeFormat) public {
+	Set pDateFormat=$Get(pDateFormat)
+	If pDateFormat="" {
+		Set pDateFormat=1
+	}	
+	Set pTimeFormat=$Get(pTimeFormat)
+	If pTimeFormat="" {
+		Set pTimeFormat=1
+	}	
+	//
+	Try {
+		Set result=$ZDateTime(pDateTime,$Get(pDateFormat),$Get(pTimeFormat))
+	} Catch {
+		Set result=""
+	}
+	Quit result		
+}
+
+	// !!! Преобразовать значение из формата TimeStamp в Horolog
+TimeStamp2Horolog(pValue) public {
+	Set date=$Extract(pValue,1,10)
+	If $Length(date)'=10 Quit ""
+	Try {
+		Set result=$ZDateH(date,3)
+	} Catch {
+		Set result=""
+	}
+	Quit result		
+}	 
+	// !!! Преобразовать значение из формата TimeStamp в кол-во секунд с полуночи
+TimeStamp2Secunds(pValue) public {
+	Try {
+		Set hor=$ZDateTimeH(pValue,3)
+	} Catch {
+		Set hor=""
+	}
+	Set sec=$Piece(hor,",",2)
+	Quit sec	
+}	 											
+	// !!! Преобразовать значение из формата TimeStamp в кол-во минут с полуночи
+TimeStamp2Minutes(pValue) public {
+	Try {
+		Set hor=$ZDateTimeH(pValue,3)
+	} Catch {
+		Set hor=""
+	}
+	Set sec=$Piece(hor,",",2)
+	Quit sec\60	
+}
+
+	// Вернуть разницу во времен в секундах между двумя значениями даты-времени
+	// pMinDateTime - минимальное значение даты-времени 
+	// pMaxDateTime - максимальное значение даты-времени
+	// pMinDateTimeFormat - формат даты-времени минимального значения (0-$Horolog, либо значение формата $ZDateTime)
+	// pMaxDateTimeFormat - формат даты-времени максимального значения
+	// Возвращаемое значение:
+	// Разница между датами в секундах (если неверное значение параметров, то пусто)
+DeltaTimeSec(pMinDateTime,pMaxDateTime,pMinDateTimeFormat,pMaxDateTimeFormat) public {
+	// Если формат не задан, то значения в Horolog-е
+	Set pMinDateTimeFormat=$Get(pMinDateTimeFormat)
+	If pMinDateTimeFormat="" Set pMinDateTimeFormat=0
+	Set pMaxDateTimeFormat=$Get(pMaxDateTimeFormat)
+	If pMaxDateTimeFormat="" Set pMaxDateTimeFormat=0
+	// Преобразования начальных значений даты времени из своего формата в SQL формат даты
+	If pMinDateTimeFormat=0 {
+		Set pMinDateTime=$$SafeZDateTime(pMinDateTime,3)
+	}	
+	If pMaxDateTimeFormat=0 {
+		Set pMaxDateTime=$$SafeZDateTime(pMaxDateTime,3)
+	}
+	// Выход, если неверное значение у одного из сравниваемых значений
+	If (pMinDateTime="")||(pMaxDateTime="") Quit ""
+	// Собственно сравнение
+	Try {
+		Set result=$system.SQL.DATEDIFF("ss",pMinDateTime,pMaxDateTime)
+	} Catch {
+		Set result=""
+	}
+	Quit result		
+}
+
+	// Преобразование буфера значений в строку с разделителем
+	// Параметры:
+	// pGlb - ссылка на глобал с буфером значений
+	// pDelimiter - разделитель
+Buffer2String(pGlb,pDelimiter) public {
+	If $Get(pDelimiter)="" Set pDelimiter=" "
+	Set result=""
+	Set i="",n=0
+	For  {
+		Set i=$Order(@pGlb@(i),1,value)
+		If i="" Quit
+		Set n=n+1
+		If (n>1) {
+			Set result=result_pDelimiter
+		}
+		Set result=result_value
+	}
+	Quit result	
+}	
+
+FileDelimiter() public {
+	Quit "\"
+}	 
+ 
+IncFileName(pDir,pPrefix,pExtention) public {
+	Set delim=$$FileDelimiter()
+	If $Extract(pDir,$Length(pDir))'=delim Set pDir=pDir_delim
+	;
+	Set mask=pPrefix_"_"_$ZD(+$H,8)_"_*."_pExtention
+	Set maxn=0
+	Set result=##class(%ResultSet).%New("%Library.File:FileSet")
+	Do result.Execute(pDir,mask)
+	For  {
+		If 'result.Next() Quit
+		Set name=result.Data("Name")
+		Set n=$Piece(name,"_",3)
+		If n>maxn Set maxn=n
+	}
+	Set maxn=maxn+1
+	If $Length(maxn)=1 Set maxn="0"_maxn
+	Quit pPrefix_"_"_$ZD(+$H,8)_"_"_maxn_"."_pExtention
+}
+ 
+FullFileName(pDir,pFileName) public {
+	Set delim="\"
+	If $Extract(pDir,$Length(pDir))'=delim Set pDir=pDir_delim
+	Quit pDir_pFileName
+ 
+}
+
+
+Translit(pValue) public { // Транслитерация ГОСТ 7.79-2000 (http://transliteration.ru/gost-7-79-2000/)
+	Set res=""
+	Set len=$Length(pValue)
+	For i=1:1:len Set res=res_$$TranslitLetter($Extract(pValue,i))
+	Quit res
+}
+TranslitLetter(pValue) public {
+	Set res=pValue
+	If pValue="а" { Set res="a" }
+	ElseIf pValue="б" { Set res="b" }
+	ElseIf pValue="в" { Set res="v" }
+	ElseIf pValue="г" { Set res="g" }
+	ElseIf pValue="д" { Set res="d" }
+	ElseIf pValue="е" { Set res="e" }
+	ElseIf pValue="ё" { Set res="yo" }
+	ElseIf pValue="ж" { Set res="zh" }
+	ElseIf pValue="з" { Set res="z" }
+	ElseIf pValue="и" { Set res="i" }
+	ElseIf pValue="й" { Set res="j" }
+	ElseIf pValue="к" { Set res="k" }
+	ElseIf pValue="л" { Set res="l" }
+	ElseIf pValue="м" { Set res="m" }
+	ElseIf pValue="н" { Set res="n" }
+	ElseIf pValue="о" { Set res="o" }
+	ElseIf pValue="п" { Set res="p" }
+	ElseIf pValue="р" { Set res="r" }
+	ElseIf pValue="с" { Set res="s" }
+	ElseIf pValue="т" { Set res="t" }
+	ElseIf pValue="у" { Set res="u" }
+	ElseIf pValue="ф" { Set res="f" }
+	ElseIf pValue="х" { Set res="kh" }
+	ElseIf pValue="ц" { Set res="cz" }
+	ElseIf pValue="ч" { Set res="ch" }
+	ElseIf pValue="ш" { Set res="sh" }
+	ElseIf pValue="щ" { Set res="shh" }
+	ElseIf pValue="ъ" { Set res="''" }
+	ElseIf pValue="ы" { Set res="y'" }
+	ElseIf pValue="ь" { Set res="'" }
+	ElseIf pValue="э" { Set res="e'" }
+	ElseIf pValue="ю" { Set res="yu" }
+	ElseIf pValue="я" { Set res="ya" }
+
+	ElseIf pValue="А" { Set res="A" }
+	ElseIf pValue="Б" { Set res="B" }
+	ElseIf pValue="В" { Set res="V" }
+	ElseIf pValue="Г" { Set res="G" }
+	ElseIf pValue="Д" { Set res="D" }
+	ElseIf pValue="Е" { Set res="E" }
+	ElseIf pValue="Ё" { Set res="Yo" }
+	ElseIf pValue="Ж" { Set res="Zh" }
+	ElseIf pValue="З" { Set res="Z" }
+	ElseIf pValue="И" { Set res="I" }
+	ElseIf pValue="Й" { Set res="J" }
+	ElseIf pValue="К" { Set res="K" }
+	ElseIf pValue="Л" { Set res="L" }
+	ElseIf pValue="М" { Set res="M" }
+	ElseIf pValue="Н" { Set res="N" }
+	ElseIf pValue="О" { Set res="O" }
+	ElseIf pValue="П" { Set res="P" }
+	ElseIf pValue="Р" { Set res="R" }
+	ElseIf pValue="С" { Set res="S" }
+	ElseIf pValue="Т" { Set res="T" }
+	ElseIf pValue="У" { Set res="U" }
+	ElseIf pValue="Ф" { Set res="F" }
+	ElseIf pValue="Х" { Set res="Kh" }
+	ElseIf pValue="Ц" { Set res="Cz" }
+	ElseIf pValue="Ч" { Set res="Ch" }
+	ElseIf pValue="Ш" { Set res="Sh" }
+	ElseIf pValue="Щ" { Set res="Shh" }
+	ElseIf pValue="Ъ" { Set res="''" }
+	ElseIf pValue="Ы" { Set res="Y'" }
+	ElseIf pValue="Ь" { Set res="'" }
+	ElseIf pValue="Э" { Set res="E'" }
+	ElseIf pValue="Ю" { Set res="Yu" }
+	ElseIf pValue="Я" { Set res="Ya" }
+	Quit res
+}
+
+DeleteLeftAndRightSpaces(pVal) public {
+	Set result=$$DeleteRightSpaces(pVal)
+	Set result=$$DeleteLeftSpaces(result)
+	Quit result
+}
+
+DeleteRightSpaces(pVal) public {
+	Set begin=1,end=$Length(pVal)
+	For i=end:-1:1 {
+		Set end=i
+		If $Extract(pVal,i)'=" " Quit
+	}
+	If end'=$Length(pVal) Quit $Extract(pVal,begin,end)
+	Quit pVal	
+}
+DeleteLeftSpaces(pVal) public {
+	Set begin=1,end=$Length(pVal)
+	For i=1:1:end {
+		Set begin=i
+		If $Extract(pVal,i)'=" " Quit
+	}
+	If begin'=1 Quit $Extract(pVal,begin,end)
+	Quit pVal	
+}
+
+LeftAlign(pVal,pLen,pChar) public {
+	Set result=$Get(pVal)
+	Set len=$Length(pVal)
+	If $Get(pLen)'>len Quit pVal
+	Set pChar=$Get(pChar," ")
+	For i=len+1:1:pLen Set result=result_pChar
+	Quit result
+}
+RightAlign(pVal,pLen,pChar) public {
+	Set result=$Get(pVal)
+	Set len=$Length(pVal)
+	If $Get(pLen)'>len Quit pVal
+	Set pChar=$Get(pChar," ")
+	For i=len+1:1:pLen Set result=pChar_result
+	Quit result
+}
+
+	// Проверка корректности каталога. Если нет, то пытаемся создать 
+TestDirectory(pDirectory) public
+{
+	; Если все просто и уже есть
+	If (pDirectory="")||(##class(%File).DirectoryExists(pDirectory)) Quit 1
+	; Подравниваем, чтобы последний символ был разделителем
+	Set delim="\" ; Только Windows ;..DirectoryDelimiter()
+	If $Extract(pDirectory,$Length(pDirectory))'=delim Set pDirectory=pDirectory_delim
+	; Если нет находим корневой или базовый сетевой каталог
+	Set cnt=$Length(pDirectory,delim)
+	Set curdir="",n=1
+	For  {
+		Set dir=$Piece(pDirectory,delim,n)
+		Set curdir=curdir_dir_delim
+		Set n=n+1
+		If dir'="" Quit
+		If n=cnt Quit
+	}	
+	; Для сетевого пути увеличиваем еще на 1
+	If $Extract(pDirectory,1,2)=(delim_delim) {
+		Set curdir=curdir_$Piece(pDirectory,delim,n)_delim
+		Set n=n+1
+	}	
+	Set ok=1
+	For {
+		; Если нет, создаем каталог
+		If '##class(%File).DirectoryExists(curdir) {
+			Set ok=##class(%File).CreateDirectory(curdir)
+		}
+		If 'ok Quit
+		Set curdir=curdir_$Piece(pDirectory,delim,n)_delim
+		Set n=n+1
+		If n>cnt Quit
+	}	
+	Quit (ok=1)
+}
+
+LogMessage(pDir,pMessage,pType,pShowTime) public
+{
+	Set pType=$Get(pType,1)
+	Set pShowTime=$Get(pShowTime,1)
+	Set delim="\"
+	If $Extract(pDir,$Length(pDir))'=delim Set pDir=pDir_delim
+	;
+	Set time=$ZTime($Piece($Horolog,",",2),1)
+	If pMessage'="" {
+		If (pShowTime) Set pMessage=time_" - "_pMessage
+		If (pType=2) Set pMessage="*** "_pMessage_" ***"
+		If (pType=3) Set pMessage="!!! "_pMessage_" !!!"
+	}
+	;
+	;Set pMessage="($Job="_$Job_") "_pMessage
+	Set fulldate=$ZDate(+$Horolog,8)
+	;
+	;
+	Set ok=$$TestDirectory(pDir)
+	If 'ok Quit
+	Set fullpath=pDir_fulldate_".log"
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.TranslateTable="CP1251"  
+	Set stream.Filename=fullpath
+	Set ok=stream.MoveToEnd()
+	If ok Set ok=stream.WriteLine(pMessage)
+	If ok Set ok=stream.SaveStream()
+	If 'ok Quit
+	Set stream=""
+	;
+	If pType=1 Quit
+	;
+	Set fulldir=pDir_"!Warning!"_delim
+	Set ok=$$TestDirectory(fulldir)
+	If 'ok Quit
+	Set fullpath=fulldir_fulldate_".log"
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.TranslateTable="CP1251"  
+	Set stream.Filename=fullpath
+	Set ok=stream.MoveToEnd()
+	If ok Set ok=stream.WriteLine(pMessage)
+	If ok Set ok=stream.SaveStream()
+}
+
+Status2Str(pStatusValue) public {
+	If (pStatusValue)||(pStatusValue="") Quit ""
+	Kill errorlist
+	Do $system.Status.DecomposeStatus(pStatusValue,.errorlist)
+	Set i="",result=""
+	For  {
+		Set i=$Order(errorlist(i),1,str)
+		If i="" Quit
+		If result'="" Set result=result_" "
+		Set result=result_str
+	}
+	Quit result	
+}	
+	
+
+LogStatus(pDir,pStatusValue,pType,pShowTime) public
+{
+	Kill errorlist
+	Do $system.Status.DecomposeStatus(pStatusValue,.errorlist)
+	Set i=""
+	For  {
+		Set i=$Order(errorlist(i),1,str)
+		If i="" Quit
+		Do LogMessage(pDir,str,$Get(pType),$Get(pShowTime))
+	}	
+	
+}
+	// Проверяет наличие файла архива с заданным именем. Если уже есть, то добавляет _ очредной №  
+ArchiveFileName(pFileName) public {
+	If '##class(%File).Exists(pFileName) Quit pFileName
+	Set cnt=$Length(pFileName,".")
+	If cnt=1 {
+		Set ext=""
+		Set name=pFileName
+	} Else {
+		Set ext=$Piece(pFileName,".",cnt)
+		Set name=$Extract(pFileName,1,$Length(pFileName)-$Length(ext)-1)
+	}
+	Set num=0
+	If ($Extract(name,$Length(name))=")")&&(name["(") {
+		Set num=$Piece(name,"(",$Length(name,"("))
+		Set num=$Piece(num,")",1)
+		If (num=+num) {
+			If (+num>0) {
+				Set numstr=$Piece(name,"(",$Length(name,"("))
+				Set name=$Extract(name,1,$Length(name)-$Length(numstr)-1)
+			} 
+		}
+		Else {
+			Set num=1		
+		}
+	
+	}		
+	For  {
+		Set num=num+1
+		Set newfilename=name_"("_num_")"
+		If ext'="" Set newfilename=newfilename_"."_ext
+		If '##class(%File).Exists(newfilename) Quit
+	}
+	Quit newfilename	
+}	
+
+TraceStr(pStr) public {
+	If $Get(pStr)="" Quit ""
+	;
+	Set exept($Char(2))="<STX>"
+	Set exept($Char(3))="<ETX>"
+	Set exept($Char(4))="<EOT>"
+	Set exept($Char(5))="<ENQ>"
+	Set exept($Char(6))="<ACK>"
+	Set exept($Char(15))="<NAK>"
+	Set exept($Char(29))="<GS>"
+	Set exept($Char(30))="<RS>"
+	;
+	Set char="",result=pStr
+	For  {
+		Set char=$Order(exept(char))
+		If char="" Quit
+		If pStr'[char Continue
+		Set cnt=$Length(result,char)
+		Set str=""
+		For i=1:1:cnt {
+			If i>1 Set str=str_exept(char)
+			Set str=str_$Piece(result,char,i)
+		}
+		Set result=str	
+	}
+	Quit result
+}	
+Rename(pOldFileName,pNewFileName,pLogDir) public {
+	Set result=$zu(140,6,pOldFileName,pNewFileName)
+	If result {
+		Do LogMessage^KSUTIL1(pLogDir,"$zu(140,6,"_pOldFileName_","_pNewFileName_")="_result,3,1)
+		Do LogMessage^KSUTIL1(pLogDir,pOldFileName_"="_##class(%Library.File).Exists(pOldFileName),3,1)
+		Do LogMessage^KSUTIL1(pLogDir,pNewFileName_"="_##class(%Library.File).Exists(pNewFileName),3,1)
+		Hang 5
+		Do LogMessage^KSUTIL1(pLogDir,pOldFileName_"="_##class(%Library.File).Exists(pOldFileName),3,1)
+		Do LogMessage^KSUTIL1(pLogDir,pNewFileName_"="_##class(%Library.File).Exists(pNewFileName),3,1)
+	}	
+	If ('##class(%Library.File).Exists(pOldFileName))&&(##class(%Library.File).Exists(pNewFileName)) Quit 1
+	Quit 'result
+}
+	// Переименование файла путем копирования (простое переименование не работает, если разные диски, сетевые пути...)
+RealRename(pOldFileName,pNewFileName) public {
+	If '##class(%File).Exists(pOldFileName) Quit $$Error^%apiOBJ(5001,"Нет файла "_pOldFileName_" !")
+	Set newfiledir=##class(%File).GetDirectory(pNewFileName)
+	If '$$TestDirectory(newfiledir) Quit $$Error^%apiOBJ(5001,"Нет удалось создать каталог "_newfiledir_" !")
+	If ##class(%File).Exists(pNewFileName) {
+		Set ok=##class(%File).Delete(pNewFileName)
+		If 'ok Quit $$Error^%apiOBJ(5001,"Нет удалось удалить существующий файл "_pNewFileName_" !")
+	}	
+	Set stream1=##class(%FileBinaryStream).%New()
+	Set stream1.Filename=pOldFileName
+	Set stream2=##class(%FileBinaryStream).%New()
+	Set stream2.Filename=pNewFileName
+	Set ok=stream2.CopyFrom(stream1)
+	If 'ok Quit $$Error^%apiOBJ(5001,"Нет удалось скопировать файл "_pOldFileName_" в "_pNewFileName_" !")
+	Set ok=stream2.%Save()	
+	If 'ok Quit $$Error^%apiOBJ(5001,"Нет удалось скопировать файл "_pOldFileName_" в "_pNewFileName_" !")
+	Kill stream1,stream2
+	Set ok=##class(%File).Delete(pOldFileName)
+	If 'ok Quit $$Error^%apiOBJ(5001,"Нет удалось удалить существующий файл "_pOldFileName_" !")
+	Quit 1
+}
+
+	// Разбить длинную строку pValue на несколько не длиннее pMaxLen в качестве возможных разделителей использовать pDelimeters
+	// Результат будет разделен pResultDelimiter 	
+Split2SeveralStrings(pValue,pMaxLen,pDelimeters,pResultDelimiter) public {
+	Set len=$Length(pValue)
+	If len'>pMaxLen Quit pValue
+	Set pDelimeters=$Get(pDelimeters," (),.-!?")
+	Set pResultDelimiter=$Get(pResultDelimiter,$Char(1))
+	Set result="",currentstr="",currentword=""
+	For i=1:1:len {
+		Set char=$Extract(pValue,i,i)
+		If pDelimeters[char{
+			If ($Length(currentstr)+$Length(currentword))'>pMaxLen {
+				Set currentstr=currentstr_currentword
+				Set currentword=char
+			} Else {
+				If result'="" Set result=result_pResultDelimiter
+				Set result=result_currentstr
+				Set currentstr=currentword
+				If char=" " {
+					Set currentword=""
+				} Else {	
+					Set currentword=char
+				}
+			}		
+		} Else {
+			If $Length(currentword)<pMaxLen {
+				Set currentword=currentword_char
+			} Else {
+				If result'="" Set result=result_pResultDelimiter
+				Set result=result_currentword
+				Set currentstr=""
+				Set currentword=char
+			}		
+		}		
+	}
+	If (currentstr'="")||(currents) {
+		If result'="" Set result=result_pResultDelimiter
+		Set result=result_currentstr_currentword
+	
+	}	
+	Quit result	
+}
+	// Изменить расширение файла pFileName на новое pNewExtension
+ChangeFileExtension(pFileName,pNewExtension) public {
+	Set cnt=$Length(pFileName,".")
+	If cnt=1 {
+		Set ext=""
+		Set name=pFileName
+	} Else {
+		Set ext=$Piece(pFileName,".",cnt)
+		Set name=$Extract(pFileName,1,$Length(pFileName)-$Length(ext)-1)
+	}
+	Quit name_"."_pNewExtension
+}
+
+	// День недели даты pHorolog в формате
+	// pFormat= 1 - номер дня
+	// pFormat= 2 - Пн,Вт,Ср,Чт,Пт,Сб,Вс
+DayOfWeek(pHorolog,pFormat) public {
+	Set pFormat=$Get(pFormat,1)
+	Try {
+		Set dayofweek=$ZDate(pHorolog,10)
+	} Catch {
+		Set dayofweek=""
+	}
+	If dayofweek="" Quit ""
+	If pFormat=1 Quit dayofweek
+	If pFormat=2 Quit $Piece("Пн,Вт,Ср,Чт,Пт,Сб,Вс",",",dayofweek)
+	Quit ""
+}
+	// Месяц системной даты в формате YYYYMM
+CurrentMonth()	public {
+	Try {
+		Set date=$ZDate(+$Horolog,8)
+	} Catch {
+		Set date=""
+	}
+	If date="" Quit ""
+	Quit $Extract(date,1,6)
+}
+	// Следующий месяц от pYearMonth в формате YYYYMM
+NextMonth(pYearMonth)	public {
+	If $Length(pYearMonth)'=6 Quit ""
+	Set year=+$Extract(pYearMonth,1,4)
+	Set month=+$Extract(pYearMonth,5,6)
+	Set month=month+1
+	If month=13 {
+		Set month=1
+		Set year=year+1
+	}
+	If $Length(month)=1 {
+		Set month="0"_month
+	}		
+	Quit year_month
+}												
+	// Предыдущий месяц от pYearMonth в формате YYYYMM
+PreviousMonth(pYearMonth)	public {
+	If $Length(pYearMonth)'=6 Quit ""
+	Set year=+$Extract(pYearMonth,1,4)
+	Set month=+$Extract(pYearMonth,5,6)
+	Set month=month-1
+	If month=0 {
+		Set month=12
+		Set year=year-1
+	}
+	If $Length(month)=1 {
+		Set month="0"_month
+	}		
+	Quit year_month
+}												
+	// Первое число месяца pYearMonth (в формате YYYYMM) возвращаемое в формате	Horolog
+FirstDateOfMonthH(pYearMonth)	public {
+	If $Length(pYearMonth)'=6 Quit ""
+	Set date=pYearMonth_"01"
+	Try {
+		Set result=$ZDateH(date,8)
+	} Catch {
+		Set result=""
+	}
+	Quit result
+}
+	// Последнее число месяца pYearMonth (в формате YYYYMM) возвращаемое в формате	Horolog
+LastDateOfMonthH(pYearMonth)	public {
+	If $Length(pYearMonth)'=6 Quit ""
+	Set nextmonth=$$NextMonth(pYearMonth)
+	Set date=nextmonth_"01"
+	Try {
+		Set result=$ZDateH(date,8)
+	} Catch {
+		Set result=""
+	}
+	If result="" Quit ""
+	Quit result-1
+}
+	// Является ли символ pChar знаком пунктуации 
+PunctuationCharacter(pChar) public {
+	If " .,!?-;:()%=<>=+/\"[pChar Quit 1
+	Quit 0
+}
+	// Удалить непечатаемые символы pNotPrintableCharacters из строки pValue 
+	// Если pNotPrintableCharacters не заданы, то формируется строка непечатных символов от $Char(0) до $Char(31) 
+RemomeNotPrintableCharacters(pValue,pNotPrintableCharacters) public {
+	Set pNotPrintableCharacters=$Get(pNotPrintableCharacters)
+	If pNotPrintableCharacters="" {
+		For i=0:1:12 Set pNotPrintableCharacters=pNotPrintableCharacters_$Char(i)
+		For i=14:1:31 Set pNotPrintableCharacters=pNotPrintableCharacters_$Char(i)
+	}
+	Quit $Translate(pValue,pNotPrintableCharacters)	
+}
+
+	// Преобразование значения в формате %Status к списку ошибок
+	// Параметры:
+	// pStatusValue - описание ошибок в формате %Status 
+	// Возвращаемое значение:
+	// Ошибки в виде $ListBuild($ListBuild(Code1,Desription1),$ListBuild(Code2,Desription2),..)
+Status2ListBuild(pStatusValue) public {
+	If (pStatusValue)||(pStatusValue="") Quit ""
+	Kill errorlist
+	Do $system.Status.DecomposeStatus(pStatusValue,.errorlist)
+	Set i="",result=""
+	For  {
+		Set i=$Order(errorlist(i))
+		If i="" Quit
+		Set code=$Get(errorlist(i,"code"))
+		Set descr=""
+		Set j=""
+		For  {
+			Set j=$Order(errorlist(i,"param",j),1,val)
+			If j="" Quit
+			If descr'="" {
+				Set descr=descr_" "
+			}
+			Set descr=descr_val	
+		}	
+		Set result=result_$ListBuild($ListBuild(code,descr))
+	}
+	Quit result	
+}
+	// Откорректировать имя файла (удаляем все недопустимые символы)
+	// Оставляем буквы-цифры и символы () []{}.-_
+	// Непечатные символы $Char(0)..$Char(31) удаляем
+	// Оставшиеся меняем на символ  pReplaceChar
+	// Параметры:
+	// pFileName - начальное значение имени файла
+	// pReplaceChar - символ, на который заменяем недопустимые в имени символы
+	// Возврашаемое значение:
+	// Строка с откорректированным именем файла
+CorrectFileName(pFileName,pReplaceChar) public {
+	Set pFileName=$$RemomeNotPrintableCharacters(pFileName)
+	Set len=$Length(pFileName)
+	Set result=""
+	For i=1:1:len {
+		Set char=$Extract(pFileName,i)
+		If (char?1AN)||("() []{}.-_"[char) {
+			Set result=result_char
+		} Else {
+			Set result=result_pReplaceChar
+		}
+	}
+	Quit result	
+}
+	// Записать уровень вызова программ из стека в глобал
+LogStackCalls(pGlb) public {
+	Do StackCalls(.stack)
+	Merge @pGlb@($Increment(@pGlb))=stack
+}	
+	// Сформировать переменную со стеком вызовов программ
+StackCalls(pStack) public {
+	Kill pStack
+	For i=0:1:($STACK(-1)-1) {
+		Set pStack(i)=$ListBuild($STACK(i,"PLACE"),$STACK(i,"MCODE"))
+	}	
+}	    	
+]]></Routine>
+</Export>
