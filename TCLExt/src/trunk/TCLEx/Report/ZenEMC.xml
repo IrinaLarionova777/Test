@@ -2,7 +2,11 @@
 <Export generator="Cache" version="24">
 <Class name="TCLEx.Report.ZenEMC">
 <Super>%ZEN.Report.reportPage</Super>
-<TimeCreated>62355,51855.555434</TimeCreated>
+<TimeCreated>62928,42360.315245</TimeCreated>
+
+<Property name="OrderNumber">
+<Type>%ZEN.Datatype.string</Type>
+</Property>
 
 <Property name="Episode">
 <Type>%ZEN.Datatype.string</Type>
@@ -50,7 +54,7 @@ XML that defines the contents of this report.</Description>
 <XMLNamespace>http://www.intersystems.com/zen/report/definition</XMLNamespace>
 <Data><![CDATA[
 <report xmlns="http://www.intersystems.com/zen/report/definition" name='ResultReport' runonce="true"> 
-<call method="GenerateReportXML"/>    
+<call method="GenerateReportXML"/>
  </report>
 ]]></Data>
 </XData>
@@ -63,7 +67,7 @@ XSlT stylesheets for both HTML and XSL-FO</Description>
 <report xmlns="http://www.intersystems.com/zen/report/display" 
 name='ResultReport' title='Результат исследования' style='standard'>
 <document width="210mm" height="297mm" marginLeft="10mm" marginRight="10mm" marginTop="5mm" marginBottom="10mm" headerHeight="30mm" referenceOrientation="0">
-<xslinclude href="C:\InterSystems\Ensemble\CSP\EMC\Report\fop.xsl" />
+<xslinclude href='#(##CLASS(TCLEx.Report.Function).GetPathToXSL())#' />
 </document>
 
 <!--
@@ -199,6 +203,7 @@ pRepParamGlb - глобал с данными</Description>
 		Set @pRepParamGlb@("FullName")=""
 		Set @pRepParamGlb@("DOB")=""
 	}
+	m ^test("ppp")=@pRepParamGlb
 ]]></Implementation>
 </Method>
 
@@ -289,6 +294,10 @@ Method %OnBeforeReport() As %Status
 /// This is queuing mechanism is never called visually but only by AsynchGenerateReport which always generates PDFs  
 Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", async As %Boolean = 0, ByRef xmlfile As %String, ByRef xslfile As %String, ByRef pdffile As %String, ByRef lockfile As %String) As %Status
 {
+	//h 30
+	//quit $$$OK
+	set nnn=$i(^test("%DisplayPDF1"))
+	s ^test("%DisplayPDF1",nnn,1)=$g(DisplayLog)_"*"_$g(RenderServer)_"*"_$g(async)_"*"_$g(xmlfile)_"*"_$g(xslfile)_"*"_$g(pdffile)_"*"_$g(lockfile)
 	Set tSC=$$$OK
 	Do {
 		#; Generate data file and XSLT stylesheet which transforms data to HTML
@@ -307,13 +316,15 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 			if tRootName'="" Set lockfile = ..MakeFileName(..GetRootDir(),tRootName,".lck")
 		}
 
+        s ^test("%DisplayPDF1",nnn,2)=$g(DisplayLog)_"*"_$g(RenderServer)_"*"_$g(async)_"*"_$g(xmlfile)_"*"_$g(xslfile)_"*"_$g(pdffile)_"*"_$g(lockfile)_"*"_logfile
 
 		#; Command line callout to FOP or XEP
+		
 		Set tSC = ..%PerformTransform(xmlfile, xslfile, pdffile, logfile, 1, RenderServer, async, $g(lockfile))
 
 		If $$$ISOK(tSC),'async {
 			If DisplayLog {
-				Set oid = ##class(%CSP.StreamServer).GetOidForFile(logfile)
+				Set oid = ##class(%CSP.StreamServer).GetOidForFile(logfile) 
 			}
 			Else {
 				Set oid = ##class(%CSP.StreamServer).GetOidForFile(pdffile)
@@ -375,6 +386,7 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 	
 	Set logofilename=..ImagePath()_"\"_..getNameFileLogo(pDepartment, pRepParamGlb)
 	If '##class(%File).Exists(logofilename) set logofilename=""
+	//h 30
 	if logofilename'="" {
     	Do stream.WriteLine("<fo:block-container absolute-position='fixed' position='absolute' left='5mm' top='5mm' width='200mm' height='30mm' overflow='hidden'>")
 		Do stream.WriteLine("<fo:block>")
@@ -669,7 +681,8 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 			Set footerstream=..Footer(pagenumber,..TotalPages,$Name(^||ZenEMC.Vals))
 			Do stream.CopyFrom(footerstream)
 		}	
-	}	
+	}
+	s ^test("length")=stream.SizeGet()	
 	Quit stream
 ]]></Implementation>
 </Method>
@@ -695,6 +708,93 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 			set filename="emc_logo_pato.jpg"
 	}
 	quit filename
+]]></Implementation>
+</Method>
+
+<Method name="printDoctorAuth">
+<Description>
+output: 1 - печатать фио авторизовавшего врачаб 0 - нет</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDepartment</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	quit $select((pDepartment)="H"||(pDepartment="Z"):1,1:0)
+]]></Implementation>
+</Method>
+
+<Method name="%DisplayPDF1">
+<Description>
+This method outputs the contents of the PDF report
+RenderServer is set to the port of the hot JVM server
+There is also a queuing hot JVM server which queues files for PDF rendering later
+This is queuing mechanism is never called visually but only by AsynchGenerateReport which always generates PDFs  </Description>
+<Internal>1</Internal>
+<FormalSpec><![CDATA[DisplayLog:%Boolean=0,RenderServer:%String="",async:%Boolean=0,&xmlfile:%String,&xslfile:%String,&pdffile:%String,&lockfile:%String,fromGenerateReport:%Boolean,outputfilename:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC=$$$OK
+	Do {
+		#; Generate data file and XSLT stylesheet which transforms data to HTML
+		Set tSC = ..%MakeXMLDataFile(.xmlfile,0) Quit:$$$ISERR(tSC)
+		//Set ..xmlfile = xmlfile
+		Set tSC = ..%MakeToXSLFOFile(.xslfile,xmlfile) Quit:$$$ISERR(tSC)
+
+		#; Generate filenames for log/pdf
+		Set tmpdir=..GetRootDir()
+		Set tRootName=..GetSafeRootName()
+		if tRootName="" Set logfile = tmpdir_##class(%FileBinaryStream).NewFileName("txt",..%GetTempDir())		
+		if tRootName'="" Set logfile = ..MakeFileName(..GetRootDir(),tRootName,".txt")
+		; delete logfile so user does not see "ghost" of old logfile when using $REPORTNAME
+		i $g(logfile)'="" Do ##class(%File).Delete(logfile)
+		if (fromGenerateReport=0 || (DisplayLog=1)) {
+			if tRootName="" Set pdffile = tmpdir_##class(%FileBinaryStream).NewFileName("pdf",..%GetTempDir())
+			if tRootName'="" Set pdffile = ..MakeFileName(..GetRootDir(),tRootName,".pdf")
+		} else {
+			Set pdffile = outputfilename
+		}
+		if (async'=0) {
+			if tRootName="" Set lockfile = tmpdir_##class(%FileBinaryStream).NewFileName("lck",..%GetTempDir())
+			if tRootName'="" Set lockfile = ..MakeFileName(..GetRootDir(),tRootName,".lck")
+		}
+
+
+		#; Command line callout to FOP or XEP
+		s ^test("pdf")=xmlfile_"||"_xslfile_"||"_pdffile_"||"_logfile
+		Set tSC = ..%PerformTransform(xmlfile, xslfile, pdffile, logfile, 1, RenderServer, async, $g(lockfile), DisplayLog)
+
+#if 0 ; 11-04-11
+		If $$$ISOK(tSC),'async {
+			If DisplayLog {
+				Set oid = ##class(%CSP.StreamServer).GetOidForFile(logfile)
+			}
+			Else {
+				Set oid = ##class(%CSP.StreamServer).GetOidForFile(pdffile)
+			}
+			Set stream=##class(%Stream.Object).%Open(oid)
+			$$$SETIO("RAW")
+			Do stream.OutputToDevice()
+		}
+#else		
+		If $$$ISOK(tSC),'async,('fromGenerateReport||(DisplayLog=1)) {
+			Set stream=##class(%FileBinaryStream).%New()
+			If DisplayLog {
+				Set stream.Filename=logfile
+			}
+			Else {
+				Set stream.Filename=pdffile
+			}
+			$$$SETIO("RAW")
+			Do stream.OutputToDevice()
+		}
+#endif		
+		
+		; if in asynch mode generation of PDF is done by queuing hot JVM server which has responsibility for
+		; deleting xmlfile and xslfile.  The queing hot JVM server needs to be connected to a print management system
+		; that has the responsibilty for deleting the pdf file when renered.  No logfile is created when PDF rendering
+		; is done by hot JVM server.
+		//if ('async) do ..DeleteTempFiles(.xmlfile,.xslfile,.pdffile,.logfile,.xmlfiles,.pdfiles,0,fromGenerateReport)
+	} While (0)
+
+	Quit tSC
 ]]></Implementation>
 </Method>
 </Class>

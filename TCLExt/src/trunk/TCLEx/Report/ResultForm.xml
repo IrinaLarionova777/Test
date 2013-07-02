@@ -18,8 +18,8 @@ pUser - пользователь запустивший отчет</Description>
 <FormalSpec>pReportType:%String,pCourier:%String,pUser:%String</FormalSpec>
 <Implementation><![CDATA[
 	//s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
-	//If (pReportType'="C")&&(pReportType'="DR") Quit		// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
-	If (pReportType'="C") Quit								// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
+	If (pReportType'="C")&&(pReportType'="DR") Quit		// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
+	//If (pReportType'="C") Quit								// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
 	Set pUser=$Get(pUser)
 	// Составляем буфер с эпизодами и наборами тестов для печати
 	Kill ^||ResultForm.Episodes
@@ -74,6 +74,7 @@ pUser - пользователь запустивший отчет</Description>
 				    Do ..MakeLISReportBuf($Name(^||ResultForm.PCL(lang)),$Name(^||ResultForm.LISReport))
 				    If $Data(^||ResultForm.LISReport) {
 					    Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.Episodes(reporttype,user,qcopies)))
+					    s ^test(11)=1
 					    Do ..SaveLISReport(pCourier,user,qcopies,$Get(^||ResultForm.PCL(lang),0),$Name(^||ResultForm.LISReport))
 				    }	
 			    }
@@ -257,6 +258,7 @@ pPCLGlb - формируемый буфер с PCL командами</Descripti
 			Set language=$ListGet(languages,i)
 			If language="" Continue
 			Do ..PCLReport2Glb(epis,.testsets,0,language,$Name(@pPCLGlb@(language,epis)))
+			//m ^test("pr1",language,epis)=@pPCLGlb@(language,epis)
 			If $Data(@pPCLGlb@(language,epis)) Set @pPCLGlb@(language)=$Get(@pPCLGlb@(language))+1
 		}
 	}
@@ -364,11 +366,60 @@ pLISGlb - буфер отчета в формате ЛИС</Description>
 	Merge ^PR(repid,"PRT")=@pLISGlb@("PRT")
 	// Также необходимо запись в PR_ReportDestination (почему-то только через SQL можно добавить запись...)
 	Kill PLIST
-	set typePrinter=$select(userCall'="":"single",1:"group")
+	//set typePrinter=$select(userCall'="":"single",1:"group")
 	set user=$select(userCall="":userAuth,1:userCall)
-	//set ^test("grprint","before")=user_"*"_typePrinter_"*"_userAuth_"*"_userCall_"*"_pCourier
 	Set PLIST(3)=..getPrinter(pCourier,user) 
 	//set ^test("grprint","before2")=PLIST(3)
+	Set PLIST(4)=pQCopies 
+	Set PLIST(5)="R" 
+	Set PLIST(6)=$Piece(hor,",",1) 
+	Set PLIST(7)=$Piece(hor,",",2)
+	Set sqlcode=$$insert^LVBPRPRD(repobj.%Id())
+]]></Implementation>
+</Method>
+
+<Method name="SaveLISReportWord">
+<Description>
+Сохранить полученный отчет в User.PRReport
+Параметры:
+pCourier - код курьера
+pUser - пользователь запустивший отчет
+fileResult - имя файла для печати
+pQCopies - число копий </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCourier:%String,pUser:%String,pQCopies:%Integer,pParams:%String,pStatus:%String</FormalSpec>
+<PublicList>PLIST</PublicList>
+<Implementation><![CDATA[
+	Set repobj=##class(User.PRReport).%New()
+	Set repid=$Get(^PR)
+	If (repid="")||($Data(^PR(repid))) {
+		Set repid=$Increment(^PR)
+	}
+	Set repobj.PRPRReportID=repid
+	Set repobj.PRPRReportDR=##class(User.SSReportGeneric).%OpenId("DRP")
+	Set repobj.PRPRContentType="W"
+	Set hor=$Horolog
+	Set repobj.PRPRCreatedDate=$Piece(hor,",",1)
+	Set repobj.PRPRCreatedTime=$Piece(hor,",",2)
+	Set repobj.PRPRParameters="C\"_pCourier
+	Set repobj.PRPRREPORTPARAMETERS="C-"_pCourier_"-"_"1"
+	Set repobj.PRPRStatus=$select($get(pStatus)'="":pStatus,1:"R") 
+	set userCall=$tr($piece(pUser,$char(1),1)," ","") // пользователь, запусающий на печать (он указан при одиночной печати, при групповой, не указан)
+	set userAuth=$piece(pUser,$char(1),2) // пользователь, авторизовавший набор тестов
+	Set repobj.PRPRUserDR=##class(User.SSUser).%OpenId(userCall)
+	Set ok=repobj.%Save()
+	If 'ok {
+		;Do $system.OBJ.DisplayError(ok)
+		Quit
+	}	
+	//
+	//Merge ^PR(repid,"HDR")=@pLISGlb@("HDR")
+	set ^PR(repid,"PRT")=$get(pParams)
+	// Также необходимо запись в PR_ReportDestination (почему-то только через SQL можно добавить запись...)
+	Kill PLIST
+	//set typePrinter=$select(userCall'="":"single",1:"group")
+	set user=$select(userCall="":userAuth,1:userCall)
+	Set PLIST(3)=..getPrinter(pCourier,user) 
 	Set PLIST(4)=pQCopies 
 	Set PLIST(5)="R" 
 	Set PLIST(6)=$Piece(hor,",",1) 
@@ -470,12 +521,12 @@ pTestSets - буфер печатаемых наборов тестов
 pLanguage - язык отчета
 pEpisPCLGlb - глобал с полученными результатами в виде PCL команд</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pReportClassName:%String,pEpis:%String,&pTestSets:%String,pLanguage:%String,pEpisPCLGlb:%String]]></FormalSpec>
+<FormalSpec><![CDATA[pReportClassName:%String,pEpis:%String,&pTestSets:%String,pLanguage:%String,pEpisPCLGlb:%String,pFlagPreview:%String=""]]></FormalSpec>
 <Implementation><![CDATA[
 	
 	Set pLanguage=$Get(pLanguage)
 	Kill ^||ResultForm.Departments
-	Do ##class(TCLEx.Function.TestSet).Departments(pEpis,.pTestSets,$Name(^||ResultForm.Departments))
+	Do ##class(TCLEx.Function.TestSet).Departments(pEpis,.pTestSets,$Name(^||ResultForm.Departments),pFlagPreview)
 	// Составляем буфер результатов по отделам эпизода с разбивкой по страницам
 	Kill @pEpisPCLGlb
 	Set depcode=""
@@ -616,7 +667,8 @@ pExtension - расширение файла
 			}		
 			Set result=result_")."_pExtension
 		}	
-	}		
+	}
+	Set result=$$CorrectFileName^KSUTIL1(result,"_")	// Удаляем непечатные символы, недопустимые в имени файла меняем на знак "_"		
 	Quit result
 ]]></Implementation>
 </Method>
@@ -736,22 +788,8 @@ Id принтера</Description>
 <ProcedureBlock>0</ProcedureBlock>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
-	// при одиночной печати просто определяем принтер по пользователю, если пользователь вдруг не задан. тогда принтер по умолчанию
-	//при групповой печати - принтер определяем по курьеру
-	set printer=""
-	if $get(pCourier)'="" {
-		set printerinfo=##class(TCLEx.Function.Printer).getPrinterByCourierDRP(pCourier)
-		set printer=$piece(printerinfo,$char(0),1)
-	} 
-	if printer="" {
-		if $get(pUser)'="" {
-		    set printer=##class(TCLEx.Function.Printer).getUserDefaultPrinter(pUser)
-	    }
-	}
-	if printer="" {
-	    	set printer=##class(TCLEx.Function.Printer).DefaultPrinter()
-	}
-	quit printer
+	Set reportclassname=$$PCLResultClassName^Settings.Reports()
+	quit $ClassMethod(reportclassname,"getPrinter",pCourier, pUser)
 ]]></Implementation>
 </Method>
 
@@ -877,6 +915,7 @@ pExtraParams - дополнительные параметры формиров�
 pPDFDir - каталог, куда выгружать файл
 pOverWritePDF - если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
 pPDFFileName - по сслке возвращается имя созданного PDF файла
+pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог файлов)/флаг2 (1/0 флаг проверки log файла с другой стороны (чтения))
 Возвращаемое значение:
 Результат создания файла в формате %Status</Description>
 <ClassMethod>1</ClassMethod>
@@ -886,10 +925,6 @@ pPDFFileName - по сслке возвращается имя созданно�
 	Set pPDFFileName=""
 	Set reportclassname=$$ZenResultClassName^Settings.Reports()
 	Kill ^||ResultForm.EpisodePCL
-	Do ..PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL))
-	If '$Data(^||ResultForm.EpisodePCL) {
-		Quit $$$ERROR($$$GeneralError,"Нет данных для эпизода "_pEpis_" !")
-	}	
 	//
 	If '$$TestDirectory^KSUTIL1(pPDFDir) {
 		Quit $$$ERROR($$$GeneralError,"Не удалось создать каталог  "_pPDFDir_" !")
@@ -897,6 +932,7 @@ pPDFFileName - по сслке возвращается имя созданно�
 	//
 	Set filename=..CallEpisodeResultFileName(reportclassname,pEpis,.pTestSets,pLanguage,"pdf")
 	Set pPDFFileName=pPDFDir_"\"_filename
+	
 	If ##class(%File).Exists(pPDFFileName) {
 		If pOverWritePDF {
 			Set ok=##class(%File).Delete(pPDFFileName)
@@ -907,23 +943,11 @@ pPDFFileName - по сслке возвращается имя созданно�
 			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$GeneralError,"Не удалось сформировать очередное имя файла для  "_pPDFFileName_" !")
 		}
 	}
-	If '$Data(%request) {
-		Set %request=##class(%CSP.Request).%New()
-		Set %request.URL="/csp/"_$ZUtil(5)_"/"_..%ClassName(1)_".xml"
-		Set %request.CgiEnvs("SERVER_NAME")="127.0.0.1"
-		Set %request.Data("$CSPTOFILE",1)=1
-		//Set %request.Data("RequestId",1)=pId
-	}
-	Kill ^||ResultForm.EpisodeTable
-	Do ..PCLGlb2TableGlb($Name(^||ResultForm.EpisodePCL),$Name(^||ResultForm.EpisodeTable))
-	Set repobj=$ClassMethod(reportclassname,"%New")
-	Set repobj.Episode=pEpis
-	Set repobj.PDF=pPDF
-	Set repobj.Language=pLanguage
-	Set repobj.DataGlobal=$Name(^||ResultForm.EpisodeTable)
-	Set repobj.ExtraParams=$Get(pExtraParams)
-	Set repobj.TotalPages=..PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
-	Set ok=repobj.GenerateReport(pPDFFileName,2)
+	
+	Set reportclassnameDRP=$$DRPResultClassName^Settings.Reports()
+	set flagPreview=""
+	set ok=$ClassMethod(reportclassnameDRP,"CreateEpisodePDFReport",pEpis, pTestSets, pPDF, pLanguage, pExtraParams, pPDFFileName, flagPreview)
+	
 	If 'ok {
 		Set pPDFFileName=""
 	}	
@@ -1071,53 +1095,49 @@ pTableGlb - глобал с табличными значениями </Descript
 ]]></Implementation>
 </Method>
 
-<Method name="SaveLISReportWord">
+<Method name="CreateEmptyFile">
 <Description>
-Сохранить полученный отчет в User.PRReport
-Параметры:
-pCourier - код курьера
-pUser - пользователь запустивший отчет
-fileResult - имя файла для печати
-pQCopies - число копий </Description>
+Create empty file</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pCourier:%String,pUser:%String,pQCopies:%Integer,pParams:%String,pStatus:%String</FormalSpec>
-<PublicList>PLIST</PublicList>
+<FormalSpec>pFile</FormalSpec>
+<ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-	Set repobj=##class(User.PRReport).%New()
-	Set repid=$Get(^PR)
-	If (repid="")||($Data(^PR(repid))) {
-		Set repid=$Increment(^PR)
+	set ok=$$$OK
+	try {
+		if '##class(%File).Exists(pFile) {
+		    set file=##class(%File).%New(pFile)
+		    $$$ThrowOnError(file.Open("WN"))
+		    $$$ThrowOnError(file.%Save())
+		    do file.Close()
+		    //Set stream=##class(%FileCharacterStream).%New()
+		    //$$$ThrowOnError(stream.WriteLine(""))
+	        //Set stream.Filename=pFile
+		    //$$$ThrowOnError(stream.SaveStream())
+		}
+	} catch(exception) {
+		set ok=exception.AsStatus()
 	}
-	Set repobj.PRPRReportID=repid
-	Set repobj.PRPRReportDR=##class(User.SSReportGeneric).%OpenId("DRP")
-	Set repobj.PRPRContentType="W"
-	Set hor=$Horolog
-	Set repobj.PRPRCreatedDate=$Piece(hor,",",1)
-	Set repobj.PRPRCreatedTime=$Piece(hor,",",2)
-	Set repobj.PRPRParameters="C\"_pCourier
-	Set repobj.PRPRREPORTPARAMETERS="C-"_pCourier_"-"_"1"
-	Set repobj.PRPRStatus=$select($get(pStatus)'="":pStatus,1:"R") 
-	set userCall=$tr($piece(pUser,$char(1),1)," ","") // пользователь, запусающий на печать (он указан при одиночной печати, при групповой, не указан)
-	set userAuth=$piece(pUser,$char(1),2) // пользователь, авторизовавший набор тестов
-	Set repobj.PRPRUserDR=##class(User.SSUser).%OpenId(userCall)
-	Set ok=repobj.%Save()
-	If 'ok {
-		;Do $system.OBJ.DisplayError(ok)
-		Quit
-	}	
-	//
-	//Merge ^PR(repid,"HDR")=@pLISGlb@("HDR")
-	set ^PR(repid,"PRT")=$get(pParams)
-	// Также необходимо запись в PR_ReportDestination (почему-то только через SQL можно добавить запись...)
-	Kill PLIST
-	//set typePrinter=$select(userCall'="":"single",1:"group")
-	set user=$select(userCall="":userAuth,1:userCall)
-	Set PLIST(3)=..getPrinter(pCourier,user) 
-	Set PLIST(4)=pQCopies 
-	Set PLIST(5)="R" 
-	Set PLIST(6)=$Piece(hor,",",1) 
-	Set PLIST(7)=$Piece(hor,",",2)
-	Set sqlcode=$$insert^LVBPRPRD(repobj.%Id())
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetNameLockFile">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFile</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if $get(pFile)="" quit ""
+    quit $piece(pFile,".",1,$length(pFile,".")-1)_".lck"
+]]></Implementation>
+</Method>
+
+<Method name="GetNameLockFileEMC">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFile</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if $get(pFile)="" quit ""
+    quit $piece(pFile,".",1,$length(pFile,".")-1)_".lcke"
 ]]></Implementation>
 </Method>
 </Class>
