@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFswingSaxoWeber" type="INT" languagemode="0"><![CDATA[
+MIFswingSaxoWeber(mi) ; SwingSaxo (DiaMed) - Russion Bion
+    //(import in LIS file with results)
+    // прибор добавляет записи в один файл, прога 
+	New (mi)
+	Set mi=$Get(mi) 
+	If '$Length(mi) Quit
+	Kill ^TMIF(mi,10) 
+	Set $ZTrap="err^MIF000"
+	If $$select^LVBMIMP(mi) q
+	For j=1:1:PLIST Set @("par"_j)=PLIST(j)
+	;
+	Set basedir=PLIST(12) if basedir="" set basedir=PLIST(20)
+	set len=$length(basedir)
+	if $tr($extract(basedir,len),"/","\")="\" set basedir=$extract(basedir,1,len-1)
+	Set indir=basedir_"\Input"
+	Set outdir=basedir_"\Output"
+	Set archivdir=basedir_"\Archive"
+	Set errdir=basedir_"\Error"
+ 	;
+	If '##class(%File).DirectoryExists(basedir) {
+		Do message^MIF000(mi,"Instrument's directory is unavailable") 
+		Quit
+	}	
+ 
+    for dir=indir,outdir,archivdir,errdir {
+	    If '##class(%File).DirectoryExists(dir) {
+		    if '##class(%File).CreateDirectory(dir) {
+			    Do message^MIF000(mi,"Can not create directory "_$tr(dir,"\","/")) quit
+		    }
+	    }
+    }
+	If $$start^MIF000() Quit
+ 	Do trace^MIF000(mi,"Started job="_$Job,"DEBUG")
+ 	;
+	For  {  
+		Do Main(mi,indir,outdir,archivdir,errdir) 
+		If $$stop^MIF000() Quit
+	}
+ 	Do trace^MIF000(mi,"Stopped job="_$Job,"DEBUG")
+	Quit
+ 
+Main(mi,pInDir,pOutDir,pArchivDir,pErrDir) [par10] public {
+ 	Set oldtime=$ZHorolog
+ 	Do LoadResultsFromMachine(mi,pInDir,pArchivDir,pErrDir)
+	Set delta=($ZHorolog-oldtime)\1
+	If delta<15 Hang 15-delta 
+} 
+
+ // Чтение файлов с результатами из прибора и запись результатов в базу
+LoadResultsFromMachine(mi,pInDir,pArchivDir,pErrDir) [mi,par10] public {
+	Set rs=##class(%ResultSet).%New("%File:FileSet")
+	Set ok=rs.Execute(pInDir,"*.*")  
+	If 'ok Quit
+	While rs.%Next() { 
+ 		Do LoadResultsFromFile(mi,$Get(rs.Data("Name")),pArchivDir,pErrDir) 
+	}
+}
+ // Чтение одного файла с результатами из прибора и запись результатов в базу
+LoadResultsFromFile(mi,pFileName,pArchivDir,pErrDir) [mi,par10,par11] public {
+	// переносим файл в текущую директорию
+	Set dir=$zconvert(##class(%File).GetDirectory(pFileName),"L")  
+ 	Set name=$Piece($zconvert(pFileName,"L"),dir,2)
+ 	Set newname=pArchivDir_"\"_name
+ 	Set newname=$$ArchiveFileName^KSUTIL1(newname)
+	Set ok=##class(%File).Rename(pFileName,newname)
+	if 'ok Do trace^MIF000(mi,"не удалось перенести файл "_pFileName_" в текущую директорию","H<--M") quit
+
+	//обрабатываем файл
+	Kill ^||results,^||datetime
+	Set ok=1,delimeter="|"
+
+	Set stream=##class(%FileCharacterStream).%New()
+	Set stream.Filename=newname
+	Set stream.TranslateTable="CP1251"
+ 	While 'stream.AtEnd {
+		Set line=stream.ReadLine()
+		;Set line=$Translate(line," "_$Char(9))
+		if line="" continue
+		set containernumber=$piece(line,delimeter,1) ;set epis=$$DeleteLeftAndRightSpaces^KSUTIL1($extract(epis,3,$length(epis)))
+		Set epis=$$Episode4Container^KSMIF000(containernumber)
+		if epis="" continue
+		if $piece(line,delimeter,5)'="" continue
+		set resstr=$piece(line,delimeter,4)
+		set isresult=0
+		for i=1:1:$length(resstr," ") {
+			set res=$piece(resstr," ",i)
+		    set test=$extract(res,3,4)
+		    set val=$extract(res,1,2)
+		    If epis'="",test'="",val'="" {
+		    	Set ^||results(epis)=$get(^||results(epis))_test_$Char(par10)_""""_val_""""_$Char(par11)
+		    	set isresult=1
+		    }
+		}
+		set datetime=$piece(line,delimeter,2)
+		if (datetime'="") && (isresult=1) && ('$data(^||datetime(epis))) {
+				set datetime=$piece(line,delimeter,2)
+				set date=$tr($piece(datetime," ",1),".","/")	set year=$piece(date,"/",3) if $length(year)=2 set year="20"_year set $piece(date,"/",3)=year
+				set time=$piece(datetime," ",2)
+				if datetime'="" set ^||datetime(epis)=$select(date'="":$zdateh(date,4),1:"")_"/"_$select(time'="":$ztimeh(time,1),1:"")
+		}
+
+ 	}
+ 	
+	Set epis=""
+ 	For  {
+ 			Set epis=$Order(^||results(epis),1,result)
+ 			If epis="" Quit
+ 			set date="",time=""
+ 			set datetime=$get(^||datetime(epis)) if datetime'="" set date=$piece(datetime,"/",1),time=$piece(datetime,"/",2)
+  			Do file^MIF000(mi,,epis,,result,date,time)
+  			do trace^MIF000(mi,"Saved result (Epis="_epis_",Result="_result_")","H<--M")
+ 	}	
+
+ 	Set stream=""
+  
+ 	If (ok) {
+		Do trace^MIF000(mi,"Done file "_newname,"H<--M")
+  	} Else {
+		Do trace^MIF000(mi,"Error during processing file "_newname,"H<--M")
+	 	Set ok2=##class(%File).Rename(newname,pErrDir_"\"_name)
+    	If ok2 {
+	    	Do trace^MIF000(mi,"Renamed file "_newname_" to "_pErrDir_"\"_name,"H<--M")
+        } Else {
+		    Do trace^MIF000(mi,"Error during renaming file "_newname_" to "_pErrDir_"\"_name,"H<--M")
+  	    }		
+  	}
+}	
+
+
+]]></Routine>
+</Export>
