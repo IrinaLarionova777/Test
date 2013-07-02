@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Report.DRPEMC">
+<Description>
+Создание файлов с Doctor Report (DRP) специфические для клиента функции</Description>
+<Super>%RegisteredObject</Super>
+<TimeCreated>62990,56005.173156</TimeCreated>
+
+<Method name="CreateEpisodePDFReport">
+<Description>
+Создание файла PDF отчета для резултатов эпизода
+Параметры:
+pEpis - Id эпизода
+pTestSets - буфер с Id наборов тестов (если пусто, все авторизованные)
+pPDF - признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+pLanguage - язык результата (2-ENG, иначе - RUS )
+pExtraParams - дополнительные параметры формироваия отчета в формате $ListBuild
+pPDFDir - каталог, куда выгружать файл
+pOverWritePDF - если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+pPDFFileName - по сслке возвращается имя созданного PDF файла
+pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог файлов)/флаг2 (1/0 флаг проверки log файла с другой стороны (чтения))
+Возвращаемое значение:
+Результат создания файла в формате %Status</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pPDF:%Boolean,pLanguage:%String,pExtraParams:%String,pPDFDir:%String,pOverWritePDF:%Boolean,&pPDFFileName:%String,pFlagLogFiles:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set pFlagLogFiles=$get(pFlagLogFiles,"1/1")
+	set flagLogFileCreate=+$piece(pFlagLogFiles,"/",1)  
+	set flagLogFileTest=+$piece(pFlagLogFiles,"/",2)
+	Set pPDFFileName=""
+	Set reportclassname=$$ZenResultClassName^Settings.Reports()
+	Kill ^||ResultForm.EpisodePCL
+	Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL))
+	If '$Data(^||ResultForm.EpisodePCL) {
+		Quit $$$ERROR($$$GeneralError,"Нет данных для эпизода "_pEpis_" !")
+	}	
+	//
+	If '$$TestDirectory^KSUTIL1(pPDFDir) {
+		Quit $$$ERROR($$$GeneralError,"Не удалось создать каталог  "_pPDFDir_" !")
+	}	
+	//
+	Set filename=##class(TCLEx.Report.ResultForm).CallEpisodeResultFileName(reportclassname,pEpis,.pTestSets,pLanguage,"pdf")
+	Set pPDFFileName=pPDFDir_"\"_filename
+	If ##class(%File).Exists(pPDFFileName) {
+		If pOverWritePDF {
+			Set ok=##class(%File).Delete(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$GeneralError,"Не удалось удалить существующий файл "_pPDFFileName_" !")
+
+		} Else {	
+			Set pPDFFileName=$$ArchiveFileName^KSUTIL1(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$GeneralError,"Не удалось сформировать очередное имя файла для  "_pPDFFileName_" !")
+		}
+	}
+	
+	//Проверка существования lock файла
+	if flagLogFileTest=1 {
+		set fileLockNameEMC=##class(TCLEx.Report.ResultForm).GetNameLockFileEMC(pPDFFileName)
+	    if ##class(%File).Exists(fileLockNameEMC) {
+		    Quit $$$ERROR($$$GeneralError,"Не удалось сформировать файл "_pPDFFileName_", так как существует lock файл "_fileLockNameEMC_" !")
+	    }
+	}
+	
+	Kill ^||ResultForm.EpisodeTable
+	Do ##class(TCLEx.Report.ResultForm).PCLGlb2TableGlb($Name(^||ResultForm.EpisodePCL),$Name(^||ResultForm.EpisodeTable))
+	set totalpages=##class(TCLEx.Report.ResultForm).PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
+	set params=$lb("",pEpis,pPDF,pLanguage,$Name(^||ResultForm.EpisodeTable),pExtraParams,totalpages)
+	
+	// create lock file
+	if flagLogFileCreate=1 {
+		set fileLockName=##class(TCLEx.Report.ResultForm).GetNameLockFile(pPDFFileName)
+	    set ok=##class(TCLEx.Report.ResultForm).CreateEmptyFile(fileLockName)
+	    If 'ok {
+		   Set pPDFFileName=""
+		   set ok=$System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось создать lck файл "_fileLockName_"."),ok)
+		   set iii=$i(^log("CreateFile",pEpis))
+		   s ^log("CreateFile",pEpis,iii)="Не удалось создать lck файл "_$g(fileLockName)_"."
+		   Quit ok 
+	    }
+	    // !!! временно
+	    set iii=$i(^log("CreateFile",pEpis))
+	    s ^log("CreateFile",pEpis,iii)=$zts_" Успешно сформирован lock файл "_$g(fileLockName)
+	    // !!! временно
+	}
+	
+	// create file
+	set ok=..CreateEpisodePDFReport0(reportclassname,params,pPDFFileName)
+	If 'ok {
+		Set pPDFFileName=""
+		if $get(flagLogFileCreate)=1 {
+		    set ok2=##class(%File).Delete($get(fileLockName))
+		    if 'ok2 set ok=$System.Status.AppendStatus(ok,ok2) 
+		}
+		Quit ok 
+	}
+	// !!! временно
+	set filesize=0 if filename'="" set filesize=##class(%File).GetFileSize(pPDFFileName) 
+	set iii=$i(^log("CreateFile",pEpis))
+	s ^log("CreateFile",pEpis,iii)=$zts_" Успешно сформирован файл "_$g(pPDFFileName)_" ("_filesize_" байт"_")"_$s(+filesize=0:" !!!!!",1:"")
+	// !!! временно
+	
+	// delete lock file
+	if flagLogFileCreate=1 {
+		set ok2=##class(%File).Delete(fileLockName)
+	    if 'ok2 set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_"."))
+	    // !!! временно
+	    set iii=$i(^log("CreateFile",pEpis))
+	    if ok2 s ^log("CreateFile",pEpis,iii)=$zts_" Успешно удален lock файл "_$g(fileLockName)
+	    else  s ^log("CreateFile",pEpis,iii)=$zts_" Не удалось удалить lock файл "_$g(fileLockName)
+	    // !!! временно
+	}
+	// в Медиалоге ловились файлы с 0 длиной - это наша ловушка на всякий случай
+	set filesize=##class(%File).GetFileSize(pPDFFileName)
+	if filesize'>0 {
+		set logFile=$ZUtil(12)_"LIS\!Warning!\"_##class(%File).GetFilename(pPDFFileName)_".txt"
+		Set logFile=$$ArchiveFileName^KSUTIL1(logFile)
+		set ok1=repobj.GenerateReport(logFile,2,1)
+		set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Файл "_pPDFFileName_" имеет нулевую длину. См. "_logFile_"."))
+	}
+	
+	If 'ok {
+		Set pPDFFileName=""
+	}	
+	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CreateEpisodePDFReport0">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportClassName:%String,pParams:%String,pPDFFileName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	// Запоминаем значения %request, если переменная уже заполнена
+	kill oldrequest
+	If $Data(%request) {
+		Set oldrequest("URL")=%request.URL
+		Set oldrequest("SERVER_NAME")=$Get(%request.CgiEnvs("SERVER_NAME"))
+		Set oldrequest("$CSPTOFILE")=$Get(%request.Data("$CSPTOFILE",1))
+	}
+	If '$Data(%request) {
+		Set %request=##class(%CSP.Request).%New()
+	}
+	
+	Set %request.URL="/csp/"_$ZUtil(5)_"/"_..%ClassName(1)_".xml"
+	Set %request.CgiEnvs("SERVER_NAME")="127.0.0.1"
+	Set %request.Data("$CSPTOFILE",1)=1
+	
+	Set repobj=$ClassMethod(pReportClassName,"%New")
+	Set repobj.OrderNumber=$lg(pParams,1)
+	Set repobj.Episode=$lg(pParams,2)
+	Set repobj.PDF=$lg(pParams,3)
+	Set repobj.Language=$lg(pParams,4)
+	Set repobj.DataGlobal=$lg(pParams,5)
+	Set repobj.ExtraParams=$lg(pParams,6)
+	Set repobj.TotalPages=$lg(pParams,7)
+	Set ok=repobj.GenerateReport(pPDFFileName,2)
+	
+	// Восстанавливаем %request
+	If $Data(oldrequest) {
+		Set %request.URL=$Get(oldrequest("URL"))
+		Set %request.CgiEnvs("SERVER_NAME")=$Get(oldrequest("SERVER_NAME"))
+		Set %request.Data("$CSPTOFILE",1)=$Get(oldrequest("$CSPTOFILE"))
+	}	
+	
+	quit ok
+]]></Implementation>
+</Method>
+</Class>
+</Export>
