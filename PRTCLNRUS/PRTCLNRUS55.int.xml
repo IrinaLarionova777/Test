@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS55" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS55   ; ТАТ по наборам тестов;
+ q
+ ;
+ ; Отчет CLNRUS55  +  CLNRUS55.xsl  + DLL: CLNSPARM007.clsSTART
+ ; 
+ ; идем по индексу ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ; и достаем результаты для выбранных наборов тестов за заданный период
+ ; 
+ ; Используется сервисная программа ^UDFSPARM001, ^REPORTSPB
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par             
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 3000: 200 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 4100: 200 : 1100 : 300 : t:True"
+ ; ---
+ ; список наборов тестов
+ s @Par@("PAR3a")="Label   : 100 : 600 : 3000 : 300 : Наборы тестов"
+ ; проверяем ограничение по отделам
+ k DEP s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP") k ^TEMP($J,"DEP")
+ s cnt=0,dep="" f  s dep=$O(^TTABi("DEP-TS",dep)) q:dep=""  do:$D(DEP(dep))   ;$$ValUser^LVBCTDEP(USER,dep,1)
+ . s num="" f  s num=$O(^TTABi("DEP-TS",dep,num)) q:num=""  do
+ .. s ts="" f  s ts=$O(^TTABi("DEP-TS",dep,num,ts)) q:ts=""  do
+ ... i $$select^LVBCTTS(ts,"Y",USER) quit
+ ... i $P($G(^TTAB("TS",ts)),"\",12)'="Y" quit    ;CTTS ActiveFlag
+ ... s cnt=$i(cnt)
+ ... s @Par@("PAR3",cnt)=ts_"   "_$P($G(^TTAB("TS",ts)),"\",1) 
+ s @Par@("PAR3","0")="* Все Наборы тестов"
+ s @Par@("PAR3")="ListBox : 100 : 900 : 7900 : 3600 : :True: 0 : Checkbox  "   
+ ; ---
+ ; список Местоположений пациентов (CT_Hospital)
+ s @Par@("PAR26a")="Label   : 100 : 4500 : 2300 : 300 : Местоположение пациента:"
+ s cnt=0,code="" f  s code=$O(^TTAB("RH",code)) q:code=""  d:code'=$C(1)
+ . s cnt=cnt+1
+ . s @Par@("PAR26",code)=code_" - "_$P($G(^TTAB("RH",code)),"\",1) 
+ if cnt>0 s @Par@("PAR26","0")="* Все местоположения"
+ s default=$S(cnt>1:0,1:$O(@Par@("PAR3","")))
+ s @Par@("PAR26")="ComboBox: 2300 : 4500 : 5500 : 300 : :True: "_default_" :List"         ;Standart
+ ; ---
+ ; настройка формы
+ s @Par@("form")="Отчет о ТАТ по наборам тестов ("_USER_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz  ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR  ;@@@
+ ; сохраняем для обработки входных данных (списка наборов тестов)
+ k MasForm m MasForm=^TEMP($j) 
+ k ^TEMP($J)
+ s Mas="^TEMP($J,""START"")"
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ // data 
+ set sc=##class(TCLEx.ReportZEN.TurnaroundTimeData).getData(LocPat,"",dateFrom,dateTo,.MasTS,"","")
+ if 'sc {
+	 k ^TEMP($zn,$J),^TEMP($j)
+	 quit "100^"_$System.Status.GetErrorText(sc) 
+ }
+ 
+ if '$D(^||TMP($j,"Report")) {
+	 k ^TEMP($zn,$J),^TEMP($j)
+	 quit "100^Нет данных!" 
+ }
+ d XML("CLNRUS55.xsl")
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ set dateFrom=PAR1,dateTo=PAR2
+ ; Список доступных отделов
+ k DEP s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ ; Наборы тестов
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Набор тестов>" q
+ set parGroupName="Наборы тестов:"
+ k MasTS,MasDEP s parGroupString=""
+ f i=1:1:$L(PAR3,$C(1)) s cnt=$P(PAR3,$C(1),i) d:cnt'="" 
+ . i cnt="0" s MasTS("*")="" quit     ;* Все
+ . s ts=$P($G(MasForm("PAR3",cnt))," ",1) q:ts=""
+ . s MasTS(ts)=$P($G(^TTAB("TS",ts)),"\",1)
+ . s parGroupString=parGroupString_$S(parGroupString="":"",1:", ")_ts_"-"_$G(MasTS(ts)) ;собираем значения в одну строку (для шапки)
+ i $D(MasTS("*")) s parGroupName="Все доступные наборы тестов",ts="" f  s ts=$O(^TTAB("TS",ts)) q:ts=""  do
+ . i $$select^LVBCTTS(ts,"Y",USER) quit
+ . i $P($G(^TTAB("TS",ts)),"\",12)'="Y" quit    ;CTTS ActiveFlag
+ . q:'$D(DEP($e(ts,1)))
+ . s MasTS(ts)=""
+ i '$D(MasTS)="" s MSGERROR="100^Не определено значение <Набор тестов>" q
+ ; местоположение пациента
+ s LocPat=$G(PAR26) s:LocPat=0 LocPat=""    ;* Все
+ ; ---
+ quit
+ ;------------------------------------------------
+XML(nameXSLfile)  ; обработка данных...
+ if $get(nameXSLfile)="" set nameXSLfile="CLNRUS55.xsl"
+ ; Формирование XML...
+ S MasO="^TEMP($J,""XML"")"
+ set group="",nn=0
+ for {
+	 set group=$order(^||TMP($j,"Report",group)) if group="" quit
+	 set rec=$get(^(group))
+     set nn=nn+1
+     set @MasO@("User",1,"Next",nn,"DateAuth")=$TR($$extdate2^SSUTIL4(group),"/",".")						
+     set @MasO@("User",1,"Next",nn,"TotalCount")=$piece(rec,"\",1)
+     set @MasO@("User",1,"Next",nn,"Mean")=$piece(rec,"\",2)
+     set @MasO@("User",1,"Next",nn,"Median")=$piece(rec,"\",3)
+     set @MasO@("User",1,"Next",nn,"Percentile75")=$piece(rec,"\",6)
+     set @MasO@("User",1,"Next",nn,"Percentile90")=$piece(rec,"\",4)
+ }
+ ;
+ ; общие итоги по отчету
+ set rec=$get(^||TMP($j,"Report"))
+ set @MasO@("User",1,"Itog_TotalCount")=$piece(rec,"\",1)
+ set @MasO@("User",1,"Itog_Mean")=$piece(rec,"\",2)
+ set @MasO@("User",1,"Itog_Median")=$piece(rec,"\",3)
+ set @MasO@("User",1,"Itog_Percentile75")=$piece(rec,"\",6)
+ set @MasO@("User",1,"Itog_Percentile90")=$piece(rec,"\",4)
+ ;
+ ; шапка
+ s @MasO@("User",1,"NameReport")="Отчет о времени выполнения исследований (TAT)"
+ S @MasO@("User",1,"DateFrom")=$TR($$extdate2^SSUTIL4(dateFrom),"/",".")
+ S @MasO@("User",1,"DateTo")=$TR($$extdate2^SSUTIL4(dateTo),"/",".")
+ S @MasO@("User",1,"NameGroup")=$get(parGroupName)
+ S @MasO@("User",1,"StringGroup")=$G(parGroupString) 
+ S @MasO@("User",1,"PatLocation")=$S($G(LocPat)="":"",1:"("_LocPat_") "_$P($G(^TTAB("RH",LocPat)),"\",1))
+  //s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ;
+ //kill ^zz M ^zz=@MasO     ;@@@
+ ;
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),nameXSLfile,USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ;
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_"^EXCEL"  ;^WINWORD"  ;^EXCEL"  ;^EXPLORER"
+ quit
+
+]]></Routine>
+</Export>

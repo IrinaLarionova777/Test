@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS56" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS56   ; ТАТ по рабочим группам наборов тестов;
+ q
+ ;
+ ; Отчет CLNRUS56  +  CLNRUS56.xsl  + DLL: CLNSPARM007.clsSTART
+ ; 
+ ; идем по индексу ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ; и достаем результаты для выбранных наборов тестов за заданный период
+ ; 
+ ; Используется сервисная программа ^UDFSPARM001, ^REPORTSPB
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par             
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 3000: 200 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 4100: 200 : 1100 : 300 : t:True"
+ ; ---
+ ; список рабочих групп наборов тестов
+ s @Par@("PAR3a")="Label   : 100 : 600 : 3000 : 300 : Группы наборов тестов"
+ set default=""
+ s @Par@("PAR3")="ComboBox: 100 : 900 : 7900 : 3600 : :True: "_default_" :List" ;Standart
+ ; проверяем ограничение по отделам
+ k DEP s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP") k ^TEMP($J,"DEP")
+ set grp="",cnt=0
+ for {
+    set grp=$order(^TTAB("GR",grp)) if grp="" quit
+    set ts="",isTestSet=0
+    for {
+	    set ts=$order(^TTAB("GR",grp,"TS",ts)) if ts="" quit
+	    if $D(DEP($e(ts,1))) set isTestSet=1 quit
+    }
+    if isTestSet=1 {
+	    set cnt=cnt+1
+        s @Par@("PAR3",grp)=$P($G(^TTAB("GR",grp)),"\",1) 	 
+    }
+ }
+ ; ---
+ ; список Местоположений пациентов (CT_Hospital)
+ s @Par@("PAR26a")="Label   : 100 : 1500 : 2300 : 300 : Местоположение пациента:"
+ s cnt=0,code="" f  s code=$O(^TTAB("RH",code)) q:code=""  d:code'=$C(1)
+ . s cnt=cnt+1
+ . s @Par@("PAR26",code)=code_" - "_$P($G(^TTAB("RH",code)),"\",1) 
+ if cnt>0 s @Par@("PAR26","0")="* Все местоположения"
+ s default=$S(cnt>1:0,1:$O(@Par@("PAR3","")))
+ s @Par@("PAR26")="ComboBox: 2300 : 1500 : 5500 : 300 : :True: "_default_" :List"         ;Standart
+ ; ---
+ ; настройка формы
+ s @Par@("form")="Отчет о ТАТ по наборам тестов ("_USER_"):500:300:Формиров.:Выход"
+ //k ^test(1) m ^tets(1)=@Par
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz  ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR  ;@@@
+ ; сохраняем для обработки входных данных (списка наборов тестов)
+ k MasForm m MasForm=^TEMP($j) 
+ k ^TEMP($J)
+ s Mas="^TEMP($J,""START"")"
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ // data 
+ set sc=##class(TCLEx.ReportZEN.TurnaroundTimeData).getDataGroup(LocPat,"",dateFrom,dateTo,.MasTS,"")
+ if 'sc {
+	 k ^TEMP($zn,$J),^TEMP($j)
+	 quit "100^"_$System.Status.GetErrorText(sc) 
+ }
+ if '$D(^||TMP($j,"Report")) quit MSGERROR="100^Нет данных!"
+ 
+ d XML^PRTCLNRUS55("CLNRUS56.xsl")
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ set dateFrom=PAR1,dateTo=PAR2
+ ; Список доступных отделов
+ k DEP s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ ; Группы наборов тестов
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Группа наборов тестов>" q
+ set parGroupName="Группа наборов тестов:"
+ set parGroupString=$piece($get(^TTAB("GR",PAR3)),"\",1)_" ("
+ k MasTS 
+ set ts=""
+ for {
+    set ts=$order(^TTAB("GR",PAR3,"TS",ts)) if ts="" quit
+    q:'$D(DEP($e(ts,1)))
+    set MasTS(ts)=""	 
+    set parGroupString=parGroupString_ts_"-"_$piece($get(^TTAB("TS",ts)),"\",1)_","
+ }
+ set len=$length(parGroupString)
+ set $e(parGroupString,len)=")"
+ i '$D(MasTS)="" s MSGERROR="100^Нет доступных наборов тестов" q
+ ; местоположение пациента
+ s LocPat=$G(PAR26) s:LocPat=0 LocPat=""    ;* Все
+ ; ---
+ quit
+
+]]></Routine>
+</Export>
