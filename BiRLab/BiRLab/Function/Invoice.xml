@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="BiRLab.Function.Invoice">
+<Super>%RegisteredObject</Super>
+<TimeCreated>62816,37157.185162</TimeCreated>
+
+<Method name="GetPriceEpisodeItem">
+<Description><![CDATA[
+input:
+  pEpisode - номер эпизода from EP_VisitNumber->EPVIS_VisitNumber
+  pItem - EP_VisitTestSet - >VISTS_TestSet_DR
+  pDate - дата, на которую ищем цену
+output: 
+  price As %String (может быть "")
+  pCito - 
+  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String,pPayment:%String="",pTestsetNpp:%String="1"]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set price="",pError="",pCito=""
+	try {
+		// по данным из BiRLab_Data.InvoiceEpisodeItem
+        set price=..GetPriceEpisodeItem0(pEpisode, pItem, pDate, .pCito, .pError, pTestsetNpp) 
+        if (pError="") quit
+	    
+	    set codePayer="",codeHospital="",citoEpis="",citoItem="",codePayerItem=""
+	    // по данным из Trak
+		&sql(SELECT VISTS_ParRef->EPVIS_PaymentCode_DR,VISTS_ParRef->EPVIS_HospitalCode_DR,VISTS_ParRef->EPVIS_PriorityCode_DR,
+		     VISTS_Priority_DR,VISTS_PaymentCode_DR 
+             INTO :codePayer,:codeHospital, :citoEpis, :citoItem, :codePayerItem
+             FROM SQLUser.EP_VisitTestSet
+             WHERE (VISTS_ParRef ->EPVIS_VisitNumber=:pEpisode) and (VISTS_TestSet_DR=:pItem)
+             )
+        if pPayment'="" {
+	        set codePayer=pPayment 
+        } else {
+	        if (codePayer="")&&(codePayerItem'="") set codePayer=codePayerItem 
+            set codePayerLpu=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(codeHospital)
+            if codePayerLpu'="" set codePayer=codePayerLpu  
+        } 
+		if (SQLCODE'=0)||(codeHospital="")||(codePayer="") {
+			    set price="",pCito=""
+			    if codeHospital="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не определено ЛПУ у эпизода "_pEpisode_" в EP_VisitNumber")) quit
+			    if codePayer="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не определен плательщик у эпизода "_pEpisode_" в EP_VisitNumber")) quit
+		        $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найден эпизод "_pEpisode_" в EP_VisitNumber"))
+		} 
+		else {
+			    set codePaymentCategory=1 //##class(BiRLab.CT.PaymentCategory).%OpenId(1)   
+		}
+	    
+	    set pCito=""
+	    if citoEpis'="" set pCito=citoEpis
+	    if citoItem'="" set pCito=citoItem
+	     
+    	set price=..GetPrice(codePayer, codeHospital, codePaymentCategory, pItem, pDate, pCito, .pError)   
+	   	if pError'="" set price="" 
+	} 
+	catch(exception) {
+		set price=""
+		set pCito=""
+		set pError=$System.Status.GetErrorText(exception.AsStatus())
+	}  
+	quit price
+]]></Implementation>
+</Method>
+
+<Method name="GetPriceEpisodeItemOld">
+<Description><![CDATA[
+input:
+  pEpisode - номер эпизода from EP_VisitNumber->EPVIS_VisitNumber
+  pItem - EP_VisitTestSet - >VISTS_TestSet_DR
+  pDate - дата, на которую ищем цену
+output: 
+  price As %String (может быть "")
+  pCito - 
+  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set price="",pError="",pCito=""
+	try {
+		// по данным из BirLab
+        set price=..GetPriceEpisodeItem0(pEpisode, pItem, pDate, .pCito, .pError) 
+        if (pError="") quit
+	    
+	    set codePayer="",codeHospital="",citoEpis="",citoItem="",codePayerItem=""
+	    // по данным из Trak
+		&sql(SELECT VISTS_ParRef->EPVIS_PaymentCode_DR,VISTS_ParRef->EPVIS_HospitalCode_DR,VISTS_ParRef->EPVIS_PriorityCode_DR,
+		     VISTS_Priority_DR,VISTS_PaymentCode_DR 
+             INTO :codePayer,:codeHospital, :citoEpis, :citoItem, :codePayerItem
+             FROM SQLUser.EP_VisitTestSet
+             WHERE (VISTS_ParRef ->EPVIS_VisitNumber=:pEpisode) and (VISTS_TestSet_DR=:pItem)
+             )
+             
+        if (codePayer="")&&(codePayerItem'="") set codePayer=codePayerItem    
+		if (SQLCODE'=0)||(codeHospital="")||(codePayer="") {
+			    set price="",pCito=""
+			    if codeHospital="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не определено ЛПУ у эпизода "_pEpisode_" в EP_VisitNumber")) quit
+			    if codePayer="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не определен плательщик у эпизода "_pEpisode_" в EP_VisitNumber")) quit
+		        $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найден эпизод "_pEpisode_" в EP_VisitNumber"))
+		} 
+		else {
+			    set codePaymentCategory=1 //##class(BiRLab.CT.PaymentCategory).%OpenId(1)   
+		}
+	    
+	    set pCito=""
+	    if citoEpis'="" set pCito=citoEpis
+	    if citoItem'="" set pCito=citoItem
+	     
+    	set price=..GetPrice(codePayer, codeHospital, codePaymentCategory, pItem, pDate, pCito, .pError)   
+	   	if pError'="" set price="" 
+	} 
+	catch(exception) {
+		set price=""
+		set pCito=""
+		set pError=$System.Status.GetErrorText(exception.AsStatus())
+	}  
+	quit price
+]]></Implementation>
+</Method>
+
+<Method name="GetPriceEpisodeItem0">
+<Description><![CDATA[
+input:
+  pEpisode - номер эпизода from BiRLab_Data.Episode->Episode (EP_VisitNumber->EPVIS_VisitNumber)
+  pItem - BiRLab_Data.EpisodeItem->Item->Code (EP_VisitTestSet - >VISTS_TestSet_DR)
+  pDate - дата, на которую ищем цену
+output: 
+  price As %String (может быть "")
+  pCito - 
+  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String,pTestsetNpp:%String="1"]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set price="",cito="",pError="",pCito=""
+	try {
+		// смотрим, выставлен ли уже счет 
+		/*
+		set idEpisodeItem=""
+		&sql(select ID into :idEpisodeItem 
+	         from BiRLab_Data.EpisodeItem where (Episode->Episode=:pEpisode) and (Item->Code=:pItem) 
+	    )
+	    if (SQLCODE=0) {
+	       &sql(select Amount,Cito into :price,:cito from BiRLab_Data.InvoiceEpisodeItem where (EpisodeItem=:idEpisodeItem) )
+	       // если счет выставлен, то уже есть цена
+	       if (SQLCODE=0) {
+		      set pCito=cito
+		      quit 
+	       }
+	      */ 
+        set testsetid=pEpisode_"||"_pItem_"||"_pTestsetNpp
+	    &sql(select Amount,Cito into :price,:cito from BiRLab_Data.InvoiceEpisodeItem
+           where EpisodeItem->Episode->Episode=:pEpisode 
+           and EpisodeItem->IdEPVisitTestSet=:testsetid 
+           and Status=1 and InvoiceEpisode->Invoice->Status<>6
+        )
+        if (SQLCODE=0) {
+		      set pCito=cito
+		      quit 
+	    }
+	    
+		set codePayer="",codeHospital="",codePaymentCategory="",dateAuth="",citoEpis="",citoItem="",id=""
+        /*
+	    &sql(select Episode->Payer->Code,Episode->Hospital->Code,Episode->PaymentCategory->Code,Episode->DateOfAuthorization,
+	         Episode->CITO, CITO 
+	         into :codePayer,:codeHospital,:codePaymentCategory,:dateAuth,:citoEpis,:citoItem 
+	         from BiRLab_Data.EpisodeItem where (Episode->Episode=:pEpisode) and (Item->Code=pItem) 
+	    )*/
+	    &sql(select Episode->Payer->Code,Episode->Hospital->Code,Episode->PaymentCategory->Code,Episode->CITO, CITO,Episode->DateOfAuthorization 
+	         into :codePayer,:codeHospital,:codePaymentCategory,:citoEpis,:citoItem,:dateAuth 
+	         from BiRLab_Data.EpisodeItem where (Episode->Episode=:pEpisode) and (Item->Code=:pItem) 
+	    )
+	    if (SQLCODE '= 0) {
+		    $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найден эпизод "_pEpisode_"/"_pItem_" в BiRLab_Data.EpisodeItem"))
+	    }
+	    
+	    if (pDate="")&&(dateAuth'="") set pDate=dateAuth
+	    
+	    set pCito=""
+	    if citoEpis'="" set pCito=citoEpis
+	    if citoItem'="" set pCito=citoItem 
+	    
+    	//set price=..GetPrice(codePayer, codeHospital, codePaymentCategory, pItem, dateAuth, pCito, .pError) 
+    	set price=..GetPrice(codePayer, codeHospital, codePaymentCategory, pItem, pDate, pCito, .pError)   
+	   	if pError'="" set price="" 
+	} 
+	catch(exception) {
+		set price=""
+		set pCito=""
+		set pError=$System.Status.GetErrorText(exception.AsStatus())
+	}  
+	quit price
+]]></Implementation>
+</Method>
+
+<Method name="GetPrice">
+<Description><![CDATA[
+input:
+  pPayer - код плательщика (BiRLab_Data.Episode->Payer->Code)
+  pHospital -код ЛПУ (BiRLab_Data.Episode->Hospital->Code)
+  pPaymentCategory - код категории (BiRLab_Data.Episode->PaymentCategory->Code)
+  pItem - 
+  pDate - дата, на которую ищем цену
+  pCito - 
+output: 
+  price As %String (может быть "")
+  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pPayer:%String,pHospital:%String,pPaymentCategory:%String,pItem:%String,pDate:%String,pCito:%String,&pError:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set price="",pError="",pCito=""
+	try {
+		set idHPCV=..GetVersionPrice2(pPayer,pHospital,pPaymentCategory,pDate)
+		if idHPCV="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найдена версия в BiRLab.CT.HospitalPaymentCategoryVersion"))
+		
+		set pricelistid="" 
+		&sql(select PriceList->ID into :pricelistid from BiRLab_CT.HospitalPaymentCategoryVersion where ID=:idHPCV)
+		if (SQLCODE'=0)||(pricelistid="") $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найдена версия в BiRLab.CT.HospitalPaymentCategoryVersion")) 
+		
+		set plv = ..GetVersionPriceV2(pricelistid,pDate)
+		set price = ##class(BiRLab.CT.PriceListVersionDetails).GetPrice(plv,pItem)
+		
+		set coef = ##class(BiRLab.CT.HospitalPaymentCategoryVersionPriority).GetCito(idHPCV,pCito)
+		if pCito'="",+coef set price = price*coef
+	} 
+	catch(exception) {
+		set price=""
+		set pCito=""
+		set pError=$System.Status.GetErrorText(exception.AsStatus())
+	}  
+	quit price
+]]></Implementation>
+</Method>
+
+<Method name="GetVersionPrice2">
+<Description><![CDATA[
+output: BiRLab_CT.HospitalPaymentCategoryVersion->ID]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPayer,pHospital,pPaymentCategory,pDate</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set idHPC = pPayer_"||"_pHospital_"||"_pPaymentCategory
+	quit:'##class(BiRLab.CT.HospitalPaymentCategory).%ExistsId(idHPC) ""
+	&sql(
+		 select ID,ActiveFrom 
+		 	into :id,:activFrom 
+		 from BiRLab_CT.HospitalPaymentCategoryVersion
+		 where ActiveFrom<:pDate
+		 	and HospitalPaymentCategory->ID=:idHPC 
+		 	and HospitalPaymentCategory->ActiveFrom<:pDate
+		 	and (HospitalPaymentCategory->ActiveTo>:pDate or HospitalPaymentCategory->ActiveTo is NULL)
+		 Order by ActiveFrom desc
+		)
+	if (SQLCODE'=0) quit ""
+	quit id
+]]></Implementation>
+</Method>
+
+<Method name="GetVersionPriceV2">
+<Description><![CDATA[
+Текущий прайс на дату (BiRLab_CT.PriceListVersion->ID)]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPriceList,pDate</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	&sql(
+		 select ID,ActiveFrom 
+		 	into :id,:activFrom 
+		 from BiRLab_CT.PriceListVersion
+		 where PriceList->ActiveFrom<=:pDate and ( PriceList->ActiveTo>=:pDate or PriceList->ActiveTo is NULL)
+		 	and ActiveFrom<=:pDate
+		 	and PriceList->ID=:pPriceList
+		 Order by ActiveFrom desc
+		)
+	if (SQLCODE'=0) quit ""
+	quit id
+]]></Implementation>
+</Method>
+
+<Method name="TestPrice">
+<Description>
+dateFrom,dateTo format dd.mm.yyyy</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>dateFrom,dateTo</FormalSpec>
+<Implementation><![CDATA[
+	set date1=$zd(dateFrom,4)
+	set date2=$zd(dateTo,4)
+ set date=date1-1 
+ for {
+		 set date=$order(^TEPIi("AUTHORISED",date)) quit:date=""  quit:date>date2  
+		 s epis="" 
+		 for {
+			 set epis=$order(^TEPIi("AUTHORISED",date,epis)) quit:epis=""  if '$data(^TEPI(epis)) continue
+			 set rec=$get(^TEPI(epis))
+             ; плательщик (на уровне лаб.номера)
+             set payepis=$piece(rec,"\",7) set:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+             set cito=$piece(rec,"\",15) 
+             ; наборы тестов для лаб.эпизода (ограничение по отделам)
+             s ts=""
+             for  {
+	             set ts=$order(^TEPIi("AUTHORISED",date,epis,ts)) quit:ts=""  
+	             set tscnt="" 
+	             for {
+		             set tscnt=$order(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) quit:tscnt=""  
+                     Set rects=$Get(^TEPI(epis,1,ts,tscnt))
+                     ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
+                     set status=$p(rects,"\",31) if status'="A" continue
+                     ; плательщик (на уровне набора тестов)
+                     set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                     set:payment="" payment=payepis
+                     
+                     ; VISTS_UserAuthorised DR
+                     //set user=$p(rects,"\",6) if user="" continue       ;если была установлена причина невыполнения
+                     ;s:user="" user="?"
+                     ;set supressbilling=$piece(rects,"\",34) if supressbilling="Y" continue  
+                     Set billingitem=ts,authdate=$Piece(rects,"\",4)
+                     
+                     Set price1=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error) 
+                     //if error'="" set ^test("05","error",epis,billingitem)=error 
+                     
+                     set codePayer="",codeHospital="",citoEpis="",citoItem="",codePayerItem=""
+	    // по данным из Trak
+		&sql(SELECT VISTS_ParRef->EPVIS_PaymentCode_DR,VISTS_ParRef->EPVIS_HospitalCode_DR,VISTS_ParRef->EPVIS_PriorityCode_DR,
+		     VISTS_Priority_DR,VISTS_PaymentCode_DR 
+             INTO :codePayer,:codeHospital, :citoEpis, :citoItem, :codePayerItem
+             FROM SQLUser.EP_VisitTestSet
+             WHERE (VISTS_ParRef ->EPVIS_VisitNumber=:pEpisode) and (VISTS_TestSet_DR=:pItem)
+             )
+             
+        if (codePayer="")&&(codePayerItem'="") set codePayer=codePayerItem    
+		if (SQLCODE'=0)||(codeHospital="")||(codePayer="") {
+			    set price="",pCito=""
+			    if codeHospital="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не определено ЛПУ у эпизода "_pEpisode_" в EP_VisitNumber")) quit
+			    if codePayer="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не определен плательщик у эпизода "_pEpisode_" в EP_VisitNumber")) quit
+		        $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найден эпизод "_pEpisode_" в EP_VisitNumber"))
+		} 
+		else {
+			    set codePaymentCategory=1 //##class(BiRLab.CT.PaymentCategory).%OpenId(1)   
+		}
+	    
+	    set pCito=""
+	    if citoEpis'="" set pCito=citoEpis
+	    if citoItem'="" set pCito=citoItem
+	     
+    	set price2=..GetPrice(codePayer, codeHospital, codePaymentCategory, pItem, pDate, pCito, .pError)
+	             }
+             }
+		 }
+ }
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// end class
+
+]]></Content>
+</UDLText>
+</Class>
+</Export>
