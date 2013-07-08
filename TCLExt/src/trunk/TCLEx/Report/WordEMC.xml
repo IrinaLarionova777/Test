@@ -100,11 +100,11 @@
      
       $$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult))
         
-      // Печать временного файла нужное кол-во раз и его удаление
+      // Печать временного файла нужное кол-во раз и его удаление (теперь печать в java программе)
       if ($get(fileResult)'="")&&(##class(%File).Exists(fileResult)) {
-	      for ii=1:1:qCopies {
+	      //for ii=1:1:qCopies {
               //$$$ThrowOnError(..printPDF($get(fileResult),$get(pPrinterCode)))
-	      }
+	      //}
           //set okdelete=##class(%File).Delete(fileResult)   
 	      //if 'okdelete $$$ThrowOnError($$$ERROR($$$GeneralError,"Не удается удалить файл "_fileResult)) 
       }
@@ -202,14 +202,17 @@
 		For  {
 			Set lang=$Order(languages(lang)) 
 			If lang="" Quit
-			$$$ThrowOnError(##class(TCLEx.Report.WordEMC).CreatePDF(epis,testsetid,lang))
+			set ok2=##class(TCLEx.Report.WordEMC).CreatePDF(epis,testsetid,lang)
+			if 'ok2 set ok=$System.Status.AppendStatus(ok,ok2)
 		}	
 	} Else {
-		$$$ThrowOnError($$$ERROR($$$GeneralError,"Не удалось отрыть объект User.EPVisitNumber с ID="_pEpis_" !"))
+		set ok=$$$ERROR($$$GeneralError,"Не удалось отрыть объект User.EPVisitNumber с ID="_pEpis_" !")
 	}	
    } catch(exception)
   {
 	  set ok=exception.AsStatus()
+  }
+  if 'ok {
 	  Do LogStatus^KSUTIL1(..getLogDir(),ok,3,1)
   }	
   quit ok
@@ -237,7 +240,7 @@
           $$$ThrowStatus(error)   
      }
      
-     set $piece(params,$char(0),21)="" // нет фио авторизовавшего врача при формировании файла почему-то
+     //set $piece(params,$char(0),21)="" // нет фио авторизовавшего врача при формировании файла почему-то
      
      set nameFile=..getNameFileResult(epis,testset,tscnt,languageLetter)_".pdf"
      
@@ -250,7 +253,9 @@
       set $piece(params,$char(0),12)=1 // переводить fileBody doc to pdf (делаем только один раз)
       set $piece(params,$char(0),11)="" // есть фио+др
       
-      $$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult,1))
+      //$$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult,1))
+      set ok=..CreateReportWordToPDF(epis, testsetid, params, language, fileResult,1)
+      if 'ok quit 
       set filesize=0 if fileResult'="" set filesize=##class(%File).GetFileSize(fileResult)
       Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_fileResult_" ("_filesize_" байт)",1,1)
 
@@ -266,14 +271,16 @@
 	  set $piece(params,$char(0),11)="1" // нет фио+др
 	  	  
 	  //s ^test("params1")=params
-      $$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult,1))
+      //$$$ThrowOnError(..CreateReportWordToPDF(epis, testsetid, params, language, fileResult,1))
+      set ok=..CreateReportWordToPDF(epis, testsetid, params, language, fileResult,1)
+      if 'ok quit 
       set filesize=0 if fileResult'="" set filesize=##class(%File).GetFileSize(fileResult)
       Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_fileResult_" ("_filesize_" байт)",1,1)
      
    } catch(exception)
   {
 	  set ok=exception.AsStatus()
-  }	
+  }
   quit ok
 ]]></Implementation>
 </Method>
@@ -309,12 +316,21 @@ flagCreateLockFile - 0/1 - флаг создания пустого lck файл
 	    
 	    set $piece(params,$char(0),17)=..getPathToOpenOfficeForJava()
         
+        //Проверка существования lock файла EMC
+        if flagCreateLockFile=1 {
+	        set fileLockNameEMC=##class(TCLEx.Report.ResultForm).GetNameLockFileEMC(fileResult)
+	        if ##class(%File).Exists(fileLockNameEMC) {
+		        $$$ThrowOnError($$$ERROR($$$GeneralError,"Не удалось сформировать файл "_fileResult_", так как существует lock файл "_fileLockNameEMC_" !"))
+	        }
+        }
+                
         // create lock file
         if flagCreateLockFile=1 {
 	        set fileLockName=##class(TCLEx.Report.ResultForm).GetNameLockFile(fileResult)
 	        set ok=##class(TCLEx.Report.ResultForm).CreateEmptyFile(fileLockName)
 	        If 'ok {
-		       $$$ThrowOnError($System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось создать lck файл "_fileLockName_"."),ok))
+		       set ok=$System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось создать lck файл "_fileLockName_"."),ok)
+		       quit
 	        }
       	}
         
@@ -331,14 +347,22 @@ flagCreateLockFile - 0/1 - флаг создания пустого lck файл
 	    // delete lock file
 	    if flagCreateLockFile=1 {
 		    set ok=##class(%File).Delete(fileLockName)
-	        if 'ok $$$ThrowOnError($System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_"."),ok))
+	        if 'ok {
+		        set ok=$System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_"."),ok)
+		        quit 
+	        }
 	    }
     } 
     catch(exception) {
 	    set ok=exception.AsStatus()
+	    if $get(fileLockName)'="" {
+		    if ##class(%File).Exists(fileLockName) {
+			    set ok2=##class(%File).Delete(fileLockName)
+			    if 'ok2 set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_".")) 
+		    }
+	    }
 	    //s ^logError("word",$i(^logError("word")),$h)=ok
 	}
-	    
     Quit ok
 ]]></Implementation>
 </Method>
@@ -376,8 +400,10 @@ flagCreateLockFile - 0/1 - флаг создания пустого lck файл
 	    set testset=$piece(testsetid,"||",2)
 	    set tscnt=$piece(testsetid,"||",3)
         set dep=$extract(testset,1)
-        kill ^||EMC.Vals     
-	    Do ##class(TCLEx.Report.PCLEMC).CreateValuesBuf(epis,,dep,language,$Name(^||EMC.Vals))
+        kill ^||EMC.Vals   
+        kill testsets  
+        set testsets(testsetid)=""
+	    Do ##class(TCLEx.Report.PCLEMC).CreateValuesBuf(epis,.testsets,dep,language,$Name(^||EMC.Vals))
 	    //m ^test("pp")=^||EMC.Vals
 	    
 	    set $piece(params,$char(0),1)=$get(^||EMC.Vals("CompanyName"))
