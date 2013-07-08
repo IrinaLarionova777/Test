@@ -48,7 +48,9 @@ FORM(USER) new (USER) s USER=$G(USER)
 	;k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
 	;s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
 	;. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR10",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
-	kill @Par@("PAR10") do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR10")))
+	kill @Par@("PAR10") 
+	set sc=##class(BiRLab.Function.Report).GetPayersAll($name(@Par@("PAR10")))
+	;do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR10")))
 	s @Par@("PAR10","0")="* Все плательщики"
 	s @Par@("PAR10")="ListBox : 100 : 2300 : 5900 : 4000 : :True: 0 : Checkbox  "   
  ;
@@ -97,13 +99,17 @@ INIT ; инициализация входных параметров
  s FlagExcel=$S(+$G(PAR6)=1:1,1:0)
  ; Флаг "Подписать дни недели (для подсчета по ""Дням"")"
  s FlagDescWeek=+$G(PAR7) s:+$G(FlagReport)'=3 FlagDescWeek=0
-#;
+ ;
  i $G(PAR10)="" s MSGERROR="100^Не определено значение <Плательщик>" q
  k PAYMENT s PAYMENT=""
- f i=1:1:$L(PAR10,$C(1)) s pay=$P(PAR10,$C(1),i) d:pay'="" 
- . i pay="0" s PAYMENT("*")="" quit     ;* Все
- . s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
- . s PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+ set flagUseBirlab=##class(BiRLab.Function.Report).GetFlagUseBirlab()
+ for i=1:1:$L(PAR10,$C(1)) {
+		 s pay=$P(PAR10,$C(1),i) if pay="" continue 
+         i pay="0" s PAYMENT("*")="" quit     ;* Все
+         if flagUseBirlab=0 s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+         else  s PAYMENT(pay)=##class(BiRLab.Function.Report).GetPayerInfo(pay,"nameshort",1)
+         s PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+	 }
  i $D(PAYMENT("*")) s PAYMENT="*",pay="" f  s pay=$O(^TTAB("BI",pay)) q:pay=""  s PAYMENT(pay)=""
  i '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" q
 
@@ -133,7 +139,21 @@ BODY  ; обработка данных...
 		 set epis=$order(^TDAY(4,date,0,epis)) quit:epis=""  if '$Data(^TEPI(epis)) continue
 		 set rec=$get(^TEPI(epis))
          ; плательщик (на уровне лаб.номера)
-         s payepis=$p(rec,"\",7) s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
+         set payment=""
+		 // при использовании BiRLab плательщик определяется по коду ЛПУ (и только на уровне EPVisitNumber) (поле EPVIS_PaymentCode_DR пусто)
+		 set hospitalcode=$piece(rec,"\",20)
+		 set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
+		 // для эпизодов, которые были до внедрения BiRLab
+         set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
+             
+         set flagBiRLab=0 
+         if (payepis="")&&(payepisnew'="") {
+	            set flagBiRLab=1
+	            set payment=payepisnew
+	            if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+         }
+         if payepis="" set payepis="?"  ;если был зарегистрирован через LT
+         
          set cito=$piece(rec,"\",15) 
          kill specimens
          s ts=""
@@ -149,11 +169,14 @@ BODY  ; обработка данных...
                  ;If (dept="")||('$Data(DEP(dept))) continue
                  ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
                  //s status=$p(rects,"\",31) if status'="A" continue 
-                 #;     плательщик (на уровне набора тестов)
-                 s payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
-                 s:payment="" payment=payepis
-                 ; проверяем ограничение по плательщику
-                 if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+                 if flagBiRLab=0 {
+	                     ; плательщик (на уровне набора тестов)
+                         set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                         set:payment="" payment=payepis
+                         ; проверяем ограничение по плательщику
+                         if PAYMENT'="*",'$D(PAYMENT(payment)) continue          
+                  }
+                 
                  ;
                  Set billingitem=ts,authdate=$Piece(rects,"\",4)
                  // этот блок оставляем только для расскоментирования сртроки с проверкой дат

@@ -127,12 +127,17 @@ INIT ; инициализация входных параметров
  ;
  i $G(PAR10)="" s MSGERROR="100^Не определено значение <Плательщик>" q
  k PAYMENT s PAYMENT=""
- f i=1:1:$L(PAR10,$C(1)) s pay=$P(PAR10,$C(1),i) d:pay'="" 
- . i pay="0" s PAYMENT("*")="" quit     ;* Все
- . s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
- . s PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+ set flagUseBirlab=##class(BiRLab.Function.Report).GetFlagUseBirlab()
+ for i=1:1:$L(PAR10,$C(1)) {
+		 s pay=$P(PAR10,$C(1),i) if pay="" continue 
+         i pay="0" s PAYMENT("*")="" quit     ;* Все
+         if flagUseBirlab=0 s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+         else  s PAYMENT(pay)=##class(BiRLab.Function.Report).GetPayerInfo(pay,"nameshort",1)
+         s PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+	 }
  i $D(PAYMENT("*")) s PAYMENT="*",pay="" f  s pay=$O(^TTAB("BI",pay)) q:pay=""  s PAYMENT(pay)=""
  i '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+ 
  ; Флаг "Расшифровка по секциям"
  set FlagSect=+$g(PAR9)
  ; Группировка: 2 - по плательщикам, 3 - по услуге, 1 - без группировки
@@ -143,14 +148,15 @@ INIT ; инициализация входных параметров
  ;------------------------------------------------
 BODY  ; обработка данных...
  ;
- set boundDate=$zdh("01/12/2012",4),okCreateTempGlob=0
- set refIndex=$name(^||inv)
- if PAR1<boundDate {
-	 do CreateIndex^PRTCLNRUS05birlab(refIndex) ;инверсии к CT_Schedule_PaymentCode 
-	 set okCreateTempGlob=1
+ set okCreateTempGlob=0 // флаг, создана ли временная глобаль для определения цены без испльзования Birlab
+ if ##class(BiRLab.Function.Report).GetFlagUseBirlab()=1 {
+	 set boundDate=##class(BiRLab.Function.Report).GetDateStartUseBirlab() //$zdh("01/12/2012",4)
+     set refIndex=$name(^||inv)
+     if (boundDate="")||(PAR1<boundDate) {
+	     do CreateIndex^PRTCLNRUS05birlab(refIndex) ;инверсии к CT_Schedule_PaymentCode 
+	     set okCreateTempGlob=1
+     }
  }
- s ^test("FlagDetailsTS")=$g(FlagDetailsTS)
- 
  ;
  ;new amount
  Kill ^||Report.Amount ; ***
@@ -228,7 +234,7 @@ BODY  ; обработка данных...
                  s:key="" key=" "
                              
                  // расчет цены по старому биллингу
-                 if (authdate<boundDate)&&(okCreateTempGlob=1) {
+                 if (okCreateTempGlob=1)&&((boundDate="")||(authdate<boundDate)) {
 	                  Set amount=$$GetBillingItemAmount^PRTCLNRUS05birlab(payment,epis,authdate,billingitem,cito)
                  }
                  // расчет цены по новому биллингу 

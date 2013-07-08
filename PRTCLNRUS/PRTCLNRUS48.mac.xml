@@ -17,7 +17,7 @@ FORM(USER) [PLIST, PAR3] PUBLIC {
 	;k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
 	;s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
 	;. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR3",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
-	kill @Par@("PAR3") do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR3")))
+	kill @Par@("PAR3") set sc=##class(BiRLab.Function.Report).GetPayersAll($name(@Par@("PAR3")))  do getAllPaiments^PRTCLNRUS40($name(@Par@("PAR3")))
 	s @Par@("PAR3","0")="* Все плательщики"
 	s @Par@("PAR3")="ListBox : 100 : 1200 : 5900 : 3000 : :True: 0 : Checkbox  "
 	; настройка формы
@@ -57,13 +57,18 @@ INIT(PAR) [MSGERROR,PAR,mas,PAR1,PAR2,PAR3,PAYMENT] PUBLIC {
 	if PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
 #; плательщик
 	if $G(PAR3)="" set MSGERROR="100^Не определено значение <Плательщик>" q
-	kill PAYMENT set PAYMENT=""
-	for i=1:1:$L(PAR3,$C(1)) set pay=$P(PAR3,$C(1),i) do:pay'="" 
-	.if pay="0" set PAYMENT("*")="" quit     ;* Все
-	.set PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
-	.set PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
-	if $D(PAYMENT("*")) s PAYMENT="*",pay="" for  set pay=$O(^TTAB("BI",pay)) quit:pay=""  s PAYMENT(pay)=""
-	if '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" quit
+	k PAYMENT s PAYMENT=""
+    set flagUseBirlab=##class(BiRLab.Function.Report).GetFlagUseBirlab()
+    for i=1:1:$L(PAR3,$C(1)) {
+		 s pay=$P(PAR3,$C(1),i) if pay="" continue 
+         i pay="0" s PAYMENT("*")="" quit     ;* Все
+         if flagUseBirlab=0 s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+         else  s PAYMENT(pay)=##class(BiRLab.Function.Report).GetPayerInfo(pay,"nameshort",1)
+         s PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+	 }
+     i $D(PAYMENT("*")) s PAYMENT="*",pay="" f  s pay=$O(^TTAB("BI",pay)) q:pay=""  s PAYMENT(pay)=""
+     i '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" q
+
 	if PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>"
 	quit
 }
@@ -74,7 +79,11 @@ BODY(PAR1,PAR2,PAR3, Mas) [MSGERROR, SQLCODE, payment, paydesc, contdesc, visnum
 	SELECT CTPC_Code, CTPC_Desc, CTCON_Code, CTCON_Description, COUNT(*)
 	INTO :payment,:paydesc,:contcode,:contdesc,:visnumbercount FROM (
 	SELECT CT_PaymentCode.CTPC_Code, CT_PaymentCode.CTPC_Desc, CT_Container.CTCON_Description, CT_Container.CTCON_Code
-	FROM ((((EP_VisitNumber INNER JOIN EP_VisitTestSet ON EP_VisitNumber.EPVIS_RowId = EP_VisitTestSet.VISTS_ParRef) INNER JOIN CT_PaymentCode ON EP_VisitNumber.EPVIS_PaymentCode_DR = CT_PaymentCode.CTPC_RowId) INNER JOIN EP_VisitTestSetData ON EP_VisitTestSet.VISTS_RowId = EP_VisitTestSetData.VISTD_ParRef) INNER JOIN CT_TestCodeContainers ON EP_VisitTestSetData.VISTD_TestCode_DR = CT_TestCodeContainers.CTTCB_ParRef) INNER JOIN CT_Container ON CT_TestCodeContainers.CTTCB_Container_DR = CT_Container.CTCON_RowID
+	FROM ((((EP_VisitNumber INNER JOIN EP_VisitTestSet ON EP_VisitNumber.EPVIS_RowId = EP_VisitTestSet.VISTS_ParRef) 
+	INNER JOIN CT_PaymentCode ON EP_VisitNumber.EPVIS_PaymentCode_DR = CT_PaymentCode.CTPC_RowId) 
+	INNER JOIN EP_VisitTestSetData ON EP_VisitTestSet.VISTS_RowId = EP_VisitTestSetData.VISTD_ParRef) 
+	INNER JOIN CT_TestCodeContainers ON EP_VisitTestSetData.VISTD_TestCode_DR = CT_TestCodeContainers.CTTCB_ParRef) 
+	INNER JOIN CT_Container ON CT_TestCodeContainers.CTTCB_Container_DR = CT_Container.CTCON_RowID
 	WHERE EP_VisitNumber.EPVIS_DateOfEntry BETWEEN :PAR1 AND :PAR2
 	GROUP BY CT_PaymentCode.CTPC_Code, CT_PaymentCode.CTPC_Desc, EP_VisitNumber.EPVIS_VisitNumber, CT_Container.CTCON_Code
 	)
