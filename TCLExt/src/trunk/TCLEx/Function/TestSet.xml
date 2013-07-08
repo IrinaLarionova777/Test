@@ -1,24 +1,121 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Export generator="Cache" version="24">
 <Class name="TCLEx.Function.TestSet">
-<Super>%Persistent</Super>
+<Super>%RegisteredObject</Super>
 <TimeCreated>62031,42176.626572</TimeCreated>
 
 <Method name="IsPrintable">
 <Description>
-Является ли набор тестов pTestSetObj печатаемым</Description>
+***
+Является ли передаваемый объект набора тестов печатаемым
+Параметры:
+pTestSetObj - объект набора тестов
+Возвращаемое значение:
+1 - Печатаемый
+0 - Непечатаемый</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pTestSetObj:User.EPVisitTestSet</FormalSpec>
 <ReturnType>%Boolean</ReturnType>
 <Implementation><![CDATA[
-	Set ok=..IsAuthorised(pTestSetObj)
-	If ok Quit 1
-	Quit ..IsCanceled(pTestSetObj)
+	If '$IsObject(pTestSetObj) Quit 0
+	If ..IsAuthorised(pTestSetObj) Quit 1
+	If ..IsCanceled(pTestSetObj) Quit 1
+	Quit ..IsInPrintableVerificationQueue(pTestSetObj.%Id())
+]]></Implementation>
+</Method>
+
+<Method name="IsInPrintableVerificationQueue">
+<Description>
+Находиться ли набор тестов в печатаемой очереди проверки
+Параметры:
+pTestSetId - ID набора тестов
+Возвращаемое значение:
+1 - Есть в очереди
+0 - Нет в очереди</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set queueid=..GetPrintableVerificationQueue(pTestSetId)
+	Quit (queueid'="")
+]]></Implementation>
+</Method>
+
+<Method name="IsViewable">
+<Description>
+***
+Является ли передаваемый объект набора тестов viewable
+Параметры:
+pVTSRowID - %ROWID epis_"||"_ts_"||"_tscnt
+Возвращаемое значение:
+1 - viewable
+0 - not viewable</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pVTSRowID:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	set returnValue=1
+	/*
+	If '$IsObject(pTestSetObj) Quit 0
+	set returnValue=1
+	set flagConfidential=$$conf^LVBVISTS(pTestSetObj.%Id())
+	if (flagConfidential="Y")||(flagConfidential="D") {  // tsobj.VISTSConfidential = "Both" or "Display"
+	   set user=$$user^MVBSSUSR()
+	   if user'="" {
+		   set supervisor=$$seldata^MVBSSUSR(user,8)  // property SSUSR_Supervisor
+		   set securitytype=$$seldata^MVBSSUSR(user,10)  // property SSUSR_PracticeSecurityType
+		   if (supervisor'="Y")&&(securitytype=3) {
+		      set returnValue=0
+		   }
+	   }
+	}*/
+	set user=$$user^MVBSSUSR()
+	if $$ValUser^LVBVISTS(user,pVTSRowID,"V") {
+		set returnValue=0
+	}
+	s ^test(444,pVTSRowID)=returnValue
+	quit returnValue
+]]></Implementation>
+</Method>
+
+<Method name="GetPrintableVerificationQueue">
+<Description>
+ID печатаемой очереди проверки для набора тестов
+Параметры:
+pTestSetId - ID набора тестов
+Возвращаемое значение:
+ID печатаемой очереди проверки</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	If pTestSetId="" Quit ""
+	Set result=""
+	&sql(DECLARE QueueCursor CURSOR FOR
+		Select VISTQ_Queue_DR,VISTQ_Queue_DR->CTVQ_Printable
+		Into :queueid,:printable
+		From SQLUser.EP_VisitTestSetQueue Where 
+		(VISTQ_ParRef=:pTestSetId) and (VISTQ_Out_Date Is Null) and 	(VISTQ_Out_Time Is Null)
+	)
+
+	&sql(OPEN QueueCursor)
+	&sql(FETCH QueueCursor)
+
+	While (SQLCODE = 0) {
+		If printable="Y" {
+			Set result=queueid
+			Quit
+		}	
+		&sql(FETCH QueueCursor)
+	}
+	&sql(CLOSE QueueCursor)
+	Quit result
 ]]></Implementation>
 </Method>
 
 <Method name="IsAuthorised">
 <Description>
+***
 Является ли набор тестов pTestSetObj авторизованным</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pTestSetObj:User.EPVisitTestSet</FormalSpec>
@@ -47,89 +144,157 @@
 ]]></Implementation>
 </Method>
 
-<Method name="Departments">
+<Method name="IsCanceled2">
+<Description>
+Отменен ли Набор тестов User.EPVisitTestSet с любой причиной отмены</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String]]></FormalSpec>
+<FormalSpec>pTestSetObj:User.EPVisitTestSet</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If '$IsObject(pTestSetObj) Quit 0
+	If (pTestSetObj.VISTSDateOfReason="")||(pTestSetObj.VISTSTimeOfReason="") Quit 0
+	Set reasonobj=pTestSetObj.VISTSReasonDR
+	If '$IsObject(reasonobj) Quit 0
+	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="Departments">
+<Description>
+Разбиение списка наборов тестов pTestSets эпизода pEpis по отделам в которые входят эти наборы тестов
+Необходимо для того, что каждый отдел печатается с новой страницы
+Параметры:
+pEpis - ID эпизода
+pTestSets - буфер с ID наборов
+pGlb - формируемый глобал в формате
+@pGlb@(КодОтделаИлиКодСуперНабора_$Char(1)_КодПечатаемойОчереди _$Char(1)_ ГруппаПечати)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pGlb:%String,pFlagPreview:%String=""]]></FormalSpec>
 <Implementation><![CDATA[
 	; Определяем из каких отделов TestSet-ы эпизода 
-	Kill ^||deptestsets
-	If '$Data(pTestSets) {										; Проходим по всем TestSet-ам, если нет конкретного списка
-		Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
-		Set key=""
-		For  {
-			Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
-			If key="" Quit
-			If '$IsObject(testsetobj) Continue
-			If '..IsPrintable(testsetobj) Continue ; Пропускаем неавторизованные или отмененные TestSet-ы
-			Set cttestsetobj=testsetobj.VISTSTestSetDR
-			If '$IsObject(cttestsetobj)||('$IsObject(cttestsetobj.CTTSDepartmentDR)) Continue
-			Set depcode=cttestsetobj.CTTSDepartmentDR.%Id()
-			Set testsetid=testsetobj.%Id()
-			If (depcode="")||(testsetid="") Continue
-			Set superset=""
-			If $IsObject(testsetobj.VISTSSuperSetDR) Set superset=testsetobj.VISTSSuperSetDR.%Id()
-			If superset="" {
-				Set ^||deptestsets(depcode,testsetid)=""
-			} Else {
-				Set ^||deptestsets(superset)=""
-			}		
+	Set pGlb=$Get(pGlb,$Name(^||deptestsets))
+	Kill @pGlb
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit ""
+	Set key=""
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		//
+		Set testsetid=testsetobj.%Id()
+		If (testsetid="") Continue
+		if (pFlagPreview'="V")&&('..IsPrintable(testsetobj)) Continue ; Пропускаем непечатаемые TestSet-ы
+		if (pFlagPreview="V")&&('..IsViewable(testsetobj.%Id())) Continue ; Пропускаем not viewable TestSet-ы
+		//
+		Set superset=""
+		If $IsObject(testsetobj.VISTSSuperSetDR) Set superset=testsetobj.VISTSSuperSetDR.%Id()
+		If (superset'="")&&(pFlagPreview'="V")&&('##class(TCLEx.Function.SuperSet).IsComplete(pEpis,superset)) Continue
+		//
+		If $Data(pTestSets) {
+			If (superset'="")&&('$Data(pTestSets(superset))) Continue
+			If (superset="")&&('$Data(pTestSets(testsetid))) Continue
+		}	
+		//
+		Set depcode="",reportgroup=""
+		If superset'="" {
+			Set depcode=superset
+		} Else {
+			Set testsetcode=testsetobj.VISTSTestSetDRGetObjectId()
+			If (testsetcode'="") {
+				Set depcode=..DepartmentCode(testsetcode)
+				Set reportgroup=..ReportGroup(testsetcode)
+			}
 		}
-	} Else {													; Проходим по конкретному списку TestSet-ов 
-		Set testsetid=""
-		For  {
-			Set testsetid=$Order(pTestSets(testsetid))
-			If testsetid="" Quit
-			Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
-			If '$IsObject(testsetobj) Continue
-			If '..IsPrintable(testsetobj) Continue ; Пропускаем неавторизованные или отмененные TestSet-ы
-			Set cttestsetobj=testsetobj.VISTSTestSetDR
-			If '$IsObject(cttestsetobj)||('$IsObject(cttestsetobj.CTTSDepartmentDR)) Continue
-			Set depcode=cttestsetobj.CTTSDepartmentDR.%Id()
-			Set testsetid=testsetobj.%Id()
-			If (depcode="")||(testsetid="") Continue
-			
-			Set superset=""
-			If $IsObject(testsetobj.VISTSSuperSetDR) Set superset=testsetobj.VISTSSuperSetDR.%Id()
-			If superset="" {
-				Set ^||deptestsets(depcode,testsetid)=""
-			} Else {
-				Set ^||deptestsets(superset)=""
-			}		
+		If depcode="" Continue
+		If reportgroup'="" {												// Если набор входит в группу наборов для печати
+			Set depcode=..DepartmentCode($Piece(reportgroup,",",1))			// Определяем код отдела для первого набора тестов группы печати
+			If depcode="" Continue
+			Set $Piece(depcode,$Char(1),3)=reportgroup						
+		}		
+		Set queueid=..GetPrintableVerificationQueue(testsetobj)				// Если набор входит в печатаемую очередь			
+		If queueid'="" {
+			Set $Piece(depcode,$Char(1),2)=queueid
+		}
+
+		Set @pGlb@(depcode,testsetid)=""
+	}
+]]></Implementation>
+</Method>
+
+<Method name="DepartmentCode">
+<Description>
+Код отдела для Кода набора тестов
+Параметры:
+pTestSet - код группы тестов
+Возвращаемое значение:
+Код Отдела, в который входит тест</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set obj=##class(User.CTTestSet).%OpenId(pTestSet,0)
+	If '$IsObject(obj) Quit ""
+	Set result=""
+	If ($IsObject(obj))&&($IsObject(obj.CTTSDepartmentDR)) {
+		Set result=obj.CTTSDepartmentDR.%Id()
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="ReportGroup">
+<Description>
+Код ГруппыПечати для Кода набора тестов
+Параметры:
+pTestSet - код группы тестов
+Возвращаемое значение:
+Пусто, если для набора нет ГруппаПечати.
+Перечисление через запятую всех кодов наборов тестов, входящих в группу </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set obj=##class(User.CTTestSet).%OpenId(pTestSet,0)
+	If '$IsObject(obj) Quit ""
+	Set reportgroup=obj.CTTSReportGroup
+	If reportgroup="" Quit ""
+	Kill ^||TestSet.ReportGroup
+	If pTestSet'="" {
+		Set ^||TestSet.ReportGroup(pTestSet)=""
+	}
+	Set cnt=$Length(reportgroup,",")
+	For i=1:1:cnt {
+		Set testset=$Piece(reportgroup,",",i)
+		If testset'="" {
+			Set ^||TestSet.ReportGroup(testset)=""
 		}	
 	}
-	Set superset=""
+	Set result="",testset=""
 	For  {
-		Set superset=$Order(^||deptestsets(superset))
-		If superset="" Quit
-		If $Data(^||deptestsets(superset))>1 Continue				// Пропускаем обычный Отдел исследований с уже определенными наборами тестов
-		If '##class(User.CTSuperSet).%ExistsId(superset) {
-			Kill ^||deptestsets(superset)
-			Continue
-		}
-		Kill ^||TestSet.SuperSetItems
-		Do ##class(TCLEx.Function.SuperSet).CreateTestSetBuf(pEpis,superset,$Name(^||TestSet.SuperSetItems))
-		If '$Data(^||TestSet.SuperSetItems) {
-			Kill ^||deptestsets(superset)
-			Continue
-		}
-		Set testset=""
-		For  {
-			Set testset=$Order(^||TestSet.SuperSetItems(testset),1,testsetid)
-			If testset="" Quit
-			If testsetid="" Continue
-			Set ^||deptestsets(superset,testsetid)=""
-		}			
+		Set testset=$Order(^||TestSet.ReportGroup(testset))
+		If testset="" Quit
+		If result'="" Set result=result_","
+		Set result=result_testset
 	}
+	Quit result
 ]]></Implementation>
 </Method>
 
 <Method name="PCLResult">
 <Description>
-Получаем результаты TestSet-а в ^||testset</Description>
+Формирование результатов TestSet-а в виде PCL команда, возвращаемых в ^||testset
+Параметры:
+pTestSetId - ID наьора тестов
+pMaxRowCount - макс. число строк на странице
+pFirstOnPage - признак первого на странице набора
+pLanguage - язык результата</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pTestSetId:%String,pMaxRowCount:%Integer,pFirstOnPage:%Boolean</FormalSpec>
+<FormalSpec>pTestSetId:%String,pMaxRowCount:%Integer,pFirstOnPage:%Boolean,pLanguage:%String</FormalSpec>
 <Implementation><![CDATA[
+	Set pLanguage=$Get(pLanguage)
 	Kill ^TMP("PRTDR00",$J),^||testset
+	Set ^TMP("PRTDR00",$j,"LAN")=$Get(pLanguage)
 	Do print^PRTDR1SPB02(pTestSetId,"P","H") 
 	Set i="",j=1
 	For  {
@@ -141,9 +306,26 @@
 		Set ^||testset(j,$Increment(^||testset(j)))=val
 	}
 	Do ..RemoveEmptyValues()
-	Do ..PCLComments(pTestSetId)
+	Do ..PCLComments(pTestSetId,pLanguage)
 	If pFirstOnPage Do ..RemoveFirstCR($NA(^||testset))
 	Do ..PCLAntibiogram(pTestSetId,pMaxRowCount)
+]]></Implementation>
+</Method>
+
+<Method name="HasPCLResult">
+<Description>
+Проверка есть ли PCL-результатов  для набора тестов pTestSetId на языке pLanguage
+Параметры:
+pTestSetId - ID наьора тестов
+pLanguage - язык результата</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pLanguage:%String</FormalSpec>
+<Implementation><![CDATA[
+	If '##class(User.EPVisitTestSet).%ExistsId(pTestSetId) Quit 0
+	Kill ^||testset
+	Do ..PCLResult(pTestSetId,50,1,pLanguage)
+	If $Data(^||testset) Quit 1
+	Quit 0
 ]]></Implementation>
 </Method>
 
@@ -153,6 +335,7 @@
 <Implementation><![CDATA[
 	Set needantibiogram=0
 	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj) Quit
 	Set key=""
 	For  {
 		Set dataobj=testsetobj.ChildEPVisitTestSetData.GetNext(.key)
@@ -183,17 +366,6 @@
 		Set k=$Order(^||testset(""),-1)+1
 		Set ^||testset(k,1)=$Char(12)
 		Do ..RemoveFirstCR($NA(^||antib))
-		/*
-		Set k=$Order(^||antib(""))
-		If $Get(^||antib(k,1))="~RES-ABP" {
-			Kill ^||antib(k,1)
-			Do ..RemoveFirstCR($NA(^||antib))
-			Set k=$Order(^||antib(""))-1
-			Set ^||antib(k,1)="~RES-ABP"
-		} Else {
-			Do ..RemoveFirstCR($NA(^||antib))
-		}*/		
-			
 	}
 	Set k=$Order(^||testset(""),-1)+1								; Дописываем данные антибиограмма в конец данных набора тестов
 	Set i=""
@@ -290,58 +462,142 @@
 ]]></Implementation>
 </Method>
 
-<Method name="PCLComments">
+<Method name="TemplateTestOrder">
+<Description>
+Сформировать глобал pTestOrderGlb с порядком тестов в описании шаблона для набора тестов pTestSet</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pTestSetId:%String</FormalSpec>
-<PublicList>testsetcode,tescodeid,SQLCODE</PublicList>
+<FormalSpec>pTestSet:%String,pTestOrderGlb:%String</FormalSpec>
 <Implementation><![CDATA[
+	Kill @pTestOrderGlb
+	&sql(
+		DECLARE TestOrderCursor CURSOR FOR
+	    Select CTTSF_Order_1,CTTSF_DataItem_DR 
+	    Into :order,:test
+	    From SQLUser.CT_TestSetFields 
+	    Where CTTSF_ParRef=:pTestSet
+	)
+	&sql(OPEN TestOrderCursor)
+	&sql(FETCH TestOrderCursor)
+
+	While (SQLCODE = 0) {
+	If (order'="")&&(test'="")&&(##class(User.CTTestCode).%ExistsId(test)) {
+		Set @pTestOrderGlb@(test)=order
+	} 	
+	&sql(FETCH TestOrderCursor)
+	}
+	&sql(CLOSE TestOrderCursor)
+]]></Implementation>
+</Method>
+
+<Method name="TestSetDataIdOrder">
+<Description>
+Сформировать глобал pDataIdOrderGlb с порядком ID данных набора тестов по pTestSetId - Id набора тестов и pTestOrderGlb - порядку тестов в шаблоне для набора тестов</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pTestOrderGlb:%String,pDataIdOrderGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Kill @pDataIdOrderGlb
+	&sql(
+		DECLARE TestDataOrderCursor CURSOR FOR
+	    Select VISTD_TestCode_DR,VISTD_RowId 
+	    Into :testcode,:testdataid
+	    From SQLUser.EP_VisitTestSetData 
+	    Where VISTD_ParRef=:pTestSetId
+	)
+	&sql(OPEN TestDataOrderCursor)
+	&sql(FETCH TestDataOrderCursor)
+
+	While (SQLCODE = 0) {
+	If (testcode'="")&&(testdataid'="") {
+		Set order=$Get(@pTestOrderGlb@(testcode))
+		If order'="" {
+			Set @pDataIdOrderGlb@(order,testdataid)=testcode
+		}
+	} 	
+	&sql(FETCH TestDataOrderCursor)
+	}
+	&sql(CLOSE TestDataOrderCursor)
+]]></Implementation>
+</Method>
+
+<Method name="PCLComments">
+<Description>
+Добавить комментарии по набору тестов pTestSetId
+Результат в ^||comments</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pLanguage:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set pLanguage=$Get(pLanguage)
 	; Добавляем комментарии
 	Kill ^||comments
 	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
 	If '$IsObject(testsetobj) Quit
-	Set testsetcode=testsetobj.VISTSTestSetDR.%Id()
-	Set key=""
+	Set testsetcode=testsetobj.VISTSTestSetDRGetObjectId()
+	If testsetcode="" Quit
+	//
+	Kill ^||TestSet.TestOrder
+	Do ..TemplateTestOrder(testsetcode,$Name(^||TestSet.TestOrder))
+	Kill ^||TestSet.DataIdOrder
+	Do ..TestSetDataIdOrder(pTestSetId,$Name(^||TestSet.TestOrder),$Name(^||TestSet.DataIdOrder))
+	Set order=""
 	For  {
-		Set dataobj=testsetobj.ChildEPVisitTestSetData.GetNext(.key)
-		If key="" Quit
-		If '$IsObject(dataobj) Continue
-		If '$IsObject(dataobj.VISTDComments) Continue
-		Set cnt=dataobj.VISTDComments.Count()
-		If cnt=0 Continue
-		Set tescodeid=""
-		If $IsObject(dataobj.VISTDTestCodeDR) Set tescodeid=dataobj.VISTDTestCodeDR.%Id()
-		If (tescodeid'="") {
-			Set commentheader=""
-			&sql(
-				Select CTTSF_CommentHeading Into :commentheader from SQLUser.CT_TestSetFields where (CTTSF_ParRef=:testsetcode)and(CTTSF_DataItem_DR=:tescodeid)
-			)
-			If commentheader'="" {
-				If '$Data(^||comments) {
-					Set ^||comments($I(^||comments),1)=""
+		Set order=$Order(^||TestSet.DataIdOrder(order))
+		If order="" Quit
+		
+		Set testdataid=""
+		For  {
+			Set testdataid=$Order(^||TestSet.DataIdOrder(order,testdataid),1,testcodeid)
+			If testdataid="" Quit
+			;If testcodeid="" Continue
+			Set dataobj=##class(User.EPVisitTestSetData).%OpenId(testdataid)
+			If ('$IsObject(dataobj))||('$IsObject(dataobj.VISTDComments)) Continue
+			Set cnt=dataobj.VISTDComments.Count()
+			If cnt=0 Continue
+			If (testcodeid'="") {
+				Set commentheader=""
+				&sql(
+					Select CTTSF_CommentHeading Into :commentheader from SQLUser.CT_TestSetFields where (CTTSF_ParRef=:testsetcode)and(CTTSF_DataItem_DR=:testcodeid)
+				)
+				If commentheader'="" {
+					Set translatedheader=""
+					If (testsetcode'="")&&(pLanguage'="") {
+						Set translatedheader=$Get(^TTAB("TS",testsetcode,"LAN",pLanguage,commentheader))
+					}
+					Kill comment
+					Set comment(1)=$Select(translatedheader'="":translatedheader,1:commentheader)
+					Merge ^||comments($I(^||comments))=comment
 				}	
+			}	
+			For i=1:1:cnt {
 				Kill comment
-				Set comment(1)=""
-				Set comment(2)=commentheader
+				Set strval=dataobj.VISTDComments.GetAt(i)
+				Set commentobj="",textobj=""
+				If (strval["[")&&(strval["]") {
+					Set n=$Piece($Piece(strval,"[",2),"]",1)
+					Set textobj=""
+					If (pLanguage'="")&&(##class(User.CTTestCodeStComTransl).%ExistsId(testcodeid_"||"_n_"||"_pLanguage)) {
+						Set commentobj=##class(User.CTTestCodeStComTransl).%OpenId(testcodeid_"||"_n_"||"_pLanguage,0)
+						If $IsObject(commentobj) {
+							Set textobj=commentobj.CTTCEText
+						}
+					}	
+					If '$IsObject(textobj) {
+						Set commentobj=##class(User.CTTestCodeStandardComm).%OpenId(testcodeid_"||"_n,0)
+						If $IsObject(commentobj) {
+							Set textobj=commentobj.CTTCTText
+						}
+					}
+				}	
+				If $IsObject(textobj) {
+					Set cnt2=textobj.Count()
+					For j=1:1:cnt2 Set comment(j)=textobj.GetAt(j)
+				} Else {
+					Set comment(1)=strval
+				}
 				Merge ^||comments($I(^||comments))=comment
-			}	
-		}	
-		For i=1:1:cnt {
-			Kill comment
-			Set strval=dataobj.VISTDComments.GetAt(i)
-			Set commentobj=""
-			If (strval["[")&&(strval["]") {
-				Set n=$Piece($Piece(strval,"[",2),"]",1)
-				If +n=n Set commentobj=##class(User.CTTestCodeStandardComm).%OpenId(tescodeid_"||"_n)
-			}	
-			If $IsObject(commentobj)&&$IsObject(commentobj.CTTCTText) {
-				Set cnt2=commentobj.CTTCTText.Count()
-				For j=1:1:cnt2 Set comment(j)=commentobj.CTTCTText.GetAt(j)
-			} Else {
-				Set comment(1)=strval
 			}
-			Merge ^||comments($I(^||comments))=comment
-		}
-	}	
+		}	
+	
+	}
 	Set i=""
 	For  {
 		Set i=$Order(^||comments(i))
@@ -492,6 +748,66 @@
 ]]></Implementation>
 </Method>
 
+<Method name="LogAuthorisationStatus">
+<Description>
+Регистрация авторизации\деавторизации набора тестов для последующих действий (отправка E-Mail, передача результата в WebER...)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisId:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisId="")||(pTestSetId="") Quit
+	;
+	Set dateoflastchange=$Get(pValues(75))
+	Set timeoflastchange=$Get(pValues(76))
+	;
+	Set dateofauthorisation=$Get(pValues(7))
+	Set timeofauthorisation=$Get(pValues(8))
+	Set authoriseddoctor=$Get(pValues(9))
+	
+	;
+	Set reason=$Get(pValues(58))
+	Set dateofreason=$Get(pValues(59))
+	Set timeofreason=$Get(pValues(60))
+	Set superset=$Get(pValues(32)),iscompletesuperset=0
+	If superset'="" {
+		Set iscompletesuperset=##class(TCLEx.Function.SuperSet).IsComplete(pEpisId,superset,.firsttestsetid)
+		Set pTestSetId=superset
+		Do ##class(TCLEx.Function.SuperSet).UpdatePrintQueueBuffer(pEpisId,superset,iscompletesuperset,authoriseddoctor)
+
+	}	
+	;
+	
+	Set needadd=0
+	If (dateoflastchange=dateofauthorisation)&&((timeoflastchange/60\1)=timeofauthorisation) { ; Если была авторизация (время авторицации в числе минут, поэтому преобразуем время изменения, которое в секундах)
+		Set needadd=1
+	} ElseIf (dateoflastchange=dateofreason)&&(timeoflastchange=timeofreason) {					; Если была отмена авторизации 
+		If reason'="" {
+			Set reasonobj=##class(User.CTReason).%OpenId(reason)
+			If $IsObject(reasonobj)&&(reasonobj.CTRReportable="Y") {
+				Set needadd=1
+			}
+		}
+	}		 
+	If (needadd)&&(superset'="")&&('iscompletesuperset) {
+		Set needadd=0
+	}	
+	Set needdel=0
+	Set status=$Get(pValues(33))
+	Set oldstatus=$Get(pOldValues(33))
+	If (status="E")&&((oldstatus="A")||(oldstatus="")) { // Была деавторизация набора тестов (иногда старый значение становится пусто, а не "А")
+		Set needdel=1
+	}	
+	If ('needadd)&&('needdel) Quit
+	If (needadd) {
+		Do ##class(TCLEx.Function.LabOrder).NeededResultModes(pEpisId,.needweber,.needhospitalemail,.needpatientemail,.needpatientsms)
+		Set hor=$Horolog
+		Do ..SetAuthorisationStatus(pEpisId,pTestSetId,hor,hor,needweber,needhospitalemail,needpatientemail,needpatientsms)
+	}	
+	If (needdel) {
+		Do ..KillAuthorisationStatus(pEpisId,pTestSetId)
+	}
+]]></Implementation>
+</Method>
+
 <Method name="RemoveFirstCR">
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pGlb:%String</FormalSpec>
@@ -526,67 +842,9 @@
 ]]></Implementation>
 </Method>
 
-<Method name="LogAuthorisationStatus">
-<Description><![CDATA[
-&&& Регистрация авторизации\деавторизации набора тестов для последующих действий (отправка E-Mail, передача результата в WebER...)]]></Description>
-<ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisId:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
-<Implementation><![CDATA[
-	;S ^CacheTempXXX(1)=pEpisId
-	;S ^CacheTempXXX(2)=pTestSetId
-	;M ^CacheTempXXX(3)=pValues
-	;M ^CacheTempXXX(4)=pOldValues
-	If (pEpisId="")||(pTestSetId="") Quit
-	;
-	Set dateoflastchange=$Get(pValues(75))
-	Set timeoflastchange=$Get(pValues(76))
-	;
-	Set dateofauthorisation=$Get(pValues(7))
-	Set timeofauthorisation=$Get(pValues(8))
-	;
-	Set reason=$Get(pValues(58))
-	Set dateofreason=$Get(pValues(59))
-	Set timeofreason=$Get(pValues(60))
-	Set superset=$Get(pValues(32)),iscompletesuperset=0
-	If superset'="" {
-		Set iscompletesuperset=##class(TCLEx.Function.SuperSet).IsComplete(pEpisId,superset,.firsttestsetid)
-		Set pTestSetId=superset
-	}	
-	;
-	Set needadd=0
-	If (dateoflastchange=dateofauthorisation)&&((timeoflastchange/60\1)=timeofauthorisation) { ; Если была авторизация (время авторицации в числе минут, поэтому преобразуем время изменения, которое в секундах)
-		Set needadd=1
-	} ElseIf (dateoflastchange=dateofreason)&&(timeoflastchange=timeofreason) {					; Если была отмена авторизации 
-		If reason'="" {
-			Set reasonobj=##class(User.CTReason).%OpenId(reason)
-			If $IsObject(reasonobj)&&(reasonobj.CTRReportable="Y") {
-				Set needadd=1
-			}
-		}
-	}		 
-	If (needadd)&&(superset'="")&&('iscompletesuperset) {
-		Set needadd=0
-	}	
-	Set needdel=0
-	Set status=$Get(pValues(33))
-	Set oldstatus=$Get(pOldValues(33))
-	If (status="E")&&(oldstatus="A") {								// Была деавторизация набора тестов
-		Set needdel=1
-	}	
-	If ('needadd)&&('needdel) Quit
-	If (needadd) {
-		Do ##class(TCLEx.Function.LabOrder).NeededResultModes(pEpisId,.needweber,.needhospitalemail,.needpatientemail,.needpatientsms)
-		Do ..SetAuthorisationStatus(pEpisId,pTestSetId,$Horolog,$Horolog,needweber,needhospitalemail,needpatientemail,needpatientsms)
-	}	
-	If (needdel) {
-		Do ..KillAuthorisationStatus(pEpisId,pTestSetId)
-	}
-]]></Implementation>
-</Method>
-
 <Method name="SetAuthorisationStatus">
-<Description><![CDATA[
-&&& Записываем статус авторизации для эпизода pEpisId набора тестов pTestSetId ]]></Description>
+<Description>
+Записываем статус авторизации для эпизода pEpisId набора тестов pTestSetId </Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pEpisId:%String,pTestSetId:%String,pEpisDateTime:%String,pTestSetDateTime:%String,pWebER:%Boolean,pHospitalEMail:%Boolean,pPatientEMail:%Boolean,pPatientSMS:%Boolean</FormalSpec>
 <Implementation><![CDATA[
@@ -598,6 +856,7 @@
 		If (episdatetime="")||(episdatetime]pEpisDateTime) Set ^TCLEx("AuthorizedEpisodes",pEpisId)=pEpisDateTime
 		Lock -^TCLEx("AuthorizedEpisodes",pEpisId)
 	}
+	If ..IsConfidentional(pTestSetId) Quit 						// Выход, если не нужно печатать, отсылать по E-Mail,SMS и т.д.
 	If (pHospitalEMail) {										// Для отсылки EMail ЛПУ
 		Lock +^TCLEx("E-Mail",pEpisId)
 		Set ^TCLEx("E-Mail",pEpisId,pTestSetId)=pTestSetDateTime
@@ -623,8 +882,8 @@
 </Method>
 
 <Method name="KillAuthorisationStatus">
-<Description><![CDATA[
-&&& Удаляем статус авторизации для эпизода pEpisId набора тестов pTestSetId]]></Description>
+<Description>
+Удаляем статус авторизации для эпизода pEpisId набора тестов pTestSetId</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pEpisId:%String,pTestSetId:%String</FormalSpec>
 <Implementation><![CDATA[
@@ -662,8 +921,8 @@
 </Method>
 
 <Method name="ResendResult">
-<Description><![CDATA[
-&&& Повторная отправка результатов ]]></Description>
+<Description>
+Повторная отправка результатов </Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pEpisId:%String,pTestSetId:%String</FormalSpec>
 <Implementation><![CDATA[
@@ -681,7 +940,608 @@
 	}			
 	Set episdatetime=$ZDateTimeH($System.SQL.DATEADD("ss",-1*episdeltatime+60,$Horolog),3)
 	Set testsetdatetime=$ZDateTimeH($System.SQL.DATEADD("ss",-1*testsetdeltatime+60,$Horolog),3)
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj) Quit
+	Set superset=""
+	If $IsObject(testsetobj.VISTSSuperSetDR) {
+		Set superset=testsetobj.VISTSSuperSetDR.%Id()
+		If '##class(TCLEx.Function.SuperSet).IsComplete(pEpisId,superset) Quit
+		Set pTestSetId=superset
+	}	
 	Do ..SetAuthorisationStatus(pEpisId,pTestSetId,episdatetime,testsetdatetime,0,needhospitalemail,needpatientemail,0)
+]]></Implementation>
+</Method>
+
+<Method name="IsConfidentional">
+<Description>
+Является ли набор тестов pTestSetId конфиденциальный (т.е. не печатается) </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If ##class(User.CTSuperSet).%ExistsId(pTestSetId) Quit 0 		// Выход, если это супер-набор
+	&sql(
+		Declare ConfCursor CURSOR FOR
+	    Select VISTD_SupressReport
+	    Into :supress
+	    From SQLUser.EP_VISITTESTSETDATA
+	    Where VISTD_ParRef=:pTestSetId
+	)
+
+	&sql(Open ConfCursor)
+	&sql(Fetch ConfCursor)
+	If SQLCODE=100 Quit 0											// Нет записей для этого набора тестов
+	Set result=1
+	While (SQLCODE = 0) {
+		If supress'="Y" {
+			Set result=0
+			Quit
+		}	
+		&sql(Fetch ConfCursor)
+	}
+	&sql(Close ConfCursor)
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="IsConfidentional2">
+<Description>
+Является ли набор тестов pTestSetId конфиденциальный (т.е. не печатается) </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If ##class(User.CTSuperSet).%ExistsId(pTestSetId) Quit 0
+	Set testset=$Piece(pTestSetId,"||",2)
+	If testset="" Quit 0
+	If (testset'="E225")&&(testset'="E901")&&(testset'="E230") Quit 0
+	Kill ^TMP("PRTDR00",$J)
+	Do print^PRTDR1SPB02(pTestSetId,"P","H")
+	If $Data(^TMP("PRTDR00",$J)) Quit 0
+	Quit 1
+]]></Implementation>
+</Method>
+
+<Method name="GetResultInfo">
+<Description>
+Формирование буфера pGlb с отображаемым результатом по набору тестов pTestSetId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pLanguage:%String,pGlb:%String</FormalSpec>
+<PublicList>PLIST</PublicList>
+<Implementation><![CDATA[
+	Set pLanguage=$Get(pLanguage)
+	Kill @pGlb
+	Kill PLIST,DataIds
+	Set sqlcode=$$results^LVBVISTS(pTestSetId,"","N")
+	Set i=""
+	For  {
+		Set i=$Order(PLIST(i),1,vals)
+		If i="" Quit
+		Set tsdataid=$Piece(vals,$Char(1),1)
+		Set code=$Piece(vals,$Char(1),2)
+		If (tsdataid="")||(code="") Continue
+		Set DataIds(code)=tsdataid
+		Set @pGlb@(tsdataid,"SequenceNumber")=i
+		Set @pGlb@(tsdataid,"Code")=code
+		Set @pGlb@(tsdataid,"RawValue")=$Piece(vals,$Char(1),3)
+		Set @pGlb@(tsdataid,"FreeText")=$Piece(vals,$Char(1),4)
+		Set flag=$Piece(vals,$Char(1),5)
+		Set @pGlb@(tsdataid,"Flag")=flag
+		If (flag="A")||(flag="H")||(flag="L") {
+			Set @pGlb@(tsdataid,"Abnormal")=1
+		}
+		Set @pGlb@(tsdataid,"Panic")=$Piece(vals,$Char(1),7)
+	}
+	If pLanguage="" {
+		Set pLanguage=$Piece($Get(^CF("SM",1)),"^",10)
+	}	
+	//Set language=$Piece($Get(^CF("SM",1)),"^",10)
+	Kill PLIST
+	Set sqlcode=$$getit^LVBCTTSF(,pTestSetId,"Y",,,"",,pLanguage)
+	Set i=""
+	For  {
+		Set i=$Order(PLIST(i),1,vals)
+		If i="" Quit
+		Set code=$Piece(vals,$Char(2),10)
+		If (code="")||('$Data(DataIds(code))) Continue
+		Set tsdataid=$Get(DataIds(code))
+		If tsdataid="" Continue
+		Set value=$Get(@pGlb@(tsdataid,"RawValue"))
+		Set type=$Piece(vals,$Char(2),18)
+		If ((type="S")||(type="B1"))&&(value'="") {
+			If (pLanguage'="")&&($Data(^TTAB("TC",code,"2L",value,pLanguage,"T"))) {
+				Set codevalue=value
+				Set value=""
+				Set j=""
+				For {
+					Set j=$Order(^TTAB("TC",code,"2L",codevalue,pLanguage,"T",j),1,val)
+					If j="" Quit
+					If j=0 Continue
+					If (value'="")&&('$$PunctuationCharacter^KSUTIL1($Extract(value,$Length(value)))) {
+						Set value=value_" "
+					}
+					Set value=value_val	
+				}
+			} ElseIf $Data(^TTAB("TC",code,2,value,"T")) {
+				Set codevalue=value
+				Set value=""
+				Set j=""
+				For {
+					Set j=$Order(^TTAB("TC",code,2,codevalue,"T",j),1,val)
+					If j="" Quit
+					If j=0 Continue
+					If (value'="")&&('$$PunctuationCharacter^KSUTIL1($Extract(value,$Length(value)))) {
+						Set value=value_" "
+					}
+					Set value=value_val	
+				}
+			}
+		}
+		If (type="X")&&(value="") {
+			Set value=$Get(@pGlb@(tsdataid,"FreeText"))
+		}
+		If (type="V") {
+			Set value=$Piece($Get(^TTAB("BUG",value)),"\",1)
+		}		
+		Set @pGlb@(tsdataid,"Value")=value
+		Set @pGlb@(tsdataid,"Description")=$Piece(vals,$Char(2),3)
+		Set @pGlb@(tsdataid,"Units")=$Piece(vals,$Char(2),17)
+		Set @pGlb@(tsdataid,"MinRange")=$Piece(vals,$Char(2),22)
+		Set @pGlb@(tsdataid,"MaxRange")=$Piece(vals,$Char(2),23)
+		
+		Set dataobj=##class(User.EPVisitTestSetData).%OpenId(tsdataid)
+		If ($IsObject(dataobj))&&($IsObject(dataobj.VISTDComments)) {
+			Set comment=""
+			Set cnt=dataobj.VISTDComments.Count()
+			For j=1:1:cnt {
+				Set str=dataobj.VISTDComments.GetAt(j)
+				Set complexrefranges=..IsComplexReferenceRanges(str)
+				Do ..CommentBuffer(code,str,pLanguage,.vals)
+				Set n=""
+				For  {
+					Set n=$Order(vals(n),1,value)
+					If n="" Quit
+					If complexrefranges {
+						Set @pGlb@(tsdataid,"ComplexRefRanges",$Increment(@pGlb@(tsdataid,"CommentStrings")))=value
+					} Else {			
+						If (comment'="")&&('$$PunctuationCharacter^KSUTIL1($Extract(value,$Length(value)))) {
+							Set comment=comment_" "
+						}
+						Set comment=comment_value	
+						Set @pGlb@(tsdataid,"CommentStrings",$Increment(@pGlb@(tsdataid,"CommentStrings")))=value
+					}
+				}
+					
+			}
+			Set @pGlb@(tsdataid,"Comment")=comment
+		}	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="IsComplexReferenceRanges">
+<Description>
+Является ли кодом стандартного комментария, которому соответствуют сложные референсные границы
+(код начинается на REF)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCommentCode:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set result=0
+	Set pCommentCode=$Translate(pCommentCode,"{}","[]")
+	If (pCommentCode["[")&&(pCommentCode["]") {
+		Set code=$Piece($Piece(pCommentCode,"[",2),"]",1)
+		If $Extract(code,1,3)="REF" {
+			Set result=1
+		}	
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="CommentBuffer">
+<Description>
+Формирование буфера pResult со строками стандартного комментария
+Параметры:
+pTestCode - код теста
+pCommentCode - код комментария
+pLanguage - язык результата
+pResult - буфер со строками результата</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestCode:%String,pCommentCode:%String,pLanguage:%String,pResult:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set pLanguage=$Get(pLanguage)
+	Kill pResult
+	Set commentobj="",textobj="",result=""
+	Set originalvalue=pCommentCode
+	Set pCommentCode=$Translate(pCommentCode,"{}","[]")
+	If (pCommentCode["[")&&(pCommentCode["]") {
+		Set n=$Piece($Piece(pCommentCode,"[",2),"]",1)
+		Set textobj=""
+		If (pLanguage'="")&&(##class(User.CTTestCodeStComTransl).%ExistsId(pTestCode_"||"_n_"||"_pLanguage)) {
+			Set commentobj=##class(User.CTTestCodeStComTransl).%OpenId(pTestCode_"||"_n_"||"_pLanguage,0)
+			If $IsObject(commentobj) {
+				Set textobj=commentobj.CTTCEText
+			}
+		}	
+		If '$IsObject(textobj) {
+			Set commentobj=##class(User.CTTestCodeStandardComm).%OpenId(pTestCode_"||"_n,0)
+			If $IsObject(commentobj) {
+				Set textobj=commentobj.CTTCTText
+			}
+		}
+	}	
+	If $IsObject(textobj) {
+		Set cnt2=textobj.Count()
+		For j=1:1:cnt2 {
+			Set val=textobj.GetAt(j)
+			Set pResult($Increment(pResult))=..DecodeCommentCharacters(val)
+		}	
+	} Else {
+		Set pResult($Increment(pResult))=..DecodeCommentCharacters(originalvalue)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="CommentValue">
+<Description>
+!!! CommentValue больше не должен использоваться!!! Вместо него сначала формируем буфер со строками в CommentBuffer
+Формирование буфера pGlb с отображаемым результатом по набору тестов pTestSetId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestCode:%String,pCommentCode:%String,pLanguage:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set pLanguage=$Get(pLanguage)
+	Set commentobj="",textobj="",result=""
+	Set pCommentCode=$Translate(pCommentCode,"{}","[]")
+	If (pCommentCode["[")&&(pCommentCode["]") {
+		Set n=$Piece($Piece(pCommentCode,"[",2),"]",1)
+		Set textobj=""
+		If (pLanguage'="")&&(##class(User.CTTestCodeStComTransl).%ExistsId(pTestCode_"||"_n_"||"_pLanguage)) {
+			Set commentobj=##class(User.CTTestCodeStComTransl).%OpenId(pTestCode_"||"_n_"||"_pLanguage,0)
+			If $IsObject(commentobj) {
+				Set textobj=commentobj.CTTCEText
+			}
+		}	
+		If '$IsObject(textobj) {
+			Set commentobj=##class(User.CTTestCodeStandardComm).%OpenId(pTestCode_"||"_n,0)
+			If $IsObject(commentobj) {
+				Set textobj=commentobj.CTTCTText
+			}
+		}
+	}	
+	If $IsObject(textobj) {
+		Set cnt2=textobj.Count()
+		For j=1:1:cnt2 {
+			Set val=textobj.GetAt(j)
+			If (result'="")&&('$$PunctuationCharacter^KSUTIL1($Extract(val,$Length(val)))) {
+				Set result=result_" "
+			}
+			Set result=result_val
+		}	
+	} Else {
+		Set result=pCommentCode
+	}
+	Set result=..DecodeCommentCharacters(result)
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="DecodeCommentCharacters">
+<Description>
+Декодировать знчение коментария (ряд символов пунктуации при хранении меняется на непечатные символы)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCommentCode:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=$Translate(pCommentCode,$Char(16,5,6,11,12,18,17),"^{}[]|\")
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="DefaultSpecimen">
+<Description>
+Биоматериал по умолчанию для набора тестов</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set testsetobj=##class(User.CTTestSet).%OpenId(pTestSet,0)
+	If '$IsObject(testsetobj) Quit ""
+	Set result="",key=""
+	For  {
+		Set specimenobj=testsetobj.ChildCTTestSetSpecimen.GetNext(.key)
+		If key="" Quit
+		If $IsObject(specimenobj)&&($IsObject(specimenobj.CTTSSSpecimenDR)) {
+			Set result=specimenobj.CTTSSSpecimenDR.%Id()
+		}
+		If result'="" Quit	 
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="NeedRemoveFromGroupPrinting">
+<Description>
+Нужно ли удаление набора тестов pTestSetId из групповой печати</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId,0)
+	If ('$IsObject(testsetobj)) Quit 0
+	Set testsetcode=testsetobj.VISTSTestSetDRGetObjectId()
+	If testsetcode="" Quit 0
+	Set cttestsetobj=##class(User.CTTestSet).%OpenId(testsetcode,0)
+	If '$IsObject(cttestsetobj) Quit 0
+	If cttestsetobj.CTTSExcludeFromFullFinal="Y" Quit 1
+	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="RemoveFromGroupPrinting">
+<Description>
+Удаление наборов тестов pTestSetId из групповой печати</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId,0)
+	If '$IsObject(testsetobj) Quit
+	Set episobj=testsetobj.VISTSParRef
+	If '$IsObject(episobj) Quit
+	Set hospobj=testsetobj.VISTSParRef.EPVISHospitalCodeDR
+	If '$IsObject(hospobj) Quit 
+	Set courierobj=hospobj.CTHOSCourierRunDR
+	If '$IsObject(courierobj) Quit 
+	Set courierid=courierobj.%Id()
+	Set hospitalid=hospobj.%Id()
+	Set episid=episobj.%Id()
+	Set testset=$Piece(pTestSetId,"||",2)
+	Set testsetnum=$Piece(pTestSetId,"||",3)
+	If (courierid="")||(hospitalid="")||(episid="")||(testset="")||(testsetnum="") Quit
+	Kill ^TRPT("DR",courierid,"H",hospitalid,episid,testset,testsetnum)
+]]></Implementation>
+</Method>
+
+<Method name="IsCito">
+<Description>
+Равен ли приоритет набора тестов "U" (Cito)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj) Quit 0
+	If '$IsObject(testsetobj.VISTSPriorityDR) Quit 0
+	If testsetobj.VISTSPriorityDR.%Id()="U" Quit 1
+ 	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="GetDepartmentByTestSet">
+<Description>
+Вернуть код отдела для набора тестов
+Параметры:
+pTestSetCode - код набра тестов
+Возвращаемое значение:
+Код отдела</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetCode:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set department=""
+	&Sql(
+		Select %NOLOCK 
+		CTTS_Department_DR
+		Into :department
+		From SQLUser.CT_TestSet 
+		WHERE CTTS_Code=:pTestSetCode
+	)
+	If (SQLCODE'=0) Quit ""
+	Quit department
+]]></Implementation>
+</Method>
+
+<Method name="GetSectionByTestSet">
+<Description>
+Вернуть код отдела для набора тестов
+Параметры:
+pTestSetCode - код набра тестов
+Возвращаемое значение:
+Код отдела</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetCode:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set section=""
+	&Sql(
+		Select %NOLOCK 
+		CTTS_Section_DR
+		Into :section
+		From SQLUser.CT_TestSet 
+		WHERE CTTS_Code=:pTestSetCode
+	)
+	If (SQLCODE'=0) Quit ""
+	Quit section
+]]></Implementation>
+</Method>
+
+<Method name="GetPropertyPosition">
+<Description>
+Вернуть позицию свойства в списке формата $LB() значений набора тестов 
+Параметры:
+pProperty - Свойство
+Возвращаемое значение:
+Позиция в списке</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pProperty:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	Quit $Case(pProperty,
+              "%ID":1,
+              "VISTSTestSetDR":2,
+              "VISTSSuperSetDR":3,
+              "VISTSPriorityDR":4,
+              "VISTSStatusResult":5,
+              "VISTSDateOfAuthorisation":6,
+              "VISTSTimeOfAuthorisation":7,
+              "VISTSUserAuthorisedDR":8,
+              "VISTSReasonDR":9,
+              "VISTSDateOfReason":10,
+              "VISTSTimeOfReason":11,
+              "VISTS_UserReason_DR":12,
+              :"")
+]]></Implementation>
+</Method>
+
+<Method name="GetPropertyValue">
+<Description>
+Вернуть значение заданного свойства в списке формата $LB() значений набора тестов 
+Параметры:
+pValues - Список значений
+pProperty - Свойство
+Возвращаемое значение:
+Значение свойства в списке</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pValues:%String,pProperty:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=""
+	Try {
+		Set pos=..GetPropertyPosition(pProperty)
+		If pos'="" {
+			Set result=$ListGet(pValues,pos)
+		}	
+	}Catch {
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="IsAuthorisedLB">
+<Description>
+Является ли набор тестов со значениями передаваемыми в списке формата $ListBuild авторизованным
+Параметры:
+pValues - Значения в формате $ListBuild
+Возвращаемое значение:
+1 - Авторизован
+0 - Нет</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pValues:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set status=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSStatusResult")
+	Set authdate=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSDateOfAuthorisation")
+	Set authtime=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSTimeOfAuthorisation")
+	Set authuser=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSUserAuthorisedDR")
+	Quit ..IsAuthorisedVals(status,authdate,authtime,authuser)
+]]></Implementation>
+</Method>
+
+<Method name="IsAuthorisedVals">
+<Description>
+Является ли набор тестов со следующими значениями авторизованным
+Параметры:
+pStatus - Статус набора тестов
+pDateOfAuthorisation - дата авторизации
+pTimeOfAuthorisation - время авторизации
+pAuthorisedUser - авторизовавший пользователь
+Возвращаемое значение:
+1 - Авторизован
+0 - Нет</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pStatus:%String,pDateOfAuthorisation:%String,pTimeOfAuthorisation:%String,pAuthorisedUser:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If pStatus'="A" Quit 0
+	If (pDateOfAuthorisation="")||(pTimeOfAuthorisation="")||(pAuthorisedUser="") Quit 0
+	Quit 1
+]]></Implementation>
+</Method>
+
+<Method name="IsCanceledLB">
+<Description>
+Является ли набор тестов со значениями передаваемыми в списке формата $ListBuild отмененным c печатаемой причиной отмены
+Параметры:
+pValues - Значения в формате $ListBuild
+Возвращаемое значение:
+1 - Отменен
+0 - Нет</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pValues:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set reason=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSReasonDR")
+	Set reasondate=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSDateOfReason")
+	Set reasontime=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSTimeOfReason")
+	Quit ..IsCanceledVals(reason,reasondate,reasontime)
+]]></Implementation>
+</Method>
+
+<Method name="IsCanceledVals">
+<Description>
+Отменен ли Набор тестов User.EPVisitTestSet с печатаемой причиной отмены  (reasonobj.CTRReportable="Y")</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReason:%String,pReasonDate:%String,pReasonTime:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If (pReason="")||(pReasonDate="")||(pReasonTime="") Quit 0
+	Set reasonobj=##class(User.CTReason).%OpenId(pReason,0)
+	If '$IsObject(reasonobj) Quit 0
+	If reasonobj.CTRReportable="Y" Quit 1
+	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="IsCanceledLB2">
+<Description>
+Является ли набор тестов со значениями передаваемыми в списке формата $ListBuild отмененным c любой причиной отмены
+Параметры:
+pValues - Значения в формате $ListBuild
+Возвращаемое значение:
+1 - Отменен
+0 - Нет</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pValues:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set reason=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSReasonDR")
+	Set reasondate=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSDateOfReason")
+	Set reasontime=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSTimeOfReason")
+	Quit ..IsCanceledVals2(reason,reasondate,reasontime)
+]]></Implementation>
+</Method>
+
+<Method name="IsCanceledVals2">
+<Description>
+Отменен ли Набор тестов User.EPVisitTestSet с печатаемой причиной отмены  (reasonobj.CTRReportable="Y")</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReason:%String,pReasonDate:%String,pReasonTime:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If (pReason="")||(pReasonDate="")||(pReasonTime="") Quit 0
+	Quit 1
+]]></Implementation>
+</Method>
+
+<Method name="IsPrintableLB">
+<Description>
+Является ли набор тестов со значениями передаваемыми в списке формата $ListBuild печатаемым
+Параметры:
+pValues - Значения в формате $ListBuild
+Возвращаемое значение:
+1 - Печатаемый
+0 - Непечатаемый</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pValues:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If ..IsAuthorisedLB(pValues) Quit 1
+	If ..IsCanceledLB(pValues) {
+		Set reason=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSReasonDR")
+		If ##class(TCLEx.Function.CodeTable).IsReportableReason(reason)
+		Quit 1
+	}	
+	Set testsetid=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"%ID")
+	Quit ..IsInPrintableVerificationQueue(testsetid)
 ]]></Implementation>
 </Method>
 
