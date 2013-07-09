@@ -145,15 +145,25 @@ BODY  ; обработка данных...
 		 set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
 		 // для эпизодов, которые были до внедрения BiRLab
          set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
-             
+         
          set flagBiRLab=0 
-         if (payepis="")&&(payepisnew'="") {
+         if (payepis="")&&(payepisnew'="") 
+         {
 	            set flagBiRLab=1
 	            set payment=payepisnew
-	            if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+         } 
+         else  
+         {
+	           set payment=$select(payepis="":"?",1:payepis)
          }
-         if payepis="" set payepis="?"  ;если был зарегистрирован через LT
-         
+	         
+	     if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+	     
+	     if '$data(@Mas@("REPORT", payment)) {
+		     set paymentname=##class(BiRLab.Function.Report).GetPayerInfo(payment,"nameshort",flagBiRLab)
+		     set @Mas@("REPORT", payment)=paymentname
+	     }
+             
          set cito=$piece(rec,"\",15) 
          kill specimens
          s ts=""
@@ -168,7 +178,8 @@ BODY  ; обработка данных...
                  If superset'="" Set dept=$Extract(superset,1) 
                  ;If (dept="")||('$Data(DEP(dept))) continue
                  ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
-                 //s status=$p(rects,"\",31) if status'="A" continue 
+                 //s status=$p(rects,"\",31) if status'="A" continue
+                 /* 
                  if flagBiRLab=0 {
 	                     ; плательщик (на уровне набора тестов)
                          set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
@@ -176,7 +187,7 @@ BODY  ; обработка данных...
                          ; проверяем ограничение по плательщику
                          if PAYMENT'="*",'$D(PAYMENT(payment)) continue          
                   }
-                 
+                 */
                  ;
                  Set billingitem=ts,authdate=$Piece(rects,"\",4)
                  // этот блок оставляем только для расскоментирования сртроки с проверкой дат
@@ -203,7 +214,7 @@ BODY  ; обработка данных...
 	         }
          }
          //if $o(specimens(""))'=$o(specimens(""),-1) m ^test(999,epis)=specimens //test
-         set payment=payepis
+         //set payment=payepis
          //?? уточнить
          if $order(specimens(""))'=$order(specimens(""),-1) {
 	        kill specimens(epis)
@@ -215,7 +226,7 @@ BODY  ; обработка данных...
 	             set specimenCount=1
                   ;
                  s @Mas@("REPORT",payment,"key",key)=$g(@Mas@("REPORT",payment,"key",key))+specimenCount
-                 s @Mas@("REPORT",payment)=$g(@Mas@("REPORT",payment))+specimenCount                                 ;кол-во контейнеров в вып.наборах тестов по заказчику
+                 s @Mas@("REPORT",payment,"count")=$g(@Mas@("REPORT",payment,"count"))+specimenCount                                 ;кол-во контейнеров в вып.наборах тестов по заказчику
                  s @Mas@("REPORT")=$g(@Mas@("REPORT"))+specimenCount                                       ;общее кол-во
                  ; индексы для динамич. построения столбцов
                  s @Mas@("SORT",key)=$g(@Mas@("SORT",key))+specimenCount 
@@ -247,12 +258,17 @@ XML      ; Формирование XML...
  ;
  ;m ^zz("SortCol")=SortCol  ;@@@
  ;
+ // сортировка плательщиков по алфавиту
+ kill @Mas@("sortpay")
+ set payment="" f  s payment=$o(@Mas@("REPORT",payment),1,paymentname) q:payment=""  d  ;
+ .set @Mas@("sortpay",paymentname_$c(1)_payment)=""
  do
- .s (NGr,Npp)=0,payment="" f  s payment=$o(@Mas@("REPORT",payment)) q:payment=""  d
+ .s (NGr,Npp)=0,paykey="" f  s paykey=$o(@Mas@("sortpay",paykey)) q:paykey=""  d
+ .. set payment=$piece(paykey,$c(1),2),paymentname=$piece(paykey,$c(1),1)
  .. s NGr=$i(NGr)
  .. S @MasO@("User",1,"Gr",NGr,"NGr")=Npp
- .. S @MasO@("User",1,"Gr",NGr,"Code")=$p($g(^TTAB("BI",payment)),"\")      ;наименование заказчика
- .. S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT",payment))          ;кол-во выполненных наборов тестов по заказчику
+ .. S @MasO@("User",1,"Gr",NGr,"Code")=paymentname     ;наименование заказчика
+ .. S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT",payment,"count"))          ;кол-во выполненных наборов тестов по заказчику
  .. S @MasO@("User",1,"Gr",NGr,"Amt")=$$j($g(@Mas@("REPORT-A",payment)),0,2) ;сумма для выполненных наборов тестов по заказчику
  .. ; разбивка по периодам
  .. S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""

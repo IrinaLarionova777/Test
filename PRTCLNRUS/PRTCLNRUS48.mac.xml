@@ -72,9 +72,148 @@ INIT(PAR) [MSGERROR,PAR,mas,PAR1,PAR2,PAR3,PAYMENT] PUBLIC {
 	if PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>"
 	quit
 }
+
+ ;------------------------------------------------
+ ; обработка данных...
+BODY(PAR1,PAR2,PAR3, Mas)  [MSGERROR, PAYMENT] PUBLIC  
+ {
+ Kill ^||Report.Amount ; ***
+ ; поиск по дате назначения (дата передачи набора тестов)
+ ; ^TDAY(4,{EPVIS DateOfEntry},{EPVIS StatusPatient},{EPVIS VisitNumber}) 
+ set date=PAR1-1 
+ for {
+	 set date=$order(^TDAY(4,date)) quit:date=""  quit:date>PAR2  
+	 s dateOUT=$$extdate2^SSUTIL4(date)  ;dd/mm/yy
+     ; --- наборы тестов --- для лаб.эпизода (ограничение по отделам)
+	 set epis="" 
+	 for {
+		 set epis=$order(^TDAY(4,date,0,epis)) quit:epis=""  if '$Data(^TEPI(epis)) continue
+		 set rec=$get(^TEPI(epis))
+         ; плательщик (на уровне лаб.номера) Плательщика берем только на уровне эпизода!
+         set payment="",paymentname=""
+		 // при использовании BiRLab плательщик определяется по коду ЛПУ (и только на уровне EPVisitNumber) (поле EPVIS_PaymentCode_DR пусто)
+		 set hospitalcode=$piece(rec,"\",20)
+		 set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
+		 // для эпизодов, которые были до внедрения BiRLab
+         set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
+             
+         set flagBiRLab=0 
+         if (payepis="")&&(payepisnew'="") 
+         {
+	            set flagBiRLab=1
+	            set payment=payepisnew
+         } 
+         else  
+         {
+	           set payment=$select(payepis="":"?",1:payepis)
+         }
+	         
+	     if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+	     
+	     set cito=$piece(rec,"\",15) 
+         kill vsp
+         s ts=""
+         for {
+	         s ts=$o(^TEPI(epis,1,ts)) quit:ts="" 
+	         //s dept=$e(ts,1) 
+	         s tscnt="" 
+	         for {
+		         s tscnt=$o(^TEPI(epis,1,ts,tscnt)) quit:tscnt=""  
+		         Set rects=$Get(^TEPI(epis,1,ts,tscnt))
+                 //Set superset=$p(rects,"\",29)
+                 //If superset'="" Set dept=$Extract(superset,1) 
+                 ;If (dept="")||('$Data(DEP(dept))) continue
+                 ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
+                 //s status=$p(rects,"\",31) if status'="A" continue
+                 /* 
+                 if flagBiRLab=0 {
+	                     ; плательщик (на уровне набора тестов)
+                         set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                         set:payment="" payment=payepis
+                         ; проверяем ограничение по плательщику
+                         if PAYMENT'="*",'$D(PAYMENT(payment)) continue          
+                  }
+                 */
+                 ;
+                 /*
+                 Set billingitem=ts,authdate=$Piece(rects,"\",4)
+                 // этот блок оставляем только для расскоментирования сртроки с проверкой дат
+                 If superset'="" {
+	                 Set billingitem=superset
+	                 //If $Data(^||Report.Amount(billingitem,epis,payment)) continue
+                     If '##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) continue
+                     Set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate(epis,superset)
+                     ;if authdate<PAR1||(authdate>PAR2) continue  //  надо расскомментировать, но одновременно с PRTCLNRUS13b 
+                     //Set ^||Report.Amount(billingitem,epis,payment)=""
+                 }
+                 */
+                 ;Set amount=$$GetBillingItemAmount^PRTCLNRUS05a(payment,epis,authdate,billingitem,cito)
+                 /*
+                 set specimenData=$piece(rects,"\",47) //VISTS_SpecimenNo
+                 //set ^test(46,epis,ts,tscnt)=specimenData_"|||"_$piece(rects,"\",46) 
+                 if specimenData="" {
+	                 if '$data(specimens(epis)) set specimens(epis)=""
+                 }
+                 else { 
+                     for ii=1:1:$length(specimenData,";") {
+	                    set specimen=$piece($piece(specimenData,";",ii),":",1)
+	                    if specimen'="" if '$data(specimens(specimen)) set specimens(specimen)=""
+                     }
+                 }*/
+                 
+                 /*
+                 set tc="" 
+                 for  {
+	                 set tc=$order(^TEPI(epis,1,ts,tscnt,"DATA",tc)) if tc="" quit
+	                 set typeContainer="" // тип контейнера
+	                 for {
+		                 set typeContainer=$order(^TTAB("TC",tc,"SC",typeContainer)) if typeContainer="" quit
+		                 set typeSpecimen="" // тип образца
+		                 for {
+			                 set typeSpecimen=$order(^TTAB("TC",tc,"SC",typeContainer,typeSpecimen)) if typeSpecimen="" quit
+			                 set vsp(typeContainer_$c(1)_typeSpecimen)=""
+		                 }
+	                 }
+                 }
+                 */
+                 set specimenData=$piece(rects,"\",47) //VISTS_SpecimenNo
+                 //set ^test(46,epis,ts,tscnt)=specimenData_"|||"_$piece(rects,"\",46) 
+                 if specimenData="" {
+	                 if '$data(vsp(epis)) {
+		                 set typeContayner=$order(^TTAB("TS",ts,"SC",""))
+		                 if typeContayner'="" set vsp(epis)=typeContayner
+	                 }
+                 }
+                 else { 
+                     for ii=1:1:$length(specimenData,";") {
+	                    set typeContayner=$piece($piece(specimenData,";",ii),":",2)
+	                    if typeContayner="" set typeContayner=$order(^TTAB("TS",ts,"SC",""))
+	                    if typeContayner'="" if '$data(vsp(typeContayner)) set vsp(typeContayner)=typeContayner
+                     }
+                 }
+                  
+	         }
+         }
+         if '$data(vsp) set vsp(epis)="Не указан контейнер"
+         set key=""
+         for {
+	                 set key=$order(vsp(key)) if key="" quit
+	                 set typeContainer=vsp(key)
+	                 if '$data(@Mas@("REPORT", payment)) {
+		                            set paymentname=##class(BiRLab.Function.Report).GetPayerInfo(payment,"nameshort",flagBiRLab)
+		                            set @Mas@("REPORT", payment)=paymentname
+	                 }
+			         set contdesc=$select('$data(^TTAB("CON",typeContainer)):"Не указан контейнер",1:$piece($get(^TTAB("CON",typeContainer)),"\",1)_$c(1)_typeContainer)
+			         set @Mas@("REPORT", payment, contdesc)=$get(@Mas@("REPORT", payment, contdesc))+1
+         }
+    }
+ }
+ //kill ^test(222) m ^test(222)=@Mas@("REPORT")
+ quit
+ }
 #;------------------------------------------------
 #; обработка данных...
-BODY(PAR1,PAR2,PAR3, Mas) [MSGERROR, SQLCODE, payment, paydesc, contdesc, visnumbercount] PUBLIC {
+BODYold(PAR1,PAR2,PAR3, Mas) [MSGERROR, SQLCODE, payment, paydesc, contdesc, visnumbercount] PUBLIC {
 	&sql(DECLARE C1 CURSOR FOR
 	SELECT CTPC_Code, CTPC_Desc, CTCON_Code, CTCON_Description, COUNT(*)
 	INTO :payment,:paydesc,:contcode,:contdesc,:visnumbercount FROM (
@@ -106,19 +245,27 @@ BODY(PAR1,PAR2,PAR3, Mas) [MSGERROR, SQLCODE, payment, paydesc, contdesc, visnum
 #; Формирование XML
 XML(USER, Mas) [MSGERROR,PAR1,PAR2,PAR3] PUBLIC {
 	if '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+	
+	 // сортировка плательщиков по алфавиту
+    kill @Mas@("sortpay")
+    set payment="" f  s payment=$o(@Mas@("REPORT",payment),1,paymentname) q:payment=""  set @Mas@("sortpay",paymentname_$c(1)_payment)=""
+
+	//m ^test("mas")=@Mas
 	set MasO=$na(^TEMP($zn,$J,"XML")), total = 0
-	set NGr1=0,paymentCode = $o(@Mas@("REPORT", ""))
-	while paymentCode ]"" {
-		set paydesc = $g(@Mas@("REPORT", paymentCode)), contdesc = $o(@Mas@("REPORT", paymentCode, "")), NGr1=$i(NGr1), NCol1=0, @MasO@("User", 1, "Gr", NGr1, "Payment") = paydesc,@MasO@("User", 1, "Gr", NGr1, "PaymentCode") = paymentCode
+	set NGr1=0,key = $o(@Mas@("sortpay", ""))
+	while key ]"" {
+		set paydesc = $piece(key,$c(1),1),paymentCode=$piece(key,$c(1),2)
+		set contdesc = $o(@Mas@("REPORT", paymentCode, "")), NGr1=$i(NGr1), NCol1=0
+		set @MasO@("User", 1, "Gr", NGr1, "Payment") = paydesc,@MasO@("User", 1, "Gr", NGr1, "PaymentCode") = paymentCode
 		while contdesc]"" {
 			set NCol1=$i(NCol1), contcount = $g(@Mas@("REPORT", paymentCode, contdesc))
-			set @MasO@("User", 1, "Gr", NGr1, "Col", NCol1, "ContName") = contdesc, ^("ContCount") = contcount
+			set @MasO@("User", 1, "Gr", NGr1, "Col", NCol1, "ContName") = $p(contdesc,$c(1),1), ^("ContCount") = contcount
 			set total = total + contcount,contdesc = $o(@Mas@("REPORT", paymentCode, contdesc))
 		}
-		set paymentCode = $o(@Mas@("REPORT", paymentCode))
+		set key = $o(@Mas@("sortpay", key))
 	}	
 	; входные параметры
-	s date1=$o(^TEPIi("AUTHORISED",PAR1-1)),date2=$o(^TEPIi("AUTHORISED",PAR2+1),-1)
+	s date1=$o(^TDAY(4,PAR1-1)),date2=$o(^TDAY(4,PAR2+1),-1)
 	S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(date1),"/",".")
 	S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(date2),"/",".")
 	S @MasO@("User",1,"Total")=total
