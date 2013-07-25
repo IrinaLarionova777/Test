@@ -257,6 +257,7 @@ pPCLGlb - формируемый буфер с PCL командами</Descripti
 			Set language=$ListGet(languages,i)
 			If language="" Continue
 			Do ..PCLReport2Glb(epis,.testsets,0,language,$Name(@pPCLGlb@(language,epis)))
+			//m ^test("pr1",language,epis)=@pPCLGlb@(language,epis)
 			If $Data(@pPCLGlb@(language,epis)) Set @pPCLGlb@(language)=$Get(@pPCLGlb@(language))+1
 		}
 	}
@@ -907,6 +908,13 @@ pPDFFileName - по сслке возвращается имя созданно�
 			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$GeneralError,"Не удалось сформировать очередное имя файла для  "_pPDFFileName_" !")
 		}
 	}
+	
+	//Проверка существования lock файла
+	set fileLockNameEMC=..GetNameLockFileEMC(pPDFFileName)
+	if ##class(%File).Exists(fileLockNameEMC) {
+		Quit $$$ERROR($$$GeneralError,"Не удалось сформировать файл "_pPDFFileName_", так как существует lock файл "_fileLockNameEMC_" !")
+	}
+	
 	If '$Data(%request) {
 		Set %request=##class(%CSP.Request).%New()
 		Set %request.URL="/csp/"_$ZUtil(5)_"/"_..%ClassName(1)_".xml"
@@ -924,14 +932,20 @@ pPDFFileName - по сслке возвращается имя созданно�
 	Set repobj.ExtraParams=$Get(pExtraParams)
 	Set repobj.TotalPages=..PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
 	
-	// create lock file
+		// create lock file
 	set fileLockName=..GetNameLockFile(pPDFFileName)
 	set ok=..CreateEmptyFile(fileLockName)
 	If 'ok {
 		Set pPDFFileName=""
 		set ok=$System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось создать lck файл "_fileLockName_"."),ok)
+		set iii=$i(^log("CreateFile",pEpis))
+		s ^log("CreateFile",pEpis,iii)="Не удалось создать lck файл "_$g(fileLockName)_"."
 		Quit ok 
 	}
+	// !!! временно
+	set iii=$i(^log("CreateFile",pEpis))
+	s ^log("CreateFile",pEpis,iii)=$zts_" Успешно сформирован lock файл "_$g(fileLockName)
+	// !!! временно
 	
 	// create file
 	Set ok=repobj.GenerateReport(pPDFFileName,2)
@@ -941,10 +955,20 @@ pPDFFileName - по сслке возвращается имя созданно�
 		if 'ok2 set ok=$System.Status.AppendStatus(ok,ok2) 
 		Quit ok 
 	}
+	// !!! временно
+	set filesize=0 if filename'="" set filesize=##class(%File).GetFileSize(pPDFFileName) 
+	set iii=$i(^log("CreateFile",pEpis))
+	s ^log("CreateFile",pEpis,iii)=$zts_" Успешно сформирован файл "_$g(pPDFFileName)_" ("_filesize_" байт"_")"_$s(+filesize=0:" !!!!!",1:"")
+	// !!! временно
 	
 	// delete lock file
 	set ok2=##class(%File).Delete(fileLockName)
 	if 'ok2 set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_"."))
+	// !!! временно
+	set iii=$i(^log("CreateFile",pEpis))
+	if ok2 s ^log("CreateFile",pEpis,iii)=$zts_" Успешно удален lock файл "_$g(fileLockName)
+	else  s ^log("CreateFile",pEpis,iii)=$zts_" Не удалось удалить lock файл "_$g(fileLockName)
+	// !!! временно
 	
 	// в Медиалоге ловились файлы с 0 длиной - это наша ловушка на всякий случай
 	set filesize=##class(%File).GetFileSize(pPDFFileName)
@@ -954,7 +978,7 @@ pPDFFileName - по сслке возвращается имя созданно�
 		set ok1=repobj.GenerateReport(logFile,2,1)
 		set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Файл "_pPDFFileName_" имеет нулевую длину. См. "_logFile_"."))
 	}
-		
+	
 	If 'ok {
 		Set pPDFFileName=""
 	}	
@@ -1185,6 +1209,16 @@ Create empty file</Description>
 <Implementation><![CDATA[
 	if $get(pFile)="" quit ""
     quit $piece(pFile,".",1,$length(pFile,".")-1)_".lck"
+]]></Implementation>
+</Method>
+
+<Method name="GetNameLockFileEMC">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFile</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if $get(pFile)="" quit ""
+    quit $piece(pFile,".",1,$length(pFile,".")-1)_".lcke"
 ]]></Implementation>
 </Method>
 </Class>
