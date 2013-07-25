@@ -3,6 +3,7 @@
 <Class name="TCLEx.Report.ResultForm">
 <Description>
 Создание отчета с результами эпизода как для печати на принтере, так и для ормирования PDF-результата</Description>
+<IncludeCode>TCLEx</IncludeCode>
 <Super>%RegisteredObject</Super>
 <TimeCreated>62336,44898.98751</TimeCreated>
 
@@ -17,7 +18,7 @@ pUser - пользователь запустивший отчет</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pReportType:%String,pCourier:%String,pUser:%String</FormalSpec>
 <Implementation><![CDATA[
-	//s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
+	s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
 	If (pReportType'="C")&&(pReportType'="DR") Quit		// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
 	//If (pReportType'="C") Quit								// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
 	Set pUser=$Get(pUser)
@@ -671,6 +672,51 @@ pExtension - расширение файла
 ]]></Implementation>
 </Method>
 
+<Method name="CallLabOrderResultFileName">
+<Description>
+Вызов получения имени файла результата для эпизода
+Параметры:
+pReportClassName - класс, формирующий отчет
+pEpis - ID эпизода
+pTestSets - буфер с ID наборов тестов (если пусто,то все наборы эпизода)
+pLanguage - язык отчета
+pExtension - расширение файла
+Возвращаемое значение:
+Имя файла результата для эпизода</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportClassName:%String,pLabOrder:%String,pLanguage:%String,pExtension:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set pReportClassName=$Get(pReportClassName)
+	Set pLanguage=$Get(pLanguage)
+	If pReportClassName="" {
+		Set pReportClassName=$$PCLResultClassName^Settings.Reports()
+	}	
+	Set result=""
+	Try {
+		Set result=$ClassMethod(pReportClassName,"LabOrderResultFileName",pLabOrder,pLanguage,pExtension)
+	} Catch {
+		/// Значение по умолчанию - %Фамилия(%NЗаказа-%ПризнакОкончательныйИлиПромежуточный).%Расширение
+		Kill ^||ResultForm.Episodes
+		Do ##class(TCLEx.Function.LabOrder).CreateOrderEpisodesGlb(pLabOrder,$Name(^||ResultForm.Episodes))
+		Set episobj=##class(User.EPVisitNumber).%OpenId($Order(^||ResultForm.Episodes("")))
+		If $IsObject(episobj) {
+			Set result=episobj.EPVISSurname_"("_pLabOrder_"-"
+			If ##class(TCLEx.Function.LabOrder).IsComplete(pLabOrder,$Name(^||ResultForm.Episodes)) {
+			Set result=result_"Окончательный"
+			} Else {
+				Set result=result_"Промежуточный"
+			}		
+			Set result=result_")."_pExtension
+		}
+
+	}		
+	//Set result=$$RemomeNotPrintableCharacters^KSUTIL1(result)		// Был прецедент, когда в Фаимлию записали $Char(10) - операциока не смогла открыть файл с таким именем
+	Set result=$$CorrectFileName^KSUTIL1(result,"_")	// Удаляем непечатные символы, недопустимые в имени файла меняем на знак "_"
+	Quit result
+]]></Implementation>
+</Method>
+
 <Method name="CallRowCount">
 <Description>
 Вызов получения числа строк в PCL отчете для отдела
@@ -949,6 +995,99 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 	
 	If 'ok {
 		Set pPDFFileName=""
+	}	
+	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CreateLabOrderPDFReport">
+<Description>
+Создание файла PDF отчета для результатов заказа
+Параметры:
+pLabOrder - Номер заказа
+pLanguage - язык результата
+pExtraParams - дополнительные параметры в формате $ListBuild
+pPDFDir - каталог, куда выгружать файл
+pOverWritePDF - если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+pPDFFileName - по сслке возвращается имя созданного PDF файла
+Возвращаемое значение:
+Результат создания файла в формате %Status</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pLabOrder:%String,pLanguage:%String,pExtraParams:%String,pPDFDir:%String,pOverWritePDF:%Boolean,&pPDFFileName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set pLanguage=$Get(pLanguage)
+	Set pPDFFileName=""
+
+	Kill ^||ResultForm.Episodes
+	Do ##class(TCLEx.Function.LabOrder).CreateOrderEpisodesGlb(pLabOrder,$Name(^||ResultForm.Episodes))
+	If '$Data(^||ResultForm.Episodes) {
+		Quit $$$ERROR($$$errNoResultData,"Нет данных для заказа "_pLabOrder_" !")
+	}	
+	Set reportclassname=$$ZenResultClassName^Settings.Reports()
+	Kill ^||ResultForm.OrderTable
+	
+	Set epis="",totalpages=0
+	For  {
+		Set epis=$Order(^||ResultForm.Episodes(epis))
+		If epis="" Quit
+		Kill ^||ResultForm.EpisodePCL
+		Do ..PCLEpisodeResult(reportclassname,epis,,pLanguage,$Name(^||ResultForm.EpisodePCL))
+		If $Data(^||ResultForm.EpisodePCL) {
+			Do ..PCLGlb2TableGlb($Name(^||ResultForm.EpisodePCL),$Name(^||ResultForm.OrderTable(epis)))
+			Set totalpages=totalpages+..PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
+		}
+	}
+	If '$Data(^||ResultForm.OrderTable) {
+		Quit $$$ERROR($$$errNoResultData,"Нет данных для заказа "_pLabOrder_" !")
+	}	
+	//
+	If '$$TestDirectory^KSUTIL1(pPDFDir) {
+		Quit $$$ERROR($$$errCreatingResultFile,"Не удалось создать каталог  "_pPDFDir_" !")
+	}	
+	//
+	Set filename=..CallLabOrderResultFileName(reportclassname,pLabOrder,pLanguage,"pdf")
+	Set pPDFFileName=pPDFDir_"\"_filename
+	If ##class(%File).Exists(pPDFFileName) {
+		If pOverWritePDF {
+			Set ok=##class(%File).Delete(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$errCreatingResultFile,"Не удалось удалить существующий файл "_pPDFFileName_" !")
+
+		} Else {	
+			Set pPDFFileName=$$ArchiveFileName^KSUTIL1(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$errCreatingResultFile,"Не удалось сформировать очередное имя файла для  "_pPDFFileName_" !")
+		}
+	}
+	// Запоминаем значения %request, если переменная ужезаполнена
+	If $Data(%request) {
+		Set oldrequest("URL")=%request.URL
+		Set oldrequest("SERVER_NAME")=$Get(%request.CgiEnvs("SERVER_NAME"))
+		Set oldrequest("$CSPTOFILE")=$Get(%request.Data("$CSPTOFILE",1))
+	}	
+	If '$Data(%request) {
+		Set %request=##class(%CSP.Request).%New()
+	}	
+	Set %request.URL="/csp/"_$ZUtil(5)_"/"_..%ClassName(1)_".xml"
+	Set %request.CgiEnvs("SERVER_NAME")="127.0.0.1"
+	Set %request.Data("$CSPTOFILE",1)=1
+	
+	Set repobj=$ClassMethod(reportclassname,"%New")
+	Set repobj.OrderNumber=pLabOrder
+	Set repobj.Episode=""
+	Set repobj.PDF=1
+	Set repobj.Language=pLanguage
+	Set repobj.ExtraParams=$Get(pExtraParams)
+	Set repobj.DataGlobal=$Name(^||ResultForm.OrderTable)
+	Set repobj.TotalPages=totalpages
+	Set ok=repobj.GenerateReport(pPDFFileName,2)
+	If 'ok {
+		Set pPDFFileName=""
+	}	
+	// Восстанавливаем %request
+	If $Data(oldrequest) {
+		Set %request.URL=$Get(oldrequest("URL"))
+		Set %request.CgiEnvs("SERVER_NAME")=$Get(oldrequest("SERVER_NAME"))
+		Set %request.Data("$CSPTOFILE",1)=$Get(oldrequest("$CSPTOFILE"))
 	}	
 	Quit ok
 ]]></Implementation>
