@@ -12,26 +12,156 @@
 Параметры:
 pEpis - Id эпизода
 pTestSets - буфер с Id наборов тестов (если пусто, все авторизованные)
-pPDF - признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
 pLanguage - язык результата (2-ENG, иначе - RUS )
+этот параметр (pExtraParams) может быть разным у разных клиентов 
 pExtraParams - дополнительные параметры формироваия отчета в формате $ListBuild
-pPDFDir - каталог, куда выгружать файл
-pOverWritePDF - если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
-pPDFFileName - по сслке возвращается имя созданного PDF файла
-pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог файлов)/флаг2 (1/0 флаг проверки log файла с другой стороны (чтения))
+  set pPDF=$lg(pExtraParams,1) - признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+  set pPDFDir=$lg(pExtraParams,2) - каталог, куда выгружать файл
+  set pOverWritePDF=$lg(pExtraParams,3) - если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+  set ExtraParamsZen=$lg(pExtraParams,4)=дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+  set flagLogFileCreate=$lg(pExtraParams,5) флаг создавать ли lock файл во время создания pdf файла 
+  set flagLogFileTest=$lg(pExtraParams,6) флаг проверять ли внешний lock файл работы с pdf файлом
+  set pFlagPreview=$lg(pExtraParams,7) флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+pPDFFileName - по ссылке возвращается или передается имя созданного PDF файла
 Возвращаемое значение:
-Результат создания файла в формате %Status</Description>
+Результат создания файла в формате %Status
+Сама функция клиенто-зависимая и все вызовы этой функции находятся в клиентских программах!</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pPDF:%Boolean,pLanguage:%String,pExtraParams:%String,pPDFDir:%String,pOverWritePDF:%Boolean,&pPDFFileName:%String,pFlagLogFiles:%String]]></FormalSpec>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pLanguage:%String,pExtraParams:%String,&pPDFFileName:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-	set pFlagLogFiles=$get(pFlagLogFiles,"1/1")
-	set flagLogFileCreate=+$piece(pFlagLogFiles,"/",1)  
-	set flagLogFileTest=+$piece(pFlagLogFiles,"/",2)
-	Set pPDFFileName=""
+  try {	
+	set FlagPreview=$lg(pExtraParams,7) //флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+	 
+	// Пока будем формировать один файл по всем наборам тестов ( и вордовским и невордовским) только при FlagPreview="V" (предпросмотр)
+	if FlagPreview="V" {
+		if $get(pPDFFileName)="" set ok=$$$ERROR($$$GeneralError,"Не указано имя файла предпросмотра.") quit
+		
+		// делим наборы тестов эпизода на word-testset and no-word-testset
+	    // если pTestSets не задана, то просто берем все наборы тестов из эпизода  (потом сделаются все проверки ниже)
+	    if '$data(pTestSets) {
+	      set ts=""
+	      for {
+		     set ts=$order(^TEPI(pEpis,1,ts)) if ts="" quit
+		     set tscnt=""
+		     for {
+			     set tscnt=$order(^TEPI(pEpis,1,ts,tscnt)) if tscnt="" quit
+			     set tsid=pEpis_"||"_ts_"||"_tscnt
+		         set pTestSets(tsid)=""
+		     }
+	      }
+	    }
+	    kill testSets,testSetsWord
+	    set tsid=""
+	    for {
+		   set tsid=$order(pTestSets(tsid)) if tsid="" quit
+		   if ##class(TCLEx.Function.TestSet).IsTestSetWordToPDF($piece(tsid,"||",2)) 
+		   {
+			   set testSetsWord(tsid)=""
+		   } 
+		   else 
+		   {
+			   set testSets(tsid)=""
+		   }
+	    }
+	    set ok=1
+	    set nmfile=##class(%File).GetFilename(pPDFFileName)
+	    set dirfile=##class(%File).GetDirectory(pPDFFileName)
+	    set files=""
+	    // формируем файл с обычными (невордовскими результатами)
+	    if $data(testSets) {
+		    set filenamevsp=..NextAuxiliaryFile(nmfile,dirfile)
+		    set ok1=..CreateEpisodePDFReportGeneral(pEpis, .testSets, pLanguage, pExtraParams, filenamevsp) 
+		    if ok1 {
+			   set files=files_$select(files'="":$char(0),1:"")_filenamevsp
+		    }
+	    }
+	    set tsid=""
+	    for {
+		    set tsid=$order(testSetsWord(tsid)) if tsid="" quit
+		    if ##class(TCLEx.Report.WordEMC).isResult(tsid) {
+			    set filenamevsp=..NextAuxiliaryFile(nmfile,dirfile)
+			    set params=##class(TCLEx.Report.WordEMC).getParams(pEpis,tsid,pLanguage,.error)
+                if $get(error)=$$$OK {
+   			       set ok1=##class(TCLEx.Report.WordEMC).CreateReportWordToPDF(pEpis, tsid, params, pLanguage, filenamevsp, 0)
+				   if ok1 {
+			          set files=files_$select(files'="":$char(0),1:"")_filenamevsp
+		           }
+                }
+			} 
+	    }
+	    // если сформировались какие-то файлы и их больше 1, то надо объединить в один pdf файл
+	    if files'="" {
+		    if $length(files,$c(0))>1 {
+		       set ok=##class(TCLEx.Report.Word).startConcatPDF(files,pPDFFileName,1)
+	        } 
+	        else 
+	        {
+		      set ok=##class(%File).Rename(files,pPDFFileName)
+	        }
+	    } else  {
+		    set ok= $$$ERROR($$$GeneralError,"Не удалось сформировать файл для предпросмотра результатов.")   
+	    }
+	}
+	else 
+	{
+		set ok=..CreateEpisodePDFReportGeneral(pEpis, .pTestSets, pLanguage, pExtraParams, .pPDFFileName)
+	}
+  } catch(exception) {
+	 set ok=exception.AsStatus() 
+  }	
+	If 'ok {
+		Set pPDFFileName=""
+		set ^ERRORS(+$h,$i(^ERRORS(+$h)))=$h_"|"_ok
+	}	
+	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CreateEpisodePDFReportGeneral">
+<Description>
+Создание файла PDF отчета для НЕвордовских результатов эпизода
+Параметры:
+pEpis - Id эпизода
+pTestSets - буфер с Id наборов тестов (если пусто, все авторизованные)
+pLanguage - язык результата (2-ENG, иначе - RUS )
+этот параметр (pExtraParams) может быть разным у разных клиентов 
+pExtraParams - дополнительные параметры формироваия отчета в формате $ListBuild
+  set pPDF=$lg(pExtraParams,1) - признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+  set pPDFDir=$lg(pExtraParams,2) - каталог, куда выгружать файл
+  set pOverWritePDF=$lg(pExtraParams,3) - если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+  set ExtraParamsZen=$lg(pExtraParams,4)=дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+  set flagLogFileCreate=$lg(pExtraParams,5) флаг создавать ли lock файл во время создания pdf файла 
+  set flagLogFileTest=$lg(pExtraParams,6) флаг проверять ли внешний lock файл работы с pdf файлом
+  set pFlagPreview=$lg(pExtraParams,7) флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+pPDFFileName - по ссылке возвращается или передается имя созданного PDF файла
+Возвращаемое значение:
+Результат создания файла в формате %Status
+Сама функция клиенто-зависимая и все вызовы этой функции находятся в клиентских программах!</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pLanguage:%String,pExtraParams:%String,&pPDFFileName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set pPDF=$lg(pExtraParams,1)  // признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+	set pPDFDir=$lg(pExtraParams,2) //каталог, куда выгружать файл
+	set pOverWritePDF=$lg(pExtraParams,3) //если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+	set ExtraParamsZen=$lg(pExtraParams,4) //дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+	set FlagPreview=$lg(pExtraParams,7) //флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+	
+	// флаг создавать ли lock файл во время создания pdf файла
+	set flagLogFileCreate=$lg(pExtraParams,5) 
+	if (flagLogFileCreate'=1)&&(flagLogFileCreate'=0) {
+		set flagLogFileCreate=0 
+	}
+	// флаг проверять ли внешний lock файл работы с pdf файлом
+	set flagLogFileTest=$lg(pExtraParams,6) 
+	if (flagLogFileTest'=1)&&(flagLogFileTest'=0) {
+		set flagLogFileTest=0 
+	}
+	
 	Set reportclassname=$$ZenResultClassName^Settings.Reports()
 	Kill ^||ResultForm.EpisodePCL
-	Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL))
+	Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL),FlagPreview)
 	If '$Data(^||ResultForm.EpisodePCL) {
 		Quit $$$ERROR($$$GeneralError,"Нет данных для эпизода "_pEpis_" !")
 	}	
@@ -40,8 +170,10 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 		Quit $$$ERROR($$$GeneralError,"Не удалось создать каталог  "_pPDFDir_" !")
 	}	
 	//
-	Set filename=##class(TCLEx.Report.ResultForm).CallEpisodeResultFileName(reportclassname,pEpis,.pTestSets,pLanguage,"pdf")
-	Set pPDFFileName=pPDFDir_"\"_filename
+	if $get(pPDFFileName)="" {
+		Set filename=##class(TCLEx.Report.ResultForm).CallEpisodeResultFileName(reportclassname,pEpis,.pTestSets,pLanguage,"pdf")
+	    Set pPDFFileName=pPDFDir_"\"_filename
+	} 
 	If ##class(%File).Exists(pPDFFileName) {
 		If pOverWritePDF {
 			Set ok=##class(%File).Delete(pPDFFileName)
@@ -64,7 +196,7 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 	Kill ^||ResultForm.EpisodeTable
 	Do ##class(TCLEx.Report.ResultForm).PCLGlb2TableGlb($Name(^||ResultForm.EpisodePCL),$Name(^||ResultForm.EpisodeTable))
 	set totalpages=##class(TCLEx.Report.ResultForm).PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
-	set params=$lb("",pEpis,pPDF,pLanguage,$Name(^||ResultForm.EpisodeTable),pExtraParams,totalpages)
+	set params=$lb("",pEpis,pPDF,pLanguage,$Name(^||ResultForm.EpisodeTable),ExtraParamsZen,totalpages)
 	
 	// create lock file
 	if flagLogFileCreate=1 {
@@ -94,7 +226,7 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 		Quit ok 
 	}
 	// !!! временно
-	set filesize=0 if filename'="" set filesize=##class(%File).GetFileSize(pPDFFileName) 
+	set filesize=0 if pPDFFileName'="" set filesize=##class(%File).GetFileSize(pPDFFileName) 
 	set iii=$i(^log("CreateFile",pEpis))
 	s ^log("CreateFile",pEpis,iii)=$zts_" Успешно сформирован файл "_$g(pPDFFileName)_" ("_filesize_" байт"_")"_$s(+filesize=0:" !!!!!",1:"")
 	// !!! временно
@@ -107,15 +239,16 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 	    set iii=$i(^log("CreateFile",pEpis))
 	    if ok2 s ^log("CreateFile",pEpis,iii)=$zts_" Успешно удален lock файл "_$g(fileLockName)
 	    else  s ^log("CreateFile",pEpis,iii)=$zts_" Не удалось удалить lock файл "_$g(fileLockName)
+	
 	    // !!! временно
-	}
-	// в Медиалоге ловились файлы с 0 длиной - это наша ловушка на всякий случай
-	set filesize=##class(%File).GetFileSize(pPDFFileName)
-	if filesize'>0 {
-		set logFile=$ZUtil(12)_"LIS\!Warning!\"_##class(%File).GetFilename(pPDFFileName)_".txt"
-		Set logFile=$$ArchiveFileName^KSUTIL1(logFile)
-		set ok1=repobj.GenerateReport(logFile,2,1)
-		set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Файл "_pPDFFileName_" имеет нулевую длину. См. "_logFile_"."))
+    	// в Медиалоге ловились файлы с 0 длиной - это наша ловушка на всякий случай
+	    set filesize=0 if pPDFFileName'="" set filesize=##class(%File).GetFileSize(pPDFFileName)
+	    if filesize'>0 {
+		   set logFile=$ZUtil(12)_"LIS\!Warning!\"_##class(%File).GetFilename(pPDFFileName)_".txt"
+		   Set logFile=$$ArchiveFileName^KSUTIL1(logFile)
+		   set ok1=repobj.GenerateReport(logFile,2,1)
+		   set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Файл "_pPDFFileName_" имеет нулевую длину. См. "_logFile_"."))
+	    }
 	}
 	
 	If 'ok {
@@ -163,6 +296,23 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 	}	
 	
 	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="NextAuxiliaryFile">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pNameFile:%String,pDirFile:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set file=""
+   	set len=$length(pNameFile,".")
+   	set name=$piece(pNameFile,".",len-1),ext=$piece(pNameFile,".",len)
+   	for {
+	   	set npp=$i(^||vspFiles)
+   	    set file=pDirFile_"\"_name_"vsp"_npp_"."_ext
+   	    if '##class(%File).Exists(file) quit
+   	}
+    quit file
 ]]></Implementation>
 </Method>
 </Class>
