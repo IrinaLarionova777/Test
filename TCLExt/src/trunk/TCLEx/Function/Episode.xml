@@ -9,13 +9,11 @@
 <FormalSpec>pEpis:%String</FormalSpec>
 <ReturnType>%Boolean</ReturnType>
 <Implementation><![CDATA[
-	if $piece($get(^TEPI(pEpis)),"\",15)="U" Quit 1
-	Quit 0
-	;Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
-	;If '$IsObject(episobj) Quit 0
-	;If '$IsObject(episobj.EPVISPriorityCodeDR) Quit 0
-	;If episobj.EPVISPriorityCodeDR.%Id()="U" Quit 1
- 	;Quit 0
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit 0
+	If '$IsObject(episobj.EPVISPriorityCodeDR) Quit 0
+	If episobj.EPVISPriorityCodeDR.%Id()="U" Quit 1
+ 	Quit 0
 ]]></Implementation>
 </Method>
 
@@ -24,6 +22,15 @@
 <FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String]]></FormalSpec>
 <ReturnType>%Integer</ReturnType>
 <Implementation><![CDATA[
+	// Если существует класс TCLEx.Funclion.Episode(расширение для клиента) и в нем существует метод IsComplete, то вызывается клиентский метод 
+	set clientext=$Piece($Get(^CF("SM",1)),"^",28)
+	if (clientext'="") {
+		set classmethod=$CLASSNAME()_"||IsComplete"
+	    if ##class(%Dictionary.CompiledMethod).%ExistsId(classmethod) {
+		    do $ClassMethod($piece(classmethod,"||",1),$piece(classmethod,"||",2), $get(pEpis), .pTestSets)
+		    quit
+	    }
+	}
 	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
 	If '$IsObject(episobj) Quit 0
 	Set totalcnt=..TotalTestSetNumber(pEpis)
@@ -53,11 +60,25 @@
 
 <UDLText name="T">
 <Content><![CDATA[
-/* Раньше использовался для определения является ли набор тестов завершенным. 
-Корректнее испльзовать CompletedTestSetNumber - отмененные тесты также уже завершенные
-/// Число печатаемых наборов тестов (авторизованных или отмененных с печатаемой причиной отмены) из списка  pTestSets эпизода pEpis
-ClassMethod PrintableTestSetNumber(pEpis As %String, ByRef pTestSets As %String) As %Integer
-{
+// Раньше использовался для определения является ли набор тестов завершенным. 
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Корректнее испльзовать CompletedTestSetNumber - отмененные тесты также уже завершенные
+
+]]></Content>
+</UDLText>
+
+<Method name="PrintableTestSetNumber">
+<Description>
+Число печатаемых наборов тестов (авторизованных или отмененных с печатаемой причиной отмены) из списка  pTestSets эпизода pEpis</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String]]></FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
 	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
 	If '$IsObject(episobj) Quit 0
 	Set cnt=0
@@ -87,10 +108,8 @@ ClassMethod PrintableTestSetNumber(pEpis As %String, ByRef pTestSets As %String)
 		}
 	}	
 	Quit cnt
-}
-*/
-]]></Content>
-</UDLText>
+]]></Implementation>
+</Method>
 
 <Method name="CompletedTestSetNumber">
 <Description>
@@ -570,6 +589,216 @@ pTestSets - список наборов тестов по которым выг�
 	If 'ok Quit ok
 	Set ok=writer.RootObject(xmlobj)
 	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="ResultLanguages">
+<Description>
+Вернуть коды языков для печати результата для эпизода Epis</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpis:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit ""
+	Set defaultlang=..GetDefaultLanguage()
+	Set langcode=""
+	If $IsObject(episobj.EPVISLanguageDR) {
+		Set langcode=episobj.EPVISLanguageDR.%Id()
+	}
+	If langcode="" {												// Если язык не заполнен, то берем язык по умолчанию
+		Set langcode=defaultlang
+	}	
+	Set result=$ListBuild(langcode)									
+	If langcode=29 {												// Если язык 29-ENG/RUS, то возвращаем 2 языка 1-RUS,2-ENG
+		Set result=$ListBuild(1,2)
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetDefaultLanguage">
+<Description>
+Язык по умолчанию</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	// Если существует класс TCLEx.Funclion.Episode(расширение для клиента) и в нем существует метод GetDefaultLanguage, то вызывается клиентский метод 
+	set clientext=$Piece($Get(^CF("SM",1)),"^",28)
+	if (clientext'="") {
+		set classmethod=$CLASSNAME()_"||GetDefaultLanguage"
+	    if ##class(%Dictionary.CompiledMethod).%ExistsId(classmethod) {
+		    do $ClassMethod($piece(classmethod,"||",1),$piece(classmethod,"||",2))
+		    quit
+	    }
+	}
+	quit 20
+]]></Implementation>
+</Method>
+
+<Method name="FirstAuthorizationDateTime">
+<Description>
+Вернуть дату-время авторизации первого набора тестов в заданном эпизоде
+Параметры:
+pEpisId - ID эпизода 
+pTestSetId - возвращаемое по ссылке ID первого авторизованного набора тестов 
+pUserAuthorsedId - возвращаемое по ссылке ID пользователя, авторизовавшегопервый набора тестов  
+Возвращаемое значение:
+Время (в формате $Horolog) авторизации первого набора тестов в эпизоде  </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisId:%String,pGlb:%String,&pTestSetId:%String,&pUserAuthorsedId:%String]]></FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set pGlb=$Get(pGlb)
+	Set (pTestSetId,pUserAuthorsedId)=""
+	If pGlb="" {								// Если буфер с данными наборов тестов эпизода не передается, то формируем его
+		Set pGlb=$Name(^||Episode.TestSets)
+		Kill @pGlb
+		Do ..MakeTestSetsBuf(pEpisId,pGlb)		
+	}	
+	Kill ^||Episode.AuthTimes
+	Set testsetid=""
+	For  {
+		Set testsetid=$Order(@pGlb@(testsetid),1,vals)
+		If testsetid="" Quit
+		
+		If ##class(TCLEx.Function.TestSet).IsAuthorisedLB(vals) {	// Выбираем только авторизованные
+			Set authdate=##class(TCLEx.Function.TestSet).GetPropertyValue(vals,"VISTSDateOfAuthorisation")
+			Set authtime=##class(TCLEx.Function.TestSet).GetPropertyValue(vals,"VISTSTimeOfAuthorisation")
+			Set authuser=##class(TCLEx.Function.TestSet).GetPropertyValue(vals,"VISTSUserAuthorisedDR")
+			Set hor=authdate_","_(60*authtime)
+			Set ^||Episode.AuthTimes(hor)=$ListBuild(testsetid,authuser)
+		}	
+	}	
+	Set result=$Order(^||Episode.AuthTimes(""),1,vals)				// Авторизованный эпизд с минимальный дата-время авторизации
+	If result'="" {
+		Set pTestSetId=$ListGet(vals,1)
+		Set pUserAuthorsedId=$ListGet(vals,2)
+	}	
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="MakeTestSetsBuf">
+<Description>
+Создать буфер с данными наборов тестов заданного эпизода
+Параметры:
+pEpisId - ID эпизода 
+pGlb - буфер в который будут записан результаты</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisId:%String,pGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set (pTestSetId,pUserAuthorsedId)=""
+	Kill @pGlb
+	&Sql(
+		Declare TestSetsCursor Cursor For
+		Select VISTS_RowId,VISTS_TestSet_DR,VISTS_SuperSet_DR,VISTS_Priority_DR,VISTS_StatusResult,VISTS_DateOfAuthorisation,VISTS_TimeOfAuthorisation,VISTS_UserAuthorised_DR,VISTS_Reason_DR,VISTS_DateOfReason,VISTS_TimeOfReason,VISTS_UserReason_DR
+		Into :testsetid,:testset,:superset,:priority,:status,:authdate,:authtime,:authuser,:reason,:reasondate,:reasontime,:reasonuser
+		From SQLUser.EP_VisitTestSet
+		Where VISTS_ParRef=:pEpisId
+	)
+	&Sql(Open TestSetsCursor)
+	&Sql(Fetch TestSetsCursor)
+	If SQLCODE=100 Quit ""											// Нет записей для этого набора тестов
+	Set result=1
+	While (SQLCODE = 0) {
+		If testsetid'="" {
+			Set @pGlb@(testsetid)=$ListBuild(testsetid,testset,superset,priority,status,authdate,authtime,authuser,reason,reasondate,reasontime,reasonuser)
+		}	
+		&Sql(Fetch TestSetsCursor)
+	}
+	&Sql(Close TestSetsCursor)
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="MakeTestSetsBufObj">
+<Description>
+Создать буфер с данными наборов тестов заданного эпизода (через объектный доступ)
+Параметры:
+pEpisId - ID эпизода 
+pGlb - буфер в который будут записан результаты</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisId:%String,pGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set (pTestSetId,pUserAuthorsedId)=""
+	Kill @pGlb
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisId)
+	If '$IsObject(episobj) Quit
+	Set key="",cnt=0
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		Set testsetid=testsetobj.%Id()
+		Set testset=testsetobj.VISTSTestSetDRGetObjectId()
+		Set superset=testsetobj.VISTSSuperSetDRGetObjectId()
+		Set priority=testsetobj.VISTSPriorityDRGetObjectId()
+		Set status=testsetobj.VISTSStatusResult
+		Set authdate=testsetobj.VISTSDateOfAuthorisation
+		Set authtime=testsetobj.VISTSTimeOfAuthorisation
+		Set authuser=testsetobj.VISTSUserAuthorisedDRGetObjectId()
+		Set reason=testsetobj.VISTSReasonDRGetObjectId()
+		Set reasondate=testsetobj.VISTSDateOfReason
+		Set reasontime=testsetobj.VISTSTimeOfReason
+		Set reasonuser=testsetobj.VISTSUserReasonDRGetObjectId()
+		Set @pGlb@(testsetid)=$ListBuild(testsetid,testset,superset,priority,status,authdate,authtime,authuser,reason,reasondate,reasontime,reasonuser)
+	}
+	Quit
+]]></Implementation>
+</Method>
+
+<Method name="LogEvent">
+<Description>
+Сохранить событие об изменении эпизода</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pRecordUpdateType:%String,pEpisId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	
+	If (pRecordUpdateType'="Insert")||(pEpisId="") Quit
+	Set episode=$Get(pValues(2))
+	Set ordernumber=##class(TCLEx.Function.LabOrder).GetOrderByEpisode(episode)
+	Set isweber=($Get(pValues(117))="WebER")
+	Set hospital=$Get(pValues(22))
+	Set user=$Get(pValues(31))		// EPVIS_UserID_DR
+	If isweber {
+		Set event="EPISODE_WEBER_CREATE"
+		Set user="WebER"
+	} Else {
+		Set event="EPISODE_MAN_CREATE"
+		Set ordernumber=""
+	}
+	Do ##class(TCLEx.Data.Event).Save(event,ordernumber,pEpisId,,,"User.EPVisitNumber",pEpisId,hospital,user)
+]]></Implementation>
+</Method>
+
+<Method name="GetAccessionNumbers">
+<Description>
+get string with all Accession Numbers of episode</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSet:%String,&pAccNumbers:%String]]></FormalSpec>
+<PublicList>PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set pAccNumbers="",sc=$$$OK,pTestSet=$get(pTestSet)
+  try {
+	  if '$$getall^LVBVISDB(pEpisode) {
+	        set nnn="" 
+	        for {
+		        set nnn=$order(PLIST(nnn)) quit:nnn="" 
+		        set ts=$piece($piece(PLIST(nnn),$c(28),7),"||",2)
+		        if pTestSet'="",ts'="" if pTestSet'=ts continue
+		        set accnum=$piece($piece($get(PLIST(nnn)),$char(28),12),"||",2) 
+		        if accnum'="" {
+			        set pAccNumbers=pAccNumbers_$s(pAccNumbers'="":", ",1:"")_$$AccNoFormat^LVBCOM03(accnum)
+		        }
+	        }
+        }	
+  } catch(exception) {
+	  set sc=exception.AsStatus()
+	  set pAccNumbers=""
+  }
+  quit sc
 ]]></Implementation>
 </Method>
 </Class>

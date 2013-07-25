@@ -1087,6 +1087,7 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 				}
 			}
 			If status=7 {								// Набор тестов удален в ЛИС или установлена причина по которой его не будут делать
+				Do ..DeletePreviousStatuses(requestid,horolog,$ListBuild(6))	// Удаляем информацию об авторизации, которые ждут своего тайм-аута
 				Set reason="Набор тестов удален"
 				If extravals'="" {
 					Set reasoncode=$ListGet(extravals,1)
@@ -1101,18 +1102,42 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 					}	
 			}
 			If status=10 {								// Была деавторизация набора
+				Do ..DeletePreviousStatuses(requestid,horolog,$ListBuild(6))	// Удаляем информацию об авторизации, которые ждут своего тайм-аута
 				Lock +^TCLEx("ResultFiles",epis,requestid)			// Регистрируем для формирования файлов с результатами
 				Set ^TCLEx("ResultFiles",epis,requestid)=vals
 				Lock -^TCLEx("ResultFiles",epis,requestid)
 				Set ok=1
 			}	
 			If ok {
+				if $g(epis)'="" m ^TCLExlog(epis,"RequestStatus",requestid,horolog)=^TCLEx("RequestStatus",requestid,horolog)
 				Kill ^TCLEx("RequestStatus",requestid,horolog)
 			}
 			Lock -^TCLEx("RequestStatus",requestid,horolog)
 		}
 	}
 	Do ..GenerateResultFiles()
+]]></Implementation>
+</Method>
+
+<Method name="DeletePreviousStatuses">
+<Description>
+Удалить предыдущие статусы заявки, которые попадают в список pStatusValuesList
+Параметры:
+pRequestId - ID запроса буферной таблицы
+pHorolog - время в формате $Horolog, до которого анализировать предыдущие записи
+pStatusValuesList - список с перечнем статусов, которые стоит удалять</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pRequestId:%String,pHorolog:%String,pStatusValuesList:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set hor=""
+	For  {
+		Set hor=$Order(^TCLEx("RequestStatus",pRequestId,hor),1,vals)
+		If (hor="")||(hor=pHorolog)||((hor]pHorolog)) Quit				// Время заполнено и время раньше, чем pHorolog
+		Set status=$ListGet(vals,4)
+		If $ListFind(pStatusValuesList,status)>0 {
+			Kill ^TCLEx("RequestStatus",pRequestId,hor)	
+		}	
+	}
 ]]></Implementation>
 </Method>
 
@@ -1136,7 +1161,7 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 		For  {
 			Set testsetid=$Order(^||EMC.TestSets(testsetid),1,vals)
 			If testsetid="" Quit
-			set isWord=##class(TCLEx.Function.CTTestSet).IsWordResult($piece(testsetid,"||",2))
+			set isWord=##class(TCLEx.Function.TestSet).IsTestSetWordToPDF($piece(testsetid,"||",2))
 			If ##class(TCLEx.Function.TestSet).IsPrintableLB(vals) {
 				If ##class(TCLEx.Function.TestSet).IsAuthorisedLB(vals) {
 					Set authdate=##class(TCLEx.Function.TestSet).GetPropertyValue(vals,"VISTSDateOfAuthorisation")
@@ -1165,6 +1190,7 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 		//s ^test("word1","testw")=$Data(^||EMC.EpisodePCL)_"@"_noresult1
 		Set ok1=1
 		If 'noresult1 {
+			//m ^TCLEx("ResultFilesLog",epis,$h)=testsets
 			Set ok1=..ExportResult2Files(epis,.testsets)
 		}
 		// печать Word наборов тестов в эпизоде (каждый набор тестов в отдельном файле)
@@ -1174,6 +1200,7 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 			set testsetid=$order(testsetsWord(testsetid)) if testsetid="" quit
 			if ##class(TCLEx.Report.WordEMC).isResult(testsetid) {
 				set noresult2=0
+				//s ^TCLEx("ResultFilesWordLog",epis,$h)=testsetid
 				set okpr=##class(TCLEx.Report.WordEMC).CreatePDFall(epis,testsetid)
 				if okpr'=1 set ok2=okpr
 			}
@@ -1212,6 +1239,7 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 				}
 				If ok {
 					Kill ^TCLEx("ResultFiles",epis,requestid)						// Если все ok - то удаляем соответствующую запись в ^TCLEx
+				
 				} Else {
 					Do LogStatus^KSUTIL1(logdir,ok,3,1)
 					Set ok=##class(dbo.EMCInterfaceLaboRequest).IsRequestExists(requestid,.exists)
@@ -1223,7 +1251,8 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 				}					
 			}
 		} Else {
-			Do LogStatus^KSUTIL1(logdir,ok,3,1)										// Запись в log информации об ошибке, если не смогло сформировать файл результата
+			set ok1=$get(ok1) if (ok1'="")&&(ok1'=1) Do LogStatus^KSUTIL1(logdir,ok1,3,1)										// Запись в log информации об ошибке, если не смогло сформировать файл результата
+			set ok2=$get(ok2) if (ok2'="")&&(ok2'=1) Do LogStatus^KSUTIL1(logdir,ok2,3,1)										// Запись в log информации об ошибке, если не смогло сформировать файл результата
 		}				
 		Lock -^TCLEx("ResultFiles",epis)
 	}
@@ -1265,20 +1294,30 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 		} Else {
 			Set languages(lang)=""
 		}
+		Set reportclassnameDRP=$$DRPResultClassName^Settings.Reports()
+		if reportclassnameDRP="" set reportclassnameDRP="TCLEx.Report.DRPEMC"
 		Set lang=""
 		For  {
 			Set lang=$Order(languages(lang)) 
 			If lang="" Quit
-			Set ok=##class(TCLEx.Report.ResultForm).CreateEpisodePDFReport(pEpis,.pTestSets,1,lang,,pdfdir,1,.filename)							// PDF Результат с данными пациента
+			set filename=""
+			set extraparams=$listbuild(1,pdfdir,1,"",1,1,"")
+			Set ok=$ClassMethod(reportclassnameDRP,"CreateEpisodePDFReport",pEpis,.pTestSets,lang,extraparams,.filename)							// PDF Результат с данными пациента
 			If 'ok Quit
-			Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_filename,1,1)
-			Set ok=##class(TCLEx.Report.ResultForm).CreateEpisodePDFReport(pEpis,.pTestSets,1,lang,$ListBuild(1),impersonalpdfdir,1,.filename)	// Обезличенный PDF результат
+		    set filesize=0 if filename'="" set filesize=##class(%File).GetFileSize(filename) 
+			Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_filename_" ("_filesize_" байт)"_$s(+filesize=0:" !!!!!",1:""),1,1)
+			
+			set filename=""
+			set extraparams=$listbuild(1,impersonalpdfdir,1,$ListBuild(1),1,1,"")
+			Set ok=$ClassMethod(reportclassnameDRP,"CreateEpisodePDFReport",pEpis,.pTestSets,lang,extraparams,.filename)	// Обезличенный PDF результат
 			If 'ok Quit
-			Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_filename,1,1)
+			set filesize=0 if filename'="" set filesize=##class(%File).GetFileSize(filename) 
+			Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_filename_" ("_filesize_" байт)"_$s(+filesize=0:" !!!!!",1:""),1,1)
 			
 			Set ok=##class(TCLEx.Function.EMC).CreateEpisodeXMLReport(pEpis,.pTestSets,lang,1,.filename)										// XML - результат
 			If 'ok Quit
-			Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_filename,1,1)
+			set filesize=0 if filename'="" set filesize=##class(%File).GetFileSize(filename)
+			Do LogMessage^KSUTIL1(logdir,"Успешно сформирован файл "_filename_" ("_filesize_" байт)"_$s(+filesize=0:" !!!!!",1:""),1,1)
 			
 		}	
 	} Else {
@@ -1341,12 +1380,37 @@ pXMLFileName - по ссылке возвращается имя созданн�
 			Set pXMLFileName=$$ArchiveFileName^KSUTIL1(pXMLFileName)
 			If ##class(%File).Exists(pXMLFileName) Quit $$$ERROR($$$GeneralError,"Не удалось сформировать очередное имя файла для  "_pXMLFileName_" !")
 		}
+	}
+	
+	try {
+		// create lock file
+		set fileLockName=##class(TCLEx.Report.ResultForm).GetNameLockFile(pXMLFileName)
+	    set ok=##class(TCLEx.Report.ResultForm).CreateEmptyFile(fileLockName)
+	    If 'ok {
+		       set ok=$System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось создать lck файл "_fileLockName_"."),ok)
+		       quit
+	    }
+		// create file
+		Set writer=##class(%XML.Writer).%New()
+	    Set writer.Indent=1
+	    $$$ThrowOnError(writer.OutputToFile(pXMLFileName))
+	    $$$ThrowOnError(writer.RootObject(resobj))
+	    
+	    // delete lock file
+	    set ok=##class(%File).Delete(fileLockName)
+        if 'ok set ok=$$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_".")
+	} 
+    catch(exception) {
+	    set ok=exception.AsStatus()
+	    Set pXMLFileName=""
+	    if $get(fileLockName)'="" {
+		    if ##class(%File).Exists(fileLockName) {
+			    set ok2=##class(%File).Delete(fileLockName)
+			    if 'ok2 set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_"."))
+		    }
+	    }
 	}	
-	Set writer=##class(%XML.Writer).%New()
-	Set writer.Indent=1
-	Set ok=writer.OutputToFile(pXMLFileName)
-	If 'ok Quit ok
-	Set ok=writer.RootObject(resobj)
+	
 	If 'ok {
 		Set pXMLFileName=""
 	}	
@@ -1359,22 +1423,64 @@ pXMLFileName - по ссылке возвращается имя созданн�
 Тайм-ауты для выгрузки набора тестов pTestSetId
 pFirstTimeOut - время с момента авторизации первого набора тестов
 pLastTimeOut - время с момента авторизации последнего набора тестов
-Для приоритетов "U" (Cito) и "C" (Срочный) берутся меньшие тайм-ауты</Description>
+Для приоритетов "U" (Cito) и "C" (Срочный) берутся меньшие тайм-ауты
+Также есть понятия: 
+1) CitoTestSets - т.е. наборов тестов, которые всегда идут с тайм-аутами, как для Cito..
+2) SuperCitoTestSets - т.е. наборов тестов, которые имеют тайм-ауты SuperCito, если приоритет исследования "U" (Cito) и "C" (Срочный) </Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec><![CDATA[pTestSetId:%String,&pFirstTimeOut:%Integer,&pLastTimeOut:%Integer]]></FormalSpec>
 <Implementation><![CDATA[
-	Set iscito=0
-	/* 	В итоге решили, что смотрим только приоритет набора тестов и закрываем 
-		для пользователей возможность менять приоритет эпизода целиком
-	// Сначала смотрим проиритет эпизода целиком
-	Set episobj=##class(User.EPVisitNumber).%OpenId($Piece(pTestSetId,"||",1))
-	If ($IsObject(episobj))&&($IsObject(episobj.EPVISPriorityCodeDR)) {
-		Set priority=episobj.EPVISPriorityCodeDR.%Id()
+	Set iscito=0,priority="",testsetcode=""
+	// В итоге решили, что смотрим только приоритет набора тестов и закрываем для пользователей возможность менять приоритет эпизода целиком
+	// Сначала анализировали приоритет эпизода в целом...
+	//
+	// Определяем приоритет и код исследованмя
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If ($IsObject(testsetobj)){
+		Set priority=testsetobj.VISTSPriorityDRGetObjectId()
+		Set testsetcode=testsetobj.VISTSTestSetDRGetObjectId()
+	}		
+
+	If 'iscito {
 		If (priority="U")||(priority="C") {
 			Set iscito=1
 		}	
-	}*/
-	// Если для эпизода не задано, то смотрим приоритет набора тестов
+		If ('iscito){
+			Set citotestsets=$$CitoTestSets^Settings.Reports()
+			If (citotestsets'="")&&(testsetcode'="")&&(citotestsets[(","_testsetcode_",")) {
+				Set iscito=1
+			}	
+		}	
+	}
+	If iscito {																			// Для CITO
+		Set supercitotestsets=$$SuperCitoTestSets^Settings.Reports()
+		If (supercitotestsets'="")&&(testsetcode'="")&&(supercitotestsets[(","_testsetcode_",")) {
+			Set pFirstTimeOut=$$SuperCitoFirtsTestSetTimeOut^Settings.Reports() 					// Сколько ждем с момента  первой авторизации TestSet-а эпизода или последней выгрузки результатов по эпизоду 
+			Set pLastTimeOut=$$SuperCitoLastTestSetTimeOut^Settings.Reports()						// Сколько ждем с момента после авторизации TestSet-а						
+		} Else {	
+			Set pFirstTimeOut=$$CitoFirtsTestSetTimeOut^Settings.Reports() 					// Сколько ждем с момента  первой авторизации TestSet-а эпизода или последней выгрузки результатов по эпизоду 
+			Set pLastTimeOut=$$CitoLastTestSetTimeOut^Settings.Reports()						// Сколько ждем с момента после авторизации TestSet-а						
+		}
+	}
+	Else {
+		Set pFirstTimeOut=$$FirtsTestSetTimeOut^Settings.Reports()
+		Set pLastTimeOut=$$LastTestSetTimeOut^Settings.Reports()
+	}
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/* Старый код TestSetTimeOuts
+/// Тайм-ауты для выгрузки набора тестов pTestSetId
+/// pFirstTimeOut - время с момента авторизации первого набора тестов
+/// pLastTimeOut - время с момента авторизации последнего набора тестов
+/// Для приоритетов "U" (Cito) и "C" (Срочный) берутся меньшие тайм-ауты
+ClassMethod TestSetTimeOuts(pTestSetId As %String, ByRef pFirstTimeOut As %Integer, ByRef pLastTimeOut As %Integer)
+{
+	Set iscito=0
+	// В итоге решили, что смотрим только приоритет набора тестов и закрываем для пользователей возможность менять приоритет эпизода целиком
+	// Сначала анализировали приоритет эпизода в целом...
 	If 'iscito {
 		Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
 		If ($IsObject(testsetobj))&&($IsObject(testsetobj.VISTSPriorityDR)) {
@@ -1400,8 +1506,10 @@ pLastTimeOut - время с момента авторизации послед�
 		Set pFirstTimeOut=$$FirtsTestSetTimeOut^Settings.Reports()
 		Set pLastTimeOut=$$LastTestSetTimeOut^Settings.Reports()
 	}
-]]></Implementation>
-</Method>
+}
+*/
+]]></Content>
+</UDLText>
 
 <Method name="UpdateTestSetCount4Episode">
 <Description>

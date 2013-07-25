@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Function.TestSetbion">
+<Super>%RegisteredObject</Super>
+<TimeCreated>63025,54020.634047</TimeCreated>
+
+<Method name="Departments">
+<Description>
+Разбиение списка наборов тестов pTestSets эпизода pEpis по отделам в которые входят эти наборы тестов
+Необходимо для того, что каждый отдел печатается с новой страницы
+Параметры:
+pEpis - ID эпизода
+pTestSets - передаваемый по ссылке список ID наборов тестов в эпизоде 
+(если данные есть, то в результат попадают только эти наборы. Если не заполнено, то все печатаемые авторизованные или отмененные наборы этого эпизода)
+pGlb - ссылка на глобал с возвращаемыми результатами (если не заполнено, то передается в ^||deptestsets)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pGlb:%String,pFlagPreview:%String=""]]></FormalSpec>
+<Implementation><![CDATA[
+	Set pGlb=$Get(pGlb,$Name(^||deptestsets))
+	Kill @pGlb
+	; Определяем из каких отделов TestSet-ы эпизода 
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis,0)
+	If '$IsObject(episobj) Quit
+	Set key=""
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		//
+		Set testsetid=testsetobj.%Id()
+		If (testsetid="") Continue
+		if (pFlagPreview'="V")&&('##class(TCLEx.Function.TestSet).IsPrintable(testsetobj)) Continue ; Пропускаем непечатаемые TestSet-ы
+		if (pFlagPreview="V")&&('##class(TCLEx.Function.TestSet).IsViewable(testsetobj.%Id())) Continue ; Пропускаем not viewable TestSet-ы
+		//
+		Set superset=testsetobj.VISTSSuperSetDRGetObjectId()
+		If (superset'="")&&(pFlagPreview'="V")&&('##class(TCLEx.Function.SuperSet).IsComplete(pEpis,superset)) Continue
+		//
+		If $Data(pTestSets) {
+			If (superset'="")&&('$Data(pTestSets(superset))) Continue
+			If (superset="")&&('$Data(pTestSets(testsetid))) Continue
+		}	
+		//
+		Set depcode=""
+		If superset'="" {
+			Set depcode=superset
+		} Else {
+			Set testsetcode=testsetobj.VISTSTestSetDRGetObjectId()
+			Set depcode=##class(TCLEx.Function.TestSet).GetDepartmentByTestSet(testsetcode)
+		}
+		If depcode="" Continue
+		Set @pGlb@(depcode,testsetid)=""
+	}
+]]></Implementation>
+</Method>
+
+<Method name="GetResultInfo">
+<Description>
+Формирование буфера pGlb с отображаемым результатом по набору тестов pTestSetId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pLanguage:%String,pGlb:%String</FormalSpec>
+<PublicList>PLIST</PublicList>
+<Implementation><![CDATA[
+	Set pLanguage=$Get(pLanguage)
+	Kill @pGlb
+	Kill PLIST,DataIds
+	Set sqlcode=$$results^LVBVISTS(pTestSetId,"","N")
+	//ZW PLIST
+	Set i=""
+	For  {
+		Set i=$Order(PLIST(i),1,vals)
+		If i="" Quit
+		Set tsdataid=$Piece(vals,$Char(1),1)
+		Set code=$Piece(vals,$Char(1),2)
+		If (tsdataid="")||(code="") Continue
+		Set DataIds(code)=tsdataid
+		Set @pGlb@(tsdataid,"SequenceNumber")=i
+		Set @pGlb@(tsdataid,"Code")=code
+		Set @pGlb@(tsdataid,"RawValue")=$Piece(vals,$Char(1),3)
+		Set @pGlb@(tsdataid,"FreeText")=$Piece(vals,$Char(1),4)
+		Set flag=$Piece(vals,$Char(1),5)
+		If (flag="A")||(flag="H")||(flag="L") {
+			Set @pGlb@(tsdataid,"Abnormal")=1
+		}
+	}
+	Set language=$Piece($Get(^CF("SM",1)),"^",10)
+	Kill PLIST
+	Set sqlcode=$$getit^LVBCTTSF(,pTestSetId,"Y",,,"",,language)
+	//ZW PLIST
+	Set i=""
+	For  {
+		Set i=$Order(PLIST(i),1,vals)
+		If i="" Quit
+		Set code=$Piece(vals,$Char(2),10)
+		If (code="")||('$Data(DataIds(code))) Continue
+		Set tsdataid=$Get(DataIds(code))
+		If tsdataid="" Continue
+		Set value=$Get(@pGlb@(tsdataid,"RawValue"))
+		Set type=$Piece(vals,$Char(2),18)
+		//W !,code,"=",type,"=",value
+		If ((type="S")||(type="B1"))&&(value'="") {
+			If $Data(^TTAB("TC",code,2,value,"T")) {
+				Set codevalue=value
+				Set value=""
+				Set j=""
+				For {
+					Set j=$Order(^TTAB("TC",code,2,codevalue,"T",j),1,val)
+					If j="" Quit
+					If j=0 Continue
+					If (value'="")&&('$$PunctuationCharacter^KSUTIL1($Extract(value,$Length(value)))) {
+						Set value=value_" "
+					}
+					Set value=value_val	
+				}
+			}
+		}
+		If (type="X")&&(value="") {
+			Set value=$Get(@pGlb@(tsdataid,"FreeText"))
+		}
+		If (type="V") {
+			If value'="" {
+				Set value=$Piece($Get(^TTAB("BUG",value)),"\",1)
+			}
+		}		
+		Set @pGlb@(tsdataid,"Value")=value
+		Set @pGlb@(tsdataid,"Description")=$Piece(vals,$Char(2),9)
+		Set @pGlb@(tsdataid,"Units")=$Piece(vals,$Char(2),17)
+		Set @pGlb@(tsdataid,"MinRange")=$Piece(vals,$Char(2),22)
+		Set @pGlb@(tsdataid,"MaxRange")=$Piece(vals,$Char(2),23)
+		
+		Set dataobj=##class(User.EPVisitTestSetData).%OpenId(tsdataid)
+		If ($IsObject(dataobj))&&($IsObject(dataobj.VISTDComments)) {
+			Set comment=""
+			Set cnt=dataobj.VISTDComments.Count()
+			For j=1:1:cnt {
+				Set value=##class(TCLEx.Function.TestSet).CommentValue(code,dataobj.VISTDComments.GetAt(j),pLanguage)
+				If (comment'="")&&('$$PunctuationCharacter^KSUTIL1($Extract(value,$Length(value)))) {
+					Set comment=comment_" "
+				}
+				Set comment=comment_value	
+			}
+			Set @pGlb@(tsdataid,"Comment")=comment
+		}	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="PCLComments">
+<Description>
+Добавить комментарии по набору тестов pTestSetId
+Результат в ^||comments</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pLanguage:%String</FormalSpec>
+<Implementation><![CDATA[
+	; Добавляем комментарии
+	Kill ^||comments
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj)||('$IsObject(testsetobj.VISTSTestSetDR)) Quit
+	Set testsetcode=testsetobj.VISTSTestSetDR.%Id()
+	If testsetcode="" Quit
+	//
+	Kill ^||TestSet.TestOrder
+	Do ##class(TCLEx.Function.TestSet).TemplateTestOrder(testsetcode,$Name(^||TestSet.TestOrder))
+	Kill ^||TestSet.DataIdOrder
+	Do ##class(TCLEx.Function.TestSet).TestSetDataIdOrder(pTestSetId,$Name(^||TestSet.TestOrder),$Name(^||TestSet.DataIdOrder))
+	Set order=""
+	For  {
+		Set order=$Order(^||TestSet.DataIdOrder(order))
+		If order="" Quit
+		
+		Set testdataid=""
+		For  {
+			Set testdataid=$Order(^||TestSet.DataIdOrder(order,testdataid),1,testcodeid)
+			If testdataid="" Quit
+			;If testcodeid="" Continue
+			Set dataobj=##class(User.EPVisitTestSetData).%OpenId(testdataid)
+			If ('$IsObject(dataobj))||('$IsObject(dataobj.VISTDComments)) Continue
+			Set cnt=dataobj.VISTDComments.Count()
+			If cnt=0 Continue
+			If (testcodeid'="") {
+				Set commentheader=""
+				&sql(
+					Select CTTSF_CommentHeading Into :commentheader from SQLUser.CT_TestSetFields where (CTTSF_ParRef=:testsetcode)and(CTTSF_DataItem_DR=:testcodeid)
+				)
+				If commentheader'="" {
+					If '$Data(^||comments) {
+						Set ^||comments($I(^||comments),1)=""
+					}	
+					Kill comment
+					Set comment(1)=""
+					Set comment(2)=commentheader
+					Merge ^||comments($I(^||comments))=comment
+				}	
+			}	
+			For i=1:1:cnt {
+				Kill comment
+				Set strval=dataobj.VISTDComments.GetAt(i)
+				Set commentobj=""
+				If (strval["[")&&(strval["]") {
+					Set n=$Piece($Piece(strval,"[",2),"]",1)
+					If +n=n Set commentobj=##class(User.CTTestCodeStandardComm).%OpenId(testcodeid_"||"_n)
+				}	
+				If $IsObject(commentobj)&&$IsObject(commentobj.CTTCTText) {
+					Set cnt2=commentobj.CTTCTText.Count()
+					For j=1:1:cnt2 Set comment(j)=commentobj.CTTCTText.GetAt(j)
+				} Else {
+					Set comment(1)=strval
+				}
+				Merge ^||comments($I(^||comments))=comment
+			}
+		}	
+	
+	}
+	Set i=""
+	For  {
+		Set i=$Order(^||comments(i))
+		If i="" Quit
+		If i=1 {								; Отступ от данных TestSet-а
+			Set k=$Order(^||testset(""),-1)+1
+			Set ^||testset(k,$Increment(^||testset(k)))="!"
+		}	
+		
+		Set j=""
+		For  {
+			Set j=$Order(^||comments(i,j),1,strval)
+			If j="" Quit
+			Set k=$Order(^||testset(""),-1)+1
+			Kill vals
+			Do ##class(TCLEx.Function.TestSet).TruncateStr(strval,80,.vals)
+			Set l=""
+			For  {
+				Set l=$Order(vals(l),1,val)
+				If l="" Quit
+				Set ^||testset(k,$Increment(^||testset(k)))="!"
+				Set ^||testset(k,$Increment(^||testset(k)))="?10 "
+				Set ^||testset(k,$Increment(^||testset(k)))=val
+				Set k=k+1
+			}
+		}
+	}
+]]></Implementation>
+</Method>
+</Class>
+</Export>
