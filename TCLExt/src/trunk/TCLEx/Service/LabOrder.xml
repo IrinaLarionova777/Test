@@ -111,7 +111,6 @@ Namespace. Change this to the namespace used by the web service.</Description>
 	Set PLIST(83)=pOrder.PolicySeries 			;EPVIS_Extra10
 	Set PLIST(114)=pOrder.PolicyNumber 			;EPVIS_Extra11
 	Set PLIST(115)=pOrder.Pasport	 			;EPVIS_Extra12
-	Set PLIST(117)="WebER"	 					;EPVIS_Extra14 - Признак, что заказ добавлен из WebER
 
 	;Set PLIST(32)=pOrder.Diagnosis 			;???
 	;Set PLIST(33)=pOrder.Antibiotics 			;??
@@ -170,11 +169,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 		Set PLIST(40)=..ReferralLaboratory4TestSet(testset)			// VISTS_MoveToReferralLab_DR
 		Set SQLCODE=$$insert^LVBVISTS(pEpisode)
 		Set SQLCODE=$Piece(SQLCODE,$Char(1),1)
-		If SQLCODE=0 {
-			Do Actions^LVBCOM13(%ROWID)
-		} Else {
-			Set err="SQLCODE="_SQLCODE_",TestSet="_testset
-		}		
+		If SQLCODE'=0 Set err="SQLCODE="_SQLCODE_",TestSet="_testset
 		If err'="" Quit
 	}	
 	If err'="" Quit $$$ERROR($$$GeneralError,"Не удалось добавить запись в таблицу SQLUser.EP_VisitTestSet ("_err_")!")
@@ -202,16 +197,31 @@ Namespace. Change this to the namespace used by the web service.</Description>
 	kill inputDataForTSCheckLVBVIS7 // входящий массив PLIST для вызова $$TScheck^LVBVIS7
 	Set cnt=$Length(pTestSets,",")
 	For i=1:1:cnt {
-		set ok=..FillPLISTforVisitTestSet(pEpisode, pTestSets, pSpecimens, pContainers,i)
-		if 'ok quit
+		set ok1=..FillPLISTforVisitTestSet(pEpisode, pTestSets, pSpecimens, pContainers,i)
+		if 'ok1 {
+			set ok=$$$ADDSC(ok,ok1)
+			continue
+		}
+		  
 		set rowid=PLIST(0)_"||"_PLIST(3)_"||"_PLIST(2)  
-		Set SQLCODE=$$insert^LVBVISTS(pEpisode)
+		Set SQLCODE=$$insert^LVBVISTS(pEpisode)  
 		Set SQLCODE=$Piece(SQLCODE,$Char(1),1)
-		If SQLCODE'=0 Set ok=$$$ERROR($$$GeneralError,"SQLCODE="_SQLCODE_",TestSet="_rowid) quit
+		If SQLCODE'=0 {
+			Set ok1=$$$ERROR($$$GeneralError,"SQLCODE="_SQLCODE_",TestSet="_rowid) 
+			set ok=$$$ADDSC(ok,ok1)
+			continue
+		}
 		// Проверяем наличие actions SD and SF и выполняем их
-		set err=..ActionsTestSet(rowid,.inputDataForTSCheckLVBVIS7)
+		set ok1=..ActionsTestSet(rowid,.inputDataForTSCheckLVBVIS7)
+		if 'ok1 {
+			set ok=$$$ADDSC(ok,ok1)
+			continue
+		}	 
 	}	
-	If 'ok set ok=$$$ERROR($$$GeneralError,"Не удалось добавить запись в таблицу SQLUser.EP_VisitTestSet ("_$SYSTEM.Status.GetErrorText(ok)_")!")
+	If 'ok {
+		set ^ERRORS(+$h,$i(^ERRORS(+$h)))=$h_"|"_$SYSTEM.Status.GetErrorText(ok)
+		set ok=$$$ERROR($$$GeneralError,"Не удалось добавить запись в таблицу SQLUser.EP_VisitTestSet ("_$SYSTEM.Status.GetErrorText(ok)_")!")
+	}
 	Quit ok
 ]]></Implementation>
 </Method>
@@ -251,7 +261,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 		Set PLIST(24)=+horolog										// VISTS_DateOfCreation
 		Set PLIST(25)=$Piece(horolog,",",2)							// VISTS_TimeOfCreation
 		Set PLIST(29)=..LaboratoryCode()
-		Set PLIST(40)=..ReferralLaboratory4TestSet(testset)			// VISTS_MoveToReferralLab_DR
+		//Set PLIST(40)=..ReferralLaboratory4TestSet(testset)			// VISTS_MoveToReferralLab_DR
 		if flagAddTestSetByAction="Y" set PLIST(83)="Y"             // VISTS_AddedByAction
 		set PLIST=$order(PLIST(""),-1)	
 	} 
@@ -276,15 +286,21 @@ Namespace. Change this to the namespace used by the web service.</Description>
 	try {
 		// строка "EPVIS" для входящего PLIST для функции $$TScheck^LVBVIS7
 		set SQLCODE=$$select^LVBEPVIS(pEpisode)
-		If +SQLCODE'=0 Set ok=$$$ERROR($$$GeneralError,"select^LVBEPVIS: SQLCODE="_SQLCODE_",episode="_pEpisode) quit 
+		If +SQLCODE'=0 { 
+		    Set ok=$$$ERROR($$$GeneralError,"select^LVBEPVIS: SQLCODE="_SQLCODE_",episode="_pEpisode) 
+		    quit
+		} 
 		set strepis="" for j=1:1:PLIST set strepis=strepis_PLIST(j)_$char(28)
 	    
 		Set allcnt=$Length(pTestSets,",")
 		set testcnt=0
-	    while (testcnt'>allcnt) {
+	    while (testcnt<allcnt) {
 		    set testcnt=testcnt+1  
-		    set ok=..FillPLISTforVisitTestSet(pEpisode, pTestSets, pSpecimens, pContainers,testcnt)
-		    if 'ok continue
+		    set ok1=..FillPLISTforVisitTestSet(pEpisode, pTestSets, pSpecimens, pContainers,testcnt)
+		    if 'ok1 {
+			    set ok=$$$ADDSC(ok,ok1)
+			    continue
+		    }
 		    set rowid=PLIST(0)_"||"_PLIST(3)_"||"_PLIST(2)
 		    set flagAddTestSetByAction=$get(PLIST(83))
 		    //if flagAddTestSetByAction="Y" continue  // по рекурсии не добавляем и не заменяем наборы тестов
@@ -295,13 +311,13 @@ Namespace. Change this to the namespace used by the web service.</Description>
 		    set PLIST(1)="EPVIS"_$char(1)_strepis
 		    set PLIST(2)="VISTS"_$char(1)_strtestset
 		    set PLIST=$order(PLIST(""),-1)
-		    set SQLCODE=$$TScheck^LVBVIS7(rowid,"TA","","A","")
+		    set SQLCODE=$$TScheck^LVBVIS7(rowid,"TA","","A","") 
 		    If +SQLCODE'=0 {
-			    Set ok=$$$ERROR($$$GeneralError,"TScheck^LVBVIS7: SQLCODE="_SQLCODE_",rowid="_rowid)
+			    //Set ok=$$$ADDSC(ok,$$$ERROR($$$GeneralError,"TScheck^LVBVIS7: SQLCODE="_SQLCODE_",rowid="_rowid))
 			    continue
 		    }
 		    
-			// выполнение действий
+			// выполнение действий (просто запись в строку pTestSets)
 			kill actions merge actions=PLIST
 			set flagReplaceTestSet=0
 		    for j=1:1:actions {
@@ -313,13 +329,13 @@ Namespace. Change this to the namespace used by the web service.</Description>
 			        if testsetnew="" continue
 			        if '$data(^TTAB("TS",testsetnew)) continue
 			        if typeAction="TR0" {
-				        if $find(pTestSets,testsetnew)'=0 continue  // если набор тестов уже есть, то не заменяем на него
+				        //if $find(pTestSets,testsetnew)'=0 continue  // если набор тестов уже есть, то не заменяем на него
 				        set $piece(pTestSets,",",testcnt)=testsetnew 
 				        set flagReplaceTestSet=1
 				        continue
 			        }
 			        if typeAction="TA0" {
-				        if $find(pTestSets,testsetnew)'=0 continue  // если набор тестов уже есть, то не добавляем его
+				        //if $find(pTestSets,testsetnew)'=0 continue  // если набор тестов уже есть, то не добавляем его
 				        set pTestSets=pTestSets_","_testsetnew_$char(1)_"Y"
 				        set allcnt=allcnt+1
 				        continue
@@ -355,7 +371,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 			// строка EPVIS
 		    set SQLCODE=$$select^LVBEPVIS(epis)
 		    If +SQLCODE'=0 {
-			   set ok=$$$ERROR($$$GeneralError,"select^LVBEPVIS: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
+			   //set ok=$$$ERROR($$$GeneralError,"select^LVBEPVIS: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
 			   quit
 		    } 
 		    set ss="" for i=1:1:PLIST set ss=ss_$get(PLIST(i))_$char(28)
@@ -365,7 +381,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 	    // строки VISTS
 	    set SQLCODE=$$select^LVBVISTS(pRowidVisitTestSet)
 	    if +SQLCODE'=0 {
-		    Set ok=$$$ERROR($$$GeneralError,"select^LVBVISTS: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
+		    //Set ok=$$$ERROR($$$GeneralError,"select^LVBVISTS: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
 		    quit
 	    }
 	    set ss="" for i=1:1:PLIST set ss=ss_$piece($get(PLIST(i)),$char(1),1)_$char(28)
@@ -375,44 +391,58 @@ Namespace. Change this to the namespace used by the web service.</Description>
 	    // функция $$TScheck^LVBVIS7 проверяет условия срабатываения действий и возвращает действия, которые надо выполнить 
 	    kill PLIST m PLIST=inputDataForTSCheck
 	    set PLIST=$order(PLIST(""),-1)
-		set SQLCODE=$$TScheck^LVBVIS7(pRowidVisitTestSet,"TA","","A","")
+		set SQLCODE=$$TScheck^LVBVIS7(pRowidVisitTestSet,"TA","","A","") b  
 		If +SQLCODE'=0 {
-			Set ok=$$$ERROR($$$GeneralError,"TScheck^LVBVIS7: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
+			//Set ok=$$$ERROR($$$GeneralError,"TScheck^LVBVIS7: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
 			quit
 		}
 		kill actions m actions=PLIST
+		
 		// выполнение действий
 		for i=1:1:actions {
 		    set rec=$get(actions(i))
 		    set typeAction=$piece(rec,$char(1),1)
 		    // TR0-Replace Test Set, TA0- Test Set Add, SD - Set Data, SF - Set Field
-		    if (typeAction'="SD")&&(typeAction'="SF") continue
+		    //if (typeAction'="SD")&&(typeAction'="SF") continue
+		    b  if (typeAction'="SF")&&(typeAction'="VQ0") continue
 		    // изменение указанного поля (Set Field)
 		    if typeAction="SF" {
 			    set numChangeField=$piece(rec,$char(1),6)
 			    if numChangeField'>0 {
-				    set ok=$$$ERROR($$$GeneralError,"Некорректное поле для изменения "_numChangeField) 
+				    set ok=$$$ADDSC(ok,$$$ERROR($$$GeneralError,"Некорректное поле для изменения "_numChangeField))
 				    continue
 			    }
 			    set value=$piece(rec,$char(1),2)
 			    if numChangeField="" continue
 			    set SQLCODE=$$select^LVBVISTS(pRowidVisitTestSet)
 			    if +SQLCODE'=0 {
-				    Set ok=$$$ERROR($$$GeneralError,"select^LVBVISTS: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
+				    Set ok=$$$ADDSC(ok,$$$ERROR($$$GeneralError,"select^LVBVISTS: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet))
 				    continue
 			    }
 			    if numChangeField>$get(PLIST) {
-				    set ok=$$$ERROR($$$GeneralError,"Некорректное поле для изменения "_numChangeField)
-				    quit
+				    set ok=$$$ADDSC(ok,$$$ERROR($$$GeneralError,"Некорректное поле для изменения "_numChangeField))
+				    continue
 			    }
 			    set PLIST(numChangeField)=value
-			    set str="" for jj=1:1:PLIST set str=str_$piece($get(PLIST(jj)),$char(1),1)_$c(2)
-			    kill PLIST
-			    set PLIST(1)=str
 			    set PLIST=$order(PLIST(""),-1)
-			    set err=$$save^LVBVISTS($piece(pRowidVisitTestSet,"||",1)) 
+			    set err=$$update^LVBVISTS(pRowidVisitTestSet) 
+			    if +err'=0 {
+				    set ok=$$$ADDSC(ok,$$$ERROR($$$GeneralError,err))
+				    continue
+			    }
 		    }
+		    // verification queue
+		    if typeAction="VQ0" {
+			   set codequeue=$piece(rec,$char(1),2) 
+			   set err=$$VQ^LVBCOM13(pRowidVisitTestSet,codequeue)
+			   if +err'=0 {
+				    set ok=$$$ADDSC(ok,$$$ERROR($$$GeneralError,err))
+				    continue
+			  }
+		    }
+		    
 		    // ввод данных по указанному тесту (Set Data)
+		    /*
 		    elseif typeAction="SD" {
 			    set value=$piece(rec,$char(1),2)
 			    set test=$piece(rec,$char(1),6)
@@ -422,13 +452,14 @@ Namespace. Change this to the namespace used by the web service.</Description>
 			    set PLIST(1)=rowid_"\"_test_"\"_value
 			    set PLIST=$order(PLIST(""),-1)
 			    if $$save^LVBVIS4(rowid,"E")
-		    }
+		    }*/
 		}
 	}
 	catch (exeption) 
 	{
 		set ok=exeption.AsStatus()
 	} 
+	
 	quit ok
 ]]></Implementation>
 </Method>
