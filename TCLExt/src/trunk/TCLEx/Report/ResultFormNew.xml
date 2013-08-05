@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Export generator="Cache" version="24">
-<Class name="TCLEx.Report.ResultForm">
+<Class name="TCLEx.Report.ResultFormNew">
 <Description>
 Создание отчета с результами эпизода как для печати на принтере, так и для ормирования PDF-результата</Description>
 <IncludeCode>TCLEx</IncludeCode>
 <Super>%RegisteredObject</Super>
-<TimeCreated>62336,44898.98751</TimeCreated>
+<TimeCreated>63035,60722.936552</TimeCreated>
 
 <Method name="MakePrintingReport">
 <Description>
@@ -18,7 +18,7 @@ pUser - пользователь запустивший отчет</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pReportType:%String,pCourier:%String,pUser:%String</FormalSpec>
 <Implementation><![CDATA[
-	s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
+	//s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
 	If (pReportType'="C")&&(pReportType'="DR") Quit		// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
 	//If (pReportType'="C") Quit								// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
 	Set pUser=$Get(pUser)
@@ -37,47 +37,15 @@ pUser - пользователь запустивший отчет</Description>
 			If user="" Quit
 			set qcopies=""
 			for {
-			 set qcopies=$order(^||ResultForm.Episodes(reporttype,user,qcopies)) 
-			 if qcopies="" quit
-			 if reporttype["word" {
-				 //делим по языкам
-				 Set epis=""
-	             For  {
-		              Set epis=$Order(^||ResultForm.Episodes(reporttype,user,qcopies,epis))
-		              If epis="" Quit
-		              Set languages=##class(TCLEx.Function.Episode).ResultLanguages(epis)
-		              If languages="" continue
- 		              Set langcnt=$ListLength(languages)
-		              For i=1:1:langcnt {
-			             Set language=$ListGet(languages,i)
-			             If language="" Continue
-	        			 set testsetid=""
-				         for {
-					        set testsetid=$order(^||ResultForm.Episodes(reporttype,user,qcopies,epis,testsetid))
-					        if testsetid="" quit
-					        set status="R"
-					        set params=epis_$char(0)_testsetid_$char(0)_user_$char(0)_language
-					        Do ..SaveLISReportWord(pCourier,user,qcopies,params,status)   
-				         }   
-			         }
-			     }
+			 set qcopies=$order(^||ResultForm.Episodes(reporttype,user,qcopies)) if qcopies="" quit
+			 
+			 set ok=..SaveLISReportAll(pCourier, user, qcopies, $name(^||ResultForm.Episodes(reporttype,user,qcopies)))  
+			 if 'ok {
+				 do ##class(TCLEx.Report.Function).ErrorWrite(ok)
+				 continue
 			 }
-			 else {
-				Kill ^||ResultForm.PCL
-			    Do ..MakePCLCommandsBuf($Name(^||ResultForm.Episodes(reporttype,user,qcopies)),$Name(^||ResultForm.PCL))
-			    //If '$Data(^||ResultForm.PCL) Quit
-			    Set lang=""
-			    For  {
-				    Set lang=$Order(^||ResultForm.PCL(lang))
-				    If lang="" Quit
-				    Kill ^||ResultForm.LISReport
-				    Do ..MakeLISReportBuf($Name(^||ResultForm.PCL(lang)),$Name(^||ResultForm.LISReport))
-				    If $Data(^||ResultForm.LISReport) {
-					    Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.Episodes(reporttype,user,qcopies)))
-					    Do ..SaveLISReport(pCourier,user,qcopies,$Get(^||ResultForm.PCL(lang),0),$Name(^||ResultForm.LISReport))
-				    }	
-			    }
-			 }
+	         //Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.Episodes(reporttype,user,qcopies))) ???
+			 
 			}
 		}
 	}
@@ -149,10 +117,11 @@ pBuf - формируемый буфер</Description>
 						If user="" Set user=" "
 						// if testset - word type
 						set key="H"
-						//if $$seldata^LVBCTTS(testset,54)="Y",+$get(^Settings("WordToPdf","stop"))=0 {
+						/*
 						if ##class(TCLEx.Function.TestSet).IsTestSetWordToPDF(testset) {	
 							set key="Hword"
 						}
+						*/
 						Set @pBuf@(key,user,pQCopies,epis,testsetid)=""
 						Kill @glb@(pReportType,pCourier,"H",hosp,epis,testset,testcnt)
 					}		
@@ -207,10 +176,12 @@ pBuf - формируемый буфер</Description>
 						}
 						If user="" Set user=" "
 						set key="D"
+						/*
 						;if $$seldata^LVBCTTS(testset,54)="Y",+$get(^Settings("WordToPdf","stop"))=0 {
 						if ##class(TCLEx.Function.TestSet).IsTestSetWordToPDF(testset) {	
 							set key="Dword"
 						}
+						*/
 						Set @pBuf@(key,user,pQCopies,epis,testsetid)=""
 						If user="" Set user=" "
 						Kill @glb@(pReportType,pCourier,"D",doctor,epis,testset,testcnt)
@@ -326,7 +297,7 @@ pEpisodesGlb - буфер со списком эпизодов и ID набор�
 ]]></Implementation>
 </Method>
 
-<Method name="SaveLISReport">
+<Method name="SaveLISReportAll">
 <Description>
 Сохранить полученный отчет в User.PRReport
 Параметры:
@@ -336,9 +307,86 @@ pEpisCount - число эпизодов в отчете
 pQCopies - число копий 
 pLISGlb - буфер отчета в формате ЛИС</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisCount:%Integer,pLISGlb:%String</FormalSpec>
+<FormalSpec>pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisodesGlb:%String</FormalSpec>
+<PublicList>PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	 // формирование задания в диспетчере печати (чтобы был номер для имени файла
+	 set ok=..CreateEmptyLISReport(pCourier,pUser,pQCopies,1,.idReport)
+	 if 'ok quit
+	 set pdfFileName=##class(TCLEx.Report.DRP).GetFileName(idReport)  //..GetFileReportName(idReport)
+	 // формирование PDF Файла со всеми эпизодами
+	 Set reportclassnameDRP=..GetDRPResultClassName()
+	 set pPDF=1  // признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+	 set pPDFDir=##class(%File).GetDirectory(pdfFileName) //каталог, куда выгружать файл
+	 set pOverWritePDF=1 //если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+	 set ExtraParamsZen="" //дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+	 set FlagPreview="" //флаг = "V" - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+	 set extraParams=$listbuild(pPDF,pPDFDir,pOverWritePDF,ExtraParamsZen,0,0,FlagPreview)
+	 
+	 set nmfile=##class(%File).GetFilename(pdfFileName)
+	 set dirfile=##class(%File).GetDirectory(pdfFileName)
+	 set files=""
+		 
+	 Set epis="",countEpisodes=0
+	 For  {
+		Set epis=$Order(@pEpisodesGlb@(epis)) If epis="" Quit
+		Set languages=##class(TCLEx.Function.Episode).ResultLanguages(epis)
+		If languages="" Continue
+		Kill testsets
+		Set testsetid=""
+		For  {
+			Set testsetid=$Order(@pEpisodesGlb@(epis,testsetid)) If testsetid="" Quit
+			Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
+			If '$IsObject(testsetobj) Quit
+			Set superset=""
+			If $IsObject(testsetobj.VISTSSuperSetDR) Set superset=testsetobj.VISTSSuperSetDR.%Id()
+			If superset'="" {
+				Set testsets(superset)=""
+			} Else {
+				Set testsets(testsetid)=""
+			}		
+		}
+		Set langcnt=$ListLength(languages)
+		For i=1:1:langcnt {
+			Set language=$ListGet(languages,i)
+			If language="" Continue
+			set filenamevsp=..NextAuxiliaryFile(nmfile,dirfile) 
+			set ok=$ClassMethod(reportclassnameDRP,"CreateEpisodePDFReport",epis,.testsets, language, extraParams, filenamevsp) 
+			if 'ok quit
+			set files=files_$select(files'="":$char(0),1:"")_filenamevsp
+			set countEpisodes=countEpisodes+1
+		}
+	}
+	if files'="" {
+		set ok=..SaveLISReportDop(idReport,pCourier,pUser,pQCopies,countEpisodes,files,pdfFileName)
+		if 'ok quit
+	}	
+  } catch(e) {
+	set ok=e.AsStatus()
+ }
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CreateEmptyLISReport">
+<Description>
+Сохранить полученный отчет в User.PRReport
+Параметры:
+pCourier - код курьера
+pUser - пользователь запустивший отчет
+pEpisCount - число эпизодов в отчете
+pQCopies - число копий 
+pLISGlb - буфер отчета в формате ЛИС</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisCount:%Integer,&pIdReport:%String]]></FormalSpec>
 <PublicList>PLIST</PublicList>
 <Implementation><![CDATA[
+  set ok=$$$OK
+  set pIdReport=""
+  try {	 
 	Set repobj=##class(User.PRReport).%New()
 	Set repid=$Get(^PR)
 	If (repid="")||($Data(^PR(repid))) {
@@ -360,20 +408,77 @@ pLISGlb - буфер отчета в формате ЛИС</Description>
 	If 'ok {
 		;Do $system.OBJ.DisplayError(ok)
 		Quit
-	}	
+	}
+	set pIdReport=repid	
 	//
-	Merge ^PR(repid,"HDR")=@pLISGlb@("HDR")
-	Merge ^PR(repid,"PRT")=@pLISGlb@("PRT")
+ } catch(e) {
+	set ok=e.AsStatus()
+ }
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="SaveLISReportDop">
+<Description>
+дописать данные в задание для диспетчера печати (User.PRReport)
+Параметры:
+pCourier - код курьера
+pUser - пользователь запустивший отчет
+pEpisCount - число эпизодов в отчете
+pQCopies - число копий 
+pFiles - список сформированных файлов для объединения в один файл</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pIdReport:%String,pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisCount:%Integer,pFiles:%String,pPDFFileName</FormalSpec>
+<PublicList>PLIST</PublicList>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {
+	 // Создаем один окончательный PDF файл (из разных файлов по разным эпизодам) (перенумерация страниц не требуется, так как в каждом эпизоде своя нумерация)
+    if pFiles'="" {
+		    if $length(pFiles,$c(0))>1 {
+		       set ok=##class(TCLEx.Report.FunctionsJava).startConcatPDF(pFiles,pPDFFileName,0,1)
+	        } 
+	        else 
+	        {
+		      set ok=##class(%File).Rename(pFiles,pPDFFileName)
+	        }
+	} else  {
+		    set ok=$$$ERROR($$$GeneralError,"Не удалось сформировать файл "_$get(pPDFFileName)_".")   
+		    quit
+	}
+  
+    // Дописываем данные в задание для диспетчера печати
+	Set repobj=##class(User.PRReport).%OpenId(pIdReport)
+	// Для того чтобы изменить кол-во эпизодов 
+	Set repobj.PRPRREPORTPARAMETERS="C-"_pCourier_"-"_pEpisCount
+	Set ok=repobj.%Save()
+	If 'ok Quit
+	
+	// В "PRT" имя уже созданного файла
+	set ^PR(pIdReport,"PRT","FileName")=pPDFFileName
+	
 	// Также необходимо запись в PR_ReportDestination (почему-то только через SQL можно добавить запись...)
 	Kill PLIST
-	//set typePrinter=$select(userCall'="":"single",1:"group")
+	set userCall=$tr($piece(pUser,$char(1),1)," ","") // пользователь, запусающий на печать (он указан при одиночной печати, при групповой, не указан)
+	set userAuth=$piece(pUser,$char(1),2) // пользователь, авторизовавший набор тестов
 	set user=$select(userCall="":userAuth,1:userCall)
 	Set PLIST(3)=..getPrinter(pCourier,user) 
 	Set PLIST(4)=pQCopies 
 	Set PLIST(5)="R" 
+	set hor=$h
 	Set PLIST(6)=$Piece(hor,",",1) 
 	Set PLIST(7)=$Piece(hor,",",2)
 	Set sqlcode=$$insert^LVBPRPRD(repobj.%Id())
+	if sqlcode'=0 {
+		kill ^PR(pIdReport,"PRT")  // чтобы задание удалилось
+		set ok=$$$ERROR($$$GeneralError,"Не удалось доформированть задание в диспетчере печати.")
+		quit
+	}
+	   
+ } catch(e) {
+	set ok=e.AsStatus()
+ }
+ quit ok
 ]]></Implementation>
 </Method>
 
@@ -443,7 +548,7 @@ pPCLRepGlb - глобал с полученными результатами</De
 	Kill @pPCLRepGlb
 	Kill ^||ResultForm.EpisodePCL
 	// Определяем какой класс будет использоваться для печати
-	Set reportclassname=$$PCLResultClassName^Settings.Reports()
+	Set reportclassname=..GetPCLResultClassName()
 	If '##class(%Dictionary.CompiledClass).%ExistsId(reportclassname) Quit	// Если нет такого класса, то выходим
 	//
 	Do ..PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL))
@@ -649,7 +754,7 @@ pExtension - расширение файла
 <Implementation><![CDATA[
 	Set pReportClassName=$Get(pReportClassName)
 	If pReportClassName="" {
-		Set pReportClassName=$$PCLResultClassName^Settings.Reports()
+		Set pReportClassName=..GetPCLResultClassName()
 	}	
 	Set result=""
 	Try {
@@ -690,7 +795,7 @@ pExtension - расширение файла
 	Set pReportClassName=$Get(pReportClassName)
 	Set pLanguage=$Get(pLanguage)
 	If pReportClassName="" {
-		Set pReportClassName=$$PCLResultClassName^Settings.Reports()
+		Set pReportClassName=..GetPCLResultClassName()
 	}	
 	Set result=""
 	Try {
@@ -834,7 +939,7 @@ Id принтера</Description>
 <ProcedureBlock>0</ProcedureBlock>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
-	Set reportclassname=$$PCLResultClassName^Settings.Reports()
+	Set reportclassname=..GetDRPResultClassName()
 	quit $ClassMethod(reportclassname,"getPrinter",pCourier, pUser)
 ]]></Implementation>
 </Method>
@@ -970,7 +1075,7 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	Set pPDFFileName=""
-	Set reportclassname=$$ZenResultClassName^Settings.Reports()
+	Set reportclassname=..GetZenResultClassName()
 	Kill ^||ResultForm.EpisodePCL
 	//
 	If '$$TestDirectory^KSUTIL1(pPDFDir) {
@@ -981,7 +1086,7 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 	Set pPDFFileName=pPDFDir_"\"_filename
 	
 	//Проверка существования lock файла
-	set fileLockNameEMC=##class(TCLEx.Report.ResultForm).GetNameLockFileEMC(pPDFFileName)
+	set fileLockNameEMC=##class(TCLEx.Report.ResultFormNew).GetNameLockFileEMC(pPDFFileName)
 	if ##class(%File).Exists(fileLockNameEMC) {
 		  Quit $$$ERROR($$$GeneralError,"Не удалось сформировать файл "_pPDFFileName_", так как существует lock файл "_fileLockNameEMC_" !")
 	}
@@ -997,7 +1102,7 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 		}
 	}
 	
-	Set reportclassnameDRP=$$DRPResultClassName^Settings.Reports()
+	Set reportclassnameDRP=..GetDRPResultClassName()
 	set flagPreview=""
 	set ok=$ClassMethod(reportclassnameDRP,"CreateEpisodePDFReport",pEpis, pTestSets, pPDF, pLanguage, pExtraParams, pPDFFileName, flagPreview)
 	
@@ -1032,7 +1137,7 @@ pPDFFileName - по сслке возвращается имя созданно�
 	If '$Data(^||ResultForm.Episodes) {
 		Quit $$$ERROR($$$errNoResultData,"Нет данных для заказа "_pLabOrder_" !")
 	}	
-	Set reportclassname=$$ZenResultClassName^Settings.Reports()
+	Set reportclassname=..GetZenResultClassName()
 	Kill ^||ResultForm.OrderTable
 	
 	Set epis="",totalpages=0
@@ -1284,6 +1389,79 @@ Create empty file</Description>
 <Implementation><![CDATA[
 	if $get(pFile)="" quit ""
     quit $piece(pFile,".",1,$length(pFile,".")-1)_".lcke"
+]]></Implementation>
+</Method>
+
+<Method name="GetDRPResultClassName">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set returnValue=$get(^SScli("DRP","DRPResultClassName"))
+	if returnValue="" {
+		set returnValue="TCLEx.Report.DRP"
+	}
+	quit returnValue
+]]></Implementation>
+</Method>
+
+<Method name="GetPCLResultClassName">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set returnValue=$get(^SScli("DRP","PCLResultClassName"))
+	if returnValue="" {
+		set returnValue="TCLEx.Report.DRP"
+	}
+	quit returnValue
+]]></Implementation>
+</Method>
+
+<Method name="GetZenResultClassName">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set returnValue=$get(^SScli("DRP","ZenResultClassName"))
+	if returnValue="" {
+		set returnValue="TCLEx.Report.ZenBion"
+	}
+	quit returnValue
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+/// Получить имя и путь к файлу - файл с DRP для диспетчера печати 
+ClassMethod GetFileReportName(pIdReport As %String) As %String
+{
+	 set pdfFileName=$$seldata^MVBCFSM(1,30) //$$PDFResultFromWordDirTemp^Settings.Reports() //$$Path^REPORTSPB()
+	 if $extract($tr(pdfFileName,"/","\"),$length(pdfFileName))'="\" set pdfFileName=pdfFileName_"\"
+	 set pdfFileName=pdfFileName_"dp"_$get(pIdReport)_".pdf"
+	 if ##class(%File).Exists(pdfFileName) {
+			set pdfFileName=$$ArchiveFileName^KSUTIL1(pdfFileName)
+	 }
+	 if ##class(%File).Exists(pdfFileName) {
+		 set pdfFileName=""
+	 }
+	 quit pdfFileName
+}*/
+]]></Content>
+</UDLText>
+
+<Method name="NextAuxiliaryFile">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pNameFile:%String,pDirFile:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set file=""
+   	set len=$length(pNameFile,".")
+   	set name=$piece(pNameFile,".",len-1),ext=$piece(pNameFile,".",len)
+   	for {
+	   	set npp=$i(^||vspFiles)
+   	    set file=pDirFile_"\"_name_"dpvsp"_npp_"."_ext
+   	    if '##class(%File).Exists(file) quit
+   	}
+    quit file
 ]]></Implementation>
 </Method>
 </Class>

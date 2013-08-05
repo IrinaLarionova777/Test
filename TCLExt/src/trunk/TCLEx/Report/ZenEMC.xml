@@ -2,7 +2,7 @@
 <Export generator="Cache" version="24">
 <Class name="TCLEx.Report.ZenEMC">
 <Super>%ZEN.Report.reportPage</Super>
-<TimeCreated>62928,42360.315245</TimeCreated>
+<TimeCreated>62355,51855.555434</TimeCreated>
 
 <Property name="Episode">
 <Type>%ZEN.Datatype.string</Type>
@@ -63,7 +63,7 @@ XSlT stylesheets for both HTML and XSL-FO</Description>
 <report xmlns="http://www.intersystems.com/zen/report/display" 
 name='ResultReport' title='Результат исследования' style='standard'>
 <document width="210mm" height="297mm" marginLeft="10mm" marginRight="10mm" marginTop="5mm" marginBottom="10mm" headerHeight="30mm" referenceOrientation="0">
-<xslinclude href="C:\InterSystems\Ensemble\CSP\EMC\Report\fop.xsl" />
+<xslinclude href='#(##CLASS(TCLEx.Report.Function).GetPathToXSL())#' />
 </document>
 
 <!--
@@ -108,151 +108,11 @@ pLanguage - язык результата
 pRepParamGlb - глобал с данными</Description>
 <FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pDepCode:%String,pLanguage:%String,pRepParamGlb:%String]]></FormalSpec>
 <Implementation><![CDATA[
+	do ##class(TCLEx.Report.Function).CreateValuesBuf($get(pEpis),.pTestSets,$get(pDepCode),$get(pLanguage),$g(pRepParamGlb))
 	
-	Kill @pRepParamGlb
-	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
-	If '$IsObject(episobj) Quit
-	//
-	Set hospobj=episobj.EPVISHospitalCodeDR
-	If $IsObject(hospobj) {
-		Set @pRepParamGlb@("CompanyCode")=hospobj.%Id()
-		Set @pRepParamGlb@("CompanyName")=hospobj.CTHOSName
-	}	
-	Set @pRepParamGlb@("Episode")=pEpis
-	Set @pRepParamGlb@("DateOfCollection")=$$Horolog2Date^KSUTIL1(episobj.EPVISDateOfCollection)
-	Set time=episobj.EPVISTimeOfCollection
-	If time'="" {
-		Set @pRepParamGlb@("TimeOfCollection")=$$DisplayTime^KSPCLUtils(time*60,2)
-	}
-	If pLanguage=2 {
-		Set @pRepParamGlb@("FullName")=$$FullName^KSPCLUtils(episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1,40)
-	} Else {
-		Set @pRepParamGlb@("FullName")=$$FullName^KSPCLUtils(episobj.EPVISExtra1,episobj.EPVISExtra2,episobj.EPVISExtra3,40)
-	}		
-
-	Set @pRepParamGlb@("Age")=$$AgeString^KSUTIL2(episobj.EPVISDateOfBirth,episobj.EPVISDateOfCollection,pLanguage)	
-	//
-	Set sex=$Select(pLanguage=2:"Unknown",1:"Неизвестен")   
-	Set sexcode="U"
-	If $IsObject(episobj.EPVISSpeciesDR) {
-		Set sexcode=episobj.EPVISSpeciesDR.%Id()
-		If (sexcode="M") { 
-			Set sex=$Select(pLanguage=2:"Male",1:"Мужской")
-		} ElseIf (sexcode="F") {
-			Set sex=$Select(pLanguage=2:"Female",1:"Женский")
-		
-		}	
-	}	
-	Set @pRepParamGlb@("SexCode")=sexcode
-	Set @pRepParamGlb@("Sex")=sex
-	//
-	Set doctobj=episobj.EPVISDoctorCodeDR
-	If $IsObject(doctobj) {
-		Set @pRepParamGlb@("DoctorCode")=doctobj.%Id()
-		Set @pRepParamGlb@("Doctor")=$Select(pLanguage=2:doctobj.CTDRSurname,1:doctobj.CTDRExtraName1)
-	}	
-	Set @pRepParamGlb@("DoctorNames")=$Extract(episobj.EPVISExtra4,1,32)
-	//
-	Set @pRepParamGlb@("DOB")=$$Horolog2Date^KSUTIL1(episobj.EPVISDateOfBirth)
-	Set depcode=$Piece(pDepCode,$Char(1),1)
-	Set queueid=$Piece(pDepCode,$Char(1),2)
-	If (depcode'="")&&(pLanguage'="") {
-		If ##class(User.CTSuperSet).%ExistsId(depcode) {
-			Set ssetobj=##class(User.CTSuperSet).%OpenId(depcode,0)
-			If $IsObject(ssetobj) {
-				Set @pRepParamGlb@("Department")=ssetobj.CTSSDesc
-			}	
-		} Else {
-			If pLanguage=2 {
-				Set depobj=##class(User.CTDepartment).%OpenId(depcode,0)
-				If $IsObject(depobj) {
-					Set @pRepParamGlb@("Department")=depobj.CTDEPName
-				}	
-				
-			} Else {	
-				Set @pRepParamGlb@("Department")=$Get(^TTAB("DEP",depcode,"LAN",pLanguage))
-			}	
-		}
-	}
-	Set @pRepParamGlb@("VerificationQueue")=(queueid'="")
-	If $IsObject(episobj.EPVISStatusPrinting) {
-		Set @pRepParamGlb@("PrintingStatus")=episobj.EPVISStatusPrinting.%Id()
-	}
-	//
-	Set authtestset=""
-	Set key="",testobj=""
-	For  {
-		Set testobj=episobj.ChildEPVisitTestSet.GetNext(.key)
-		If key="" Quit
-		If '$IsObject(testobj) Continue
-		If '##class(TCLEx.Function.TestSet).IsAuthorised(testobj) Continue
-		Set testsetid=testobj.%Id()
-		If '..IsTestSet4Department(testsetid,.pTestSets,pDepCode) Continue
-		Set authtestset=testsetid
-		Quit
-	}
-	//
-	If authtestset'="" {
-		Do ..SetTestSetVals(authtestset,pLanguage,pRepParamGlb)
-	}
 	If ..ImpersonalResult {
 		Set @pRepParamGlb@("FullName")=""
 		Set @pRepParamGlb@("DOB")=""
-	}
-]]></Implementation>
-</Method>
-
-<Method name="IsTestSet4Department">
-<Description>
-Подходит ли объект набора тестов эпизода pTestSetObj для отдела pDepCode
-для супер-набора также проверяется, что код набора тестов является заключением (pSummaryTestSet) </Description>
-<ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pTestSetId:%String,&pTestSets:%String,pDepCode:%String]]></FormalSpec>
-<ReturnType>%Boolean</ReturnType>
-<Implementation><![CDATA[
-	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
-	If '$IsObject(testsetobj) Quit 0
-	If ($Data(pTestSets)&&('$Data(pTestSets(pTestSetId)))) Quit 0
-	If '$IsObject(testsetobj.VISTSTestSetDR) Quit 0
-	//
-	Set depcode=$Piece(pDepCode,$Char(1),1)
-	Set queueid=$Piece(pDepCode,$Char(1),2)
-	//
-	Set testsetcode=testsetobj.VISTSTestSetDR.%Id()
-	If $Extract(testsetcode,1,1)'=depcode Quit 0 
-	//
-	If queueid="" Quit 1
-	If (queueid'="")&&(##class(TCLEx.Function.TestSet).GetPrintableVerificationQueue(testsetobj)=queueid) Quit 1
-	Quit 0
-]]></Implementation>
-</Method>
-
-<UDLText name="T">
-<Content><![CDATA[
-// Загрузить значения полей для печати, которые берутся из набора тестов 
-
-]]></Content>
-</UDLText>
-
-<Method name="SetTestSetVals">
-<Description>
-pTestSetId - Id набора тестов
-pTestSets - буфер наборов тестов 
-pLanguage - язык результата  
-pRepParamGlb - глобал с данными</Description>
-<ClassMethod>1</ClassMethod>
-<FormalSpec>pTestSetId:%String,pLanguage:%String,pRepParamGlb:%String</FormalSpec>
-<Implementation><![CDATA[
-	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
-	If '$IsObject(testsetobj) Quit
-	
-	Set @pRepParamGlb@("TS_ID")=testsetobj.%Id()
-	Set @pRepParamGlb@("TS_DateOfAuthorisation")=$$DisplayDate^KSPCLUtils(testsetobj.VISTSDateOfAuthorisation)
-	;
-	Set userobj=testsetobj.VISTSUserAuthorisedDR
-	If $IsObject(userobj) { 
-		Set @pRepParamGlb@("TS_AuthorisedDoctorId")=userobj.%Id()
-		Set @pRepParamGlb@("TS_AuthorisedDoctor")=userobj.SSUSRName
 	}
 ]]></Implementation>
 </Method>
@@ -631,7 +491,29 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 		Do stream.WriteLine("</fo:block-container>")
 	}
 
-	If pPageNumber<pTotalPages {
+    // Печать водяного знака
+    set pathImage2=##class(TCLEx.Report.Function).ImagePath()
+    set watersignfile=pathImage2_"\watersign.png" 
+    If '##class(%File).Exists(watersignfile) {
+			Set watersignfile=""
+		}		
+    
+    If watersignfile'="" {
+	    set flagViewer=""
+	    Set vals=..ExtraParams
+	    If (vals'="")&&($listlength(vals)>1) Set flagViewer=$ListGet(vals,2)
+	    if flagViewer="V" {
+		    Do stream.WriteLine("<fo:block-container z-index='1' position='absolute' left='20mm' top='110mm' width='150mm' height='80mm' overflow='hidden'>")
+		    Do stream.WriteLine("<fo:block>")
+		    Do stream.WriteLine("	<fo:external-graphic  content-width='150mm' content-height='80mm'   >")
+		    Do stream.WriteLine("		<xsl:attribute name='src'>"_$ZConvert(watersignfile,"o","XML")_"</xsl:attribute>")
+		    Do stream.WriteLine("	</fo:external-graphic>")
+		    Do stream.WriteLine("</fo:block>")
+		    Do stream.WriteLine("</fo:block-container>")
+	    }
+	}
+    
+    If pPageNumber<pTotalPages {
 		Do stream.WriteLine("<fo:block break-after='page'/>")
 	}
 
