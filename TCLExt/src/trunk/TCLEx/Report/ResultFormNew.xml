@@ -27,6 +27,7 @@ pUser - пользователь запустивший отчет</Description>
 	Do ..MakePrintingEpisodesBuf(pReportType,pCourier,pUser,$Name(^||ResultForm.Episodes))
 	If '$Data(^||ResultForm.Episodes) Quit
 	//
+	set countEpisode=0 // считаем кол-во эпизодов, пападающий в один файл - 10 максимум
 	Set reporttype=""
 	For  {
 		Set reporttype=$Order(^||ResultForm.Episodes(reporttype))
@@ -39,12 +40,30 @@ pUser - пользователь запустивший отчет</Description>
 			for {
 			 set qcopies=$order(^||ResultForm.Episodes(reporttype,user,qcopies)) if qcopies="" quit
 			 
-			 set ok=..SaveLISReportAll(pCourier, user, qcopies, $name(^||ResultForm.Episodes(reporttype,user,qcopies)))  
-			 if 'ok {
-				 do ##class(TCLEx.Report.Function).ErrorWrite(ok)
-				 continue
+			 // разбиваем на отдельные задания диспетчера печати (не больше limitEpis эпизодов в одном задании)
+			 set countEpisode=0 // считаем кол-во эпизодов
+			 set limitEpis=3  // макс число эпизодов в одном задании диспетчера печати
+			 kill ^||ResultForm.EpisodesOneReport
+			 set epis="" 
+			 for {
+				 set epis=$order(^||ResultForm.Episodes(reporttype,user,qcopies,epis)) if epis="" quit
+				 set countEpisode=countEpisode+1
+				 if countEpisode>limitEpis {
+				     if $data(^||ResultForm.EpisodesOneReport) {
+					     set ok=..SaveLISReportAll(pCourier, user, qcopies, $name(^||ResultForm.EpisodesOneReport))  
+			             if 'ok do ##class(TCLEx.Report.Function).ErrorWrite(ok)
+			             if ok Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.EpisodesOneReport))
+			             set countEpisode=1
+			             kill ^||ResultForm.EpisodesOneReport
+			         }
+				 }
+				 merge ^||ResultForm.EpisodesOneReport(epis)=^||ResultForm.Episodes(reporttype,user,qcopies,epis)	 
 			 }
-	         //Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.Episodes(reporttype,user,qcopies))) ???
+			 if $data(^||ResultForm.EpisodesOneReport) {
+					     set ok=..SaveLISReportAll(pCourier, user, qcopies, $name(^||ResultForm.EpisodesOneReport))  
+			             if 'ok do ##class(TCLEx.Report.Function).ErrorWrite(ok)
+			             if ok Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.EpisodesOneReport))
+			 }
 			 
 			}
 		}
