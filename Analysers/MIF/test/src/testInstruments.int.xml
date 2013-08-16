@@ -154,6 +154,7 @@ EmulateDeviceClient(ip,port)
  use 0
  close dev
  q "succsess client"
+
  //
  ;иммулайт прибор - клиент - конкретная глобаль для Sysmex для тестирования программ MIFstartServer MIFxt4000iB
 EmulateSysmex(ip,port)
@@ -422,5 +423,58 @@ jobTestMoveLicense()
  //set ^test("lic")=ok
  h 1000  
  quit 
+ 
+TestASTM()
+ set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21),lf=$char(10),cr=$char(13)
+ set str1="1H|\^&|||110620||||||||1|20111225165759"
+ set str2="2P|||SARRALIH||||||||||||||||||||||"
+ set str3="3O||SARRALIH|2291312433502050|^^^PLScr-G|||||||||||||||||||||F"
+ set str4="4R|1|^^^PLScr-G|3.9^GPLU/ml^Neg|||||F||MARGO ||20111224174549"
+ set str5="5C|1|I|QC Approved|I"
+ set str6="6L|1|N"
+ set string=stx_str1_etx_$$CHSUM(str1_etx)_cr_lf
+ for i=2:1:6 {
+	 set string=string_stx_@("str"_i)_etx_$$CHSUM(@("str"_i)_etx)_cr_lf 
+ }
+ /*
+ set str1="1H|\^&||parol|LIS|||||IMMULITE||P|1|" 
+ set str2="2L|1|N"
+ set string=stx_str1_etx_$$CHSUM(str1_etx)_cr_lf
+ set string=string_stx_str2_etx_$$CHSUM(str2_etx)_cr_lf 
+ */
+ set target=##class(EnsLib.EDI.ASTM.Document).ImportFromString(string,.status)
+ if 'status {
+	 d $system.OBJ.DisplayError(status)
+	 quit
+ }
+ 
+ set target.DocType="E1394:P"
+    
+ b  set pathvalue=target.GetValueAt("Pgrp(1).Ogrp(1).Rgrp(1).R:DataOrMeasurementValue",,.status)
+ if 'status {do $system.Status.DisplayError(status)}
+ write !,"patientname=",pathvalue
+ quit
+ 
+CHSUM(x) ; calculate check sum
+ new (x) 
+ set z=0 for y=1:1:$length(x) set z=z+$ascii(x,y)
+ quit $translate($justify($zhex(z#256),2)," ","0")  
+ 
+EmulateDeviceServer2(mi,port)
+ set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21),lf=$char(10),cr=$char(13)
+  set dev="TCP"_port
+  open dev::20 else  quit
+  use dev:"PST"
+  set npp=""
+  for {
+	  set npp=$order(^TMPmif(mi,99,npp),1,rec) if npp="" quit
+	  if $extract(rec,1,5)'="H<--M" continue
+	  write stx_rec_$c(13)_$c(10),*-3
+	  read *ans:1
+	  if ans'=ack use 0 write !,"На строку "_stx_rec_$c(13)_$c(10)_" нет подтверждения" quit
+  }
+  use 0
+  close dev
+  quit 
 ]]></Routine>
 </Export>
