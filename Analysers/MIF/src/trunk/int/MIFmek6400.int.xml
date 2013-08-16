@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFmek6400" type="INT" languagemode="0"><![CDATA[
+MIFmek6400(mi) ; free protocol  -  test (uni-Directional) (Russion ГКБ-12))
+    // com port => host-client 
+    set mi=$get(mi) if '$length(mi) quit
+    kill ^TMIF(mi,10) 
+    set $ztrap="err^MIF000"
+    if $$select^LVBMIMP(mi) quit
+    for j=1:1:PLIST set @("par"_j)=PLIST(j)
+    set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21)
+    set lf=$char(10),cr=$char(13)
+    if $$start^MIF000() quit
+    do trace^MIF000(mi,"Started job="_$Job,"DEBUG")
+    For  {
+		Do Main(mi)
+		If $$stop^MIF000() Quit
+ 	}	
+	Close par4
+	Do trace^MIF000(mi,"Stopped job="_$Job,"DEBUG")
+	Quit
+ 
+ // for host-client 
+Main 
+    set strResults="WBC/LY%/MO%/GR%/LY/MO/GR/RBC/HGB/HCT/MCV/MCH/MCHC/RDW/PLT/PCT/MPV/PDW"
+    read *R:10
+    ;if $c(R)'=enq d trace^MIF000(mi,"Waiting <STX> but received <"_R_">","DEBUG") q
+    if $char(R)'=stx quit
+    do receiveSTX
+    quit
+ 
+ ;обработка полученного от прибора ENQ
+receiveSTX
+     set (sample,epis,surname,result,date,time,QC)="" 
+     do trace^MIF000(mi,"STX","H<--M")
+     set record=$$read^MIF000("",etx) 
+     if '$length(record) quit
+     do trace^MIF000(mi,record,"H<--M")
+     set date=$$DateTrasform($piece(record,cr,1))
+     set epis=$zstrip($piece(record,cr,2),"W<>")
+     if epis="" quit
+     
+     ; results
+     for k=1:1:$length(strResults,"/") {
+	     set test=$piece(strResults,"/",k)
+	     set rec=$piece(record,cr,k)
+         set res=$zstrip($extract(rec,1,4),"W<>")
+         set flag=$zstrip($extract(rec,5,6),"W<>")
+         if res'="" set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
+     }
+     // save results
+     do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date,"DEBUG")
+	 If epis'="",result'="" {
+		do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+	 }
+     quit
+     
+DateTrasform(pDate)
+   set returnValue=""
+   try {
+	   set day=$piece(pDate,"/",1)
+       set month=$piece(pDate,"/",2)
+       set year=$piece(pDate,"/",3)
+       set returnValue=$zdh(day_" "_$zcvt($extract(month,1),"U")_$zcvt($extract(month,2,3),"L")_" "_year,2)
+   } catch(e) {
+	   set returnValue=""
+   }
+   quit returnValue
+      
+	
+      
+
+]]></Routine>
+</Export>
