@@ -1,0 +1,448 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFversacell" type="INT" languagemode="0"><![CDATA[
+MIFversacell(mi) ; ASTM protocol  -  VersaCell( Centaure XP +Immulite 2000) (Bi-Directional) (Russion Burdenko))
+ s mi=$g(mi) i '$l(mi) q
+ k ^TMIF(mi,10) s $zt="err^MIF000"
+ i $$select^LVBMIMP(mi) q
+ f j=1:1:PLIST s @("par"_j)=PLIST(j)
+ s stx=$c(2),etx=$c(3),ack=$c(6),enq=$c(5),eot=$c(4),nak=$c(21),etb=$c(23)
+ s lf=$c(10),cr=$c(13)
+ set (sample,epis,surname,result,date,time,QC)=""
+ i $$start^MIF000() q
+ d trace^MIF000(mi,"Started job="_$j,"DEBUG")
+ for {
+	 d Main 
+	 if $$stop^MIF000() quit
+ }
+ c par4
+ quit
+Main 
+ read *R:10
+ ;i $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ i $c(R)'=enq q
+ set nameMachine="",nameLIS=""
+ set (sample,epis,surname,result,date,time,QC)=""
+ do receiveENQ
+ if $get(nameMachine)="IMMULITE" do ORDERimmulite
+ else  do ORDER
+ quit
+ 
+ ;обработка полученного от прибора ENQ
+receiveENQ 
+ do trace^MIF000(mi,"ENQ","H<--M")
+ do ACK
+ set buffer=""
+ for {
+	 read *R:10 
+	 if $c(R)=eot quit
+     if $c(R)'=stx continue
+     set record=$$read^MIF000("",lf) if '$l(record)  continue
+     do trace^MIF000(mi,record,"H<--M")
+     set record=$e(record,1,$l(record)-1)
+     ;do trace^MIF000(mi,$tr(record,$c(13,3)," "),"H<--M")
+     ; check record validity
+     set endtext=$select('$find(record,etx):etb,1:etx)
+     set chsum=$p(record,endtext,2),chrecord=$piece(record,endtext,1)_endtext
+     if $$CHSUM(chrecord)'=chsum do NAK continue
+     do ACK
+     set record=$piece(record,endtext,1)
+     set record=$e(record,2,$l(record)) ;на 1-ом месте стоит номер записи - на записях-продолжениях он мешает
+     if endtext=etb {
+	     set buffer=buffer_record
+	     continue
+     }
+     set buffer=buffer_record
+     if buffer="" continue
+     do trace^MIF000(mi,"buffer="_buffer,"H<--M")
+     for pp=1:1:$length(buffer,$c(13)) {
+	     set record=$piece(buffer,$c(13),pp)
+	     if record="" continue 
+	     set typerecord=$piece(record,"|",1)
+	     if typerecord="" continue
+	     set typerecord=$select($length(typerecord)=1:typerecord,1:$e(typerecord,2))
+	     do trace^MIF000(mi,typerecord_" "_record,"H<--M")
+	     ; head record
+         if typerecord="H" {
+             set nameMachine=$piece(record,"|",5),nameLIS=$piece(record,"|",10)  
+             continue
+         }
+         ; query record
+         if typerecord="Q" {
+	        set epis=$p($p(record,"|",3),"^",2)
+	        if $l(epis) set ^TMP($zn,$j,"ENQ",epis)="" continue
+            ;if $l(epis),$d(^TEPI(epis,1)) set ^TMP($zn,$j,"ENQ",epis)="" continue
+            ;set suffix=$e(epis,$l(epis)),epis=$e(epis,1,$l(epis)-1)
+            ;if $l(epis),$d(^TEPI(epis,1)) set ^TMP($zn,$j,"ENQ",epis)=suffix continue
+            ;set epis=$p($p(record,"|",3),"^",2) if $l(epis) set ^TMP($zn,$j,"ENQ",epis)=""
+            continue
+         }    
+         ; patient record
+         if typerecord="P" {
+            do Last s (sample,epis,surname,result,date,time,QC)=""
+            set surname=$tr($tr($p(record,"|",6),""),"^"," ") 
+            continue
+         }
+         ; order record
+         if typerecord="O" {
+	        set epis=$tr($p($p(record,"|",3),"^",1)," "),QC=$tr($p(record,"|",12)," ") //s:'$l(epis) epis=$tr($p($p(record,"|",4),"^",1)," ")
+	        // проверяем , не есть ли это контроль качества
+            set QC="" if $l(epis) set QC=$$findQC^MIF000(mi,epis) ; check if received id is QC
+            if QC="Q" s QC="Y"
+            continue
+         }
+         ; result record
+         if typerecord="R" {
+	         
+	         ; strip trailing spaces
+         set test=$p($p(record,"|",3),"^",4) set test=$$DeleteLeftAndRightSpaces^KSUTIL1(test)
+         set res=$tr($p(record,"|",4),", ",".")
+         if $length(res),$isvalidnum(res) set res=+res
+         set flag=$tr($p(record,"|",7)," ")
+         if flag="N" s flag="" ; normal flag
+         set resultaspect=$tr($p($p(record,"|",3),"^",8)," ")
+         
+     if nameMachine="IMMULITE" {
+         
+         if $l(test),$l(res) {
+	          // подтверждаем разбавление как отработавшее , если оно есть
+	          set nppDilution=$order(^TMIF(mi,30,epis,test,"d",""),-1)
+	          set dilution=""
+	          if nppDilution'="" {
+		          set $piece(^TMIF(mi,30,epis,test,"d",nppDilution),$char(0),2)=1
+		          set dilution=$piece(^TMIF(mi,30,epis,test,"d",nppDilution),$char(0),1)
+	          }
+	          set okDilut=1 
+	          // результат плохой - надо разбавлять (dilution) - создание нового заказа для прибора
+	          if flag=">" {
+		          if $get(epis)'="" {
+			              set testLIS=$order(^TMIF(mi,3,test,""))
+			              if (testLIS="")||('$data(^TMIF(mi,2,testLIS,1,""""_res_""""))) {
+				              set dilutionNext=$$getDilution(dilution)
+			                  if dilutionNext'="",$length(epis),$data(^TEPI(epis,1)) {
+				                 set ^TMP($zn,$j,"ENQ2",epis,test)=dilutionNext 
+				                 set okDilut=0 
+			                  }
+			              }
+		          }    
+	          }
+	          // записываем этот результат + записываем разбавление в результат соответсвующего теста, если оно было 
+              if okDilut=1 {
+	              set result=result_test_$c(par10)_res_$c(par10)_flag_$c(par11)
+	              if $get(epis)'="" {
+		              if dilution'="" {
+                          // если уже введен результат - разведение - что будет????
+			              set testdilution=test_"_D"
+			              if $data(^TMIF(mi,3,testdilution)) {
+				              set result=result_testdilution_$c(par10)_dilution_$c(par10)_""_$c(par11)
+			              }
+			                
+		              }
+		              if $data(^TMIF(mi,30,epis,test)) do trace^MIF000(mi,"kill dilutions epis="_epis_" test="_test,"H-->H")
+		              kill ^TMIF(mi,30,epis,test)
+	              }
+	              ; date and time
+                  if $l($tr($p(record,"|",13)," ")) {
+	                 set datetime=$p(record,"|",13)
+	                 s date=$$intdate^SSUTIL4($e(datetime,5,6)_"/"_$e(datetime,7,8)_"/"_$e(datetime,1,4))
+                     s time=($e(datetime,9,10)*3600)+($e(datetime,11,12)*60)
+                  }
+              }
+  
+         }
+      } else {
+	         
+            if resultaspect="DOSE" if $l(test),$l(res) s result=result_x1_$c(par10)_x2_$c(par10)_x3_$c(par11)
+            ; date and time
+            set datetime=$p(record,"|",13)
+            if $l($tr(datetime," ")) {
+	            s date=$$intdate^SSUTIL4($e(datetime,5,6)_"/"_$e(datetime,7,8)_"/"_$e(datetime,1,4))
+                s time=($e(datetime,9,10)*3600)+($e(datetime,11,12)*60)
+            }
+      }
+         continue
+         }
+         ; last record
+         if typerecord="L" {
+	        d Last 
+	        continue
+         }
+    }
+    set buffer=""
+ } 
+ do trace^MIF000(mi,$s($c(R)=eot:"EOT",1:R),"H<--M")
+ quit
+ 
+Last ; file result if exists
+ do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_$g(date)_" time="_$g(time)_" QC="_$g(QC),"H<--H")
+ if epis?1.99AN,$l(result) do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ set (sample,epis,surname,result,date,time,QC)=""
+ quit
+ 
+ORDER ; create list of orders if exists
+ // посылка ранее не посланных заданий 
+ s epis=""
+ for {
+	 set epis=$order(^TMIF(mi,10,epis)) quit:epis="" 
+	 d Send(epis)
+ }
+ // создание и посылка новых заданий 
+ s epis=""
+ for {
+	 set epis=$o(^TMP($zn,$j,"ENQ",epis)) quit:epis="" 
+     do scanone^MIF000(mi,epis)
+     if $$select^LVBEPVIS(epis,"Y") k ^TMP($zn,$j,"ENQ",epis) continue
+     s sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+     ;s sex=$s($g(PLIST(5))="М":"M",$g(PLIST(5))="Ж":"F",1:"U")
+     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8)
+     // header record
+     s line=$o(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="H|\^&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"Centaur")_"||P|1|" 
+     s line=$o(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="P|1|"_epis_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"||"_"|"_sex_"|||||" ;_$g(PLIST(15))
+     s tc="" f N=1:1 s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d SET(epis,tc)
+     s line=$o(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="L|1|"_$s(N>1:"N",1:"I")
+     k ^TMP($zn,$j,"ENQ",epis)
+     d Send(epis)
+ }
+ quit
+ 
+SET(epis,tcx) ; set record to be sent to instrument
+ set ll=$length(tcx)
+ if $e(tcx,ll-1,ll)="_i" set tcx=$e(tcx,1,ll-2)
+ s line=$o(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="O|"_N_"|"_epis_"||^^^"_tcx_"|||||||||||||||||||||O"
+ q
+ 
+Send(epis) ; send list of orders if exists
+ d ENQ f j=1:1:10 r *R:1 quit:$c(R)=ack!($c(R)=enq)  ;d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
+ i $c(R)=enq q
+ i $c(R)'=ack d EOT q
+ d trace^MIF000(mi,"ACK","H<--M")
+ s x="" f FRAME=1:1 s x=$O(^TMIF(mi,10,epis,x)) q:x=""  q:$$SEND(FRAME#8_^TMIF(mi,10,epis,x))
+ i x="" k ^TMIF(mi,10,epis)
+ d EOT
+ q
+
+SEND(str) ; send string to instrument
+ set str=str_cr_etx,chsum=$$CHSUM(str)
+ write stx,str,chsum,cr,lf,*-3 
+ do trace^MIF000(mi,str_chsum,"H-->M")
+ for j=1:1:6 {
+	 read *R:1 
+	 quit:($c(R)=ack)!($c(R)=eot)
+	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
+ }
+ if $c(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
+ if $c(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
+ do trace^MIF000(mi,R,"H<--M")
+ quit 2
+
+ORDERimmulite ; create list of orders if exists
+ // order for query
+ s epis="" 
+ for {
+	 set epis=$o(^TMP($zn,$j,"ENQ",epis)) quit:epis="" 
+     do scanone^MIF000(mi,epis) 
+     if $$select^LVBEPVIS(epis,"Y") k ^TMP($zn,$j,"ENQ",epis) continue
+     set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+     ;s sex=$s($g(PLIST(5))="М":"M",$g(PLIST(5))="Ж":"F",1:"U")
+     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
+     set priorityEpis=$piece($get(PLIST(17)),$char(1),1)
+     ;s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1|"_epis_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"||"_birthday_"|"_sex_"|||||" ;_$g(PLIST(15))
+     set line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1|"_epis_"|||^|||"_sex_"|||||"_$g(PLIST(15))
+     set testcodeAnal="" 
+     for N=1:1 {
+	     set testcodeAnal=$o(^TMP("MIF-SINGLE",$j,mi,epis,testcodeAnal)) 
+	     if testcodeAnal="" quit
+	     set rowid=$$getRowIdTestSet^MIF000dop(mi,epis,testcodeAnal) //$order(xxVTS(epis,testcodeAnal,"")) // чтобы сущестовавала xxVTS в scanone^MIF000 n (xxVTS)
+	     //priority
+	     set priority=""
+	     if rowid'="" {
+		    if $$select^LVBVISTS(rowid)=0 set priority=$piece($get(PLIST(13)),$char(1),1)
+	     }
+	     if priority="" set priority=priorityEpis     
+	     // пропускаем тесты с "_D"
+	     set len=$length(testcodeAnal)
+	     if $extract(testcodeAnal,len-1,len)="_D" continue
+	     //если лаборант уже ввел разбавление в тест testcodeAnal_"_D"
+	     set testcodeAnalDilution=testcodeAnal_"_D"
+	     set dilution=""
+	     if $data(^TMIF(mi,3,testcodeAnalDilution)) {
+			 set dilution=$$getResultTestCode(mi,epis,testcodeAnal,testcodeAnalDilution) 
+			 //если заданный лаборантом результат уже был и был подтвержден как отработавший, то
+			 //берем следующее разбавление от последнего отработавшего разбавления
+			 if dilution'="" {
+			    if $data(^TMIF(mi,30,epis,testcodeAnal,"i",dilution)) {  // если такое разбавление уже посылалось
+				    set npp="",ok=0
+				    for {
+					    set npp=$order(^TMIF(mi,30,epis,testcodeAnal,"i",dilution,npp)) if npp="" quit
+					    if $piece($get(^TMIF(mi,30,epis,testcodeAnal,"d",npp)),$char(0),2)=1 set ok=1 quit
+				    }
+				    if ok=1 {  // если такое разбавление уже посылалось и отработало
+				        set dilution=$$getDilutionSend(mi,epis,testcodeAnal)
+				    }
+			    }	 
+			 }
+	     }
+	     // если уже готова для посылки следующая степень разведения
+	     if dilution="",$data(^TMP($zn,$j,"ENQ2",epis,testcodeAnal)) {
+		     set dilution=$get(^TMP($zn,$j,"ENQ2",epis,testcodeAnal)) 
+		     kill ^TMP($zn,$j,"ENQ2",epis,testcodeAnal)
+	     }
+	     // если уже были посланы и подтверждены какие-то степени разбавления, то посылаем следующую степень разбавления
+	     // от последней подтвержденной степени
+	     if dilution="",$data(^TMIF(mi,30,epis,testcodeAnal,"d")) {
+		       set dilution=$$getDilutionSend(mi,epis,testcodeAnal)
+	     }
+	     do trace^MIF000(mi,"send epis="_$g(epis)_"testcodeAnal="_$g(testcodeAnal)_" dilution="_$g(dilution)_" priority="_$g(priority),"H-->H") 
+	     do SETimmulite(epis,testcodeAnal,dilution,priority)
+     }
+     set line=$order(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|"_$s(N>1:"F",1:"I")
+     kill ^TMP($zn,$j,"ENQ",epis)
+     d SendImmulite
+ }
+ //reorders with dilution Нужен ли тут приоритет???
+ s epis="" 
+ for {
+	 set epis=$o(^TMP($zn,$j,"ENQ2",epis)) quit:epis="" 
+     if $$select^LVBEPVIS(epis,"Y") k ^TMP($zn,$j,"ENQ2",epis) continue
+     set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
+     set line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1|"_epis_"|||^|||"_sex_"|||||"_$g(PLIST(15))
+     set testcodeAnal="" 
+     for N=1:1 {
+	     set testcodeAnal=$o(^TMP($zn,$j,"ENQ2",epis,testcodeAnal)) 
+	     if testcodeAnal="" quit
+	     set dilution=$get(^TMP($zn,$j,"ENQ2",epis,testcodeAnal)) if dilution="" continue
+         if '$data(^TMIF(mi,3,testcodeAnal)) continue
+         do trace^MIF000(mi,"send epis="_$g(epis)_"testcodeAnal="_$g(testcodeAnal)_" dilution="_$g(dilution),"H-->H")
+	     do SETimmulite(epis,testcodeAnal,dilution)
+	     kill ^TMP($zn,$j,"ENQ2",epis,testcodeAnal)
+     }
+     set line=$order(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|"_$s(N>1:"F",1:"I")
+     kill ^TMP($zn,$j,"ENQ2",epis)
+     d SendImmulite
+ }
+ quit
+ 
+SETimmulite(epis,tcx,dilution,priority) ; set record to be sent to instrument
+ set line=$order(^TMIF(mi,10,""),-1)+1
+ set priorityAnal="" if $get(priority)'="" set priorityAnal=$select(priority="U":"S",1:"R") // надодо будет еще добавить A-As soon as possible
+ set ^TMIF(mi,10,line)="O|"_N_"|"_epis_"||^^^"_tcx_$select($get(dilution)'="":"^"_dilution,1:"")_"|"_priorityAnal_"||||||N||||||||||||||Q"
+ if $get(dilution)'="" {  // в этот ли момент?
+	 set npp=$order(^TMIF(mi,30,epis,tcx,"d",""),-1)+1
+	 set ^TMIF(mi,30,epis,tcx,"d",npp)=dilution 
+	 set ^TMIF(mi,30,epis,tcx,"i",dilution,npp)="" 
+	 //do trace^MIF000(mi,"set dilution="_dilution_" epis="_epis_" tcx="_tcx,"H-->H")
+ }
+ quit
+ 
+SendImmulite ; send list of orders if exists
+ do ENQ 
+ for j=1:1:10 {
+	 read *R:1 
+	 quit:$char(R)=ack!($char(R)=enq)  
+	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
+ }
+ if $c(R)=enq quit
+ if $c(R)'=ack do EOT quit
+ do trace^MIF000(mi,"ACK","H<--M")
+ set recordHead="1H|\^&||parol|"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"IMMULITE")_"||P|1|" //_$Translate($ZDateTime($Horolog,8)," :")
+ quit:$$SEND(recordHead)
+ set x="" for FRAME=2:1 set x=$Order(^TMIF(mi,10,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,x))
+ if x="" kill ^TMIF(mi,10)
+ do EOT
+ quit
+
+CHSUM(x) ; calculate check sum
+ n (x) s z=0 f y=1:1:$l(x) s z=z+$a(x,y)
+ s z=$e("0123456789ABCDEF",z#256\16+1)_$e("0123456789ABCDEF",z#16+1)
+ q z
+ 
+ACK w ack,*-3 d trace^MIF000(mi,"ACK","H-->M") q
+NAK w nak,*-3 d trace^MIF000(mi,"NAK","H-->M") q
+EOT w eot,*-3 d trace^MIF000(mi,"EOT","H-->M") q
+ENQ w enq,*-3 d trace^MIF000(mi,"ENQ","H-->M") q
+
+ // получить следующую степень разбавления
+getDilution(dilutionPrevious) public {
+	set dilutionPrevious=+$get(dilutionPrevious)
+	set dilution=""
+	 // возможные степени разбавления 5,10,20,40,100
+    for i=5,10,20,40,100 {
+          if dilutionPrevious<i set dilution=i quit
+    }
+    /*
+    if dilution="" {
+	    set dilution=dilutionPrevious\100*100+100   
+	}*/
+	quit dilution
+}
+
+ // получить степень разбавления для оправки заказа на прибор
+getDilutionSend(mi,epis,testcodeAnal) public {
+	set dilution="" 
+    set dilutionLastInfo=$$getLastDilution(mi,epis,testcodeAnal)
+	set dilutionPrevious=$piece(dilutionLastInfo,$char(0),1)
+	set dilutionAuth=$piece(dilutionLastInfo,$char(0),2)
+	if dilutionPrevious'="" {
+	   // если по последней посланной степени разведения уже был получен результат, то посылаем следующую степень разведения 
+	   if dilutionAuth=1 {
+			   set dilution=$$getDilution(dilutionPrevious)
+	   } 
+	   else {  // если была послана степень разведения, но результат не получен, то посылаем эту спень снова
+	    	   set dilution=dilutionPrevious
+	   }
+	}
+	else {
+		set dilution=$$getDilution("")
+	}
+	quit dilution
+}
+ // Получить последнюю посланную степень разбавления для теста
+getLastDilution(mi,epis,test) public {
+    set info=""
+    set npp=$order(^TMIF(mi,30,epis,test,"d",""),-1)
+	if npp'="" {
+	    set info=^TMIF(mi,30,epis,test,"d",npp)
+	}
+    quit info
+} 
+ // Получить последнюю подтвержденную степень разбавления для теста
+getLastAuthDilution(mi,epis,test) public {
+    set dilution=""
+    set npp=""
+	for {
+	    set npp=$order(^TMIF(mi,30,epis,test,"d",npp),-1) if npp="" quit
+	    if $piece($get(^TMIF(mi,30,epis,test,"d",npp)),$char(0),2)=1 quit
+	}
+	if npp'="" {
+	    set dilution=$piece(^TMIF(mi,30,epis,test,"d",npp),$char(0),1)   
+	}
+    quit dilution
+}   
+ //testcodeAnal - тест анализатора - реальный
+ //testcodeAnalDilution - тест анализатора - для ввода разбавления 
+getResultTestCode(mi,epis,testcodeAnal,testcodeAnalDilution) public {
+	set result=""
+	set testcode=$order(^TMIF(mi,3,testcodeAnal,""))
+	set testcodeDilution=$order(^TMIF(mi,3,testcodeAnalDilution,""))
+	if testcode=""||(testcodeDilution="") quit ""
+	// проходим по наборам тестов, к которым принадлежит testcode
+	// на случай, если будет испльзоваться один и тот же тест для ввода разбавления в разных наборах тестов 
+    set ts=""
+    for {
+	    set ts=$order(^TMIF(mi,2,testcode,0,ts))
+	    if ts="" quit
+        if '$data(^TEPI(epis,1,ts)) continue
+		set tscnt=""
+		for {
+			set tscnt=$order(^TEPI(epis,1,ts,tscnt)) if tscnt=""||(result'="") quit
+			if '$d(^TEPI(epis,1,ts,tscnt,"DATA",testcodeDilution)) continue
+            //if $p($g(^TEPI(epis,1,ts,tscnt,"DATA",testcodeDilution)),"\",10)="Y" continue
+            set result=$piece(^TEPI(epis,1,ts,tscnt,"DATA",testcodeDilution),"\",1)
+		}
+		if result'="" quit
+	}
+	quit result
+}
+]]></Routine>
+</Export>
