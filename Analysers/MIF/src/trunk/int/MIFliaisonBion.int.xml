@@ -81,7 +81,7 @@ receiveENQ
      if typerecord="Q" {
 	     Set containernumber=$Piece($Piece(record,"|",3),"^",1)
          Set epis=$$Episode4Container^KSMIF000(containernumber)	     
-	     If epis="ALL" Do PrepareAllOrders(mi) continue
+	     //If epis="ALL" Do PrepareAllOrders(mi) continue
 	     if $length(epis) set ^TMP($zname,$job,"ENQ",epis)=containernumber 
          continue
      }    
@@ -107,6 +107,11 @@ receiveENQ
          set res=$translate($piece(record,"|",4),", ","."),flag=$translate($piece(record,"|",7)," ")
          if flag="N" set flag="" ; normal flag
          if $length(res),$isvalidnum(res) set res=+res // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
+         // union res and flag
+         // if (flag'="")&&($find("<=>=",flag))&&('$find(res,flag)) { 
+         if (flag'="")&&($find("<=>=",flag))&&('$$FindSign(res)) {
+	         set res=flag_res
+         }
          if $length(test),$length(res) set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
          ; date and time
          if $length($translate($piece(record,"|",13)," ")) {
@@ -191,33 +196,31 @@ PrepareAllOrders(pInstrument) public {
 }	 
  
 ORDER ; create list of orders if exists
-  // посылка ранее не посланных заданий 
- set epis="",isorder=0
- for {
-	 set epis=$order(^TMIF(mi,10,epis)) quit:epis="" 
-	 do Send(epis)
- }
  set flagExistCustomMethod=0
  set classmethod="TCLEx.MIF.Custom||Filter"
  if ##class(%Dictionary.CompiledMethod).%ExistsId(classmethod) {
     set flagExistCustomMethod=1	 
  }
  set epis="",patientnum=0,isorder=0 
+ set first=0
  for {
 	 set epis=$order(^TMP($zname,$job,"ENQ",epis),1,containernumber) quit:epis="" 
+	 if containernumber="" set containernumber=epis
      do scanone^MIF000(mi,epis)
      if $$select^LVBEPVIS(epis,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
+     if first=0 {
+	      // header record
+          set line=$order(^TMIF(mi,10,""),-1)+1
+          set ^TMIF(mi,10,line)="H|\^&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"Liaison") //_"||P|1|" 
+	      set first=1
+     }
      set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
      ;s sex=$s($g(PLIST(5))="М":"M",$g(PLIST(5))="Ж":"F",1:"U")
      set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
-     // header record
-     set line=$order(^TMIF(mi,10,epis,""),-1)+1
-     //"1H|\^&|||LIS|||||Liaison|"
-     set ^TMIF(mi,10,epis,line)="H|\^&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"Liaison") //_"||P|1|" 
      // patient record
      set patientnum=patientnum+1
-     set line=$order(^TMIF(mi,10,epis,""),-1)+1
-     set ^TMIF(mi,10,epis,line)="P|"_patientnum_"|"_containernumber_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"||"_"|"_sex_"|||||" ;_$g(PLIST(15))
+     set line=$order(^TMIF(mi,10,""),-1)+1
+     set ^TMIF(mi,10,line)="P|"_patientnum_"|"_containernumber_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"||"_"|"_sex_"|||||" ;_$g(PLIST(15))
      // order records
      set priorityEpis="" if PLIST(17)'="" if $$seldata^LVBCTPR(PLIST(17),4)="Y" set priorityEpis="Y"
      set tc="" 
@@ -241,21 +244,22 @@ ORDER ; create list of orders if exists
 	     do SET(containernumber,tc)
 	     set isorder=1
      }
-     // terminate record
-     set line=$order(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="L|1|"_$s(isorder=1:"N",1:"I")
      kill ^TMP($zname,$job,"ENQ",epis)
-     do Send(epis)
- }
+  }
+   // terminate record
+   set line=$order(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|"_$s(isorder=1:"N",1:"I")
+   do Send()
  quit
  
 SET(epis,tcx) ; set record to be sent to instrument
  set ll=$length(tcx)
  if $e(tcx,ll-1,ll)="_i" set tcx=$e(tcx,1,ll-2)
- set line=$order(^TMIF(mi,10,epis,""),-1)+1
- set ^TMIF(mi,10,epis,line)="O|"_N_"|"_epis_"||^^^"_tcx_"|||||||||||||||||||||O"
+ set line=$order(^TMIF(mi,10,""),-1)+1
+ set ^TMIF(mi,10,line)="O|"_N_"|"_epis_"||^^^"_tcx_"|||||||||||||||||||||O"
  quit
  
-Send(epis) ; send list of orders if exists
+Send() ; send list of orders if exists
+ if '$data(^TMIF(mi,10)) quit
  do ENQ 
  for j=1:1:10 {
 	 read *R:1 
@@ -265,8 +269,8 @@ Send(epis) ; send list of orders if exists
  if $char(R)=enq quit
  if $char(R)'=ack do EOT quit
  do trace^MIF000(mi,"ACK","H<--M")
- set x="" for FRAME=1:1 set x=$Order(^TMIF(mi,10,epis,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,epis,x))
- if x="" kill ^TMIF(mi,10,epis)
+ set x="" for FRAME=1:1 set x=$Order(^TMIF(mi,10,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,x))
+ if x="" kill ^TMIF(mi,10)
  do EOT
  quit
  
@@ -293,5 +297,18 @@ ACK write ack,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
 NAK write nak,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
 EOT write eot,*-3 do trace^MIF000(mi,"EOT","H-->M") quit
 ENQ write enq,*-3 do trace^MIF000(mi,"ENQ","H-->M") quit
+
+FindSign(str) 
+	new i,ans
+	set ans=0
+	for i=1:1:$length(str) {
+		set pp=$extract(str,i,i)
+		if "<>="[pp {
+			set ans=1
+			quit
+		} 
+	}
+	quit ans
+
 ]]></Routine>
 </Export>
