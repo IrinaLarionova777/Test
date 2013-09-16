@@ -1,0 +1,439 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Function.HospitalPatient">
+<Super>%RegisteredObject</Super>
+<TimeCreated>63077,65608.997993</TimeCreated>
+
+<Method name="CreateHospitalPatient">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pObjectTransport:TCLEx.Object.LabOrder</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		     // Добавляем/обновляем User.HOSHospitalPatients
+		     Set ok=..Order2HospitalPatient(pObjectTransport,.hosppatobj)					
+		     If 'ok {
+			     Quit
+		     }
+		     
+		     set hosppatid=hosppatobj.%Id()
+		     // Удаление всех наборов тестов HospitalPatientTestSets 
+		     Set ok=..DeleteExistingHospitalPatientTestSets(hosppatid)
+		     If 'ok {
+			     Quit
+		     }	
+		     
+		     ;Kill ^||EMED.TestSets
+		     ;Do ..HospitalPatientTestSets(hosppatobj.%Id(),$Name(^||EMED.TestSets))	// Составляем буфер с уже имеющимися наборами тестов в User.HOSHospitalPatients
+		 	 ;Set maxcount=$ListGet($Get(^||EMED.TestSets),1)
+		 
+		     // Если строка с наборами тестов через "," не содержит наборов тестов, то удаляем объект hosppatobj
+		     Set cnt=$length(hosppatobj.TestSets,",")					
+		     if cnt=0 {
+			      set sqlcode=$$delete^LVBHOSP(hosppatid) 
+			      set ok=$$$ERROR($$$SQLError,"Ошибка при удалении объекта User.HospitalPatient с кодом "_hosppatid_": "_sqlcode)
+			      quit
+		     }		
+		     
+		     // Пробегаем по всем назначенным исследованиям заказ
+		     set maxcount=0,requestok=1
+		     For i=1:1:cnt {
+			    Set testset=$piece(hosppatobj.TestSets,",",i)
+			    set errstr=""
+			    if '..IsCorrectTestSet(testset,.errstr)	{					// Корректное исследование ?
+			        if errstr'="" set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,errstr))
+					Set requestok=0
+				    continue
+			    }
+			    
+			    If ##class(User.CTSuperSet).%ExistsId(testset) {				// Если это супер-набор
+				   Set superset=testset
+				   Kill ^||EMED.SuperSet
+				   Do ##class(TCLEx.Function.SuperSet).CreateItemsBuf(superset,$Name(^||EMED.SuperSet))	// определяем элементы супер-набора
+				   Set supersetitem="",supersetok=1
+				   For  {
+					  Set supersetitem=$Order(^||EMED.SuperSet(supersetitem))
+					  If supersetitem="" Quit
+					  Set maxcount=maxcount+1
+					  Set hosptestsetobj=##class(User.HOSHospitalPatientsTSet).%New()
+						Set hosptestsetobj.HOSPTParRef=hosppatobj
+						//Set hosptestsetobj.HOSPTExtraExternalID=testsetrequestid
+						Set hosptestsetobj.HOSPTCounter=maxcount
+						Do hosptestsetobj.HOSPTSuperSetDRSetObjectId(superset)
+						Do hosptestsetobj.HOSPTTestSetDRSetObjectId(supersetitem)
+ 						Set ok1=hosptestsetobj.%Save()
+						If 'ok1 {
+							Set supersetok=ok1
+							set ok=$System.Status.AppendStatus(ok,ok1)
+						}	
+				   }
+				   If 'supersetok {												// Проверка успешности добавления по всем элементам супер-набора
+					   Set requestok=0
+					   continue
+				   }			
+			    } Else {														// Если обычный набор тестов (не супер-набор !!!)
+				   Set maxcount=maxcount+1
+				   Set hosptestsetobj=##class(User.HOSHospitalPatientsTSet).%New()
+				   Set hosptestsetobj.HOSPTParRef=hosppatobj
+				   //Set hosptestsetobj.HOSPTExtraExternalID=testsetrequestid
+				   Set hosptestsetobj.HOSPTCounter=maxcount
+				   //Set hosptestsetobj.HOSPTHospitalRefNumber=testset
+				   Do hosptestsetobj.HOSPTTestSetDRSetObjectId(testset)
+				   Set ok1=hosptestsetobj.%Save()
+				   If 'ok1 {														// Проверка успешности добавления набора тестов
+					   Set requestok=0
+					   set ok=$System.Status.AppendStatus(ok,ok1)
+					   continue
+				   }			
+			    }
+    
+	         }
+	} catch(e) {
+		  set ok=e.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="Order2HospitalPatient">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pOrderObj:TCLEx.Object.LabOrder,&pHospitalPatientObject:User.HOSHospitalPatients]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK,pHospitalPatientObject=""
+ try {
+	set orderId=$select(pOrderObj.OrderId'="":pOrderObj.OrderId,1:pOrderObj.EpisId)
+	set hospatid="L"_"||"_pOrderObj.PatientId_"||"_orderId
+	Set pHospitalPatientObject=##class(User.HOSHospitalPatients).%OpenId(hospatid)
+	If '$IsObject(pHospitalPatientObject) {
+		Set pHospitalPatientObject=##class(User.HOSHospitalPatients).%New()
+		Do pHospitalPatientObject.HOSPParRefSetObjectId("L")
+		Set pHospitalPatientObject.HOSPDebtorNumber=pOrderObj.PatientId
+		Set pHospitalPatientObject.HOSPVisit=orderId
+	}
+	Set pHospitalPatientObject.HOSPLabTrakMRN=pOrderObj.HospitalMRN
+	Do pHospitalPatientObject.HOSPPatientSiteDRSetObjectId(pOrderObj.PatientSiteDR)
+	Set pHospitalPatientObject.HOSPAdmissionDate=pOrderObj.DateOfRequest
+	Set pHospitalPatientObject.HOSPTransDate=pOrderObj.TimeOfRequest
+	
+	Set pHospitalPatientObject.HOSPSurname=pOrderObj.Surname
+	Set pHospitalPatientObject.HOSPGivenName=pOrderObj.Name
+	Set pHospitalPatientObject.HOSPExtraName1=pOrderObj.FartherName
+	set pHospitalPatientObject.HOSPDOB=pOrderObj.DOB
+	
+	//Филиал
+	set usersiteid=pOrderObj.PatientSiteDR
+	if ##class(User.CTUserLocation).%ExistsId(usersiteid) {
+	   do pHospitalPatientObject.HOSPPatientSiteDRSetObjectId(usersiteid)
+	}
+	
+	// Пол
+	if ##class(User.CTSpecies).%ExistsId(pOrderObj.Sex) {
+		Do pHospitalPatientObject.HOSPSexDRSetObjectId(pOrderObj.Sex)
+	}
+	
+	// Врач
+	If (pOrderObj.Doctor'="")&&(##class(User.CTDoctor).%ExistsId(pOrderObj.Doctor)) {
+			set ok=pHospitalPatientObject.HOSPDoctorReferringDRSetObjectId(pOrderObj.DoctorCode)
+			//if 'ok quit
+	}
+	// Местоположение пациента (отделение или госпиталь)
+	If (pOrderObj.PatientLocation'="")&&(##class(User.CTHospital).%ExistsId(pOrderObj.PatientLocation)) {
+			set ok=pHospitalPatientObject.HOSPLocationDRSetObjectId(pOrderObj.PatientLocation)
+			//if 'ok quit
+	}
+	
+	// Приоритет в поле HOSPExtraName2 
+	If (pOrderObj.Priority'="")&&(##class(User.CTPriority).%ExistsId(pOrderObj.Priority)) {
+			set pHospitalPatientObject.HOSPExtraName2=pOrderObj.Priority
+	}
+	set ok=pHospitalPatientObject.%Save()
+ 
+  } catch(e) {
+		  set ok=e.AsStatus()
+		  set pHospitalPatientObject=""
+  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="DeleteExistingHospitalPatientTestSets">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospitalPatientId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	&Sql(
+		Delete from SQLUser.HOS_HospitalPatientsTSet
+		Where HOSPT_ParRef=:pHospitalPatientId
+	)
+	If (SQLCODE=0)||(SQLCODE=100) Quit $$$OK
+	Quit $$$ERROR($$$SQLCode,SQLCODE)
+]]></Implementation>
+</Method>
+
+<Method name="IsCorrectTestSet">
+<Description>
+Является ли корректным код исследования pTestSet 
+т.е. есть запись с этим кодом в User.CTSuperSet или в User.CTTestSet(для наборов также проверяем флаг активности CTTSActiveFlag)
+возвращаем 1 (ok) или 0 и описание ошибки в pError</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTestSet:%String,&pError:%String]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	If pTestSet="" {
+		Set pError="Не заполнен код исследования !"
+		Quit 0
+	}
+	If ##class(User.CTSuperSet).%ExistsId(pTestSet) {
+		Set obj=##class(User.CTSuperSet).%OpenId(pTestSet,0)
+		If '$IsObject(obj) {
+			Set pError="Неверный код исследования "_pTestSet_"!"
+			Quit 0
+		}
+		Quit 1
+		
+	}	
+	Set obj=##class(User.CTTestSet).%OpenId(pTestSet,0)
+	If '$IsObject(obj) {
+		Set pError="Неверный код исследования "_pTestSet_"!"
+		Quit 0
+	}
+	If obj.CTTSActiveFlag'="Y" {
+		Set pError="Исследование с кодом "_pTestSet_" деактивировано!"
+		Quit 0
+	}
+	Quit 1
+]]></Implementation>
+</Method>
+
+<Method name="HospitalPatientRequestId4TestSets">
+<Description>
+Формируем буфер pGlb с соответсвием request_id буферной таблицы наборам тестов 
+для записи  HOSHospitalPatientsTSet  с Id=pHospPatId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospPatId:%String,pGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Kill @pGlb
+	&sql(
+		Declare HospTSCursor2 CURSOR FOR
+		Select HOSPT_ExtraExternal_ID,HOSPT_TestSet_DR,HOSPT_SuperSet_DR,HOSPT_ExtraPriority_DR
+		INTO :requestid,:testset,:superset,:cito
+		From SQLUser.HOS_HospitalPatientsTSet 
+		Where HOSPT_ParRef=:pHospPatId
+	)
+	&sql(Open HospTSCursor2)
+	&sql(Fetch HospTSCursor2)
+
+	Set maxcount=0
+	While (SQLCODE = 0) {
+		If (requestid'="")&&(testset'="") {
+			If superset="" {
+				Set @pGlb@(testset,requestid)=$ListBuild(cito)
+			} Else {
+				Set @pGlb@(superset,requestid)=$ListBuild(cito)
+			}		
+		}
+		&sql(Fetch HospTSCursor2)
+	}
+	&sql(Close HospTSCursor2)
+]]></Implementation>
+</Method>
+
+<Method name="GetEpisodeByOrderId">
+<Description>
+Получение ID эпизода ЛИС по ID ордера
+Параметры:
+pOrderId - ID ордера
+Возвращаемое значение:
+ID эпизода ЛИС. Пусто, если эпизода еще нет</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrderId:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	If pOrderId="" Quit ""
+	Quit $Get(^TCLEx("OrderId",pOrderId))
+]]></Implementation>
+</Method>
+
+<Method name="SetEpisodeByOrderId">
+<Description>
+Запоминаем соответствие эпизода и ID ордера
+Параметры:
+pOrderId - ID ордера
+pEpisode - ID эпизода ЛИС. </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pOrderId:%String</FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pOrderId="") Quit
+	Set ^TCLEx("OrderId",pOrderId)=pEpisode
+]]></Implementation>
+</Method>
+
+<Method name="UpdateDoctor">
+<Description>
+Добавить(если нет записи)/Обновить(если отличаются данные) запись справочника User.CTDoctor по значениям
+из транзитного объекта TCLEx.Object.Doctor</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDoctorObject:TCLEx.Object.Doctor</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {
+	  if '$IsObject(pDoctorObject) {
+		  set ok=$$$ERROR($$$GeneralError,"Не указан объект с описанием данных о докторе")
+		  quit
+	  }
+	  set doctorCode=pDoctorObject.DoctorId
+	  If doctorCode="" {
+		  set ok=$$$ERROR($$$GeneralError,"Не указан код доктора")
+		  Quit
+	  }
+	Set exists=##class(User.CTDoctor).%ExistsId(doctorCode)
+	Set obj=##class(User.CTDoctor).%OpenId(doctorCode)
+	If (exists)&&('$IsObject(obj)) {								// Запись блокирована другим пользователем - не пытаемся ее редактировать	
+	    set ok=$$$ERROR($$$GeneralError,"Запись с кодом "_doctorCode_" в User.CTDoctor заблокирована")
+	    quit
+	}
+	Set needupdate=0
+	If 'exists {
+		Set obj=##class(User.CTDoctor).%New()
+		set obj.CTDRCode=doctorCode
+		Set needupdate=1
+	}
+	if (pDoctorObject.Surname'="")&&(obj.CTDRSurname'=pDoctorObject.Surname) {
+		Set obj.CTDRSurname=pDoctorObject.Surname
+		Set needupdate=1
+	}
+	if (pDoctorObject.Address'="")&&(obj.CTDRAddress1'=pDoctorObject.Address) {
+		Set obj.CTDRAddress1=pDoctorObject.Address
+		Set needupdate=1
+	}
+	if (pDoctorObject.NoOfCopies'="")&&(obj.CTDRNoOfCopies'=pDoctorObject.NoOfCopies) {
+		Set obj.CTDRNoOfCopies=pDoctorObject.NoOfCopies
+		Set needupdate=1
+	}
+	set courier=pDoctorObject.CourierId
+	if (courier'="")&&(##class(User.CTCourier).%Exists(courier)) {
+		if (obj.CTDRCourierRunDR="")||((obj.CTDRCourierRunDR'="")&&(obj.CTDRCourierRunDR.%Id()'=courier)) {
+			set ok=obj.CTDRCourierRunDRSetObjectId(courier) 
+			Set needupdate=1
+	    }
+	}
+	set printFormat=pDoctorObject.PrintFormatDR
+	if printFormat="" set printFormat="IF"
+	if (printFormat'="")&&(##class(User.CTPrintFormat).%Exists(printFormat)) {
+		if (obj.CTDRPrintFormatDR="")||((obj.CTDRPrintFormatDR'="")&&(obj.CTDRPrintFormatDR.%Id()'=printFormat)) { 
+			set ok=obj.CTDRPrintFormatDRSetObjectId(printFormat) 
+			Set needupdate=1
+		}
+	}
+	set companyId=pDoctorObject.CompanyId
+	if (companyId'="")&&(##class(User.CTCompany).%Exists(companyId)) {
+		if (obj.CTDRCompanyDR="")||((obj.CTDRCompanyDR'="")&&(obj.CTDRCompanyDR.%Id()'=companyId)) {
+			set ok=obj.CTDRCompanyDRSetObjectId(companyId) 
+			Set needupdate=1
+		}
+	}
+	set specialtyId=pDoctorObject.SpecialtyId
+	if specialtyId="" set specialtyId="GP"
+	if (specialtyId'="")&&(##class(User.CTSpecialty).%Exists(specialtyId)) {
+		if (obj.CTDRSpecialtyDR="")||((obj.CTDRSpecialtyDR'="")&&(obj.CTDRSpecialtyDR.%Id()'=specialtyId))
+			set ok=obj.CTDRSpecialtyDRSetObjectId(specialtyId) 
+			Set needupdate=1
+		}
+	set startdate=pDoctorObject.StartDate
+	if (startdate'="")&&(obj.CTDRStartDate'=startdate) {
+		set obj.CTDRStartDate=pDoctorObject.StartDate
+		Set needupdate=1
+	}
+		
+	Set obj.CTDRActiveFlag="Y"
+		 
+	If needupdate {
+		set ok=obj.%Save()
+	}
+  } catch(e) {
+	  set ok=e.AsStatus()
+  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="UpdatePatientLocation">
+<Description>
+Добавить(если нет записи)/Обновить(если отличаются данные) запись справочника User.CTHospital по значениям
+pObjHospital- объект с описанием отделения или госпиталя </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pObjHospital:TCLEx.Object.PatientLocation</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {	
+      if '$IsObject(pObjHospital) {
+		  set ok=$$$ERROR($$$GeneralError,"Не указан объект с описанием местоположения пациента")
+		  quit
+	  }
+	  set hospitalCode=pObjHospital.HospitalId
+	  If hospitalCode="" {
+		  set ok=$$$ERROR($$$GeneralError,"Не указан код местоположения пациента")
+		  Quit
+	  }
+	  Set exists=##class(User.CTHospital).%ExistsId(hospitalCode)
+	  Set obj=##class(User.CTHospital).%OpenId(hospitalCode)
+	  If (exists)&&('$IsObject(obj)) {								// Запись блокирована другим пользователем - не пытаемся ее редактировать	
+	    set ok=$$$ERROR($$$GeneralError,"Запись с кодом "_hospitalCode_" в User.CTHospital заблокирована")
+	    quit
+	  }
+	  Set needupdate=0
+	  If 'exists {
+		Set obj=##class(User.CTHospital).%New()
+		set obj.CTHOSCode=hospitalCode
+		Set obj.CTHOSCumulative="N"
+		Set obj.CTHOSDisplaySequence=99999
+		//Set obj.CTHOSExcludeFromAutoFax="N" Нет такого поля
+		set obj.CTHOSFaxEnabled="N"  // new
+		//Set obj.CTHOSFaxAlways="N" // Нет такого поля
+		Set obj.CTHOSUserBasedPrinting="N"
+		Set needupdate=1
+	  }
+	  if (pObjHospital.NoOfCopies'="")&&(obj.CTHOSNoOfCopies'=pObjHospital.NoOfCopies) {
+		Set obj.CTHOSNoOfCopies=pObjHospital.NoOfCopies
+		Set needupdate=1
+	  }
+	  set printFormat=pObjHospital.PrintFormatDR
+	  if printFormat="" set printFormat="I"
+	  if (printFormat'="")&&(##class(User.CTPrintFormat).%Exists(printFormat)) {
+		if (obj.CTHOSPrintFormatDR="")||((obj.CTHOSPrintFormatDR'="")&&(obj.CTHOSPrintFormatDR.%Id()'=printFormat)) { 
+			set ok=obj.CTHOSPrintFormatDRSetObjectId(printFormat) 
+			Set needupdate=1
+		}
+	  }
+
+	  set courier=pObjHospital.CourierId
+	  if (courier'="")&&(##class(User.CTCourier).%Exists(courier)) {
+		if (obj.CTHOSCourierRunDR="")||((obj.CTHOSCourierRunDR'="")&&(obj.CTHOSCourierRunDR.%Id()'=courier)) {
+			set ok=obj.CTHOSCourierRunDRSetObjectId(courier) 
+			Set needupdate=1
+	    }
+	  }
+		
+	  If (pObjHospital.HospitalName'="")&&(obj.CTHOSName'=pObjHospital.HospitalName) {
+		Set obj.CTHOSName=pObjHospital.HospitalName
+		Set needupdate=1
+	  }
+	  If obj.CTHOSActiveFlag'="Y" {
+	 	Set obj.CTHOSActiveFlag="Y"
+		Set needupdate=1
+	  }
+	  If needupdate {
+		set ok=obj.%Save()
+	  }
+  } catch(e) {
+	    set ok=e.AsStatus()
+  }
+  quit ok
+]]></Implementation>
+</Method>
+</Class>
+</Export>
