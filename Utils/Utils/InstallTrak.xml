@@ -8,6 +8,9 @@
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pWorkFolder:%String,pNamespace:%String,pCacheDir:%String</FormalSpec>
 <Implementation><![CDATA[
+	if ($get(pWorkFolder)="")||($get(pNamespace)="")||($get(pCacheDir)="") {
+		set ok=..GetPaths(.pWorkFolder,.pNamespace,.pCacheDir)
+	}
 	
 	if $get(pWorkFolder)="" {
 		set stringError="Не указана рабочая папка для установки Trak. Установка прервана."
@@ -77,7 +80,8 @@
 		
 	// Пути TrakCareLab
 	do ..LogEvents(pWorkFolder,"-----------------Установка настроек Trak------------------------------")
-	do ..TrakSettings(pWorkFolder,pNamespace)
+	set ok=..TrakSettings(pWorkFolder,pNamespace,serverName)
+	do ..LogEvents(pWorkFolder,"Установка настроек Trak",ok)
 
     // Для работы клиента на сервере
     
@@ -111,37 +115,26 @@
 	set nameDBnojrnl=pNamespace_"nojrnl"
 	
 	zn "%SYS"
+	
 	// app
 	set nameDB=nameDBapp
-	if '##Class(Config.Databases).Get(nameDB) {
-		set Properties("Directory")=pWorkFolder_"db\app"
-        set ok=##Class(Config.Databases).Create(nameDB,.Properties)
-        do ..LogEvents(pWorkFolder,"Создание база данных для программ "_nameDB,ok)
-	} else {
-	    do ..LogEvents(pWorkFolder,"База данных для программ "_nameDB_" уже существует")	
-	}
-		
+	set dirDB=pWorkFolder_"db\"_pNamespace_"app"
+	set ok=..CreateDB(pWorkFolder,nameDB,dirDB,0)
+	do ..LogEvents(pWorkFolder,"Создание база данных для программ "_nameDB_" в "_dirDB,ok)
     
     // data
 	set nameDB=nameDBdata
-	if '##Class(Config.Databases).Get(nameDB) {
-	    set Properties("Directory")=pWorkFolder_"db\data" //_nameDB
-        set ok=##Class(Config.Databases).Create(nameDB,.Properties)
-        do ..LogEvents(pWorkFolder,"Создание база данных для данных "_nameDB,ok)
-    } else {
-	    do ..LogEvents(pWorkFolder,"База данных для данных "_nameDB_" уже существует")	
-	}
+	set dirDB=pWorkFolder_"db\"_pNamespace_"data"
+	set ok=..CreateDB(pWorkFolder,nameDB,dirDB,0)
+	do ..LogEvents(pWorkFolder,"Создание база данных для данных "_nameDB_" в "_dirDB,ok)
 	
     // data no journal
 	set nameDB=nameDBnojrnl
-	if '##Class(Config.Databases).Get(nameDB) {
-	    set Properties("Directory")=pWorkFolder_"db\nojrnl" //_nameDB
-        set ok=##Class(Config.Databases).Create(nameDB,.Properties)
-        do ..LogEvents(pWorkFolder,"Создание база данных для нежурналируемых данных "_nameDB,ok)
-    } else {
-	    do ..LogEvents(pWorkFolder,"База данных для для нежурналируемых данных "_nameDB_" уже существует")	
-	}
-    
+	set dirDB=pWorkFolder_"db\"_pNamespace_"nojrnl"
+	set ok=..CreateDB(pWorkFolder,nameDB,dirDB,1)
+	do ..LogEvents(pWorkFolder,"Создание база данных для нежурналируемых данных "_nameDB_" в "_dirDB,ok)
+	
+	     
     // namespace
     
     // Проверка, не существует ли уже такой namespace
@@ -154,8 +147,8 @@
     
     // create namespase
     kill Properties
-    set Properties("Globals")=pNamespace_"data"
-    set Properties("Routines")=pNamespace_"app"
+    set Properties("Globals")=nameDBdata
+    set Properties("Routines")=nameDBapp
     set ok=##Class(Config.Namespaces).Create(pNamespace,.Properties)
     do ..LogEvents(pWorkFolder,"Создание области "_pNamespace,ok)
     
@@ -183,6 +176,102 @@
 	do ..LogEvents(pWorkFolder,"Создание map ^PR* --> "_nameDBnojrnl,ok)
 	
 	quit
+]]></Implementation>
+</Method>
+
+<Method name="CreateDB">
+<Description>
+Создание базы данных на основе уже существующего файла cache.dat</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pWorkFolder:%String,pNameDB:%String,pDirDB:%String,pFlagNoJournal:%Boolean</FormalSpec>
+<Implementation><![CDATA[
+	if $get(pFlagNoJournal)="" set pFlagNoJournal=0
+	set ok=$$$OK
+	set namespaceold=$zu(5)
+	zn "%SYS"
+	try {
+		
+		if ##Class(Config.Databases).Get(pNameDB) {
+		    do ..LogEvents(pWorkFolder,"База данных "_pNameDB_" уже существует")
+		    set ok=1
+		    quit
+		}
+	    if $extract($tr(pDirDB,"/","\"),$length(pDirDB))'="\" set pDirDB=pDirDB_"\"
+	    
+	    if '##class(%File).Exists(pDirDB_"cache.dat") {
+		    set stringError="Файла cache.dat в "_pDirDB_" не существует"
+		    set ok=$$$ERROR($$$GeneralError,stringError)
+		    do ..LogEvents(pWorkFolder,"",ok)
+		    quit
+	    }
+	    
+	    //set ok=##class(Config.Configuration).AddDatabase(pNameDB,pDirDB) //deprecated
+	    kill Properties
+	    Set Properties("Directory")=pDirDB
+	    Set ok = ##Class(Config.Databases).Create(pNameDB,.Properties)
+		do ..LogEvents(pWorkFolder,"Создание база данных "_pNameDB_" в "_pDirDB_" (##class(Config.Configuration).AddDatabase)",ok)
+		
+		if (ok=1)&&(pFlagNoJournal=1) {
+		    Set db=##Class(SYS.Database).%OpenId(pDirDB)	
+		    if '$IsObject(db) {
+		        set stringError="Error d ##Class(SYS.Database).%OpenId(pDirDB)"
+		        set ok=$$$ERROR($$$GeneralError,stringError)
+		        do ..LogEvents(pWorkFolder,"",ok)
+		        quit
+		    } else {
+			    set ok=db.DisableJournaling()
+			    do ..LogEvents(pWorkFolder,"Выключение журналирования для базы данных "_pNameDB_": "_pDirDB,ok)
+		    }
+		}
+		/* см. %CSP.UI.Portal.Dialog.DatabaseWizard
+		} Else {
+			Set JournalState = ##class(%Library.JournalState).MenuToLogical(pProxy.GlobalJournalState)
+			Set tSC = ##class(SYS.Database).CreateDatabase(Directory,Size,BlockSize,pProxy.Encrypted,pProxy.Resource,JournalState,pProxy.MirrorDBName,pProxy.MirrorSetName)
+			If $$$ISERR(tSC) throw ##Class(%Exception.StatusException).CreateFromStatus(tSC)
+ 			Set Properties("Directory") = Directory
+			#; Handle if we have dismounted then deleted the database at the O/S level,
+			#; but the CPF entry still exists with the same directory, then recreate the DB only
+			If ##Class(Config.Databases).Exists(DBName,.Obj) {
+				If Obj.Directory '= ##class(%File).ComputeFullDBDir(Directory) {
+					Set tSC = ##Class(Config.Databases).Create(DBName,.Properties)
+					If $$$ISERR(tSC) throw ##Class(%Exception.StatusException).CreateFromStatus(tSC)
+				}
+			} Else {
+				Set tSC = ##Class(Config.Databases).Create(DBName,.Properties)
+				If $$$ISERR(tSC) throw ##Class(%Exception.StatusException).CreateFromStatus(tSC)
+			}
+		} */
+	
+	    /*
+	
+	    Set db=##Class(SYS.Database).%OpenId(pDirDB)
+	    if '$IsObject(db) {
+		    set stringError="Файла cache.dat в "_pDirDB_" не существует"
+		    set ok=$$$ERROR($$$GeneralError,stringError)
+		    do ..LogEvents(pWorkFolder,"",ok)
+		    quit
+	    } else {	
+	        set ok=db.%Save()
+	        do ..LogEvents(pWorkFolder,"Создание база данных в "_pDirDB_" (##Class(SYS.Database).%Save())",ok)
+	        if 'ok quit
+		    kill Properties
+		    set Properties("Directory")=pDirDB
+		    set ok=##Class(Config.Databases).Create(pNameDB,.Properties)
+		    do ..LogEvents(pWorkFolder,"Создание база данных "_pNameDB_": "_pDirDB_" (##Class(Config.Databases).Create)",ok)
+		    if 'ok quit
+	        if (pFlagNoJournal=1) {
+			    set ok=db.DisableJournaling()
+			    do ..LogEvents(pWorkFolder,"Выключение журналирования для базы данных "_pNameDB_": "_pDirDB,ok)
+		    }
+	    } */
+    } catch exception { 
+        set ok=exception.AsStatus()
+        do ..LogEvents(pWorkFolder,"Создание база данных "_$get(pNameDB)_": "_$get(pDirDB),ok)
+    }
+    if $get(namespaceold)'="" {
+	     zn namespaceold 	
+    } 	
+    quit ok
 ]]></Implementation>
 </Method>
 
@@ -429,7 +518,7 @@ WebServerPort</Description>
 	set objgate.JavaHome=..JavaHome()
 	set objgate.HeartbeatInterval=0 //Number of seconds between each communication with the Java Gateway to check whether it is active. When enabled, the minimum value is 5 seconds and the maximum value is 3600 seconds (1 hour). The default is 10 seconds. A value of 0 disables this feature.
 	set objgate.HeartbeatFailureAction="" //Action to take if the Java Gateway goes into a failure state. Setting it to Restart (default) causes the Java Gateway to restart. Setting it to Alert generates an alert entry in the Event Log. This is independent of the Alert on Error setting. 
-	set ok=..GetClassPath(pWorkFolder_"\Lab\java\jar",.classpath)
+	set ok=..GetClassPath(pWorkFolder,.classpath)
 	do ..LogEvents(pWorkFolder,"Создание Classpath ",ok)
 	if classpath'="" { 
 	    set objgate.ClassPath=classpath
@@ -459,14 +548,15 @@ WebServerPort</Description>
 <Description>
 Сохдать строку classpath по всем файлам jar в указанной директории</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pPathJar:%String,&pClasspath:%String]]></FormalSpec>
+<FormalSpec><![CDATA[pWorkFolder:%String,&pClasspath:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	set ok=$$$OK set pClasspath=""
 	try {
- 	    if $get(pPathJar)="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не указан путь к jar библиотекам"))
+		set pPathJar=pWorkFolder_"\Lab\java\jar"
+ 	    //if $get(pPathJar)="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не указан путь к jar библиотекам"))
  	    if '##class(%File).Exists(pPathJar) $$$ThrowOnError($$$ERROR($$$GeneralError,"Путь "_pPathJar_" не существует"))
-	    set pathWorkJasper=##class(JasperWrap.JasperReportTune).getDirJasper()
+	    set pathWorkJasper=pWorkFolder_"\Lab\java"
 	    if pathWorkJasper="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не определен pClasspath для JasperGateway"))
 	    if '##class(%File).Exists(pathWorkJasper) $$$ThrowOnError($$$ERROR($$$GeneralError,"Путь "_pathWorkJasper_" не существует"))
         set pClasspath=pathWorkJasper
@@ -657,34 +747,49 @@ WebServerPort</Description>
 <Description>
 Настройки по умолчанию для Trak</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pWorkFolder:%String,pGateway:%String</FormalSpec>
+<FormalSpec>pWorkFolder:%String,pGateway:%String,pServerName:%String</FormalSpec>
 <Implementation><![CDATA[
-	set mainpath=pWorkFolder_"Lab\",ok=1
+ set ok=$$$OK
+ try {
+	set mainpath=""
+	if $get(pServerName)'="" set mainpath="\\"_pServerName_"\Lab\"
+	else   if $get(pWorkFolder)'=""  set mainpath=pWorkFolder_"Lab\"
+	if mainpath="" {
+		set ok=$$$ERROR($$$GeneralError,"Не указан ни ip сервера, ни рабочая папка")
+		quit
+	}
 	set $piece(^CF("SM",1),"^",1)=mainpath_"Results"               //CFSM_PathtoDocumentServer
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathtoDocumentServer="_mainpath_"Results",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathtoDocumentServer="_mainpath_"Results",ok)
 	set $piece(^CF("SM",1),"^",2)=mainpath_"Results\tiff"          //CFSM_PathToImagesServer
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToImagesServer="_mainpath_"Results\tiff",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToImagesServer="_mainpath_"Results\tiff",ok)
 	set $piece(^CF("SM",1),"^",7)=mainpath_"\Errors"               //CFSM_PathToErrorFileServer 
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToErrorFileServer="_mainpath_"Errors",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToErrorFileServer="_mainpath_"Errors",ok)
 	set $piece(^CF("SM",1),"^",11)=mainpath_"Results\template"     //CFSM_PathToTemplateServer
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToTemplateServer="_mainpath_"Results\template",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToTemplateServer="_mainpath_"Results\template",ok)
 	set $piece(^CF("SM",1),"^",13)=mainpath_"Results"              //CFSM_PathToImportEpisodes 
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToImportEpisodes="_mainpath_"Results",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToImportEpisodes="_mainpath_"Results",ok)
 	set $piece(^CF("SM",1),"^",14)=mainpath_"Results"              //CFSM_PathToVoiceFileServer 
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToVoiceFileServer="_mainpath_"Results",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToVoiceFileServer="_mainpath_"Results",ok)
 	set $piece(^CF("SM",1),"^",26)=mainpath_"Reports"              //CFSM_PathToReportsLocal
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToReportsLocal="_mainpath_"Results",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToReportsLocal="_mainpath_"Results",ok)
 	set $piece(^CF("SM",1),"^",27)=mainpath_"Results"              //CFSM_PathToReportsFax 
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToReportsFax="_mainpath_"Results",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToReportsFax="_mainpath_"Results",ok)
 	set $piece(^CF("SM",1),"^",30)=mainpath_"Results"              //CFSM_PathToEDIFilesIn 
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToEDIFilesIn="_mainpath_"Results",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToEDIFilesIn="_mainpath_"Results",ok)
 	set $piece(^CF("SM",1),"^",31)=mainpath_"Results"              //CFSM_PathToEDIFilesOut 
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToEDIFilesOut="_mainpath_"Results",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToEDIFilesOut="_mainpath_"Results",ok)
 	set $piece(^CF("SM",1),"^",34)=mainpath_"Results"              //CFSM_PathToReportsFaxCache 
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToReportsFaxCache="_mainpath_"Results",ok)
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToReportsFaxCache="_mainpath_"Results",ok)
 	set $piece(^CF("SM",1),"^",40)=mainpath_"Results"              //CFSM_PathToQCReport 
-	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFSM_PathToQCReport="_mainpath_"Results",ok)
-	quit
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFSM_PathToQCReport="_mainpath_"Results",ok)
+	//выключить клиентские программы $Piece($Get(^CF("SM",1)),"^",28)
+	set $piece(^CF("SM",1),"^",28)=""                      //CFLAB_TestEntryType 
+	do ..LogEvents(pWorkFolder,"Установка параметра по умолчанию CFLabTrak.CFLAB_TestEntryType=""""",ok)
+	} catch exception { 
+      Set ok=exception.AsStatus()
+      do ..LogEvents(pWorkFolder,"Установка параметров по умолчанию для Trak: ",ok)
+  }
+  quit ok
 ]]></Implementation>
 </Method>
 
@@ -814,8 +919,8 @@ WebServerPort</Description>
 <Implementation><![CDATA[
 	set ok=$$$OK
 	try {
-		set fileTrakIni=pWorkFolder_"install\labtrak.ini.txt"
-	    set fileTrakIniNew=pWorkFolder_"install\labtrakNew.ini.txt"
+		set fileTrakIni=pWorkFolder_"Lab\install\labtrak.ini.txt"
+	    set fileTrakIniNew=pWorkFolder_"Lab\install\labtrakNew.ini.txt"
 	    if ##class(%File).Exists(fileTrakIniNew) {
 		   set ok=##class(%File).Delete(fileTrakIniNew)
 		   do ..LogEvents(pWorkFolder,"Удаление файла "_fileTrakIniNew,ok)
@@ -884,8 +989,8 @@ WebServerPort</Description>
 		do ..LogEvents(pWorkFolder,"Создание объекта задачи для менеджера задач - BackUpRunner",ok)
 		
 		// Запуск BackupSettings.exe - создание объекта Backup.Settings с настройкой путей и прочее
-		set ok=$zf(-1,pWorkFolder_"\Lab\BackUp\Settings\BackupSettings.exe")
-		do ..LogEvents(pWorkFolder,"Запуск BackupSettings.exe - создание объекта Backup.Settings с настройкой путей и прочее (через zf(-1))",ok)
+		//set ok=$zf(-1,pWorkFolder_"\Lab\BackUp\Settings\BackupSettings.exe")
+		//do ..LogEvents(pWorkFolder,"Запуск BackupSettings.exe - создание объекта Backup.Settings с настройкой путей и прочее (через zf(-1))",ok)
 		
 	} catch(exception) {
 		Set ok=exception.AsStatus()
@@ -983,6 +1088,53 @@ WebServerPort</Description>
 		do ..LogEvents(pWorkFolder,"Изменения в BackupSettings.ini",ok)
   }
   quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetPaths">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pWorkFolder:%String,&pNamespace:%String,&pCacheDir:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	set pWorkFolder=$get(pWorkFolder)
+	set pCacheDir=$get(pCacheDir)
+	set pNamespace=$get(pNamespace)
+	try {
+		set fileVals=$zu(12)_"vals.txt"
+	    
+	    if '##class(%File).Exists(fileVals) {
+		    set stringError="Не существует файл "_fileVals
+		    set ok=$$$ERROR($$$GeneralError,stringError)
+		    write stringError,!
+		    quit
+	    }
+	    if ##class(%File).Exists(fileVals) {
+		   Set stream=##class(%FileCharacterStream).%New()
+	       Set stream.Filename=fileVals
+	       Set stream.TranslateTable="CP1251"
+	       
+ 	       While 'stream.AtEnd {
+		      Set line=stream.ReadLine()
+		      if line="" continue
+		      set pCacheDir=$zstrip($piece(line,",",1),"<>W")
+		      set pWorkFolder=$zstrip($piece(line,",",2),"<>W")
+		      set pNamespace=$zstrip($piece(line,",",4),"<>W")
+	          quit
+ 	       }
+ 	       write !,"pWorkFolder=",pWorkFolder,!
+ 	       write "pCacheDir=",pCacheDir,!
+ 	       write "pNamespace=",pNamespace,!
+ 	       
+ 	       kill stream
+	       //set ok=##class(%File).Delete(fileVals)
+	       //do ..LogEvents(pWorkFolder,"Удаление файла "_fileVals,ok)
+	    }
+	} catch(exception) {
+		Set ok=exception.AsStatus()
+		do ..LogEvents(pWorkFolder,"Получение параметров из файла "_$get(fileVals),ok)
+		kill stream1,stream2
+	}
+    quit ok
 ]]></Implementation>
 </Method>
 
