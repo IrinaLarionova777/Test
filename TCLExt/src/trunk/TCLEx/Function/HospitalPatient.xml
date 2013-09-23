@@ -12,6 +12,7 @@
 	set ok=$$$OK
 	try {
 		     // Добавляем/обновляем User.HOSHospitalPatients
+		     s ^test(222)=pObjectTransport.OrderId
 		     Set ok=..Order2HospitalPatient(pObjectTransport,.hosppatobj)					
 		     If 'ok {
 			     Quit
@@ -29,7 +30,7 @@
 		 	 ;Set maxcount=$ListGet($Get(^||EMED.TestSets),1)
 		 
 		     // Если строка с наборами тестов через "," не содержит наборов тестов, то удаляем объект hosppatobj
-		     Set cnt=$length(hosppatobj.TestSets,",")					
+		     Set cnt=$length(pObjectTransport.TestSets,",")	
 		     if cnt=0 {
 			      set sqlcode=$$delete^LVBHOSP(hosppatid) 
 			      set ok=$$$ERROR($$$SQLError,"Ошибка при удалении объекта User.HospitalPatient с кодом "_hosppatid_": "_sqlcode)
@@ -39,7 +40,7 @@
 		     // Пробегаем по всем назначенным исследованиям заказ
 		     set maxcount=0,requestok=1
 		     For i=1:1:cnt {
-			    Set testset=$piece(hosppatobj.TestSets,",",i)
+			    Set testset=$piece(pObjectTransport.TestSets,",",i)
 			    set errstr=""
 			    if '..IsCorrectTestSet(testset,.errstr)	{					// Корректное исследование ?
 			        if errstr'="" set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,errstr))
@@ -103,6 +104,7 @@
 <Implementation><![CDATA[
  set ok=$$$OK,pHospitalPatientObject=""
  try {
+	 s ^test("111")=pOrderObj.OrderId
 	set orderId=$select(pOrderObj.OrderId'="":pOrderObj.OrderId,1:pOrderObj.EpisId)
 	set hospatid="L"_"||"_pOrderObj.PatientId_"||"_orderId
 	Set pHospitalPatientObject=##class(User.HOSHospitalPatients).%OpenId(hospatid)
@@ -119,7 +121,7 @@
 	
 	Set pHospitalPatientObject.HOSPSurname=pOrderObj.Surname
 	Set pHospitalPatientObject.HOSPGivenName=pOrderObj.Name
-	Set pHospitalPatientObject.HOSPExtraName1=pOrderObj.FartherName
+	Set pHospitalPatientObject.HOSPExtraName1=pOrderObj.FatherName
 	set pHospitalPatientObject.HOSPDOB=pOrderObj.DOB
 	
 	//Филиал
@@ -135,7 +137,7 @@
 	
 	// Врач
 	If (pOrderObj.Doctor'="")&&(##class(User.CTDoctor).%ExistsId(pOrderObj.Doctor)) {
-			set ok=pHospitalPatientObject.HOSPDoctorReferringDRSetObjectId(pOrderObj.DoctorCode)
+			set ok=pHospitalPatientObject.HOSPDoctorReferringDRSetObjectId(pOrderObj.Doctor)
 			//if 'ok quit
 	}
 	// Местоположение пациента (отделение или госпиталь)
@@ -273,12 +275,13 @@ pEpisode - ID эпизода ЛИС. </Description>
 <Method name="UpdateDoctor">
 <Description>
 Добавить(если нет записи)/Обновить(если отличаются данные) запись справочника User.CTDoctor по значениям
-из транзитного объекта TCLEx.Object.Doctor</Description>
+из транзитного объекта TCLEx.Object.Doctor
+pFlagUpdate - 1 - update or insert</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pDoctorObject:TCLEx.Object.Doctor</FormalSpec>
+<FormalSpec><![CDATA[pDoctorObject:TCLEx.Object.Doctor,&pFlagUpdate:%Boolean]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-  set ok=$$$OK
+  set ok=$$$OK,pFlagUpdate=0
   try {
 	  if '$IsObject(pDoctorObject) {
 		  set ok=$$$ERROR($$$GeneralError,"Не указан объект с описанием данных о докторе")
@@ -299,59 +302,61 @@ pEpisode - ID эпизода ЛИС. </Description>
 	If 'exists {
 		Set obj=##class(User.CTDoctor).%New()
 		set obj.CTDRCode=doctorCode
-		Set needupdate=1
+		Set needupdate=1 
 	}
 	if (pDoctorObject.Surname'="")&&(obj.CTDRSurname'=pDoctorObject.Surname) {
 		Set obj.CTDRSurname=pDoctorObject.Surname
-		Set needupdate=1
+		Set needupdate=1 
 	}
 	if (pDoctorObject.Address'="")&&(obj.CTDRAddress1'=pDoctorObject.Address) {
 		Set obj.CTDRAddress1=pDoctorObject.Address
-		Set needupdate=1
+		Set needupdate=1 
 	}
 	if (pDoctorObject.NoOfCopies'="")&&(obj.CTDRNoOfCopies'=pDoctorObject.NoOfCopies) {
 		Set obj.CTDRNoOfCopies=pDoctorObject.NoOfCopies
-		Set needupdate=1
+		Set needupdate=1 
 	}
 	set courier=pDoctorObject.CourierId
-	if (courier'="")&&(##class(User.CTCourier).%Exists(courier)) {
+	if (courier'="")&&(##class(User.CTCourier).%ExistsId(courier)) {
 		if (obj.CTDRCourierRunDR="")||((obj.CTDRCourierRunDR'="")&&(obj.CTDRCourierRunDR.%Id()'=courier)) {
 			set ok=obj.CTDRCourierRunDRSetObjectId(courier) 
-			Set needupdate=1
+			Set needupdate=1 
 	    }
 	}
 	set printFormat=pDoctorObject.PrintFormatDR
 	if printFormat="" set printFormat="IF"
-	if (printFormat'="")&&(##class(User.CTPrintFormat).%Exists(printFormat)) {
+	if (printFormat'="")&&(##class(User.CTPrintFormat).%ExistsId(printFormat)) {
 		if (obj.CTDRPrintFormatDR="")||((obj.CTDRPrintFormatDR'="")&&(obj.CTDRPrintFormatDR.%Id()'=printFormat)) { 
 			set ok=obj.CTDRPrintFormatDRSetObjectId(printFormat) 
-			Set needupdate=1
+			Set needupdate=1 
 		}
 	}
 	set companyId=pDoctorObject.CompanyId
-	if (companyId'="")&&(##class(User.CTCompany).%Exists(companyId)) {
+	if (companyId'="")&&(##class(User.CTCompany).%ExistsId(companyId)) {
 		if (obj.CTDRCompanyDR="")||((obj.CTDRCompanyDR'="")&&(obj.CTDRCompanyDR.%Id()'=companyId)) {
 			set ok=obj.CTDRCompanyDRSetObjectId(companyId) 
-			Set needupdate=1
+			Set needupdate=1 
 		}
 	}
-	set specialtyId=pDoctorObject.SpecialtyId
+	set specialtyId=pDoctorObject.SpecialtyId d
 	if specialtyId="" set specialtyId="GP"
-	if (specialtyId'="")&&(##class(User.CTSpecialty).%Exists(specialtyId)) {
-		if (obj.CTDRSpecialtyDR="")||((obj.CTDRSpecialtyDR'="")&&(obj.CTDRSpecialtyDR.%Id()'=specialtyId))
+	if (specialtyId'="")&&(##class(User.CTSpecialty).%ExistsId(specialtyId)) {
+		if (obj.CTDRSpecialtyDR="")||((obj.CTDRSpecialtyDR'="")&&(obj.CTDRSpecialtyDR.%Id()'=specialtyId)) {
 			set ok=obj.CTDRSpecialtyDRSetObjectId(specialtyId) 
-			Set needupdate=1
+			Set needupdate=1 
 		}
+	}
 	set startdate=pDoctorObject.StartDate
 	if (startdate'="")&&(obj.CTDRStartDate'=startdate) {
 		set obj.CTDRStartDate=pDoctorObject.StartDate
-		Set needupdate=1
+		Set needupdate=1 
 	}
 		
 	Set obj.CTDRActiveFlag="Y"
 		 
 	If needupdate {
 		set ok=obj.%Save()
+		set pFlagUpdate=1
 	}
   } catch(e) {
 	  set ok=e.AsStatus()
@@ -363,12 +368,13 @@ pEpisode - ID эпизода ЛИС. </Description>
 <Method name="UpdatePatientLocation">
 <Description>
 Добавить(если нет записи)/Обновить(если отличаются данные) запись справочника User.CTHospital по значениям
-pObjHospital- объект с описанием отделения или госпиталя </Description>
+pObjHospital- объект с описанием отделения или госпиталя 
+pFlagUpdate - 1 - update or insert</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pObjHospital:TCLEx.Object.PatientLocation</FormalSpec>
+<FormalSpec><![CDATA[pObjHospital:TCLEx.Object.PatientLocation,&pFlagUpdate:%Boolean]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-  set ok=$$$OK
+  set ok=$$$OK,pFlagUpdate=0
   try {	
       if '$IsObject(pObjHospital) {
 		  set ok=$$$ERROR($$$GeneralError,"Не указан объект с описанием местоположения пациента")
@@ -403,7 +409,7 @@ pObjHospital- объект с описанием отделения или го�
 	  }
 	  set printFormat=pObjHospital.PrintFormatDR
 	  if printFormat="" set printFormat="I"
-	  if (printFormat'="")&&(##class(User.CTPrintFormat).%Exists(printFormat)) {
+	  if (printFormat'="")&&(##class(User.CTPrintFormat).%ExistsId(printFormat)) {
 		if (obj.CTHOSPrintFormatDR="")||((obj.CTHOSPrintFormatDR'="")&&(obj.CTHOSPrintFormatDR.%Id()'=printFormat)) { 
 			set ok=obj.CTHOSPrintFormatDRSetObjectId(printFormat) 
 			Set needupdate=1
@@ -411,7 +417,7 @@ pObjHospital- объект с описанием отделения или го�
 	  }
 
 	  set courier=pObjHospital.CourierId
-	  if (courier'="")&&(##class(User.CTCourier).%Exists(courier)) {
+	  if (courier'="")&&(##class(User.CTCourier).%ExistsId(courier)) {
 		if (obj.CTHOSCourierRunDR="")||((obj.CTHOSCourierRunDR'="")&&(obj.CTHOSCourierRunDR.%Id()'=courier)) {
 			set ok=obj.CTHOSCourierRunDRSetObjectId(courier) 
 			Set needupdate=1
@@ -428,6 +434,7 @@ pObjHospital- объект с описанием отделения или го�
 	  }
 	  If needupdate {
 		set ok=obj.%Save()
+		set pFlagUpdate=1
 	  }
   } catch(e) {
 	    set ok=e.AsStatus()
