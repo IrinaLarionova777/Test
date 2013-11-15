@@ -1,0 +1,409 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Data.BindUserReport">
+<Description>
+Связка Группа пользователей - Отчет - для ограниченря доступа</Description>
+<ProcedureBlock>0</ProcedureBlock>
+<SqlTableName>BindUserReport</SqlTableName>
+<StorageStrategy>SQLStorage</StorageStrategy>
+<Super>%Persistent,,%ZEN.DataModel.Adaptor</Super>
+<TimeCreated>62927,63074.90317</TimeCreated>
+
+<Index name="RowIDBasedIDKeyIndex">
+<IdKey>1</IdKey>
+<PrimaryKey>1</PrimaryKey>
+<Properties>SSUSRGroup,CTCLRReportDR</Properties>
+<Unique>1</Unique>
+</Index>
+
+<Property name="SSUSRGroup">
+<Description>
+Security Group</Description>
+<Type>User.SSGroup</Type>
+<Required>1</Required>
+<SqlColumnNumber>2</SqlColumnNumber>
+<SqlFieldName>SSUSR_Group</SqlFieldName>
+</Property>
+
+<Property name="CTCLRReportDR">
+<Type>User.SSReportGeneric</Type>
+<Required>1</Required>
+<SqlColumnNumber>3</SqlColumnNumber>
+<SqlFieldName>CTCLR_Report_DR</SqlFieldName>
+</Property>
+
+<Query name="qReportGroupByUserGroup">
+<Description>
+Запрос Всех групп отчетов с пометкой, какие отчеты доступны указанной группе пользователей</Description>
+<Type>%Query</Type>
+<FormalSpec>pUserGroup1:%String,pCountRows1:%Integer=0</FormalSpec>
+<Parameter name="ROWSPEC" value="CodeReportGroup:%String,FlagUseDisplay:%String,ReportGroupDescription:%String,FlagUse:%String"/>
+</Query>
+
+<Method name="qReportGroupByUserGroupExecute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,pUserGroup1:%String,pCountRows1:%Integer=0]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	Kill ^||res1
+	
+	Set qHandle=$lb("",pCountRows1,0)
+	
+	/* не работает из web
+	// select CTPG_Code,CTPG_Description from CT_PrintReportGroup where CTPG_Display='Y' 
+	set sql="select CTPG_Code,CTPG_Description from CT_PrintReportGroup where CTPG_Display='Y' "
+	set rs = ##class(%ResultSet.SQL).%New()
+	set rs=##class(%ResultSet.SQL).%Prepare(sql)
+	s ^test("prepare")=sql_"*"_rs_"*"_rs.%Next()
+	quit:'rs ""
+	
+	while (rs.%Next()) {
+		set id = rs.%GetData(1)
+		s ^test("next",$i(^test("next")))=id_" "_rs.%GetData(2)
+		if id'="" {
+		     set ^||res1(id)=$LB(id,rs.%GetData(2),"")
+		}
+	}*/
+	
+	set reportgroup=""
+	for {
+		set reportgroup=$order(^TTAB("CTPG",reportgroup),1,val) if reportgroup="" quit
+		if $piece(val,"\",3)'="Y" continue
+		set reportDesc=$piece(val,"\",1)
+		set flagUse=..GetFlagUseReportGroupByUserGroup(pUserGroup1,reportgroup,.err)
+		if 'err set flagUse=""
+		set flagUseDisplay=$select(flagUse=1:"*",flagUse=2:"**",1:"")
+		set ^||res1(reportgroup)=$LB(reportgroup,flagUseDisplay,reportDesc,flagUse)
+	}
+	//k ^test(1) m ^test(1)=^||res1
+ } catch(exeption) {
+	 set ok=exeption.AsStatus()
+ }
+ Quit $$$OK  //!!!!
+]]></Implementation>
+</Method>
+
+<Method name="qReportGroupByUserGroupClose">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary]]></FormalSpec>
+<PlaceAfter>qReportGroupByUserGroupExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Kill ^||res1
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="qReportGroupByUserGroupFetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>qReportGroupByUserGroupExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	//quit:'$D(^||res1) $$$OK
+	set key=$lg(qHandle,1)
+	set count=$lg(qHandle,2)
+	set flag=$lg(qHandle,3)
+	if flag=0 {
+		Set key=$Order(^||res1(key))
+	}
+	If (key="")&&(count'>0) Set AtEnd=1,Row="" Quit $$$OK
+	if key'="" {
+		Set Row=$G(^||res1(key))
+	} else {
+		set Row=$lb("","","")
+	}
+	//s ^test(2,$i(^test(2)))=Row
+	set qHandle=$lb(key,count-1,$select(key="":1,1:0)) 
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="Testq">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ Set result=##class(%ResultSet).%New("TCLEx.Data.BindUserReport:qReportGroupByUserGroup")
+ Do result.Execute(2)
+ For  Quit:'result.Next()  Do
+ . Write result.Data("CodeReportGroup")," ",result.Data("ReportGroupDescription")," ",result.Data("FlagUse"),!
+]]></Implementation>
+</Method>
+
+<Query name="qReportsByUserGroupReportGroup">
+<Description>
+Запрос Отчетов по группе отчетов и по групе пользователей
+pUserGroup2 - код группы пользователей 
+pReportGroup - код группы отчетов
+pCountRows2 - кол-во записей для вывода (если данные кончились раньше, то дальше пустые строки)</Description>
+<Type>%Query</Type>
+<FormalSpec>pUserGroup2:%String,pReportGroup:%String,pCountRows2:%Integer=0</FormalSpec>
+<Parameter name="ROWSPEC" value="CodeReport:%String,FlagUseDisplay:%String,ReportDescription:%String,FlagUse:%String"/>
+</Query>
+
+<Method name="qReportsByUserGroupReportGroupExecute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,pUserGroup2:%String,pReportGroup:%String,pCountRows2:%Integer=0]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Kill ^||res
+	s ^test("par2",$i(^test("par2")))=pUserGroup2_"*"_pReportGroup
+	// select %ID,CTCLR_Description from CT_ClientsReports where CTCLR_ReportGroup_DR='ACC' and CTCLR_Display='Y'
+
+	//do ##class(BiRLab.UI.Invoice).Clear()
+	
+	Set qHandle=$lb("",pCountRows2,0)
+	/* не работает из web
+	set sql="select %ID,CTCLR_Description from CT_ClientsReports"
+	set where=" where CTCLR_Display='Y'"
+	if pReportGroup'="" set where=where_" and CTCLR_ReportGroup_DR='"_pReportGroup_"'"
+	;
+	set rs = ##class(%ResultSet.SQL).%New()
+	if where=" where" set where=""
+	set sql=sql_where
+	//set:sql[" and" $E(sql,$L(sql)-4,$L(sql)-1)=""
+	;s ^tmp=sql
+	set rs=##class(%ResultSet.SQL).%Prepare(sql)
+	quit:'rs ""
+	
+	//set buf = $NA(^CacheTemp(%session.SessionId,"FindValues"))
+	//kill @buf
+
+	while (rs.%Next()) {
+		set id = rs.%GetData(1)
+		if id'="" {
+		     set ^||res(id)=$LB(id,rs.%GetData(2),"")
+		}
+	}*/
+	set report=""
+	for {
+		set report=$order(^TTAB("REPORT-GENERIC",report),1,val) if report="" quit
+		if $piece(val,"\",7)'="Y" continue
+		set reportGroup=$piece(val,"\",4)
+		if reportGroup'=pReportGroup continue
+		set reportDesc=$piece(val,"\",9)
+		/*
+		set flagUse=0
+		if $data(^TTABex("BindUserGroupReport",pUserGroup2,report)) {
+			set flagUse=1
+		}*/
+		set flagUse=..GetFlagUseReportByUserGroup(pUserGroup2, report)
+		set flagUseDisplay=$select(flagUse=1:"*",1:"")
+		set ^||res(report)=$LB(report,flagUseDisplay,reportDesc,flagUse)
+	}
+
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="qReportsByUserGroupReportGroupClose">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary]]></FormalSpec>
+<PlaceAfter>qReportsByUserGroupReportGroupExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Kill ^||res
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="qReportsByUserGroupReportGroupFetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>qReportsByUserGroupReportGroupExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set key=$lg(qHandle,1)
+	set count=$lg(qHandle,2)
+	set flag=$lg(qHandle,3)
+	if flag=0 {
+		Set key=$Order(^||res(key))
+	}
+	If (key="")&&(count'>0) Set AtEnd=1,Row="" Quit $$$OK
+	if key'="" {
+		Set Row=$G(^||res(key))
+	} else {
+		set Row=$lb("","","")
+	}
+	set qHandle=$lb(key,count-1,$select(key="":1,1:0)) 
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="Testq1">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ Set result=##class(%ResultSet).%New("TCLEx.Data.BindUserReport:qReportsByUserGroupReportGroup")
+ Do result.Execute("1","",50) //"ACC",50)
+ For  Quit:'result.Next()  Do
+ . Write result.Data("CodeReport")," ",result.Data("ReportDescription")," ",result.Data("FlagUse"),!
+]]></Implementation>
+</Method>
+
+<Method name="GetFlagUseReportGroupByUser">
+<Description>
+Флаг использования группы отчетов указанным пользователем
+=2 - если все отчеты группы отчетов видны для данной группы пользователей
+=1 - если часть отчетов группы отчетов видны для данной группы пользователей
+=0 =если ни один отчет из группы отчетов не виден для данной группы пользователей</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pUser:%String,pReportGroup:%String,&pError:%Status]]></FormalSpec>
+<ProcedureBlock>1</ProcedureBlock>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set pError=$$$OK,returnValue=0
+	try {
+		set userobj = ##class(User.SSUser).%OpenId(pUser)
+        if '$IsObject(userobj) set pError=$$Error^%apiOBJ(5001,"Не найден пользователь "_pUser) quit 
+        set usergroup=userobj.SSUSRGroup.%Id()
+        set pError=""
+        set returnValue=..GetFlagUseReportGroupByUserGroup(usergroup,pReportGroup,.pError)
+	} catch(exeption) {
+		set pError=exeption.AsStatus()
+		set FlagUse=0
+	}
+	quit returnValue
+]]></Implementation>
+</Method>
+
+<Method name="GetFlagUseReportGroupByUserGroup">
+<Description>
+Флаг использования группы отчетов указанной группой пользователей
+=2 - если все отчеты группы отчетов видны для данной группы пользователей
+=1 - если часть отчетов группы отчетов видны для данной группы пользователей
+=0 =если ни один отчет из группы отчетов не виден для данной группы пользователей</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pUserGroup:%String="",pReportGroup:%String="",&pError:%Status]]></FormalSpec>
+<ProcedureBlock>1</ProcedureBlock>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	s ^test(12)=$g(pUserGroup)_"*"_$g(pReportGroup)
+	set pError=$$$OK
+	if (pUserGroup="")||(pReportGroup="") quit 0
+	set FlagUse=2
+	try {
+		set report="",flagNoOne=1
+	    for {
+		   set report=$order(^TTAB("REPORT-GENERIC",report),1,val) if report="" quit
+		   if $piece(val,"\",7)'="Y" continue
+		   set reportGroup=$piece(val,"\",4)
+		   if reportGroup'=pReportGroup continue
+		   set reportDesc=$piece(val,"\",9)
+		   set flagUse=..GetFlagUseReportByUserGroup(pUserGroup, report)
+		   if flagUse=0 {
+			   set FlagUse=1
+		   } else {
+			   set flagNoOne=0
+		   }	
+	    }
+	    if flagNoOne=1 {
+		    set FlagUse=0
+	    }
+	} catch(exeption) {
+		set pError=exeption.AsStatus()
+		set FlagUse=0
+	}
+	quit FlagUse
+]]></Implementation>
+</Method>
+
+<Method name="GetFlagUseReportByUser">
+<Description>
+Получить флаг использования отчета для пользователя
+1 - отчет доступен для пользователя, 0 - отчет не доступен, "" - ошибка</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pUser:%String="",pReport:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if $get(^Settings("server","SecurityAccessToreport"))'=1 quit 1
+	if (pUser="")||(pReport="") quit ""
+	set userobj = ##class(User.SSUser).%OpenId(pUser)
+    if '$IsObject(userobj) quit "" 
+    set usergroup=userobj.SSUSRGroup.%Id()
+    quit ..GetFlagUseReportByUserGroup(usergroup,pReport)
+]]></Implementation>
+</Method>
+
+<Method name="GetFlagUseReportByUserGroup">
+<Description>
+Получить флаг использования отчета для группы пользователей
+1 - отчет доступен для группы пользователей, 0 - отчет не доступен</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pUserGroup:%String,pReport:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if $get(^Settings("server","SecurityAccessToreport"))'=1 quit 1
+	if $get(pUserGroup)=""||($get(pReport)="") quit ""
+  	if $data(^TTABex("BindUserGroupReport",pUserGroup,pReport)) quit 1
+  	else  quit 0
+]]></Implementation>
+</Method>
+
+<Method name="SetFlagUseReport">
+<Description>
+Установить флаг использования отчета для группы пользователей</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pUserGroup:%String,pReport:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+  	   if '$data(^TTABex("BindUserGroupReport",pUserGroup,pReport)) {
+			   set ^TTABex("BindUserGroupReport",pUserGroup,pReport)=""
+	   }
+	} catch(exeption) {
+		set ok=exeption.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="DeleteFlagUseReport">
+<Description>
+Снять флаг использования отчета для группы пользователей</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pUserGroup:%String,pReport:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+  	   if $data(^TTABex("BindUserGroupReport",pUserGroup,pReport)) {
+			   kill ^TTABex("BindUserGroupReport",pUserGroup,pReport)
+	   }
+	} catch(exeption) {
+		set ok=exeption.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Storage name="SQLStorage">
+<Type>%CacheSQLStorage</Type>
+<SqlRowIdName>TTABEx_BindUserGroupReport_RowId</SqlRowIdName>
+<StreamLocation>^TCLEx.Data.BindUserReportS</StreamLocation>
+<SQLMap name="DataMaster">
+<Type>data</Type>
+<Global>^TTABex</Global>
+<Structure>delimited</Structure>
+<Subscript name="1">
+<Expression>"BindUserGroupReport"</Expression>
+</Subscript>
+<Subscript name="2">
+<Expression>{SSUSR_Group}</Expression>
+</Subscript>
+<Subscript name="3">
+<Expression>{CTCLR_Report_DR}</Expression>
+</Subscript>
+<RowIdSpec name="1">
+<Expression>{L2}</Expression>
+<Field>SSUSR_Group</Field>
+</RowIdSpec>
+<RowIdSpec name="2">
+<Expression>{L3}</Expression>
+<Field>CTCLR_Report_DR</Field>
+</RowIdSpec>
+</SQLMap>
+</Storage>
+</Class>
+</Export>
