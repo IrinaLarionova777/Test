@@ -201,17 +201,6 @@ BODY  ; поиск по дате назначения (дата передачи
  ... i $$select^LVBEPVIS(epis,"Y",USER) quit
  ... f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
  ... k VISIT m VISIT=PLIST
- ... i +$G(FlagPayPat)=1 do
- .... set hospitalcode=$piece($get(VISIT(22)),$c(1),1)
- .... set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
- .... set payer="",payername=""
- .... // для эпизодов, которые были до внедрения BiRLab
- .... set payepis=$piece($get(VISIT(9)),$c(1),1)  //EPVIS_PaymentCode_DR 
- .... set flagBiRLab=0 
- .... if (payepis="")&&(payepisnew'="") do  ;
- ..... set flagBiRLab=1	
- ..... set payer=payepisnew
- ..... set payername=##class(BiRLab.Function.Report).GetPayerInfo(payepisnew,"nameshort",1)
  ... ;------------------
  ... ; считаем наборы тестов для epis (согласно ограничениям по отделам для USER)
  ... s (count,countA)=0,ListTS="" k ListSpecimen
@@ -222,20 +211,12 @@ BODY  ; поиск по дате назначения (дата передачи
  ..... ; ---
  ..... ; Флаг "Только не выполненные назначения"
  ..... i +$G(FlagWaiting)=1 quit:status="A"
- .....;
- ..... ; Плательщик (на уровне лаб.номера/набора тестов)
- ..... i +$G(FlagPayPat)=1 do
- ...... if flagBiRLab=0 do  ;
- ....... s payer=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 	;VISTS_PaymentCode_DR
- ....... if payer="" set payer=payepis
- ....... set payername=##class(BiRLab.Function.Report).GetPayerInfo(payer,"nameshort",0)
- .....;
  ..... ; ------------------
  ..... ; set sorting key - 1/2/3
  ..... s (SORT1,SORT2,SORT3)=""
- ..... s SORT1=$$SORTKEY($G(ParamSort1),payer) s:SORT1="" SORT1=" "
- ..... s SORT2=$$SORTKEY($G(ParamSort2),payer) s:SORT2="" SORT2=" "
- ..... s SORT3=$$SORTKEY($G(ParamSort3),payer) s:SORT3="" SORT3=" "
+ ..... s SORT1=$$SORTKEY($G(ParamSort1)) s:SORT1="" SORT1=" "
+ ..... s SORT2=$$SORTKEY($G(ParamSort2)) s:SORT2="" SORT2=" "
+ ..... s SORT3=$$SORTKEY($G(ParamSort3)) s:SORT3="" SORT3=" "
  ..... ; формируем индексы для печати
  ..... s @Mas@("xREPORT",SORT1,SORT2,SORT3,"epis",epis,"ListTS",ts_"||"_tscnt)=syn
  ..... //if $l(epis)=10 s pp=$p($G(^TEPI(epis,1,ts,tscnt)),"\",47) s:pp="" pp=epis s ^test(888,epis,pp)="" //test
@@ -245,7 +226,9 @@ BODY  ; поиск по дате назначения (дата передачи
  ...... s @Mas@("xREPORT",SORT1,SORT2,SORT3,"epis",epis,"ListSpecimen",specDR)=$P($G(^TTAB("SPEC",specDR)),"\",1)
  ..... ; Плательщик (на уровне лаб.номера/набора тестов)
  ..... i +$G(FlagPayPat)=1 do
- ...... if payer'="" s @Mas@("xREPORT",SORT1,SORT2,SORT3,"epis",epis,"Payment",payer)=payername
+ ...... s pay=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 	;VISTS_PaymentCode_DR
+ ...... s:pay="" pay=$P($G(VISIT(9)),$C(1),1) q:pay=""
+ ...... s @Mas@("xREPORT",SORT1,SORT2,SORT3,"epis",epis,"Payment",pay)=$P($G(^TTAB("BI",pay)),"\",1)
  ..... ; ---
  ..... ; считаем количество "НАЗНАЧЕННЫХ" наборы тестов
  ..... s @Mas@("xREPORT",SORT1,SORT2,SORT3,"epis",epis,"Count")=$G(@Mas@("xREPORT",SORT1,SORT2,SORT3,"epis",epis,"Count"))+1
@@ -260,7 +243,7 @@ BODY  ; поиск по дате назначения (дата передачи
  ;m ^zz=@Mas   ;@@@
  quit
  ;-------------------------------
-SORTKEY(par,payment) ;достаем значения для формирования индексов сортировки данных
+SORTKEY(par) ;достаем значения для формирования индексов сортировки данных
  s result=""
  d:$G(par)'=""
  . ; ФИО пациента
@@ -271,9 +254,8 @@ SORTKEY(par,payment) ;достаем значения для формирова�
  . i par="LOC" s result=$G(VISIT(22)) q
  . ; Плательщик (на уровне лаб.номера/набора тестов)
  . i par="PAYMENT" do  q
- .. ;s result=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 		;VISTS_PaymentCode_DR
- .. ;i result="" s result=$G(VISIT(9))
- .. set result=$get(payment)
+ .. s result=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 		;VISTS_PaymentCode_DR
+ .. i result="" s result=$G(VISIT(9))
  . ; Категория пациента 
  . i par="PATCATEG" s result=$G(VISIT(94)) q
  . ; Лабораторный номер
@@ -509,7 +491,7 @@ XML      ; Формирование XML...
  i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
  ;
  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
- s MSGERROR="0^^"_%Ret_"^WINWORD" ;"^EXCEL"  ;^WINWORD"  ;^EXCEL"  ;^EXPLORER"
+ s MSGERROR="0^^"_%Ret_"^"_$$GetViwer^REPORTSPB($zn) ;"^EXCEL"  ;^WINWORD"  ;^EXCEL"  ;^EXPLORER"
  quit
 ]]></Routine>
 </Export>
