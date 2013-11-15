@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Export generator="Cache" version="24">
 <Routine name="PRTCLNRUS54" type="INT" languagemode="0"><![CDATA[
-PRTCLNRUS54   ;Отчет по контролю качества ; liv
+PRTCLNRUS54  ;Отчет по контролю качества ; liv 
+ ; for version L2012
  ;
  q
- ; Отчет CLNRUS54  +  CLNRUS54.xsl  + DLL: CLNSPARM007.clsSTART
+ ; Отчет CLNRUS54  +  CLNRUS54.xsl  + DLL: PRTCLNRUS.clsSTART
  ;==================================================================================================================
 CREATE(REPID,PAR,USER,%msql) ; create report
  n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
@@ -136,7 +137,6 @@ XML(pDateFrom,pDateTo,devices,MasXML) public
 		  }
 	    }  
 	  }
-	  k ^test("ttt") m ^test("ttt")=@MasXML
       kill @MasXML@("Data2")
   } catch(exception) {
 	  set ok=exception.AsStatus()
@@ -161,9 +161,12 @@ Report
   quit "0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"  
 
 GetData(pDateFrom,pDateTo,pDevices,pGlb) public
-
+  // если у анализатора несколько материалов, то надо заводить разные группы
+  // к группе к уровню можно прицкрепить только одну дату (ну и к каждой дпте только один материал-лот-уровень
+  // поэтому по дате и номеру уровня можно определить  материал-лот-уровень
   set pDateFrom=pDateFrom-0.5
   kill @pGlb
+  /*
   set material=""
   for {
 		  set material=$order(^TTQC(material)) if material="" quit
@@ -196,6 +199,49 @@ GetData(pDateFrom,pDateTo,pDevices,pGlb) public
 			  }
 		  }
 	  }
+	  */
+  set pDateFrom=pDateFrom-0.5
+  kill @pGlb
+  set group=""
+  for {
+		  set group=$order(^TQCA("GROUP",group)) if group="" quit
+		  // Test Area and Analisator
+		  set recGroup=$get(^TTAB("CTQC-G",group))
+		  set area=$piece(recGroup,"\",2) if area'="M" continue // M-Mashines
+		  set mi=$piece(recGroup,"\",3) if mi="" continue
+		  if ($data(pDevices)>1) if '$data(pDevices(mi)) continue
+		  //^TQCA("GROUP","GR13","LINK","C","LEVEL","1","DATE") 
+		  set QCtype=""
+		   for {
+			  set QCtype=$order(^TQCA("GROUP",group,"RUN",QCtype)) if QCtype="" quit
+			  set testcode=""
+		      for {
+			      set testcode=$order(^TQCA("GROUP",group,"RUN",QCtype,testcode)) if testcode="" quit
+			      set date=pDateFrom
+			      for {
+				      set date=$order(^TQCA("GROUP",group,"RUN",QCtype,testcode,"DATE",date)) if date=""||(date>pDateTo) quit  
+				      set num=""
+				      for {
+					      set num=$order(^TQCA("GROUP",group,"RUN",QCtype,testcode,"DATE",date,"RUNNUMBER",num)) if num="" quit
+					      set level=""
+					      for {
+						      set level=$order(^TQCA("GROUP",group,"RUN",QCtype,testcode,"DATE",date,"RUNNUMBER",num,"LEVEL",level),1,record) if level="" quit
+						      set time=$piece(record,"\",6),result=$piece(record,"\",1)
+						      // определение материала
+						      set dateStart=$order(^TQCA("GROUP",group,"LINK",QCtype,"LEVEL",level,"DATE",date+0.5),-1)
+						      if dateStart="" continue
+						      set materialLotLevel=$piece($get(^TQCA("GROUP",group,"LINK",QCtype,"LEVEL",level,"DATE",dateStart)),"\",1)
+						      if materialLotLevel="" quit 
+                              set material=$piece(materialLotLevel,"||",1)
+                              set lot=$piece(materialLotLevel,"||",2)
+						      set result=$$FormatResult(result)
+						      set @pGlb@(mi,testcode,material,lot,level,date_$char(1)_time_$char(1)_num)=result
+					      }
+					  }  
+				  }
+		      }
+		   }
+	  }
  quit	   
  
 CreateFile(filereal)
@@ -208,7 +254,6 @@ CreateFile(filereal)
      // данные
      set ok=$$XML(pDateFrom,pDateTo,"",glb)
      if 'ok quit
-     //kill ^test("fff") m ^test("fff")=@glb
      if '$data(@glb@("User",1,"QC")) set ok=$$Error^%apiOBJ(5001,"Нет данных за "_$zd($h-1,4)) quit
      
      // создание файла во временной директории

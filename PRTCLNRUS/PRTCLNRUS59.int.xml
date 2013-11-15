@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS59" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS59   ; Журнал учета рабочего времени анализатора; liv
+ q
+ ;
+ ; Отчет CLNRUS59  +  CLNRUS59.xsl  + DLL: ReportVB.clsStart
+ ; 
+ ; Используется сервисная программа  ^REPORTSPB
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par             
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 3000: 200 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 4100: 200 : 1100 : 300 : t:True"
+ ; ---
+ ; список приборов
+ s @Par@("PAR3a")="Label   : 100 : 1000 : 1000 : 300 : Анализатор:"
+ set default=""
+ s @Par@("PAR3")="ListBox :  100 : 1300 : 6000 : 5000 : :True: 0 : Checkbox  " 
+ set id=""
+ for {
+	 set id=$order(^TMIF(id),1,record) if id="" quit
+	 set name=$piece(record,"\",1)
+	 ;set @Par@("PAR3",name_$char(4)_id)=name
+	 set @Par@("PAR3",id)=name
+ }
+ ;if $data(@Par@("PAR3")) set @Par@("PAR3",0)="Все анализаторы"
+ ; ---
+ ; настройка формы
+ s @Par@("form")="Журнал учета рабочего времени анализатора ("_USER_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz  ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR  ;@@@
+ ; сохраняем для обработки входных данных (списка наборов тестов)
+ k MasForm m MasForm=^TEMP($j) 
+ k ^TEMP($J)
+ s Mas="^TEMP($J,""START"")"
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ set glb=$name(^||data)
+ set sc=$$BODY(glb) 
+ if 'sc {
+	 k ^TEMP($zn,$J),^TEMP($j)
+	 s MSGERROR="100^"_$System.Status.GetErrorText(sc) 
+	 quit MSGERROR
+ }
+ set ok=$$XML(PAR1,PAR2,glb)
+ if 'ok {
+	 k ^TEMP($zn,$J),^TEMP($j)
+	 s MSGERROR="100^"_$System.Status.GetErrorText(ok) 
+	 quit MSGERROR
+ }
+ ;
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ set MSGERROR="0^^"_%Ret_"^"_$$GetViwer^REPORTSPB($zn)  ;^WINWORD"  ;^EXCEL"  ;^EXPLORER"
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,i,j
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ set dateFrom=PAR1,dateTo=PAR2
+ ; Анализаторы
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Анализатор>" q
+ ; ---
+ kill devices
+ for i=1:1:$length(PAR3,$char(1)) {
+	 set analyzer=$piece(PAR3,$char(1),i)
+	 if analyzer'="" set devices(analyzer)=""
+ }
+ quit
+BODY(glb)
+ set ok=1
+ try {
+	 kill @glb
+     set nndev=0,r=$char(0)
+     set mi=""
+     for {
+	     set mi=$order(devices(mi)) if mi="" quit
+	     set nndev=nndev+1
+	     //set @MasXML@("User",1,"GRDevice",nndev,"Device")=$piece($get(^TMIF(mi)),"\",1)
+  
+         set date=PAR1-1,nn=0
+         for {
+	         set date=$order(^TMIFinfo(mi,"Date",date)) if (date="")||(date>PAR2) quit
+	         set epis="",min=9999999,max=0
+	         for {
+		         set epis=$order(^TMIFinfo(mi,"Date",date,epis)) if epis="" quit
+		         set record=$get(^TMIFinfo(mi,0,epis)) 
+		         set timeOrder=+$piece(record,r,2)
+		         set timeResult=+$piece(record,r,4)
+		         if (timeOrder=0)&&(timeResult=0) continue
+		         if timeOrder'=0 {
+			        if timeOrder<min set min=timeOrder
+			        if timeOrder>max set max=timeOrder   
+		         }
+		         if timeResult'=0 {
+			        if timeResult<min set min=timeResult
+			        if timeResult>max set max=timeResult  
+		         }
+	         }
+	         set ras=max-min
+	         if ras<0 set ras=0
+	         set ras=ras\60 // разница в минутах
+	         set rasHour="" // разница в часах
+	         if ras>0 {
+		         set rasHour=(ras\60)_"."_$tr($j(ras#60,2)," ","0")
+	         }
+	         if min=9999999 {
+		         set min="-"
+	         } else {
+		         set min=$zt(min)
+	         }
+	         if max=0 {
+		         set max="-"
+	         } else {
+		         set max=$zt(max)
+	         }
+	         set @glb@(mi,date)=$listbuild(min,max,ras,rasHour)     
+		     }
+      }
+      set mi=""
+      for {
+	      set mi=$order(@glb@(mi)) if mi="" quit
+	      set date="" 
+	      for {
+		      set date=$order(@glb@(mi,date),1,rec) if date="" quit
+		      set ras=$li(rec,3),rasHour=$li(rec,4)
+		      set $li(@glb@(mi),3)=$lg($get(@glb@(mi)),3)+ras
+	      }
+	      set rec=$get(@glb@(mi))
+	      set $li(@glb,3)=$lg($get(@glb),3)+$lg(rec,3)
+      }
+     
+	  } catch(exception) {
+	 set ok=exception.AsStatus()
+ }
+ //k ^test(1,"data") m ^test(1,"data")=@glb
+ quit ok
+ ;------------------------------------------------
+XML(DateFrom,DateTo,glb)  ; обработка данных...
+ ; Формирование XML...
+ set ok=1
+ try {
+	 
+     if '$D(@glb) {
+	     set ok=$$Error^%apiOBJ(5001,"Нет данных!") 
+	     quit
+     }
+     S MasO="^TEMP($J,""XML"")"
+     kill @MasO
+     set @MasO@("User",1,"DateFrom")=$TR($$extdate2^SSUTIL4(DateFrom),"/",".")
+     set @MasO@("User",1,"DateTo")=$TR($$extdate2^SSUTIL4(DateTo),"/",".")
+     set analyzer="",nnAn=0
+     for {
+	    set analyzer=$order(@glb@(analyzer),1,rec) if analyzer="" quit
+        set nnAn=nnAn+1
+        set ras=$lg(rec,3),rasHour=""
+        if +ras>0 set rasHour=(ras\60)_"."_$tr($j(ras#60,2)," ","0")
+        set @MasO@("User",1,"GrAnalyzer",nnAn,"Analyzer")=$piece($get(^TMIF(analyzer)),"\",1)
+        set @MasO@("User",1,"GrAnalyzer",nnAn,"Ras")=##class(TCLEx.Report.Function).TransValueForExcel(ras)
+        set @MasO@("User",1,"GrAnalyzer",nnAn,"RasHour")=##class(TCLEx.Report.Function).TransValueForExcel(rasHour)
+        set date=""
+        for {
+	     set date=$order(@glb@(analyzer,date)) if date="" quit
+	     set rec=^(date)
+	     set day=$zd(date,4)
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Date")=$tr(day,"/",".")
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Min")=$listget(rec,1)
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Max")=$listget(rec,2)
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Ras")=##class(TCLEx.Report.Function).TransValueForExcel($listget(rec,3))
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"RasHour")=##class(TCLEx.Report.Function).TransValueForExcel($listget(rec,4))
+        }
+     }
+     set rec=$get(@glb)
+     set ras=$lg(rec,3),rasHour=""
+     if +ras>0 set rasHour=(ras\60)_"."_$tr($j(ras#60,2)," ","0")
+     set @MasO@("User",1,"RasO")=ras
+     set @MasO@("User",1,"RasHourO")=$piece(rasHour,".",1)
+     set @MasO@("User",1,"RasMinutO")=$piece(rasHour,".",2)
+     ;
+     ; шапка
+     s @MasO@("User",1,"NameReport")="Журнал учета рабочего времени анализатора"
+     S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+     ;
+     ;kill ^zz M ^zz=@MasO     ;@@@
+     ;
+     S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS59.xsl",USER)
+     if $extract(%Ret)="*" set ok=$$Error^%apiOBJ(5001,"Ошибка:"_$E(%Ret,2,$L(%Ret)))
+ } catch(e) {
+    set ok=e.AsStatus()
+ }
+ quit ok
+ 
+
+]]></Routine>
+</Export>

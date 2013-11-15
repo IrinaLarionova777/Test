@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS58" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS58   ;Отчет по рабочим листам (особый для ГКБ 12) ; liv
+ ;
+ q
+ ;==================================================================================================================
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ 
+ ; дата
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t :True"
+  
+ ; список типов рабочих листов
+ s @Par@("PAR3a")="Label   : 100 : 600 : 4000 : 200 : Тип рабочего листа:"
+ set default="МИКРО"
+ s @Par@("PAR3")="ComboBox: 100 : 800 : 4000 : 200 : :True: "_default_" :List" ;Standart
+ set id=""
+ for {
+	 set id=$order(^TTAB("WS",id),1,record) if id="" quit
+	 set name=$piece(record,"\",1)
+	 set @Par@("PAR3",id)=name
+ }
+
+ ; номер рабочего листа
+ s @Par@("PAR4a")="Label   : 100 : 1200 : 4000 : 200 : Номер рабочего листа:"
+ s @Par@("PAR4")="Text     : 100:  1400 : 1000 : 200 :  :False"
+
+ ; список наборов тестов
+ s @Par@("PAR5a")="Label   : 100 : 1800 : 5000 : 200 : Набор тестов не из РЛ (тесты из него тоже будут печататься):True"
+  ; проверяем ограничение по отделам
+ k DEP s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP") k ^TEMP($J,"DEP")
+ set testsetDefault=""
+ s cnt=0,dep="" f  s dep=$O(^TTABi("DEP-TS",dep)) q:dep=""  do:$D(DEP(dep))   ;$$ValUser^LVBCTDEP(USER,dep,1)
+ . s num="" f  s num=$O(^TTABi("DEP-TS",dep,num)) q:num=""  do
+ .. s ts="" f  s ts=$O(^TTABi("DEP-TS",dep,num,ts)) q:ts=""  do
+ ... i $$select^LVBCTTS(ts,"Y",USER) quit
+ ... i $P($G(^TTAB("TS",ts)),"\",12)'="Y" quit    ;CTTS ActiveFlag
+ ... s cnt=$i(cnt)
+ ... s @Par@("PAR5",cnt)=ts_"   "_$P($G(^TTAB("TS",ts)),"\",1)
+ ... if ts="A002" set testsetDefault=cnt 
+ s @Par@("PAR5")="ComboBox :  100 : 2000 : 5000 : 200 : :True: "_testsetDefault_" : List  "  
+
+ ; ширина столбца с результатом по тесту в мм
+ s @Par@("PAR6a")="Label   : 100 : 2400 : 4000 : 200 : Ширина столбца с результатом по тесту в мм:"
+ s @Par@("PAR6")="Text     : 100:  2600 : 1100 : 200 : 8 :False"
+
+ ;
+ ; настройка формы
+ s @Par@("form")="Отчет ро рабочим листам:500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ //s ^test("par")=PAR
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k MasForm m MasForm=^TEMP($j) 
+ k ^TEMP($J)
+ k ^TEMP($j)
+ kill ^TEMP($zn,$J)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" s ^test(111,"e")=MSGERROR  quit MSGERROR
+ quit $$FormReport()
+ 
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+  ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата>" q
+ ; Тип рабочего листа
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Тип рабочего листа>" q
+ i $G(PAR5)="" s MSGERROR="100^Не определено значение <Набор тестов>" q
+ set numWS=+$get(PAR4)
+ if +numWS'=0 {
+	  if '$data(^TWKS(typeWS,"2",numWS)) s MSGERROR="100^Нет рабочего листа типа "_$piece($get(^TTAB("WS",PAR3)),"\",1)_" номер "_numWS q
+ }
+ set dopTestSet=$piece($get(MasForm("PAR5",PAR5))," ",1)
+ if '$data(^TTAB("TS",dopTestSet)) s MSGERROR="100^Нет набора тесов с кодом "_dopTestSet q
+ //s ^test(111,"par")=$g(PAR1)_"*"_$g(PAR3)_"*"_$g(PAR4)_"*"_$g(dopTestSet)_"*"_$g(PAR6)
+ quit
+ 
+FormReport()   ; обработка данных и формирование файла отчета ...
+ set returnValue="" 
+ try {
+	 
+  set typeWS=$get(PAR3)
+  set numWS=+$get(PAR4)
+  set dateWS=$get(PAR1)
+  set widthColumn=$get(PAR6)
+  if +widthColumn=0 set widthColumn=10
+  //set dopTestSet=$get(PAR5)
+
+  set path=$$PathClient^REPORTSPB($get(USER))
+
+  if $extract(path)="*" {
+	 set returnValue="100^Ошибка: "_path 
+	 quit
+  }
+  set fileReport=path_"\"_$$NameFile^REPORTSPB()_".pdf"
+  set files=""
+  if +numWS'=0 {
+	  set ok=##class(TCLEx.Report.WSrpt2).GetPDF(typeWS,numWS,fileReport,0,dopTestSet,widthColumn) 
+	  if 'ok {
+		  set returnValue="100^Ошибка: "_$system.Status.GetErrorText(ok)
+		  quit
+	  } else {
+		  set returnValue="0^^"_fileReport_"^PDF"
+		  quit
+	  }
+  } else {
+	 set num="",npp=0,returnValue="",files=""
+	 for {
+		 set num=$order(^TWKS(typeWS,6,dateWS,num)) if num="" quit
+		 set npp=npp+1
+		 set fileReport=path_"\"_$$NameFile^REPORTSPB(npp)_".pdf"
+		 set ok=##class(TCLEx.Report.WSrpt2).GetPDF(typeWS,num,fileReport,0,dopTestSet,widthColumn) 
+	     if 'ok {
+		    set returnValue="100^Ошибка: "_$system.Status.GetErrorText(ok)
+		    quit
+	     } else {
+		    set files=files_$select(files'="":$char(0),1:"")_fileReport
+	     }
+	 }
+	 if returnValue'="" {
+		 quit 
+	 }
+	 if files="" {
+		 set returnValue="100^Нет рабочих листов за "_$zdate(PAR1,4)_" ."
+		 quit
+	 }
+	 if $length(files,$c(0))=1 {
+		 set returnValue="0^^"_fileReport_"^PDF" 
+		 quit
+	 } else {	 
+	 	  set npp=npp+1
+		  set fileReport=path_"\"_$$NameFile^REPORTSPB(npp)_".pdf"
+	      set ok=##class(TCLEx.Report.FunctionsJava).startConcatPDF(files,fileReport,0,1)
+	      if 'ok {
+		      set returnValue="100^Ошибка: "_$system.Status.GetErrorText(ok)
+		      quit
+	      } else {
+		      set returnValue="0^^"_fileReport_"^PDF"
+		      quit
+	      }
+	 } 
+	  
+  }
+ } catch(e) {
+	 set returnValue="100^"_$ze
+ }
+ s ^test(111)=returnValue
+ quit returnValue
+ 
+]]></Routine>
+</Export>
