@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="Client12.MISExchange">
+<Super>%SYS.Task.Definition</Super>
+<TimeCreated>63070,43687.121958</TimeCreated>
+
+<Parameter name="LOCKRESOURCENAME">
+<Description>
+Имя ресурса, соответствующего очереди </Description>
+<Default>^MIS.SendResultsAdnStatusTest</Default>
+</Parameter>
+
+<Parameter name="WAITINTERVAL">
+<Description>
+Продолжительность (в секундах) каждой итерации ожидания появления нового сообщения в очереди</Description>
+<Default>30</Default>
+</Parameter>
+
+<Parameter name="STOPPINGRESOURCENAME">
+<Description>
+Имя ресурса-семафора, наличие которого сигнализирует о том, что выполняется штатный останов процесса/процессов обработки очереди </Description>
+<Default>^MIS.StopSendResultsTest</Default>
+</Parameter>
+
+<Method name="OnTask">
+<Description>
+Callback метод класса задачи</Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set lockname=..GetLockResoursce()
+	If '$Data(^$Lock(lockname)) {
+		Job ##class(Client12.MISExchange).DoTask()
+	}	
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="DoTask">
+<Description><![CDATA[
+Собственно выполняемый код с заданной периоличностью тайм-аута
+Нужно для работы с тайм-аутами < 1 минуты]]></Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+    set lockname=..GetLockResoursce() 
+    set stopname=..GetStoppingResourceName()
+	Lock +@lockname
+	kill @stopname
+	Try {
+				
+		// Создаем объект клиента для доступа к веб сервису MISservice
+		set ok=##class(Client12.LIS.Client).CreateObjectClient(.objclient)
+		set eventDesc="Создание коннекта к вебсервису (Client12.LIS.ClientSoap)"
+		do ..LogEvent("Client12.MISExchange",$select('ok:"error",1:""),eventDesc,ok,"","","") 
+		if 'ok {
+			  quit
+		} 
+		
+		Set timeout=..GetWaitInterval()
+		For  {
+			Set starttime=$ZHorolog
+			
+			//Отправка скопившихся SendOrderStatus
+			//s ^test(1,$h_"."_$p($zts,".",2))="ProcessSendOrderStatusBefore"
+			set ok=..ProcessSendOrderStatus(.objclient)
+	        if 'ok {
+	            do ..LogEvent("SendResult","error","Произошла ошибка в Client12.MISExchange.ProcessSendOrderStatus в области "_$ZUtil(5),ok,"","","")
+	            set error=$System.Status.GetErrorText(ok)
+                if (error["TCP")||(error["SOAP") {
+	                kill objclient
+		            set objclient=""  // для того, чтобы переустановился коннект
+	            }
+            }
+	
+	        //s ^test(1,$h_"."_$p($zts,".",2))="ProcessSendResultsBefore"
+	        
+			set ok=##class(Client12.SendResults).ProcessSendResults(.objclient)
+            if 'ok {
+	            do ..LogEvent("SendResult","error","Произошла ошибка в Client12.SendResults.ProcessSendResults в области "_$ZUtil(5),ok,"","","")
+	            set error=$System.Status.GetErrorText(ok)
+                if (error["TCP")||(error["SOAP") {
+		            kill objclient
+		            set objclient=""  // для того, чтобы переустановился коннект
+	            }
+            }
+		    
+		    //Отправка скопившихся SendOrderStatus (при отправке результатов могли создаться события Отправить статус по ордеру)
+	        set ok=..ProcessSendOrderStatus(.objclient)
+	        if 'ok {
+	            do ..LogEvent("SendResult","error","Произошла ошибка в Client12.MISExchange.ProcessSendOrderStatus в области "_$ZUtil(5),ok,"","","")
+	            set error=$System.Status.GetErrorText(ok)
+                if (error["TCP")||(error["SOAP") {
+		            kill objclient
+		            set objclient=""  // для того, чтобы переустановился коннект
+	            }
+            }
+		
+			If $Data(@stopname) {
+				Kill @stopname
+				Quit
+			}
+			
+			set deltatime=($ZHorolog-starttime)\1
+			If deltatime'>timeout {
+				Hang (timeout-deltatime)
+			}	
+		}	
+		
+	} Catch(ex) {
+		set ok=ex.AsStatus()
+		do ..LogEvent("SendResult","error","Произошла ошибка в классе Client12.MISExchange "_$ZUtil(5),ok,"","","") 
+	}	
+	Lock -@lockname
+	kill objclient
+	quit
+]]></Implementation>
+</Method>
+
+<Method name="ProcessSendOrderStatus">
+<Description>
+Отправка скопившихся SendOrderStatus (^ECUBE("SendStatus"))</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pObjClient:Client12.LIS.ClientSoap]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {
+
+	  set horolog=""
+	  for {
+		  set horolog=$order(^ECUBE("SendStatus",horolog)) if horolog="" quit
+		  set npp=""
+		  for {
+			  set npp=$order(^ECUBE("SendStatus",horolog,npp),1,vals) if npp="" quit
+		      set orderId=$listget(vals,1)
+		      set status=$listget(vals,2)
+		      set episode=$listget(vals,3)
+		      //s ^test(999,$i(^test(999)))=$g(pObjClient)_"*"_$g(orderId)_"*"_$g(status)
+		      set ok1=##class(Client12.LIS.Client).SendOrderStatus(.pObjClient,orderId,status)
+		      // ok1 = (0/1/2)^текст ошибки или сообщения (0-ошибка, 1 - все хорошо, 2 - статус отвергается, но не надо переотправлять
+		      if +ok1'=0 {
+			      kill ^ECUBE("SendStatus",horolog,npp)
+		      }
+		      set desc="Отправлен статус "_status_" по эпизоду "_episode_", OrderId="_orderId
+		      do ..LogEvent("SendOrderStatus",$select(+ok1=0:"error",1:""),desc,$select(+ok1=0:"",1:1),ok1,episode,orderId)
+		      if +ok1=0 {
+				  set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,$piece(ok1,"^",2)))
+			  }
+		  }
+	  }
+  } catch ex {
+	    If $ZERROR["<ZSOAP>" {
+            Set ok=$system.Status.AppendStatus(ok,$get(%objlasterror))
+            } 
+        Else {
+            Set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$CacheError,$ZERROR))
+        }
+  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="StopTask">
+<Description>
+Останов задачи</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	set lockname=..GetLockResoursce()
+	If $Data(^$Lock(lockname)) {
+		Set id=##Class(%SYS.Task).FindId("LIS-MIS")
+		If id'="" {
+			Set ok=##Class(%SYS.Task).Suspend(id)
+			If ok {
+				Write !,"Приостановлено задание LIS-MIS менеджера задач"
+			} Else {
+				Do $System.OBJ.DisplayError(ok)
+			}		
+		}
+		set stopname=..GetStoppingResourceName()
+		Set @stopname=1
+		For  {
+			If '$Data(@stopname) Quit
+			Hang 1
+		}
+		Write !,"Задача остановлена" 	
+	} Else {
+		Write !,"Нет активных задач" 	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="LogEvent">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEvent:%String="",pTypeEvent:%String="",pDescription:%String="",pStatus:%Status="",pErrorString:%String="",pEpisode:%String="",pLocation:%String=""</FormalSpec>
+<Implementation><![CDATA[
+	//s ^test("log",$i(^test("log")))=$g(pDescription)
+	if (pErrorString="")&&(pStatus'="") {
+		set pErrorString=$system.Status.GetErrorText(pStatus)
+	}
+	/*
+	if ((pStatus'=1)||(pErrorString'=""))&&(pTypeEvent'="error") {
+		set pTypeEvent="error"
+	}*/
+	set orderId="",superOrderId=""
+	if (pLocation["^") {
+		set orderId=$piece(pLocation,"^",1)
+		set superOrderId=$piece(pLocation,"^",2)
+	}
+	
+	set obj=##class(ECUBE.Object.Event).%New()
+	set obj.TypeEvent=pTypeEvent
+	set obj.Description=$e(pDescription,1,1900)
+	set obj.Status=pStatus
+	set obj.Error=$e(pErrorString,1,1900)
+	set obj.GroupEvent=pEvent
+	set obj.Episode=pEpisode
+	set obj.Location=pLocation
+	set obj.Order=orderId
+	set obj.SuperOrder=superOrderId
+	set hor=$h,zts=$zts
+	set obj.Date=$tr($zd(hor,3),"-","")
+	set obj.Time=$tr($zt($piece(hor,",",2)),":","")_"."_$p(zts,".",2)
+	set obj.TimeMicroSec=+$p(zts,".",2)
+	set ok=obj.%Save()
+	if 'ok {
+		set hor=+$h
+		set ^ERRORS(hor,$i(^ERRORS(hor)))=ok
+	}
+]]></Implementation>
+</Method>
+
+<Method name="GetLockResoursce">
+<Description>
+Имя ресурса, соответствующего очереди</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit ..#LOCKRESOURCENAME
+]]></Implementation>
+</Method>
+
+<Method name="GetWaitInterval">
+<Description>
+Время паузы</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit ..#WAITINTERVAL
+]]></Implementation>
+</Method>
+
+<Method name="GetStoppingResourceName">
+<Description>
+Имя ресурса-семафора, наличие которого сигнализирует о том, что выполняется штатный останов процесса/процессов обработки очереди</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit ..#STOPPINGRESOURCENAME
+]]></Implementation>
+</Method>
+
+<Method name="CreateTask">
+<Description>
+Создание объекта задачи для менеджера задач - BackUp</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {
+		Set obj=##Class(%SYS.Task).%New()
+		Set obj.Name="LIS-MIS"
+		Set obj.Description="Отправка заказов ЛИС-->МИС"
+		Set obj.TaskClass="Client12.MISExchange"
+		Set obj.NameSpace=$zu(5)
+		set obj.Priority=0 // Normal
+    
+        set obj.DailyFrequency=1 // запускать несколько раз в день
+	    Set obj.DailyFrequencyTime=0  // время между запусками в минутах
+	    Set obj.DailyIncrement=5  // Каждые 5 минут
+	    Set obj.DailyStartTime=$ZTH("00:00:00")
+	    Set obj.DailyEndTime=$ZTH("23:59:00")
+	    
+	    set obj.RunAsUser="_SYSTEM"
+	
+	Set ok=obj.%Save()
+	
+  } catch(exception) {
+		Set ok=exception.AsStatus()
+  }
+  quit ok
+]]></Implementation>
+</Method>
+</Class>
+</Export>

@@ -1,0 +1,679 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="Client12.SendResults">
+<Super>%RegisteredObject</Super>
+<TimeCreated>63070,74795.873537</TimeCreated>
+
+<Parameter name="TIMEOUTGENERAL">
+<Description>
+Timeout для обычных наборов тестов в секундах</Description>
+<Default>1800</Default>
+</Parameter>
+
+<Parameter name="TIMEOUTCITO">
+<Description>
+Timeout для обычных наборов тестов в секундах</Description>
+<Default>60</Default>
+</Parameter>
+
+<Method name="ProcessSendResults">
+<Description>
+Обработка очереди</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pObjClient:Client12.LIS.ClientSoap]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {
+	  
+      // Отправка результатов по timeout
+	  set status=1
+	  set priority=""
+	  for priority="Y","N" {
+		  set timeout=..GetTimeout(priority)
+		  set date=""
+	      for {
+		     set date=$order(^ECUBE("Status",status,priority,date)) if date="" quit
+		     if '..IsTimeoutEnded(date,timeout) continue
+		     set dateOfAuthorization=$tr($zd(+date,3),"-","")_","_$tr($zt($piece(date,",",2)),":","")
+		     set epis=""
+		     for {
+			   set epis=$order(^ECUBE("Status",status,priority,date,epis)) if epis="" quit
+			   set superOrderId=""
+			   set ok=..GetOrderIdByEpisode(epis,.superOrderId)
+			   if ('ok)||(superOrderId="") {
+				    set eventDesc="Не найдено соответствующего номера направления для эпизода "_epis
+				    do ##class(Client12.MISExchange).LogEvent("SendResult","error2",eventDesc,ok,"",$get(epis),"") 
+				    continue
+			   }
+			   set order=""
+			   for {
+				    set order=$order(^ECUBE("Status",status,priority,date,epis,order)) if order="" quit
+				    set ts=""
+			        for {
+				     set ts=$order(^ECUBE("Status",status,priority,date,epis,order,ts)) if ts="" quit
+				     set ok=..GetTestSetECUBE(ts, .testsetECUBE)
+				     if ('ok)||(testsetECUBE="") {
+				       set eventDesc="Не найдено соответствующего TestId для testset="_ts
+				       do ##class(Client12.MISExchange).LogEvent("SendResult","error",eventDesc,ok,"",epis,epis_"||"_ts) 
+				       //continue попробуем взять в справочнике тестов
+				     }
+				     set tscnt=""
+				     for {
+					   set tscnt=$order(^ECUBE("Status",status,priority,date,epis,order,ts,tscnt)) if tscnt="" quit
+					   set testsetid=epis_"||"_ts_"||"_tscnt
+		               set doctorId=##class(TCLEx.Function.TestSet).GetDoctorAuthorisation(testsetid)
+		               set doctorId=$piece($get(^SSU("SSUSR",1,doctorId)),"^",15)
+			           // Отправка результатов по всем тестам набра тестов ts
+			           // Если orderId=0, значит этот набор тестов введен руками - в этом случае посылаем 0_"^"_ Ноиер направления
+			           set orderId=order_$select(order=0:"^"_superOrderId,1:"")
+					   set ok=..SendTestSetData(.pObjClient,epis, ts, testsetid, orderId, testsetECUBE, dateOfAuthorization, doctorId)
+					   set eventDesc="Отправка результатов по всем тестам: эпизод "_epis_" testsetid="_testsetid
+				       do ##class(Client12.MISExchange).LogEvent("SendResult",$select('ok:"error",1:""),eventDesc,ok,"",epis,testsetid) 
+				       set ok2=..SaveVisitEvent(epis,$select('ok:"Не удалось отправить в МИС результаты по тестам: эпизод="_epis_" набор тестов="_ts_"("_tscnt_")",1:"Отправлены в МИС результаты по тестам: эпизод="_epis_" набор тестов="_ts_"("_tscnt_")"))
+				       if 'ok {
+					      continue
+				       }  
+				       // Устанавливаем статус 2 (отправлены результаты по тестам) по набору тестов testsetid     
+					   set ok=##class(Client12.Data.EpisodeTestSet).SaveStatus(epis,orderId,ts,tscnt,2)
+					   set testsetorderid=epis_"||"_orderId_"||"_ts_"||"_tscnt
+					   set eventDesc="Установлен статус 2 в Client12.Data_EpisodeTestSet: testsetid="_testsetorderid
+				       do ##class(Client12.MISExchange).LogEvent("SendResult",$select('ok:"error",1:""),eventDesc,ok,"",epis,testsetorderid)
+				       if 'ok {
+					      continue
+				       }
+				      
+					   // Если это последний набор тестов (по все остальным наборам тестов результаты уже отправлены),
+					   // то посылаем флаг закрытия ордера по результатам
+					   if ..IsLastTestSet(epis,orderId) {
+						  do ..SetQueueEventsSendStatus(orderId,20,epis)
+					   }
+				     }
+			        }
+			     }
+		     }
+	      }
+	  }
+			  
+       
+  } catch(ex) {
+        If $ZERROR["<ZSOAP>" {
+            Set ok=$get(%objlasterror)
+            } 
+        Else {
+            Set ok=$$$ERROR($$$CacheError,$ZERROR)
+        }  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="SendTestSetData">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pObjClient:Client12.LIS.ClientSoap,pEpisode:%String,pTestSet:%String,pTestSetId:%String,pOrderId:%String,pTestSetIdECUBE:%String,pDateOfAuthorisation:%String,pDoctorAuthorisation:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ try {
+	  
+	Kill ^||EMED.TestOrder,^||EMED.TestSetDataId
+	Do ##class(TCLEx.Function.TestSet).TemplateTestOrder2(pTestSet,$Name(^||EMED.TestOrder)) // ^||EMED.TestOrder(testcode)=nppInTestSet
+	Do ##class(TCLEx.Function.TestSet).TestSetDataIdOrder(pTestSetId,$Name(^||EMED.TestOrder),$Name(^||EMED.TestSetDataId)) // ^||EMED.TestSetDataId(nppInTestSet,testdataid)=testcode
+	Kill ^||EMED.EMEDTest
+	
+	Set n="",testsetok=1
+	For  {
+		Set n=$Order(^||EMED.TestSetDataId(n))
+		If n="" Quit
+		Set testdataid=""
+		For  {
+			Set testdataid=$Order(^||EMED.TestSetDataId(n,testdataid),1,testcode)
+			If testdataid="" Quit
+			set ok1=..GetTestCodeECUBE(testcode,.testcodeECUBE)
+			if ('ok1)||(testcodeECUBE="") {
+				set eventDesc="Не найдено соответствующего кода MIS для testcode="_testcode
+				do ##class(Client12.MISExchange).LogEvent("SendResult","error2",eventDesc,ok1,"",$get(epis),$get(pTestSetId)) 
+				// Если тест не настроен для отправки в МИС, то и не надо значит его отправлять
+				//set ok=$system.Status.AppendStatus(ok,$select(ok1'=1:ok1,1:$$$ERROR($$$GeneralError,eventDesc)))
+				continue
+			}
+			Kill ^||EMED.TestSetData
+			Do ##class(TCLEx.Function.TestSet).GetResultInfo(testdataid,,$Name(^||EMED.TestSetData))
+			Set test=$Get(^||EMED.TestSetData(testdataid,"Description"))
+			Set result=$Get(^||EMED.TestSetData(testdataid,"Value"))
+			Set units=$Get(^||EMED.TestSetData(testdataid,"Units"))
+			set analyzerId=$get(^||EMED.TestSetData(testdataid,"AnalyzerId"))
+			Set comment=$$Buffer2String^KSUTIL1($Name(^||EMED.TestSetData(testdataid,"CommentStrings")),$Char(13,10)) //$Get(^||EMED.TestSetData(testdataid,"Comment"))
+
+			Set minrange=$Get(^||EMED.TestSetData(testdataid,"MinRange"))			
+			Set maxrange=$Get(^||EMED.TestSetData(testdataid,"MaxRange"))
+			/*
+			Set range=""
+			If (minrange'="")&&(maxrange'="") {
+				Set range=minrange_"-"_maxrange
+			} ElseIf (minrange'="")&&(maxrange="")&&(($Extract(minrange,1,1)'="<")&&($Extract(minrange,1,1)'=">")&&($Extract(minrange,1,1)'="=")){
+				Set range="> "_minrange
+			} ElseIf (minrange'="")&&(maxrange="")&&(($Extract(minrange,1,1)="<")||($Extract(minrange,1,1)=">")||($Extract(minrange,1,1)="=")){
+				Set range=minrange
+			} ElseIf (minrange="")&&(maxrange'="")&&(($Extract(maxrange,1,1)'="<")&&($Extract(maxrange,1,1)'=">")&&($Extract(maxrange,1,1)'="=")){
+				Set range="< "_maxrange
+			} ElseIf (minrange="")&&(maxrange'="")&&(($Extract(maxrange,1,1)="<")||($Extract(maxrange,1,1)=">")||($Extract(maxrange,1,1)'="=")){
+				Set range=maxrange
+			}
+			*/					
+			Set refrangestatus=$Get(^||EMED.TestSetData(testdataid,"Flag"))
+			
+			/*
+			Set emedragngestatus=2
+			If (refrangestatus="L") {
+				Set emedragngestatus=1
+			} ElseIf(refrangestatus="N") {
+				Set emedragngestatus=2
+			} ElseIf(refrangestatus="H") {
+				Set emedragngestatus=3
+			} ElseIf(refrangestatus="A") {
+				Set emedragngestatus=4
+			}		
+			Set critical=$Get(^||EMED.TestSetData(testdataid,"Panic"))
+			If (critical="L") {
+				Set emedragngestatus=5
+			} ElseIf(critical="H") {
+				Set emedragngestatus=6
+			}
+			If units'="" {
+				If range'="" {
+					Set range=range_" "
+				}	
+				Set range=range_units
+			}	
+			If $Data(^||EMED.TestSetData(testdataid,"ComplexRefRanges")) {
+				Set range=$$Buffer2String^KSUTIL1($Name(^||EMED.TestSetData(testdataid,"ComplexRefRanges")),$Char(13,10)) //$Get(^||EMED.TestSetData(testdataid,"Comment"))
+			}
+			*/
+			//ResultInfo = BoundMin _"^"_ BoundMax _"^"_ FlagBound _"^"_ AnalyzerID
+			set resultInfo=minrange_"^"_maxrange_"^"_refrangestatus_"^"_analyzerId
+			
+			// Если не удалось получить TestId из справочника набоов тестов, берем из справочника тестов
+			//if pTestSetIdECUBE="" {
+				set lll=$length(testcodeECUBE,".")
+			    if lll>1 {
+				   set pTestSetIdECUBE=$piece(testcodeECUBE,".",1,lll-1)
+			    }
+			//}
+			set testcodeECUBE=$piece(testcodeECUBE,".",$length(testcodeECUBE,"."))
+			//set pDoctorAuthorisation="58" // временно
+			Set ok1=##class(Client12.LIS.Client).SendResult(.pObjClient,pOrderId,$tr(pTestSetIdECUBE,".","^"),$tr(testcodeECUBE,".","^"),pDateOfAuthorisation,result,resultInfo,pDoctorAuthorisation,comment)
+			
+			// ok1 = (0/1/2)^текст ошибки или сообщения (0-ошибка, 1 - все хорошо, 2 - результаты отвергаются, не надо переотправлять
+			set eventDesc="Отправка результата по "_pTestSetId_"||"_testcode_": OrderId="_pOrderId_", TestId="_pTestSetIdECUBE_", Parameter="_testcodeECUBE
+			set eventDesc=eventDesc_", DateOfAuthorisation="_pDateOfAuthorisation_", result="_result_", resultInfo="_resultInfo_", Doctor="_pDoctorAuthorisation_", Comment="_comment
+			if +ok1=2 set eventDesc=eventDesc_": "_$piece(ok1,"^",2)
+			set typeevent=$select(+ok=0:"error",1:"")
+			do ##class(Client12.MISExchange).LogEvent("SendResult",typeevent,eventDesc,$select(+ok1=0:"",1:1),ok1,pEpisode,pTestSetId)
+			if +ok1=0 {
+				set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,$piece(ok1,"^",2)))
+			}
+		}
+	}
+  }
+  Catch {
+        If $ZERROR["<ZSOAP>" {
+            Set ok=$get(%objlasterror)
+            } 
+        Else {
+            Set ok=$$$ERROR($$$CacheError,$ZERROR)
+        }
+  }	
+  Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="IsLastTestSet">
+<Description>
+Последний ли это testsetid, отправляемый ECUBE (с результатами)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pOrderId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	set result=1
+	set ts=""
+	for {
+		set ts=$order(^TEPI(pEpisode,1,ts)) if ts="" quit
+		set tscnt=""
+		for {
+			set tscnt=$order(^TEPI(pEpisode,1,ts,tscnt),1,vals) if tscnt="" quit
+            if $piece(vals,"\",47)'=pOrderId { // надо проверять только строки, относящиеся к указанному ордеру
+	            continue
+            }
+			if ('##class(TCLEx.Function.TestSet).IsAuthorised2(pEpisode,ts,tscnt))&&('##class(TCLEx.Function.TestSet).IsCanceled3(pEpisode,ts,tscnt)) {
+				set result=0
+				quit
+			}
+			set vals=$get(^ECUBE("Epis",pEpisode,pOrderId,ts,tscnt)) 
+			set status=$lg(vals,2)
+			if (status=1)||(status=0)||(status="") {
+				set result=0
+				quit
+			}
+		}
+	}
+
+	quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetOrderIdByEpisode">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,&pOrderId:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	set pOrderId=""
+	try {
+		set pOrderId=$piece($piece(^TEPI(pEpisode),"\",37),",",1)
+	} catch ex {
+		set ok=ex.AsStatus()
+	}
+	if pOrderId="" {
+		set ok=$$$ERROR($$$GeneralError,"Для эпизода "_$get(pEpisode)_" не найден номер заказа.")
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetTestSetECUBE">
+<Description>
+По-екубовски TestId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTestSet:%String,&pTestSetECUBE:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	set pTestSetECUBE=""
+	try {
+		set pTestSetECUBE=$piece(^TTAB("TS",pTestSet),"\",31)
+	} catch ex {
+		set ok=ex.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetTestCodeECUBE">
+<Description>
+Здесь предполагается pTestCodeECUBE в виде Вид оплаты_"."_Код теста_"."_Номер параметра</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTestCode:%String,&pTestCodeECUBE:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	set pTestCodeECUBE=""
+	try {
+		set pTestCodeECUBE=$piece(^TTAB("TC",pTestCode),"\",16)
+		//set pTestCodeECUBE=$piece(pTestCodeECUBE,".",$length(pTestCodeECUBE,"."))
+	} catch ex {
+		set ok=ex.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="TestSetTrigger">
+<Description>
+Помещение нового сообщения в очередь
+Status:
+       1 - набор тестов авторизован, и не отправлен в МИС
+       2 - набор тестов авторизован, и отправлен в МИС
+       3 - набор тестов деавторизован сообщение отправлено в МИС 
+Параметр pSuperOrderId переопределяется (менялся подход)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTypeEvent:%String,pSuperOrderId:%String,pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	
+	#dim ok As %Status
+	set ok=$$$OK
+    //s ^test("par")=pEpisode_"*"_pTestSetId_"*"_pTypeEvent
+    //m ^test("par2")=pValues
+    //m ^test("par3")=pOldValues
+    //pSuperOrderId - Номер направления
+    
+    set orderId=+$get(pValues(48)) // в поле SpecimenNo хранится номер ордера (несколько ордеров в одном направлении)
+    // Теперь нулевой номер ордера записывается на руками введенные тесты (0 нужен для индекса в ECUBE.Date.EpisodeTestSet)
+    if orderId="" {
+	    quit
+    } 
+    
+    set eventDesc=""
+    Try {
+	     set ok=##class(Client12.SendResults).GetOrderIdByEpisode(pEpisode,.pSuperOrderId)
+	     if 'ok {
+		     quit
+	     }
+         set testset=$piece(pTestSetId,"||",2)
+         set tscnt=$piece(pTestSetId,"||",3)
+         set testsetorderid=pEpisode_"||"_orderId_"||"_testset_"||"_tscnt
+         set episodeorderid=pEpisode_"||"_orderId
+         set eventDesc="Запись в Client12.Data.EpisodeTestSet: эпизод="_$get(pEpisode)_" testsetid="_testsetorderid
+         // сознательно не ставлю проверок
+         If pTypeEvent="AfterInsert" {
+             if ..IsTestSetCanceled(pEpisode,pTestSetId,.pValues,.pOldValues) {
+			     //Set datetimeofcreation=$select($Get(pValues(59))'="":pValues(59),1:+$h)_","_$select($Get(pValues(60))'="":(60*pValues(60)),1:$piece($h,",",2))
+			     Set datetimeofcreation=$select($Get(pValues(24))'="":pValues(24),1:+$h)_","_$select($Get(pValues(25))'="":(60*pValues(25)),1:$piece($h,",",2))
+			     set priority=..GetPriority(pEpisode,$get(pValues(13)))
+			     set status=3
+			     set eventDesc="Запись об отмене набора тестов в ECUBE.Data.EpisodeTestSet: эпизод="_$get(pEpisode)_", orderId="_$get(orderId)_", testset="_$get(testset)_", tscnt="_$get(tscnt)_", datetime="_datetimeofcreation_", status="_status
+			     if '##class(Client12.Data.Episode).%ExistsId(pEpisode) {
+				     set ok=##class(Client12.Data.Episode).SaveData(pEpisode,pSuperOrderId,10)
+				     if 'ok quit
+			     }
+			     if '##class(Client12.Data.EpisodeOrder).%ExistsId(episodeorderid) {
+				     set ok=##class(Client12.Data.EpisodeOrder).SaveData(pEpisode,orderId,10)
+				     if 'ok quit
+			     }
+			     set ok=##class(Client12.Data.EpisodeTestSet).SaveData(testsetorderid,datetimeofcreation,status,priority)
+	             if 'ok quit
+	              
+	             // Если это последний набор тестов (по все остальным наборам тестов результаты уже отправлены),
+					   // то посылаем флаг закрытия ордера по результатам
+					   // Здесь этого делать нельзя, так как это триггер и еще набор тестов не полный 
+				 //if ..IsLastTestSet(pEpisodeбorderId) {
+			     //			  do ..SetQueueEventsSendStatus(orderId,20,pEpisode)
+				 //}
+             }
+         }
+         if pTypeEvent="AfterUpdate" {
+	        set priority=..GetPriority(pEpisode,$get(pValues(13))) 
+	        // Если набор тестов авторизован
+	        If ..IsTestSetAuthorized(pEpisode,pTestSetId,.pValues,.pOldValues) {					// Авторизация набора тестов
+		         Set datetimeofauth=$select($Get(pValues(7))'="":pValues(7),1:+$h)_","_$select($Get(pValues(8))'="":(60*pValues(8)),1:$piece($h,",",2))
+		  		 set status=1
+		  		 set eventDesc="Запись об авторизации в ECUBE.Data.EpisodeTestSet: эпизод="_$get(pEpisode)_", orderId="_$get(orderId)_", testset="_$get(testset)_", tscnt="_$get(tscnt)_", datetimeAuth="_datetimeofauth_", status="_status
+		  		 if '##class(Client12.Data.Episode).%ExistsId(pEpisode) {
+				     set ok=##class(Client12.Data.Episode).SaveData(pEpisode,pSuperOrderId,10)
+				     if 'ok quit
+			     }
+		  		 if '##class(Client12.Data.EpisodeOrder).%ExistsId(episodeorderid) {
+			  		 set ok=##class(Client12.Data.EpisodeOrder).SaveData(pEpisode,orderId,10)
+		  		     if 'ok quit
+		  		 }
+		  		 set ok=##class(Client12.Data.EpisodeTestSet).SaveData(testsetorderid,datetimeofauth,status,priority)
+	             if 'ok quit
+			
+			// Если отменена авторизация	 
+            } ElseIf (..IsTestSetUndoOfAuthorization(pEpisode,pTestSetId,.pValues,.pOldValues)) {		// Деавторизация набора тестов
+			     Set datetimeofcreation=$select($Get(pValues(24))'="":pValues(24),1:+$h)_","_$select($Get(pValues(25))'="":(60*pValues(25)),1:$piece($h,",",2))
+			     set status=0
+			     set eventDesc="Запись об отмене авторизации в ECUBE.Data.EpisodeTestSet: эпизод="_$get(pEpisode)_", orderId="_$get(orderId)_", testset="_$get(testset)_", tscnt="_$get(tscnt)_", datetime="_datetimeofcreation_", status="_status
+			     set ok=##class(Client12.Data.EpisodeTestSet).SaveData(testsetorderid,datetimeofcreation,status,priority)
+	             if 'ok quit
+	             //Посылаем сообщение в МИС : 30 – по одному или нескольким результатам эпизода отменена авторизация (ордер открыт)	
+			     do ..SetQueueEventsSendStatus(orderId,30,pEpisode)
+			 
+			// Если набор тестов отменен (введена причина отмены)    		  	 
+		    } elseif (..IsTestSetCanceled(pEpisode,pTestSetId,.pValues,.pOldValues)) {
+			     Set datetimeofcreation=$select($Get(pValues(59))'="":pValues(59),1:+$h)_","_$select($Get(pValues(60))'="":(60*pValues(60)),1:$piece($h,",",2))
+			     set status=3
+			     set eventDesc="Запись об отмене набора тестов в ECUBE.Data.EpisodeTestSet: эпизод="_$get(pEpisode)_", orderId="_$get(orderId)_", testset="_$get(testset)_", tscnt="_$get(tscnt)_", datetime="_datetimeofcreation_", status="_status
+			     if '##class(Client12.Data.Episode).%ExistsId(pEpisode) {
+				     set ok=##class(Client12.Data.Episode).SaveData(pEpisode,pSuperOrderId,10)
+				     if 'ok quit
+			     }
+			     if '##class(Client12.Data.EpisodeOrder).%ExistsId(episodeorderid) {
+				     set ok=##class(Client12.Data.EpisodeOrder).SaveData(pEpisode,orderId,10)
+				     if 'ok quit
+			     }
+			     set ok=##class(Client12.Data.EpisodeTestSet).SaveData(testsetorderid,datetimeofcreation,status,priority)
+	             if 'ok quit
+	              
+	             // Если это последний набор тестов в данном ордере (по все остальным наборам тестов результаты уже отправлены),
+					   // то посылаем флаг закрытия ордера по результатам
+				 if ..IsLastTestSet(pEpisode,orderId) {
+						  do ..SetQueueEventsSendStatus(orderId,20,pEpisode)
+				 }
+			
+			// Если Причина отмены набора тестов снята
+			} elseif (..IsTestSetUndoOfCancelation(pEpisode,pTestSetId,.pValues,.pOldValues)) {
+			     Set datetimeofcreation=$select($Get(pValues(59))'="":pValues(59),1:+$h)_","_$select($Get(pValues(60))'="":(60*pValues(60)),1:$piece($h,",",2))
+			     set status=0
+			     set eventDesc="Запись об отмене отмены набора тестов в ECUBE.Data.EpisodeTestSet: эпизод="_$get(pEpisode)_", orderId="_$get(orderId)_", testset="_$get(testset)_", tscnt="_$get(tscnt)_", datetime="_datetimeofcreation_", status="_status
+			     set ok=##class(Client12.Data.EpisodeTestSet).SaveData(testsetorderid,datetimeofcreation,status,priority)
+	             if 'ok quit
+	             //Посылаем сообщение в МИС : 30 – по одному или нескольким результатам эпизода отменена причина отмены (ордер открыт)	
+			     do ..SetQueueEventsSendStatus(orderId,30,pEpisode)
+			     
+		    // Если изменился приоритет у набора тестов уже после авторизации (например, для ускорения отправки)
+		    } elseif (##class(Client12.Data.EpisodeTestSet).%ExistsId(testsetorderid))&&($listget($get(^ECUBE("Epis",pEpisode,orderId,testset,tscnt)),3)'=priority) {
+				   set ok=##class(Client12.Data.EpisodeTestSet).SavePriority(testsetorderid,priority)
+				   set eventDesc="Запись об изменении приоритета с "_$get(pOldValues(13))_" на "_$get(pValues(13))_" в Client12.Data.EpisodeTestSet: эпизод="_$get(pEpisode)_", orderId="_$get(orderId)_", testset="_$get(testset)_", tscnt="_$get(tscnt)_" priority="_priority
+	               if 'ok quit
+		    }
+	    }
+    } catch(e) {
+		set ok=e.AsStatus()
+	}
+	set desc="Запись в Client12.EpisodeTestSet: эпизод="_$get(pEpisode)_" testset="_$get(testset)_" tscnt="_$get(tscnt)
+	set typeevent=$select(pTypeEvent="AfterInsert":"insert",1:"update")
+	do ##class(Client12.MISExchange).LogEvent("TestSetTrigger",typeevent,$get(eventDesc),ok,"",$get(pEpisode),$get(pTestSetId)) 
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="IsTestSetAuthorized">
+<Description>
+Была ли авторизация набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pTestSetId="") Quit 0
+	;
+	Set dateofauthorisation=$Get(pValues(7))
+	Set authoriseduser=$Get(pValues(9)) 
+	If (dateofauthorisation="")||(authoriseduser="") Quit 0			// Дата авторизации и авторизовавший пользователь должны быть заполнены
+
+	Set olddateofauthorisation=$Get(pOldValues(7))
+	Set oldauthoriseduser=$Get(pOldValues(9)) 
+	If (olddateofauthorisation="")&&(oldauthoriseduser="") Quit 1	// а старой даты авторизации и авторизовавшего пользователя не должно быть
+	Quit 0
+	;
+]]></Implementation>
+</Method>
+
+<Method name="IsTestSetUndoOfAuthorization">
+<Description>
+Была ли анулирование авторизации набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pTestSetId="") Quit 0
+	;
+	Set status=$Get(pValues(33))
+	Set oldstatus=$Get(pOldValues(33))
+	Set result=0
+	If (status="E")&&((oldstatus="A")||(oldstatus="")) { 							// Была деавторизация набора тестов (иногда старый значение становится пусто, а не "А")
+		Set result=1
+	}	
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="IsTestSetCanceled">
+<Description>
+Была ли отмена  набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pTestSetId="") Quit 0
+	;
+	Set reason=$Get(pValues(58))
+	If (reason="")  Quit 0								// Новая причина должна быть 
+	//
+	Set oldreason=$Get(pOldValues(58))							 
+	If (oldreason="")  Quit 1							// а также старой причины отмены не должно быть 
+	
+	Quit 0
+
+	/*
+	Set reason=$Get(pValues(58))
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(reason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}	
+	If (reason="")||(notreason)  Quit 0								// Новая причина должна быть и у этой причины отмены не должно быть CTRBillable="Y"
+	//
+	Set oldreason=$Get(pOldValues(58))							 
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(oldreason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}
+	If (oldreason="")||(notreason)  Quit 1							// а также старой причины отмены не должно быть или у нее было CTRBillable="Y"
+	
+	Quit 0
+	*/
+]]></Implementation>
+</Method>
+
+<Method name="IsTestSetUndoOfCancelation">
+<Description>
+Была ли анулирование отмены набора тестов при вызове триггера для эпизода pEpisode, Id набора тестов  pTestSetId, новых значений pValues, старых значений pOldValues</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSetId:%String,&pValues:%String,&pOldValues:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	If (pEpisode="")||(pTestSetId="") Quit 0
+	;
+	Set oldreason=$Get(pOldValues(58))							 
+	If (oldreason="")  Quit 0							// Старая причина отмены должна быть 
+	//
+	Set reason=$Get(pValues(58))
+	If (reason="")  Quit 1								// и новая причины отмены не должна быть заполнена 
+	Quit 0
+    /*	
+	Set oldreason=$Get(pOldValues(58))							 
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(oldreason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}
+	If (oldreason="")||(notreason)  Quit 0							// Старая причина отмены должна быть и у нее не должно быть CTRBillable="Y"
+	//
+	Set reason=$Get(pValues(58))
+	Set notreason=0
+	Set reasonobj=##class(User.CTReason).%OpenId(reason,0)
+	If ($IsObject(reasonobj))&&(reasonobj.CTRBillable="Y") {
+		Set notreason=1
+	}	
+	If (reason="")||(notreason)  Quit 1								// и новая причины отмены не должна быть заполнена или у нее CTRBillable="Y"
+	Quit 0
+	*/
+]]></Implementation>
+</Method>
+
+<Method name="GetPriority">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pPriorityTestSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set priority="N"
+	if ($get(pPriorityTestSet)'="")&&($$seldata^LVBCTPR(pPriorityTestSet,4)="Y") {
+		set priority="Y"
+	} 
+	if priority="N" {
+		set pri=$piece($get(^TEPI(pEpisode)),"\",15)
+		if (pri'="")&&($$seldata^LVBCTPR(pri,4)="Y") {
+			set priority="Y"
+		}
+	}
+	quit priority
+]]></Implementation>
+</Method>
+
+<Method name="SetQueueEventsSendStatus">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrderId:%String,pStatus:%String,pEpisode:%String</FormalSpec>
+<Implementation><![CDATA[
+	set ok=##class(Client12.Data.EpisodeOrder).GetStatus(pEpisode,pOrderId,.oldstatus)
+	if (ok=1)&&(pStatus=oldstatus) quit
+	if pStatus=10 {
+		    if (oldstatus=20) set pStatus=30
+		    if (oldstatus=30) {
+			    quit
+		    }
+	} elseif (pStatus=30) {
+		    if (oldstatus=10) {
+			    quit
+		    }
+	}
+	// ставим отправку статуса в очередь
+	do ..SetEventSendStatus(pOrderId,pStatus,pEpisode) 
+	
+	// записываем новый статус в Client12.Data.Episode
+	if '##class(Client12.Data.Episode).%ExistsId(pEpisode) {
+		set superOrderId=$piece($get(^TEPI(pEpisode)),"\",38)
+		set ok=##class(Client12.Data.Episode).SaveData(pEpisode,superOrderId,10)
+	}
+	set ok1=##class(Client12.Data.EpisodeOrder).SaveData(pEpisode,pOrderId,pStatus)
+	if 'ok1 do $system.Status.AppendStatus(ok,ok1)
+	set eventDesc="Установлен статус "_$get(pStatus)_" для эпизода "_$get(pEpisode)_" orderId="_pOrderId
+	do ##class(Client12.MISExchange).LogEvent("SetQueueEventsSendStatus",$select('ok:"error",1:""),eventDesc,ok,"",$get(pEpisode),$get(pOrderId))
+	
+	quit
+]]></Implementation>
+</Method>
+
+<Method name="SetEventSendStatus">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrderId:%String,pStatus:%String,pEpisode:%String=""</FormalSpec>
+<Implementation><![CDATA[
+	set horolog=$h_"."_$piece($zts,".",2)
+	set npp=$order(^ECUBE("SendStatus",horolog,""),-1)+1
+	set ^ECUBE("SendStatus",horolog,npp)=$listbuild(pOrderId,pStatus,pEpisode)
+	quit
+]]></Implementation>
+</Method>
+
+<Method name="IsTimeoutEnded">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateTime:%String,pTimeout:%Boolean</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set result=1
+	Set now=$Horolog
+	Set deltatime=$$DeltaTimeSec^KSUTIL1(pDateTime,now)	
+	If deltatime<pTimeout {
+		Set result=0
+	}		  										
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetTimeout">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPriority:%String</FormalSpec>
+<Implementation><![CDATA[	quit $select($get(pPriority)="Y":..#TIMEOUTCITO,1:..#TIMEOUTGENERAL)
+]]></Implementation>
+</Method>
+
+<Method name="SaveVisitEvent">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pText:%String</FormalSpec>
+<PublicList>PLIST,SQLCODE</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		kill PLIST
+		s PLIST(3)="ER",PLIST(4)=pText,PLIST(5)=+$h,PLIST(6)=$p($h,",",2)
+		set PLIST(8)="trak"
+		set sqlcode=$$insert^LVBVISEV(pEpisode)
+		if +sqlcode'=0 {
+			set ok=$$$ERROR($$$GeneralError,sqlcode)
+		}
+	} catch(e) {
+		set ok=e.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+</Class>
+</Export>

@@ -1,0 +1,575 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="Client12.LIS.Sevice">
+<ProcedureBlock>1</ProcedureBlock>
+<Super>%SOAP.WebService</Super>
+<TimeCreated>63077,68756.229971</TimeCreated>
+
+<Parameter name="SERVICENAME">
+<Default>LISservice</Default>
+</Parameter>
+
+<Parameter name="NAMESPACE">
+<Default>http://tempuri.org</Default>
+</Parameter>
+
+<Parameter name="USECLASSNAMESPACES">
+<Default>1</Default>
+</Parameter>
+
+<Parameter name="SOAPSESSION">
+<Default>1</Default>
+</Parameter>
+
+<Method name="SendOrder">
+<FormalSpec>pPatientId:%String,pPatientInfo:%String,pOrderId:%String,pOrderInfo:%String,pPatientLocation:%String,pDoctor:%String,pStringTests:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	set ok=1
+	try {
+		//set testnpp=$o(^test("Lic",""),-1)+1
+		//set ^test("Lic",testnpp)="$j="_$j_", $system.License.CSPUsers()="_$system.License.CSPUsers()_", $system.License.LUConsumed()="_$system.License.LUConsumed()_", $system.License.CSPGrace()="_$system.License.CSPGrace()_", $system.License.LUAvailable()="_$system.License.LUAvailable()_", $system.License.GetUserId()="_$system.License.GetUserId()
+		//set ^test("SendOrder",$i(^test("SendOrder")))=$get(pPatientId)_"*"_$get(pPatientInfo)_"*"_$get(pOrderId)_"*"_$get(pOrderInfo)_"*"_$get(pPatientLocation)_"*"_$get(pDoctor)_"*"_$get(pStringTests)
+		set titleEvent="SendOrder"
+		set descParameters="(pPatientId="_$get(pPatientId)_", pPatientInfo="_$get(pPatientInfo)_", pOrderId="_$get(pOrderId)_", pOrderInfo="_$get(pOrderInfo)_", pStringTests="_$get(pStringTests)_")"
+		
+		//в одном направлении может быть несколько ордеров для одного вида материала, но в одном направлении только один вид материала (одна пробирка)
+		// делаем эпизод по направлению
+		set orderId=$piece(pOrderId,"^",1) // номер ордера
+		set superorderId=$piece(pOrderId,"^",2) // номер направления (в одном направлении может быть несколько ордеров для одной пробирки)
+		if superorderId="" set superorderId=orderId
+		
+		Set epis=##class(TCLEx.Function.HospitalPatient).GetEpisodeByOrderId(orderId) // если в эпизоде несколько ордеров, то все ссылки order->episode есть
+				
+	    If (epis="")||('##class(User.EPVisitNumber).%ExistsId(epis)) {						 	// Еще нет эпизода в User.EPVisitNumber
+	         
+	         // Данные по доктору складываем в транзитный объект
+	         if ..CreareTransitObjectDoctor($get(pDoctor),.objdoctor) {
+		         // запись данных о докторе в справочник Trak
+		         set ok1=##class(TCLEx.Function.HospitalPatient).UpdateDoctor(objdoctor,.flagUpdate)
+		         if ('ok1)||(flagUpdate=1) {
+			         do ##class(Client12.MISExchange).LogEvent("UpdateDoctor","update/insert","В справочнике User.CTDoctor вставлена или изменена запись ("_$get(pDoctor)_")",ok1,,,"")
+		         }
+	         } 
+	         
+	         // Данные по отделению складываем в транзитный объект
+	         if ..CreareTransitObjectPatientLocation($get(pPatientLocation),.objhos) {
+		         // запись данных об отделениив справочник Trak
+		         set ok1=##class(TCLEx.Function.HospitalPatient).UpdatePatientLocation(objhos,.flagUpdate)
+		         if ('ok1)||(flagUpdate=1) {
+			         do ##class(Client12.MISExchange).LogEvent("UpdatePatientLocation","update/insert","В справочнике User.CTHospital вставлена или изменена запись ("_$get(pPatientLocation)_")",ok1,,,"")
+		         }
+	         }    
+	         
+             // Если нет заказанных тестов, то удаляем все соответсвующие объекты User.HOSHospitalPatients
+	         if $translate(pStringTests,";","")="" {
+		         set visitId=..Translate(superorderId)
+	             set patientId=..GetPatientId(pPatientInfo)
+		         set ok1=..DeleteHospitalPatients(patientId,visitId,orderId)
+		         if 'ok1 {
+			         Set eventDescription="Не удалось удалить объекты User.HOSHospitalPatients: patientId="_patientId_", visitId="_visitId_", orderId="_orderId_" "_descParameters
+			         do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription,ok1,,,pOrderId)
+			         set ok="0^"_$system.Status.GetErrorText(ok1)
+		         }
+		         Set eventDescription="Заказ для patientId="_patientId_", visitId="_visitId_", orderId="_orderId_" не создан, так как нет заказанных исследований "_descParameters
+			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription,,,,pOrderId)
+		         quit
+             }
+
+	         // Данные о заказе складываем в транзитный объект
+	         set flagCancel="" // не найдено ни одного набора тестов - не наш заказ - отправляем 2
+	         set ok=..CreareTransitObject(pPatientId, pPatientInfo, superorderId, orderId, pOrderInfo, pPatientLocation, pDoctor, pStringTests,.orderobj,.flagCancel) 
+	         if 'ok {
+		         Set eventDescription="Не удалось создать транзитный объект для записи в User.HOSHospitalPatients "_descParameters
+			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription,ok,,,pOrderId)
+			     set ok="0^"_$system.Status.GetErrorText(ok)
+			     quit
+	         }
+             
+             set flagNoTestsInOrder=$select($translate(pStringTests,";","")="":1,1:0)  // флаг о том, что в ордере нет заказанных тестов
+	             
+             // Если исследования были заказаны, но не найдено ни одного соответсвующего набора тестов в ЛИС
+	         if (flagCancel=1) {
+		         Set eventDescription="Не найдено ни одного набора тестов для заказа "_pOrderId
+			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription_" "_descParameters,,,,pOrderId)
+			     set ok="2^"_eventDescription
+			     quit
+	         }
+
+	         // id User.HospitalPatient
+	         set hosppatid=""
+	         set ok=##class(TCLEx.Function.HospitalPatient).GetHospitalPatientId(orderobj,.hosppatid)
+		     if 'ok {
+		         Set eventDescription="Не удалось сформировать id для User.HOSHospitalPatients "_descParameters
+			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription,ok,,,pOrderId)
+			     set ok="0^"_$system.Status.GetErrorText(ok)
+			     quit
+		     }
+		     
+             // Удаление всех наборов тестов HospitalPatientTestSets, соотвествующих данному ордеру 
+	         // Если объект User.HOSHospitalPatients существует
+	         if ##class(User.HOSHospitalPatients).%ExistsId(hosppatid) {
+		         // Удаление всех наборов тестов HospitalPatientTestSets, соотвествующих данному ордеру
+		         Set ok=..DeleteExistingHospitalPatientTestSets(hosppatid,orderId)
+		         Set eventDescription="Удаление наборов тестов в HOS_HospitalPatientsTSet, соответсвующие ордеру "_orderId_", ("_hosppatid_") "_descParameters
+		         do ##class(Client12.MISExchange).LogEvent(titleEvent,$select('ok:"error",1:""),eventDescription,ok,,,pOrderId)
+		         If 'ok {
+			         set ok="0^"_$system.Status.GetErrorText(ok)
+			         Quit
+		         }	
+	         }
+	         
+	         /*
+      	     // Если строка с наборами тестов через ";" не содержит наборов тестов, то удаляем объект User.HospitalPatient с кодом "_hosppatid (То, что 
+	         // соотвествует ордеру orderId
+	         if flagNoTestsInOrder=1 {
+		         if ##class(User.HOSHospitalPatients).%ExistsId(hosppatid) {
+		            set hosppatobj=##class(User.HOSHospitalPatients).%OpenId(hosppatid)
+		            if $IsObject(hosppatobj)&&(hosppatobj.ChildHOSHospitalPatientsTSet.Count()=0) {
+	                    set ok=##class(TCLEx.Function.HospitalPatient).DeleteHospitalPatient(hosppatid) 
+	                    Set eventDescription="Удаление объекта User.HOSHospitalPatients "_hosppatid_" "_descParameters
+			            do ##class(Client12.MISExchange).LogEvent(titleEvent,$select(ok'=0:"error",1:""),eventDescription,ok,,,pOrderId)
+		                if 'ok {
+				          set ok="0^"_$system.Status.GetErrorText(ok)
+				          quit
+			            }
+		            }
+		         }
+		         Set eventDescription="Не заказано ни одного теста для заказа "_pOrderId
+			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription_" "_descParameters,,,,pOrderId)
+			     //set ok="2^"_eventDescription ???
+		         quit
+		     }		
+	         */
+	         
+		     // Данные из транзитного объекта в User.HOSHospitalPatients
+		     set ok=##class(TCLEx.Function.HospitalPatient).CreateUpdateHospitalPatient(orderobj)
+		     If 'ok {
+			     Set eventDescription="Не удалось сохранить объект User.HOSHospitalPatients "_hosppatid_" "_descParameters
+			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription,ok,,,pOrderId)
+			     set ok="0^"_$system.Status.GetErrorText(ok)
+			     Quit
+		     } else {
+			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"","Сохранен объект User.HOSHospitalPatients "_hosppatid_ "("_descParameters_")",,,,pOrderId)
+		     }			
+	    } Else {																
+		    set eventDescription="Для ордера "_orderId_" уже существует эпизод "_epis_" "_descParameters
+		    set ok="2^"_"Для заказа "_pOrderId_" уже существует эпизод "_epis
+		    do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription,,ok,,pOrderId)
+	    }
+
+	} catch(exception) {
+		//set ok=exception.AsStatus()
+		set ok="0^"_$zerror
+		do ##class(Client12.MISExchange).LogEvent(titleEvent,"error","Ошибка в Client12.LIS.Sevice.SendOrder",,$zerror,,$get(pOrderId))
+	}
+	/*
+	if 'ok {
+		set eventDescription="Ошибка при вызове Client12.LIS.Sevice.SendOrder"_" ("_descParameters_")"
+		do ##class(Client12.MISExchange).LogEvent($get(titleEvent),"error",eventDescription,ok,,,$get(pOrderId))
+		set fault=##class(%SOAP.Fault).%New()
+		Set fault.faultcode=$$$FAULTServer
+		Set fault.detail="Ошибка при вызове программы метода SebdOrder класса Client12.LIS.Sevice, аргументы: "_$get(pPatientMK)_","_$get(pDateAuthorisation)_","_$get(pTestSet)_","_$get(pNumberProb)_","_$get(pTest)_","_$get(pValue)_","_$get(pYear)_","_$get(pMinBound)_","_$get(pMaxBound)_")"
+		Set fault.faultstring="Hello222" //$system.Status.GetErrorText(ok)
+		Do ..ReturnFault(fault)
+		quit "0^error"
+	}
+	 */
+	Quit ok  //$system.Status.GetErrorText(ok)
+]]></Implementation>
+</Method>
+
+<Method name="CreareTransitObjectDoctor">
+<Description>
+Создать объект TCLEx.Object.Doctor из входных параметров</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pDoctorInfo:%String,&pObjectDoctor:TCLEx.Object.Doctor]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK,pObjectDoctor=""
+	try {
+		set r="^"
+		 if $get(pDoctorInfo)="" {
+			 set ok=0
+			 quit
+		 }
+		 set pObjectDoctor=##class(TCLEx.Object.Doctor).%New()
+		 set pObjectDoctor.DoctorId=$piece(pDoctorInfo,r,1)
+		 set pObjectDoctor.Surname=$piece(pDoctorInfo,r,2)
+		 if (pObjectDoctor.DoctorId="")||(pObjectDoctor.Surname="") {
+			 set ok=0
+			 set pObjectDoctor=""
+			 quit
+		 }
+		 set pObjectDoctor.Address="ГКБ 12" 
+		 set pObjectDoctor.NoOfCopies=1
+		 //set pObjectDoctor.CourierId="HP1200"
+		 set pObjectDoctor.PrintFormatDR="IF"
+		 set pObjectDoctor.CompanyId="1"
+		 set pObjectDoctor.StartDate=+$Horolog
+		 set pObjectDoctor.SpecialtyId="GP"
+
+	} catch(e) {
+	    set ok=e.AsStatus()
+	    set pObjectDoctor=""
+  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CreareTransitObjectPatientLocation">
+<Description>
+Создать объект TCLEx.Object.PatientLocation из входных параметров</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pPatientLocationInfo:%String,&pObjectPatientLocation:TCLEx.Object.PatientLocation]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK,pObjectPatientLocation=""
+	try {
+		set r="^"
+		if $get(pPatientLocationInfo)="" {
+			 set ok=0
+			 quit
+		}
+		set pObjectPatientLocation=##class(TCLEx.Object.PatientLocation).%New()
+		set pObjectPatientLocation.HospitalId=$piece(pPatientLocationInfo,r,1)
+		set pObjectPatientLocation.HospitalName=$piece(pPatientLocationInfo,r,2)
+		if (pObjectPatientLocation.HospitalId="")||(pObjectPatientLocation.HospitalName="") {
+			 set ok=0
+			 set pObjectPatientLocation=""
+			 quit
+		} 
+		Set pObjectPatientLocation.NoOfCopies=1
+		Set pObjectPatientLocation.CourierId="KDL"
+		Set pObjectPatientLocation.PrintFormatDR="I"
+		
+
+	} catch(e) {
+	    set ok=e.AsStatus()
+	    set pObjectPatientLocation=""
+  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CreareTransitObject">
+<Description>
+Создать объект TCLEx.Object.LabOrder из входных параметров
+Создаем транзитный объект по pPatientId(индефикатор пациента)+pSuperOrderId(номер направления)
+В одном направлении может быть несколько ордеров (приходят по одному)
+Если ордеры отличаются по коду биоматериала, то пытаемся создать разные объекты HospitalPatient
+Для этого в поле PhoneHome сохраняем код биоматериала
+В поле PhoneWork сохраняем список ордеров, попавших в один объект HospitalPatient 
+(если ордеры из одного направдения имеют одинаковый код биоматериала, то они попадают в один объект HospitalPatient ) </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pPatientId,pPatientInfo,pSuperOrderId,pOrderId,pOrderInfo,pPatientLocation,pDoctor,pStringTests,&pObj:TCLEx.Object.LabOrder,&pFlagCancel:%String,&pHospitalPatientId:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK,pFlagCancel="",pObj="",pHospitalPatientId=""
+	try {
+	set r="^"	
+	set vidAnal=..Translate($piece(pOrderInfo,r,1))
+	
+	// создаем строку набров тестов
+	set ok=..GetTestSets(vidAnal,pStringTests,.testsetstr)
+	if 'ok {
+		set pFlagCancel=1
+		quit
+	}
+	if testsetstr="" {
+		set pFlagCancel=1
+		quit
+	}
+	
+	// по какому-нибудь набору тестов находим код биоматериала
+	set specimenId=""
+	for i=1:1:$length(testsetstr,",") {
+		set testset=$piece(testsetstr,",",i)
+	    set specimenId=##class(TCLEx.Function.TestSet).DefaultSpecimen(testset)
+	    if specimenId'="" quit
+	}
+	
+	set visitId=..Translate(pSuperOrderId)
+	set patientId=..GetPatientId(pPatientInfo)
+
+	if specimenId="" {
+	    set hospatid="L||"_patientId_"||"_visitId	
+	} else {
+		set hospatid=""
+	    set ok=..FindHospitalPatient(patientId,visitId,specimenId,.hospatid)
+	    if 'ok {
+		    quit
+	    }
+	}
+	
+	Set pObj=##class(TCLEx.Object.LabOrder).%New()
+	
+	Set pObj.OrderId=$piece(hospatid,"||",3) //visitId
+	Set pObj.PatientId=$piece(hospatid,"||",2) //patientId 
+	Set pObj.HospitalMRN=..Translate($tr(pPatientId,r,"/")) 
+	//Set pObj.PatientId=..Translate($tr(pPatientId,r,"/"))
+	//Set pObj.HospitalMRN=..Translate($piece(pPatientInfo,r,1)_"/"_$piece(pPatientInfo,r,2)) 
+	
+	Set pObj.Surname=..Translate($piece(pPatientInfo,r,3))
+	Set pObj.Name=..Translate($piece(pPatientInfo,r,4))
+	Set pObj.FatherName=..Translate($piece(pPatientInfo,r,5))
+	Set pObj.DOB=..TranslateDate($piece(pPatientInfo,r,6))
+	Set pObj.Sex=..Translate($piece(pPatientInfo,r,7))
+	set pObj.PatientType=..Translate($piece(pPatientInfo,r,8))  //вид обслуживания - записываем в тип пациента 
+	set pObj.ExtraExternalID=..Translate(pOrderId)
+	set pObj.Specimens=specimenId
+	
+	// Приоритет заказа
+	set priority=..Translate($piece(pOrderInfo,r,2))
+	If (priority=2) {
+		set codecito="C"
+		if ##class(User.CTPriority).%ExistsId(codecito) {
+		    set pObj.PriorityTestSet=codecito
+	    }
+	}
+	// Дата и время ордера
+	Set pObj.DateOfRequest=..TranslateDate($piece(pOrderInfo,r,3))
+	Set pObj.TimeOfRequest=..TranslateTime($piece(pOrderInfo,r,4))
+	// Дата и время забора материала
+	Set pObj.DateOfCollection=..TranslateDate($piece(pOrderInfo,r,5))
+	Set pObj.TimeOfCollection=..TranslateTime($piece(pOrderInfo,r,6))
+	// Врач, назначивший анализы
+	Set pObj.Doctor=$piece(pDoctor,r,1)
+	set pObj.DoctorName=$piece(pDoctor,r,2)
+	// Местоположение пациента
+	Set pObj.PatientLocation=$piece(pPatientLocation,r,1)
+	Set pObj.PatientLocationName=$piece(pPatientLocation,r,2)
+		
+	//Филиал
+	set usersiteid="KDL"
+	if ##class(User.CTUserLocation).%ExistsId(usersiteid) {
+	   set pObj.PatientSiteDR=usersiteid
+	}
+	
+    // Строка с наборами тестов
+	set pObj.TestSets=testsetstr
+	
+	// В поле PhoneWork пишем номера всех ордеров, которые попали в данный объект HospitalPatient через запятую
+	set pObj.PhoneWork=pOrderId
+	
+	// код биоматериала
+	set pObj.PhoneHome=specimenId
+	 
+	} catch(e) {
+	    set ok=e.AsStatus()
+	    set pObj=""
+  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetPatientId">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPatientInfo:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set r="^"
+    quit ..Translate($piece(pPatientInfo,r,1)_"/"_$piece(pPatientInfo,r,2))
+]]></Implementation>
+</Method>
+
+<Method name="GetTestSetByEcubeTestId">
+<Description>
+Получение кода набора тестов в ЛИС по коду вида анализа и коду теста в МИС</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTest:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set pp=$p(pTest,".",2)
+	//quit $select(pp=2:"A005",1:"A111")
+	set lll=$length(pTest)
+	if $extract(pTest,lll,lll)="." set pTest=$extract(pTest,1,lll-1)
+	quit $select($get(pTest)'="":$order(^TTABii("TS","NationalNumber",pTest,"")),1:"")
+]]></Implementation>
+</Method>
+
+<Method name="Translate">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pInputSytring:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	quit pInputSytring
+]]></Implementation>
+</Method>
+
+<Method name="TranslateDate">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pInputSytring:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	quit $select(pInputSytring'="":$zdh(pInputSytring,5),1:"")
+]]></Implementation>
+</Method>
+
+<Method name="TranslateTime">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pInputSytring:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	quit $select(pInputSytring'="":$zth($e(pInputSytring,1,2)_":"_$e(pInputSytring,3,4)_":"_$e(pInputSytring,5,6)),1:"")
+]]></Implementation>
+</Method>
+
+<Method name="FindHospitalPatient">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pPatientId:%String,pSuperOrderId:%String,pSpecimenId:%String,&pHosPatId:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK,pHosPatId=""	
+ try {
+	 &sql(DECLARE HospPat CURSOR FOR
+		Select HOSP_RowID,HOSP_PhoneHome,HOSP_Visit
+		Into :rowid,:specimenid,:visitid
+		From SQLUser.HOS_HospitalPatients Where 
+		(HOSP_DebtorNumber=:pPatientId) and (HOSP_Visit %STARTSWITH :pSuperOrderId) 
+	 ) 
+
+	&sql(OPEN HospPat)
+	&sql(FETCH HospPat)
+
+    kill vr
+	While (SQLCODE = 0) {
+		if $piece(visitid,".",1)'=pSuperOrderId {  
+			continue
+		}
+		if specimenid=pSpecimenId {
+			set pHosPatId=rowid
+			quit
+		}
+		set vr(visitid)=""
+		&sql(FETCH HospPat)
+	}
+	&sql(CLOSE HospPat)
+	
+	if pHosPatId="" {
+		if $data(vr) {
+			set visitidnew=$order(vr(""),-1)+0.1
+		} else {
+			set visitidnew=pSuperOrderId
+		}
+		set pHosPatId="L||"_pPatientId_"||"_visitidnew
+	}
+ } catch(e) {
+	 set ok=e.AsStatus()
+	 set pHosPatId=""
+ }
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetTestSets">
+<Description>
+Создаем строку наборов тестов ЛИС по стоке тестов из Э-куб</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pVidAnal:%String,pStringTestsMIS:%String,&pStringTestsLIS:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK,pStringTestsLIS=""
+	try {
+	    kill vr
+	    For i=1:1:$length(pStringTestsMIS,";") {
+		   set param=$piece(pStringTestsMIS,";",i) 
+		   if param="" continue 
+	       Set testsetMIS=pVidAnal_"."_param
+		   set testset=..GetTestSetByEcubeTestId(testsetMIS)
+		   if testset="" {
+			  do ##class(Client12.MISExchange).LogEvent("SendOrder","error2","Не найден набор тестов для теста МИС "_testsetMIS,,,,"")
+		   }
+		   if testset'="" {
+			 if $data(vr(testset)) continue
+			 set vr(testset)=""
+			 set pStringTestsLIS=pStringTestsLIS_$select(pStringTestsLIS'="":",",1:"")_testset
+		   }
+	    }
+	    if pStringTestsLIS="" {
+		    //ищем набор тестов по виду анализа
+	        set testset=..GetTestSetByEcubeTestId(pVidAnal)
+	        if testset'="" {
+		       set pStringTestsLIS=pStringTestsLIS_$select(pStringTestsLIS'="":",",1:"")_testset
+	        }
+	    } 
+	  } catch(e) {
+	       set ok=e.AsStatus()
+	       set pStringTestsLIS=""
+      }
+      quit ok
+]]></Implementation>
+</Method>
+
+<Method name="DeleteExistingHospitalPatientTestSets">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pHospitalPatientId:%String,pOrderId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	&Sql(
+		Delete from SQLUser.HOS_HospitalPatientsTSet
+		Where HOSPT_ParRef=:pHospitalPatientId and HOSPT_ExtraExternal_ID=:pOrderId
+	)
+	If (SQLCODE=0)||(SQLCODE=100) Quit $$$OK
+	Quit $$$ERROR($$$SQLCode,SQLCODE)
+]]></Implementation>
+</Method>
+
+<Method name="DeleteHospitalPatients">
+<Description>
+Удалить все объекты HospitalPatients, соответсвующие направлению pSuperOrderId и ордеру pOrderId</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPatientId:%String,pSuperOrderId:%String,pOrderId:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		&sql(
+		   Declare HosPat1 CURSOR FOR
+		   Select HOSP_RowID
+		   INTO :rowid
+		   From SQLUser.HOS_HospitalPatients 
+		   Where HOSP_DebtorNumber=:pPatientId and HOSP_Visit %STARTSWITH :pSuperOrderId 
+	    )
+	    &sql(Open HosPat1)
+	    &sql(Fetch HosPat1)
+
+	    While (SQLCODE = 0) {
+		   If (rowid'="") {
+			   if $piece($piece(rowid,"||",3),".",1)'=pSuperOrderId {
+				   continue
+			   }
+			   set ok1=..DeleteExistingHospitalPatientTestSets(rowid,pOrderId)
+			   Set eventDescription="Удаление наборов тестов в HOS_HospitalPatientsTSet, соответсвующие ордеру "_pOrderId_" в "_rowid
+		       do ##class(Client12.MISExchange).LogEvent("DeleteOrder",$select('ok1:"error",1:""),eventDescription,ok1,,,pOrderId)
+			   if 'ok1 {
+				   set ok=$System.Status.AppendStatus(ok,ok1)
+				   continue
+			   }
+			   set hosppatobj=##class(User.HOSHospitalPatients).%OpenId(rowid,0)
+		       if $IsObject(hosppatobj)&&(hosppatobj.ChildHOSHospitalPatientsTSet.Count()=0) {
+	               set ok1=##class(TCLEx.Function.HospitalPatient).DeleteHospitalPatient(rowid) 
+	               Set eventDescription="Удаление объекта User.HOSHospitalPatients "_rowid
+			       do ##class(Client12.MISExchange).LogEvent("DeleteOrder",$select('ok1:"error",1:""),eventDescription,ok1,,,rowid)
+		           if 'ok1 {
+				      set ok=$System.Status.AppendStatus(ok,ok1)
+			       }
+		       }
+		       kill hosppatobj
+		   }
+		   &sql(Fetch HosPat1)
+	    }
+	    &sql(Close HosPat1)
+    } catch(e) {
+	    set ok=e.AsStatus()
+    }
+    quit ok
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// end of class
+
+]]></Content>
+</UDLText>
+</Class>
+</Export>
