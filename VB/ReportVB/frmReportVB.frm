@@ -508,11 +508,11 @@ Private Sub cmd_OK_Click()
     'ret = cacheExecute("$$START^REPORTSPB(P0,P1,P2)", sBuffer, "", curUser, parameters, "", "", "", "", "", "", "")
     ret = mvbAccess("$$STARTjob^REPORTSPB(P0,P1,P2)", sBuffer, "", curUser, parameters, "", "", "", "", "", "", "")
     If (ret = "1") Then
-       FormProgressBar.Move (Screen.width - FormProgressBar.width) / 2, (Screen.height - FormProgressBar.height) / 2
-       FormProgressBar.Timer1.Interval = 1000
-       FormProgressBar.Timer1.Enabled = True
-       FormProgressBar.Show (vbModal)
-       'MsgBox ("After : FormProgressBar.Visible=" & FormProgressBar.Visible & " FormProgressBar.Timer1.Enabled=" & FormProgressBar.Timer1.Enabled & " FormProgressBar.Timer1.Interval=" & FormProgressBar.Timer1.Interval & " FormProgressBar.WindowState=" & FormProgressBar.WindowState)
+       formProgressBarMy.Move (Screen.width - formProgressBarMy.width) / 2, (Screen.height - formProgressBarMy.height) / 2
+       formProgressBarMy.Timer1.Interval = 1000
+       formProgressBarMy.Timer1.Enabled = True
+       formProgressBarMy.Show (vbModal)
+       'MsgBox ("After : FormProgressBarMy.Visible=" & FormProgressBarMy.Visible & " FormProgressBarMy.Timer1.Enabled=" & FormProgressBarMy.Timer1.Enabled & " FormProgressBarMy.Timer1.Interval=" & FormProgressBarMy.Timer1.Interval & " FormProgressBarMy.WindowState=" & FormProgressBarMy.WindowState)
        ' kill prosess if press X in frmProgressBar
        ret = mvbAccess("$$KillProcess^REPORTSPB()", sBuffer, "", "", "", "", "", "", "", "", "", "")
     End If

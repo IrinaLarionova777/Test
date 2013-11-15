@@ -1,5 +1,5 @@
 VERSION 5.00
-Begin VB.Form formProgressBar 
+Begin VB.Form formProgressBarMy 
    ClientHeight    =   1740
    ClientLeft      =   60
    ClientTop       =   345
@@ -43,7 +43,7 @@ Begin VB.Form formProgressBar
       Width           =   7095
    End
 End
-Attribute VB_Name = "FormProgressBar"
+Attribute VB_Name = "formProgressBarMy"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
@@ -51,7 +51,7 @@ Attribute VB_Exposed = False
 
 Private Sub Form_Load()
    Me.flagNormalClose.Caption = "no"
-  'MsgBox ("Load : FormProgressBar.Visible=" & FormProgressBar.Visible & " FormProgressBar.Timer1.Enabled=" & FormProgressBar.Timer1.Enabled & " FormProgressBar.Timer1.Interval=" & FormProgressBar.Timer1.Interval & " FormProgressBar.WindowState=" & FormProgressBar.WindowState)
+  'MsgBox ("Load : FormProgressBarMy.Visible=" & FormProgressBarMy.Visible & " FormProgressBarMy.Timer1.Enabled=" & FormProgressBarMy.Timer1.Enabled & " FormProgressBarMy.Timer1.Interval=" & FormProgressBarMy.Timer1.Interval & " FormProgressBarMy.WindowState=" & FormProgressBarMy.WindowState)
 End Sub
 
 
@@ -67,13 +67,13 @@ Private Sub Timer1_Timer()
   
     ret = mvbAccess("$$TestProcessEnd^REPORTSPB()", sBuffer, "", "", "", "", "", "", "", "", "", "")
     'MsgBox ("ret=" & ret & " flagTurnOnTimer=" & flagTurnOnTimer)
-    'MsgBox ("FormProgressBar.Timer1.Interval =" & FormProgressBar.Timer1.Interval)
-    If ((ret <> "") And (FormProgressBar.Timer1.Enabled = True) And (FormProgressBar.Timer1.Interval > 0)) Then
-       FormProgressBar.Timer1.Enabled = False
-       FormProgressBar.Timer1.Interval = 0
+    'MsgBox ("FormProgressBarMy.Timer1.Interval =" & FormProgressBarMy.Timer1.Interval)
+    If ((ret <> "") And (formProgressBarMy.Timer1.Enabled = True) And (formProgressBarMy.Timer1.Interval > 0)) Then
+       formProgressBarMy.Timer1.Enabled = False
+       formProgressBarMy.Timer1.Interval = 0
        Me.flagNormalClose.Caption = "yes"
        Unload Me
-       'FormProgressBar.Hide '.Visible = False
+       'FormProgressBarMy.Hide '.Visible = False
        
        ' browse the file with report
        'return error - просто выводим сообщение (из экрана не выходим)
@@ -113,12 +113,20 @@ Private Sub Timer1_Timer()
         End If
         ' find path to executive for browser
         executableFile = FileExecutablePath(fileDestination, "c:\")
+        
         ' если был создан файл дл€ определени€ обработчика, то надо его удалить
         If (fileDestination <> file) Then
             'My.Computer.FileSystem.DeleteFile (fileDestination)
             Kill fileDestination
         End If
+        ' if xecutableFile from OpenOffice, auto find browser (≈сли прикреплен OpenOffice, тонадо использовать просто web brouser for file.html, так как swriter.exe,scalc.exe плохо открывают html файлы - некрасиво)
         'executableFile is found
+        If (InStr(executableFile, "OpenOffice") > 0) Then
+           executableFile = ""
+        End If
+        
+        'MsgBox ("executableFile=" & executableFile)
+        
         If (executableFile <> "") Then
              vspbool = True
              Shell executableFile & " " & file, vbNormalFocus
@@ -136,8 +144,8 @@ ErrorHandler:
      If (vspbool = True) Then
          ErrorLevel = ShellExecute(vbNull, "open", file, vbNull, vbNull, 1)
      End If
-     FormProgressBar.Timer1.Enabled = False
-     FormProgressBar.Timer1.Interval = 0
+     formProgressBarMy.Timer1.Enabled = False
+     formProgressBarMy.Timer1.Interval = 0
      Unload Me
      Exit Sub
     End If
