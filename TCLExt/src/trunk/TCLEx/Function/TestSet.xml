@@ -18,9 +18,13 @@ pTestSetObj - объект набора тестов
 <ReturnType>%Boolean</ReturnType>
 <Implementation><![CDATA[
 	If '$IsObject(pTestSetObj) Quit 0
+	set testsetid=pTestSetObj.%Id()
+	quit $$printable^LVBCTTS($piece(testsetid,"||",2),testsetid,"Y") 
+	/*
 	If ..IsAuthorised(pTestSetObj) Quit 1
 	If ..IsCanceled(pTestSetObj) Quit 1
 	Quit ..IsInPrintableVerificationQueue(pTestSetObj.%Id())
+	*/
 ]]></Implementation>
 </Method>
 
@@ -325,7 +329,7 @@ pLanguage - язык результата</Description>
 	Set pLanguage=$Get(pLanguage)
 	Kill ^TMP("PRTDR00",$J),^||testset
 	Set ^TMP("PRTDR00",$j,"LAN")=$Get(pLanguage)
-	Do print^PRTDR1SPB02(pTestSetId,"P","H") 
+	Do print^PRTDR1rus(pTestSetId,"P","H") 
 	Set i="",j=1
 	For  {
 		Set i=$Order(^TMP("PRTDR00",$J,"RESULT",i),1,val)
@@ -527,6 +531,34 @@ pLanguage - язык результата</Description>
 	&sql(FETCH TestOrderCursor)
 	}
 	&sql(CLOSE TestOrderCursor)
+]]></Implementation>
+</Method>
+
+<Method name="TemplateTestOrder2">
+<Description>
+Сформировать глобал pTestOrderGlb с порядком тестов в описании шаблона для набора тестов pTestSet
+брать только печатаемые (Reportable) тесты</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String,pTestOrderGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Kill @pTestOrderGlb
+	&sql(
+		DECLARE TestOrderCursor2 CURSOR FOR
+	    Select CTTSF_Order_1,CTTSF_DataItem_DR 
+	    Into :order,:test
+	    From SQLUser.CT_TestSetFields 
+	    Where CTTSF_ParRef=:pTestSet and CTTSF_Reportable='Y'
+	)
+	&sql(OPEN TestOrderCursor2)
+	&sql(FETCH TestOrderCursor2)
+
+	While (SQLCODE = 0) {
+	If (order'="")&&(test'="")&&(##class(User.CTTestCode).%ExistsId(test)) {
+		Set @pTestOrderGlb@(test)=order
+	} 	
+	&sql(FETCH TestOrderCursor2)
+	}
+	&sql(CLOSE TestOrderCursor2)
 ]]></Implementation>
 </Method>
 
@@ -1210,7 +1242,10 @@ pLanguage - язык результата</Description>
 				}
 			} ElseIf $Data(^TTAB("TC",code,2,value,"T")) {
 				Set codevalue=value
-				Set value=""
+				if $get(^TTAB("TC",code,2,codevalue,"T",0))'="" {
+					Set value=codevalue
+				}
+				/*
 				Set j=""
 				For {
 					Set j=$Order(^TTAB("TC",code,2,codevalue,"T",j),1,val)
@@ -1220,7 +1255,7 @@ pLanguage - язык результата</Description>
 						Set value=value_" "
 					}
 					Set value=value_val	
-				}
+				} */
 			}
 		}
 		If (type="X")&&(value="") {
@@ -1467,6 +1502,28 @@ pTestSetCode - код набра тестов
 		}
 		If result'="" Quit	 
 	}
+	if result="" {
+		Set key=""   
+	    For  {
+		     Set containerobj=testsetobj.ChildCTTestSetContainers.GetNext(.key)
+		     If key="" Quit
+		     If $IsObject(containerobj)&&($IsObject(containerobj.CTTSYSpecimenDR)) {
+			    Set result=containerobj.CTTSYSpecimenDR.%Id()
+		     }
+		     If result'="" Quit	 
+	    }
+	}
+	/* еще надо сделать по кодам тестов	
+		if result="" {
+		   &SQL(SELECT CTSPE_Code INTO :result
+	          FROM ((CT_Specimen INNER JOIN 
+		      (CT_TestCode INNER JOIN CT_TestCodeContainers ON CT_TestCode.CTTC_RowId = CT_TestCodeContainers.CTTCB_ParRef) ON CT_Specimen.CTSPE_RowId = CT_TestCodeContainers.CTTCB_Specimen_DR) 
+		      INNER JOIN CT_TestSetFields ON CT_TestCode.CTTC_RowId = CT_TestSetFields.CTTSF_DataItem_DR) 
+		      INNER JOIN CT_TestSet ON CT_TestSetFields.CTTSF_ParRef = CT_TestSet.CTTS_RowId 
+		      WHERE CTTS_Code=:pTestSet)
+		}
+	}*/
+	
 	Quit result
 ]]></Implementation>
 </Method>
@@ -1523,6 +1580,27 @@ pTestSetCode - код набра тестов
 	If '$IsObject(testsetobj) Quit 0
 	If '$IsObject(testsetobj.VISTSPriorityDR) Quit 0
 	If testsetobj.VISTSPriorityDR.%Id()="U" Quit 1
+ 	Quit 0
+]]></Implementation>
+</Method>
+
+<Method name="IsCito2">
+<Description>
+Равен ли приоритет набора тестов "U" (Cito)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	if $get(pTestSetId)="" quit 0
+	set epis=$piece(pTestSetId,"||",1)
+	set testset=$piece(pTestSetId,"||",2)
+	set tscnt=$piece(pTestSetId,"||",3)
+	if (epis="")||(testset="")||(tscnt="") quit 0
+	set rec=$get(^TEPI(epis,1,testset,tscnt))
+	if rec="" quit 0
+	set priority=$piece(rec,"\",10)
+	if priority="" quit 0
+	if (priority'="")&&($$seldata^LVBCTPR(priority,4)="Y") quit 1
  	Quit 0
 ]]></Implementation>
 </Method>
@@ -1843,14 +1921,20 @@ pValues - Значения в формате $ListBuild
 <FormalSpec>pValues:%String</FormalSpec>
 <ReturnType>%Boolean</ReturnType>
 <Implementation><![CDATA[
+	
+	Set testsetid=$listGet(pValues,1) 			; SQLUser.EP_VisitTestSet\VISTS_RowId
+	quit $$printable^LVBCTTS($piece(testsetid,"||",2),testsetid,"Y")
+	
+	/*
 	If ..IsAuthorisedLB(pValues) Quit 1
 	If ..IsCanceledLB(pValues) {
-		Set reason=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSReasonDR")
-		If ##class(TCLEx.Function.CodeTable).IsReportableReason(reason)
+		//Set reason=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"VISTSReasonDR")
+		//If ##class(TCLEx.Function.CodeTable).IsReportableReason(reason)
 		Quit 1
 	}	
 	Set testsetid=##class(TCLEx.Function.TestSet).GetPropertyValue(pValues,"%ID")
 	Quit ..IsInPrintableVerificationQueue(testsetid)
+	*/
 ]]></Implementation>
 </Method>
 
@@ -1876,14 +1960,9 @@ pValues - Значения в формате $ListBuild
 ]]></Implementation>
 </Method>
 
-<UDLText name="T">
-<Content><![CDATA[
-// Получить код врача, авторизовавшего набор тестов в эпизоде
-
-]]></Content>
-</UDLText>
-
 <Method name="GetDoctorAuthorisation">
+<Description>
+Получить код врача, авторизовавшего набор тестов в эпизоде</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pTestSetId:%String</FormalSpec>
 <ReturnType>%String</ReturnType>
@@ -1901,20 +1980,29 @@ pValues - Значения в формате $ListBuild
 ]]></Implementation>
 </Method>
 
-<Storage name="Default">
-<Type>%Library.CacheStorage</Type>
-<DataLocation>^TCLEx.Function.TestSetD</DataLocation>
-<DefaultData>TestSetDefaultData</DefaultData>
-<IdLocation>^TCLEx.Function.TestSetD</IdLocation>
-<IndexLocation>^TCLEx.Function.TestSetI</IndexLocation>
-<StreamLocation>^TCLEx.Function.TestSetS</StreamLocation>
-<Data name="TestSetDefaultData">
-<Structure>listnode</Structure>
-<Subscript/>
-<Value name="1">
-<Value>%%CLASSNAME</Value>
-</Value>
-</Data>
-</Storage>
+<Method name="GetDoctorAuthorisationDefault">
+<Description>
+Получить код врача, авторизовавшего набор тестов в эпизоде
+Если пользователь, авторизовавший резкльтаты, = trak, то взять врача по умолчанию для отдела</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pDoctorId:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if $get(pDoctorId)="" {
+		Set doctorId=##class(TCLEx.Function.TestSet).GetDoctorAuthorisation(pTestSetId)
+	} else {
+		set doctorId=pDoctorId
+	}
+	// Автоматическое подтверждение - тогда берем доктора по умолчанию для отдела
+	if doctorId="trak" {
+		set dep=$piece($piece(pTestSetId,"||",2),1)
+		if dep'="" {
+			set doctorDefault=$piece($get(^TTAB("DEP",dep)),"\",8)
+			if doctorDefault'="" set doctorId=doctorDefault
+		}
+	}
+	Quit doctorId
+]]></Implementation>
+</Method>
 </Class>
 </Export>
