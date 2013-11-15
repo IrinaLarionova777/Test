@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Report.DRPBion">
+<Description>
+Создание файлов с Doctor Report (DRP) специфические для клиента функции</Description>
+<IncludeCode>TCLEx</IncludeCode>
+<Super>%RegisteredObject</Super>
+<TimeCreated>63026,53598.863869</TimeCreated>
+
+<Method name="CreateEpisodePDFReport">
+<Description>
+Создание файла PDF отчета для резултатов эпизода
+Параметры:
+pEpis - Id эпизода
+pTestSets - буфер с Id наборов тестов (если пусто, все авторизованные)
+pLanguage - язык результата (2-ENG, иначе - RUS )
+этот параметр (pExtraParams) может быть разным у разных клиентов 
+pExtraParams - дополнительные параметры формироваия отчета в формате $ListBuild
+  set pPDF=$lg(pExtraParams,1) - признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+  set pPDFDir=$lg(pExtraParams,2) - каталог, куда выгружать файл
+  set pOverWritePDF=$lg(pExtraParams,3) - если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+  set ExtraParamsZen=$lg(pExtraParams,4)=дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+  set flagLogFileCreate=$lg(pExtraParams,5) флаг создавать ли lock файл во время создания pdf файла 
+  set flagLogFileTest=$lg(pExtraParams,6) флаг проверять ли внешний lock файл работы с pdf файлом
+  set pFlagPreview=$lg(pExtraParams,7) флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+pPDFFileName - по ссылке возвращается или передается имя созданного PDF файла
+Возвращаемое значение:
+Результат создания файла в формате %Status
+Сама функция клиенто-зависимая и все вызовы этой функции находятся в клиентских программах!</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pLanguage:%String,pExtraParams:%String,&pPDFFileName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  try {	
+	set FlagPreview=$lg(pExtraParams,7) //флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+	 
+	// Пока будем формировать один файл по всем наборам тестов ( и вордовским и невордовским) только при FlagPreview="V" (предпросмотр)
+	if FlagPreview="V" {
+		if $get(pPDFFileName)="" set ok=$$$ERROR($$$GeneralError,"Не указано имя файла предпросмотра.") quit
+		
+		// делим наборы тестов эпизода на word-testset and no-word-testset
+	    // если pTestSets не задана, то просто берем все наборы тестов из эпизода  (потом сделаются все проверки ниже)
+	    if '$data(pTestSets) {
+	      set ts=""
+	      for {
+		     set ts=$order(^TEPI(pEpis,1,ts)) if ts="" quit
+		     set tscnt=""
+		     for {
+			     set tscnt=$order(^TEPI(pEpis,1,ts,tscnt)) if tscnt="" quit
+			     set tsid=pEpis_"||"_ts_"||"_tscnt
+		         set pTestSets(tsid)=""
+		     }
+	      }
+	    }
+	    kill testSets,testSetsWord
+	    set tsid=""
+	    for {
+		   set tsid=$order(pTestSets(tsid)) if tsid="" quit
+		   if ##class(TCLEx.Function.TestSet).IsTestSetWordToPDF($piece(tsid,"||",2)) 
+		   {
+			   set testSetsWord(tsid)=""
+		   } 
+		   else 
+		   {
+			   set testSets(tsid)=""
+		   }
+	    }
+	    set ok=1
+	    set nmfile=##class(%File).GetFilename(pPDFFileName)
+	    set dirfile=##class(%File).GetDirectory(pPDFFileName)
+	    set files=""
+	    // формируем файл с обычными (невордовскими результатами)
+	    if $data(testSets) {
+		    set filenamevsp=..NextAuxiliaryFile(nmfile,dirfile)
+		    set ok1=..CreateEpisodePDFReportGeneral(pEpis, .testSets, pLanguage, pExtraParams, filenamevsp) 
+		    if ok1 {
+			   set files=files_$select(files'="":$char(0),1:"")_filenamevsp
+		    }
+		    else {
+			    do ##class(TCLEx.Function.General).WriteError($System.Status.GetErrorText(ok1),$zn)
+		    }
+		   
+	    }
+	    set tsid=""
+	    for {
+		    set tsid=$order(testSetsWord(tsid)) if tsid="" quit
+		    if ##class(TCLEx.Report.WordEMC).isResult(tsid) {
+			    set filenamevsp=..NextAuxiliaryFile(nmfile,dirfile)
+			    set params=##class(TCLEx.Report.WordEMC).getParams(pEpis,tsid,pLanguage,.error)
+                if $get(error)=$$$OK {
+   			       set ok1=##class(TCLEx.Report.WordEMC).CreateReportWordToPDF(pEpis, tsid, params, pLanguage, filenamevsp, 0)
+				   if ok1 {
+			          set files=files_$select(files'="":$char(0),1:"")_filenamevsp
+		           }
+		           else {
+			           do ##class(TCLEx.Function.General).WriteError($System.Status.GetErrorText(ok1),$zn)
+		           }
+                }
+			} 
+	    }
+	    // если сформировались какие-то файлы и их больше 1, то надо объединить в один pdf файл
+	    if files'="" {
+		    if $length(files,$c(0))>1 {
+		       set ok=##class(TCLEx.Report.Word).startConcatPDF(files,pPDFFileName,1)
+	        } 
+	        else 
+	        {
+		      set ok=##class(%File).Rename(files,pPDFFileName)
+	        }
+	    } else  {
+		    set ok= $$$ERROR($$$GeneralError,"Не удалось сформировать файл для предпросмотра результатов.")   
+	    }
+	}
+	else 
+	{
+		set ok=..CreateEpisodePDFReportGeneral(pEpis, .pTestSets, pLanguage, pExtraParams, .pPDFFileName)
+	}
+  } catch(exception) {
+	 set ok=exception.AsStatus() 
+  }	
+	If 'ok {
+		Set pPDFFileName=""
+		 do ##class(TCLEx.Function.General).WriteError($System.Status.GetErrorText(ok),$zn)
+	}	
+	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CreateEpisodePDFReportGeneral">
+<Description>
+Создание файла PDF отчета для НЕвордовских результатов эпизода
+Параметры:
+pEpis - Id эпизода
+pTestSets - буфер с Id наборов тестов (если пусто, все авторизованные)
+pLanguage - язык результата (2-ENG, иначе - RUS )
+этот параметр (pExtraParams) может быть разным у разных клиентов 
+pExtraParams - дополнительные параметры формироваия отчета в формате $ListBuild
+  set pPDF=$lg(pExtraParams,1) - признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+  set pPDFDir=$lg(pExtraParams,2) - каталог, куда выгружать файл
+  set pOverWritePDF=$lg(pExtraParams,3) - если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+  set ExtraParamsZen=$lg(pExtraParams,4)=дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+  set flagLogFileCreate=$lg(pExtraParams,5) флаг создавать ли lock файл во время создания pdf файла 
+  set flagLogFileTest=$lg(pExtraParams,6) флаг проверять ли внешний lock файл работы с pdf файлом
+  set pFlagPreview=$lg(pExtraParams,7) флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+pPDFFileName - по ссылке возвращается или передается имя созданного PDF файла
+Возвращаемое значение:
+Результат создания файла в формате %Status
+Сама функция клиенто-зависимая и все вызовы этой функции находятся в клиентских программах!</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pLanguage:%String,pExtraParams:%String,&pPDFFileName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set pLanguage=$Get(pLanguage)
+	Set pExtraParams=$Get(pExtraParams)
+	
+	set pPDF=$lg(pExtraParams,1)  // признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+	set pPDFDir=$lg(pExtraParams,2) //каталог, куда выгружать файл
+	set pOverWritePDF=$lg(pExtraParams,3) //если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+	set ExtraParamsZen=$lg(pExtraParams,4) //дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+	set FlagPreview=$lg(pExtraParams,7) //флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+	
+    Set pLanguage=$Get(pLanguage)
+	Set pExtraParams=$Get(pExtraParams)
+	
+	Set reportclassname=$$ZenResultClassName^Settings.Reports()
+	Kill ^||ResultForm.EpisodePCL
+	Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL),FlagPreview)
+	If '$Data(^||ResultForm.EpisodePCL) {
+		Quit $$$ERROR($$$errNoResultData,"Нет данных для эпизода "_pEpis_" !")
+	}	
+	//
+	if (pPDFDir'="")&&('$$TestDirectory^KSUTIL1(pPDFDir)) {
+		Quit $$$ERROR($$$errCreatingResultFile,"Не удалось создать каталог  "_pPDFDir_" !")
+	}	
+	//
+	if $get(pPDFFileName)="" {
+		Set filename=##class(TCLEx.Report.ResultForm).CallEpisodeResultFileName(reportclassname,pEpis,.pTestSets,pLanguage,"pdf")
+	    Set pPDFFileName=pPDFDir_"\"_filename
+	}
+	If ##class(%File).Exists(pPDFFileName) {
+		If pOverWritePDF {
+			Set ok=##class(%File).Delete(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$errCreatingResultFile,"Не удалось удалить существующий файл "_pPDFFileName_" !")
+
+		} Else {	
+			Set pPDFFileName=$$ArchiveFileName^KSUTIL1(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$errCreatingResultFile,"Не удалось сформировать очередное имя файла для  "_pPDFFileName_" !")
+		}
+	}
+
+	Kill ^||ResultForm.EpisodeTable
+	Do ##class(TCLEx.Report.ResultForm).PCLGlb2TableGlb($Name(^||ResultForm.EpisodePCL),$Name(^||ResultForm.EpisodeTable))
+	set totalpages=##class(TCLEx.Report.ResultForm).PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
+	set params=$lb("",pEpis,pPDF,pLanguage,$Name(^||ResultForm.EpisodeTable),ExtraParamsZen,totalpages)
+	
+	// create file
+	set ok=..CreateEpisodePDFReport0(reportclassname,params,pPDFFileName)
+	If 'ok {
+		Set pPDFFileName=""
+	}	
+	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CreateEpisodePDFReport0">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportClassName:%String,pParams:%String,pPDFFileName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	// Запоминаем значения %request, если переменная уже заполнена
+	kill oldrequest
+	If $Data(%request) {
+		Set oldrequest("URL")=%request.URL
+		Set oldrequest("SERVER_NAME")=$Get(%request.CgiEnvs("SERVER_NAME"))
+		Set oldrequest("$CSPTOFILE")=$Get(%request.Data("$CSPTOFILE",1))
+	}
+	If '$Data(%request) {
+		Set %request=##class(%CSP.Request).%New()
+	}
+	
+	Set %request.URL="/csp/"_$ZUtil(5)_"/"_..%ClassName(1)_".xml"
+	Set %request.CgiEnvs("SERVER_NAME")="127.0.0.1"
+	Set %request.Data("$CSPTOFILE",1)=1
+	
+	Set repobj=$ClassMethod(pReportClassName,"%New")
+	Set repobj.OrderNumber=$lg(pParams,1)
+	Set repobj.Episode=$lg(pParams,2)
+	Set repobj.PDF=$lg(pParams,3)
+	Set repobj.Language=$lg(pParams,4)
+	Set repobj.DataGlobal=$lg(pParams,5)
+	Set repobj.ExtraParams=$lg(pParams,6)
+	Set repobj.TotalPages=$lg(pParams,7)
+	Set ok=repobj.GenerateReport(pPDFFileName,2)
+
+	// Восстанавливаем %request
+	If $Data(oldrequest) {
+		Set %request.URL=$Get(oldrequest("URL"))
+		Set %request.CgiEnvs("SERVER_NAME")=$Get(oldrequest("SERVER_NAME"))
+		Set %request.Data("$CSPTOFILE",1)=$Get(oldrequest("$CSPTOFILE"))
+	}	
+	
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="NextAuxiliaryFile">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pNameFile:%String,pDirFile:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set file=""
+   	set len=$length(pNameFile,".")
+   	set name=$piece(pNameFile,".",len-1),ext=$piece(pNameFile,".",len)
+   	for {
+	   	set npp=$i(^||vspFiles)
+   	    set file=pDirFile_"\"_name_"vsp"_npp_"."_ext
+   	    if '##class(%File).Exists(file) quit
+   	}
+    quit file
+]]></Implementation>
+</Method>
+
+<Method name="getPrinter">
+<Description>
+Получить принтер  
+Параметры:
+pCourier - ID курьера
+pUser - ID пользователя
+Возвращаемое значение:
+Id принтера</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCourier,pUser</FormalSpec>
+<ProcedureBlock>0</ProcedureBlock>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+    New PLIST,sqlcode
+	Set result=""
+	Set user=##class(TCLEx.Data.Event).CurrentUser()
+	If user'="" {										// Ищем принтер по умолчанию для пользователя
+		Kill PLIST		
+		Set sqlcode=$$selrow^MVBSSUSR(user)				// ( таблица SS_USER поле CTPrintDestination)
+		If sqlcode=0 {
+			Set result=$Piece(PLIST(13),$Char(1),1)
+		}	
+	}	
+	If result'="" Quit result							// Если для пользователя принтер не заполнен
+	Quit ##class(TCLEx.Function.Printer).DefaultPrinter()
+]]></Implementation>
+</Method>
+</Class>
+</Export>
