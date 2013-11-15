@@ -61,7 +61,7 @@
      set typeFileReport=##class(Report.JasperReportTune).getTypeFileReport()
      try {
 	     set debug="0"
-        do ##class(isc.jasper.JasperFacade).executeAndSave(jgw,connectURL,fileJasper, typeFileReport, paramsHashMap, fileReport, debug) 
+        do ##class(isc.jasper.JasperFacade).executeAndSave(jgw,connectURL,fileJasper, typeFileReport, paramsHashMap, fileReport,debug) 
      } catch e { 
          set textError="" 
          If $ZERROR["<ZJGTW>" {
@@ -249,9 +249,13 @@
 	//quit ##class(Report.rpt).getPathFileReport00(.pathFileReport,USER)
 	set res=$$$OK,pathFileReport=""
 	try {
+		/*
 	       set pathFileReport=##class(ReportZEN.settings).getNodeSettings("server","pathTempFile")   ;"//lissrv/lab/temp/reports" ;"C:\BION\lab\temp\Reports"
 	       if pathFileReport="" $$$ThrowOnError($$$ERROR($$$GeneralError,"В настройках не указан путь к временным файлам"))
 	       if $get(USER)'="" set pathFileReport=pathFileReport_"\"_USER
+	       */
+	       set pathFileReport=$$Path^REPORTSPB()
+           if pathFileReport'="" set pathFileReport=pathFileReport_"\Clients"
 	       if '##class(%File).Exists(pathFileReport) do ##class(%File).CreateDirectoryChain(pathFileReport)
 	} 
 	catch(exception)
@@ -314,75 +318,6 @@
 ]]></Implementation>
 </Method>
 
-<Method name="startPdfBoxFacade">
-<ClassMethod>1</ClassMethod>
-<FormalSpec>fileReport:%String,namePrinter:%String,flagSilence:%Integer</FormalSpec>
-<ReturnType>%Status</ReturnType>
-<Implementation><![CDATA[
-  if $get(flagSilence)="" set flagSilence=1
- // открываем gateway
-  set gateway=##class(Report.JasperReportTune).getNameGateway() 
-  if gateway="" Quit $$$ERROR($$$GeneralError,"Не указан gateway")
-  
-  set jvm = ##class(%Net.Remote.ObjectGateway).%OpenId(gateway)
-  if '$IsObject(jvm) Quit $$$ERROR($$$GeneralError,"Incorrect Java GateWay configuration !")
-  
-  Set result=$$$OK
-  Try
-	{
-		; запуск шлюза, если он не запущен
-		If $$$ISERR(##class(%Net.Remote.Service).PingGateway(jvm.Port,jvm.Server,jvm.InitializationTimeout)) {
-			$$$ThrowOnError(##class(%Net.Remote.Service).StartGateway(gateway))
-		}	
-	
-		Set jgw=##class(%Net.Remote.Gateway).%New()
-		; подключение к шлюзу
-		$$$ThrowOnError(jgw.%Connect(jvm.Server,jvm.Port))
-		Try
-		{
-			if flagSilence=1 {
-				do ##class(isc.pdfbox.PdfboxFacade).printSilent(jgw, fileReport, namePrinter) 
-			}
-			else  {
-				do ##class(isc.pdfbox.PdfboxFacade).print(jgw, fileReport, namePrinter) 
-			}
-  
-		}
-		Catch exception
-		{
-		If $ZERROR["<ZJGTW>" {
-		    set %objlasterror=$get(%objlasterror)
-		    if ##class(%SYSTEM.Status).IsError(%objlasterror) {
-			    set result=%objlasterror
-		    }  else {
-			    Set result=$$Error^%apiOBJ(5001,$ZERROR)  //$$Error^%apiOBJ(5001,$get(%objlasterror))
-		    }
-            } 
-		else {
-		    Set result=exception.AsStatus()
-		}
-		}
-		; отключение от шлюза
-		Do jgw.%Disconnect()
-	}
-	Catch exception
-	{
-	    If $ZERROR["<ZJGTW>" {
-		    set %objlasterror=$get(%objlasterror)
-		    if ##class(%SYSTEM.Status).IsError(%objlasterror) {
-			    set result=%objlasterror
-		    }  else {
-			    Set result=$$Error^%apiOBJ(5001,$ZERROR)  //$$Error^%apiOBJ(5001,$get(%objlasterror))
-		    }
-            } 
-		else {
-		    Set result=exception.AsStatus()
-		}
-	}
-  quit result
-]]></Implementation>
-</Method>
-
 <Method name="getNamePrinterForReport">
 <ClassMethod>1</ClassMethod>
 <FormalSpec><![CDATA[nodeReport:%String,user:%String,&namePrinter:%String]]></FormalSpec>
@@ -402,16 +337,16 @@
   // принтер по умолчанию для системы 
   if codePrinter="" set codePrinter=$piece($get(^CF("SM",1)),"^",25)
   if codePrinter="" Quit $$$ERROR($$$GeneralError,"Принтер по умолчанию задан некорректно")
-  
+    
   if key="" set key=$piece($get(^CF("SM",1)),"^",25)
   
   set codeDevice=$get(^TTAB("CTDS",codePrinter,1))
   if codeDevice="" Quit $$$ERROR($$$GeneralError,"Принтер по умолчанию задан некорректно")
   
-  set printer=$piece($get(^%IS(codeDevice,1)),"^",1)
-  if printer="" Quit $$$ERROR($$$GeneralError,"В cache не определено устройство "_codeDevice)
-  set namePrinter=printer
-  if $extract(printer,1,5)="|PRN|" set namePrinter=$extract(printer,6,$length(printer))
+  //set printer=$piece($get(^%IS(codeDevice,1)),"^",1)
+  //if printer="" Quit $$$ERROR($$$GeneralError,"В cache не определено устройство "_codeDevice)
+  set namePrinter=codeDevice
+  if $extract(namePrinter,1,5)="|PRN|" set namePrinter=$extract(namePrinter,6,$length(namePrinter))
   quit $$$OK
 ]]></Implementation>
 </Method>
