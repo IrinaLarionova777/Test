@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Export generator="Cache" version="24">
-<Routine name="MIFastm" type="INT" languagemode="0"><![CDATA[
-MIFastm(mi) ; ASTM protocol  -  test (Bi-Directional) (Russion Burdenko))
+<Routine name="MIFdxh800" type="INT" languagemode="0"><![CDATA[
+MIFdxh800(mi) ; ASTM protocol  -  DxH-800 Beckman Coulter (Bi-Directional) (Russion EMC)
  set mi=$get(mi) if '$length(mi) quit
  kill ^TMIF(mi,10) 
  //set $ztrap="err^MIF000dop"
@@ -53,6 +53,7 @@ receiveENQ
  set (sample,epis,surname,result,date,time,QC)="" 
  do trace^MIF000(mi,"ENQ","H<--M")
  do ACK
+ set delimComponents="!"
  set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=60,ok=1
  for {
 	 read *R:10 
@@ -78,7 +79,7 @@ receiveENQ
      }
      ; query record
      if typerecord="Q" {
-	     set epis=$piece($piece(record,"|",3),"^",2)
+	     set epis=$piece($piece(record,"|",3),delimComponents,2)
 	     If epis="ALL" Do PrepareAllOrders(mi) continue
 	     if $length(epis) set ^TMP($zname,$job,"ENQ",epis)="" 
          continue
@@ -86,13 +87,13 @@ receiveENQ
      ; patient record
      if typerecord="P" {
         do Last set (sample,epis,surname,result,date,time,QC)=""
-        set surname=$translate($translate($piece(record,"|",6),""),"^"," ") 
+        set surname=$translate($translate($piece(record,"|",6),""),delimComponents," ") 
         continue
      }
      ; order record
      if typerecord="O" {
-	     set epis=$translate($piece($piece(record,"|",3),"^",1)," ")
-	     if '$length(epis) set epis=$translate($piece($piece(record,"|",4),"^",1)," ")
+	     set epis=$translate($piece($piece(record,"|",3),delimComponents,1)," ")
+	     if '$length(epis) set epis=$translate($piece($piece(record,"|",4),delimComponents,1)," ")
 	     set QC=$translate($piece(record,"|",12)," ") 
          if QC="Q" set QC="Y"
          continue
@@ -100,14 +101,14 @@ receiveENQ
      ; result record
      if typerecord="R" {
          ; strip trailing spaces
-         set test=$piece($piece(record,"|",3),"^",4) set test=$$DeleteLeftAndRightSpaces^KSUTIL1(test)
-         set res=$translate($piece(record,"|",4),", ","."),flag=$translate($piece(record,"|",7)," ")
+         set test=$piece($piece(record,"|",3),delimComponents,4) set test=$$DeleteLeftAndRightSpaces^KSUTIL1(test)
+         set res=$translate($piece($piece(record,"|",4),delimComponents,1),", ","."),flag=$translate($piece(record,"|",8)," ")
          if flag="N" set flag="" ; normal flag
          if $length(res),$isvalidnum(res) set res=+res // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
          if $length(test),$length(res) set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
          ; date and time
-         if $length($translate($piece(record,"|",13)," ")) {
-	         set datetime=$piece(record,"|",13)
+         set datetime=$piece(record,"|",14)
+         if $length($translate(datetime," ")) {
 	         set date=$$intdate^SSUTIL4($extract(datetime,5,6)_"/"_$extract(datetime,7,8)_"/"_$extract(datetime,1,4))
              set time=($extract(datetime,9,10)*3600)+($extract(datetime,11,12)*60)
          }
@@ -120,6 +121,7 @@ receiveENQ
      }
      set timeSilenceStart=$piece($horolog,",",2)
  }
+ 
  if ok=1 {
 	 do trace^MIF000(mi,$select($char(R)=eot:"EOT",$char(R)=enq:"ENQ",1:R),"H<--M")
 	 do ORDER
@@ -144,61 +146,9 @@ PrepareAllOrders(pInstrument) public {
 		set ^TMP($zname,$job,"ENQ",epis)="" 
 	}
 }	 
+ 
 
-ORDER ; create list of orders if exists
-  // посылка ранее не посланных заданий 
- set epis="" set ok=1
- for {
-	 set epis=$order(^TMIF(mi,10,epis)) quit:epis="" 
-	 set ok1=$$Send(epis) if 'ok1 set ok=0 quit
-	 do Send(epis)
- }
- if ok=0 quit
- 
- set epis="" 
- for {
-	 set epis=$order(^TMP($zname,$job,"ENQ",epis)) quit:epis="" 
-     do scanone^MIF000(mi,epis)
-     if $$select^LVBEPVIS(epis,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
-     set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
-     ;s sex=$s($g(PLIST(5))="М":"M",$g(PLIST(5))="Ж":"F",1:"U")
-     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
-     // header record
-     set line=$order(^TMIF(mi,10,epis,""),-1)+1
-     set ^TMIF(mi,10,epis,line)="H|\^&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"Centaur")_"||P|1|" 
-     // patient record
-     ;s line=$o(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="P|1|"_epis_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"||"_birthday_"|"_sex_"|||||" ;_$g(PLIST(15))
-     set line=$order(^TMIF(mi,10,epis,""),-1)+1
-     set ^TMIF(mi,10,epis,line)="P|1|"_epis_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"||"_"|"_sex_"|||||" ;_$g(PLIST(15))
-     ;s line=$o(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="P|1|"_epis_"|||||||||||"
-     // order records
-     set tc="" 
-     for N=1:1 {
-	     set tc=$order(^TMP("MIF-SINGLE",$job,mi,epis,tc)) 
-	     if tc="" quit
-	     do SET(epis,tc)
-     }
-     // terminate record
-     set line=$order(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="L|1|"_$select(N>1:"F",1:"I")
-     kill ^TMP($zname,$job,"ENQ",epis)
- }
- 
- set epis="" set ok=1
- for {
-	 set epis=$order(^TMIF(mi,10,epis)) quit:epis="" 
-	 set ok1=$$Send(epis) if 'ok1 set ok=0 quit
- }
- 
- quit
- 
-SET(epis,tcx) ; set record to be sent to instrument
- set line=$order(^TMIF(mi,10,epis,""),-1)+1
- set ^TMIF(mi,10,epis,line)="O|"_N_"|"_epis_"||^^^"_tcx_"|||||||A||||||||||||||Q"
- quit
-
- // с обработкой приоритета и типа материала образца (каждый эпизод в отдельном блоке Header...Last)
-ORDER2 
- set delimComponents="^"
+ORDER
   // посылка ранее не посланных заданий 
  set epis="" set ok=1
  for {
@@ -234,11 +184,14 @@ ORDER2
 	     set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
 	     set rec=$get(^TEPI(epis,1,testset,tscnt))
 	     // код типа образца материала
+	     /*
          set codeTypeSpecimen=$piece(rec,"\",46)
          if codeTypeSpecimen="" set codeTypeSpecimen=$$TestSpecimenType^KSReportSQL(testset)
          if codeTypeSpecimen="" set codeTypeSpecimen=0
-         set specimenAnalisator="" ;$$getSpecimenAnalisator(codeTypeSpecimen)
-         if specimenAnalisator="" set specimenAnalisator="0"
+         set specimenAnalisator=$$getSpecimenAnalisator(codeTypeSpecimen)
+         if specimenAnalisator="" set specimenAnalisator="W"
+         */
+         set specimenAnalisator="Whole blood"
          
          // приоритет по набору тестов
          set priorityCodeTest=$piece(rec,"\",10)
@@ -262,7 +215,7 @@ ORDER2
 	             continue
              }
              set ordernum=ordernum+1
-	         do SET2(epis,tcstr,priority,specimen,ordernum)
+	         do SET(epis,tcstr,priority,specimen,ordernum)
 	         set okOrder=1   
 	         kill vsp(priority,specimen)
 	     }
@@ -287,96 +240,15 @@ ORDER2
  if ok=0 quit
  
  quit
-
-SET2(epis,tcx,priority,specimen,ordernum) ; set record to be sent to instrument
+ 
+SET(epis,tcx,priority,specimen,ordernum) ; set record to be sent to instrument
  set priority=$select(+priority=1:"S",1:"R")
- if (specimen="")||(specimen="0") set specimen="Whole blood"
+ if specimen="" set specimen="Whole blood"
  if $get(ordernum)="" set ordernum=1
  set line=$order(^TMIF(mi,10,epis,""),-1)+1
  set ^TMIF(mi,10,epis,line)="O|"_ordernum_"|"_epis_"|"_"|"_tcx_"|"_priority_"||||||A||||"_specimen_"||||||||||"
- quit
-
- // с обработкой приоритета и типа материала образца (все заказанные эпизоды в одном блоке Header...Last)
-ORDER3 
- set delimComponents="^"
- // посылка ранее не посланных заданий 
- set ok=$$Send3() if 'ok quit
-
- // header record
- set line=$order(^TMIF(mi,10,""),-1)+1
- set ^TMIF(mi,10,line)="H|\"_delimComponents_"&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"DxH")_"||||" 
-  
- set epis="",okSend=0
- for {
-	 set epis=$order(^TMP($zname,$job,"ENQ",epis)) quit:epis="" 
-     do scanone^MIF000(mi,epis)
-     if $$select^LVBEPVIS(epis,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
-     set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
-     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
-     // приоритет по эпизоду
-     set priority=0 //Routine 
-     if $$seldata^LVBCTPR(PLIST(17),4)="Y" set priority=1 // STAT
-    // patient record
-     set line=$order(^TMIF(mi,10,""),-1)+1
-     set ^TMIF(mi,10,line)="P|1||"_epis_"||"_$$Translit^KSUTIL1($e(surname,1,20)_delimComponents_$e(name,1,20))_"||"_"|"_sex_"|"_"W"_"||||" ;_$g(PLIST(15))
-     // order records
-     
-     kill vsp
-     set tc="" 
-     for {
-	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,epis,tc)) if tc="" quit
-	     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,epis,tc)
-	     if refEpisode="" continue
-	     set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
-	     set rec=$get(^TEPI(epis,1,testset,tscnt))
-	     // код типа образца материала
-         set codeTypeSpecimen=$piece(rec,"\",46)
-         if codeTypeSpecimen="" set codeTypeSpecimen=$$TestSpecimenType^KSReportSQL(testset)
-         if codeTypeSpecimen="" set codeTypeSpecimen=0
-         set specimenAnalisator="" ;$$getSpecimenAnalisator(codeTypeSpecimen)
-         if specimenAnalisator="" set specimenAnalisator="0"
-         
-         // приоритет по набору тестов
-         set priorityCodeTest=$piece(rec,"\",10)
-         if (priority=0)&&(priorityCodeTest'="") if $$seldata^LVBCTPR(priorityCodeTest,4)="Y" set priority=1 // STAT
-         set vsp(priority,specimenAnalisator,tc)=""
-     }
-     
-     set priority="",okOrder=0,ordernum=0
-     for {
-	     set priority=$order(vsp(priority),-1) if priority="" quit
-	     set specimen=""
-	     for {
-		     set specimen=$order(vsp(priority,specimen)) if specimen="" quit
-		     set tc=""  set tcstr=""
-		     for {
-			     set tc=$order(vsp(priority,specimen,tc)) if tc="" quit
-			     set tcstr=tcstr_$select(tcstr'="":"\",1:"")_delimComponents_delimComponents_delimComponents_tc
-		     }
-		     /*
-             if tcstr="" {
-	             kill vsp(priority,specimen)
-	             continue
-             }
-             */
-             set ordernum=ordernum+1
-	         do SET2(epis,tcstr,priority,specimen,ordernum)
-	         set okOrder=1,okSend=1   
-	         kill vsp(priority,specimen)
-	     }
-     }   
-	            
-     kill ^TMP($zname,$job,"ENQ",epis)
- }
- // terminate record
- set line=$order(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|N"
+ quit 
  
- if okSend=0 kill ^TMIF(mi,10)
- 
- set ok=$$Send3() 
- 
- quit
-
 Send(epis) ; send list of orders if exists
  do ENQ 
  set time1=$p($h,",",2)
@@ -385,6 +257,9 @@ Send(epis) ; send list of orders if exists
 	 if ($char(R)=ack)||($char(R)=enq)||($char(R)=eot) quit
 	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
  }
+ //set time2=$p($h,",",2)
+ //set ras=time2-time1
+ //if (ras>0)&&(ras<10)
  set ch=$char(R)
  do trace^MIF000(mi,$select(ch=enq:"ENQ",ch=eot:"EOT",ch=ack:"ACK",ch=nak:"NAK",1:ch),"H<--M")
  if $char(R)=enq do EOT quit 0
@@ -393,23 +268,6 @@ Send(epis) ; send list of orders if exists
  if x="" kill ^TMIF(mi,10,epis)
  do EOT
  quit 1
- 
-Send3() ; send list of orders if exists
- do ENQ 
- set time1=$p($h,",",2)
- for j=1:1:10 {
-	 read *R:1 
-	 if ($char(R)=ack)||($char(R)=enq)||($char(R)=eot) quit
-	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
- }
- set ch=$char(R)
- do trace^MIF000(mi,$select(ch=enq:"ENQ",ch=eot:"EOT",ch=ack:"ACK",ch=nak:"NAK",1:ch),"H<--M")
- if $char(R)=enq do EOT quit 0
- if $char(R)'=ack do EOT quit 0
- set x="" for FRAME=1:1 set x=$Order(^TMIF(mi,10,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,x))
- if x="" kill ^TMIF(mi,10)
- do EOT
- quit 1 
  
 SEND(str) ; send string to instrument
  set str=str_cr_etx,chsum=$$CHSUM(str)
