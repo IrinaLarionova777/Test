@@ -28,9 +28,10 @@ pPDFFileName - по ссылке возвращается или передае�
 <FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pLanguage:%String,pExtraParams:%String,&pPDFFileName:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
+	//s ^test("par")=$g(pEpis)_"*"_$g(pTestSets)_"*"_$g(pLanguage)_"*"_$g(pExtraParams)_"*"_$g(pPDFFileName)
   try {	
 	set FlagPreview=$lg(pExtraParams,7) //флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
-	 
+	
 	// Пока будем формировать один файл по всем наборам тестов ( и вордовским и невордовским) только при FlagPreview="V" (предпросмотр)
 		if $get(pPDFFileName)="" set ok=$$$ERROR($$$GeneralError,"Не указано имя файла предпросмотра.") quit
 		
@@ -113,7 +114,7 @@ pPDFFileName - по ссылке возвращается или передае�
   }	
 	If 'ok {
 		Set pPDFFileName=""
-		set ^ERRORS(+$h,$i(^ERRORS(+$h)))=$h_"|"_ok
+		do ##class(TCLEx.Function.General).WriteError($ze,$zn)
 	}	
 	Quit ok
 ]]></Implementation>
@@ -134,7 +135,7 @@ pExtraParams - дополнительные параметры формиров�
   set ExtraParamsZen=$lg(pExtraParams,4)=дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
   set flagLogFileCreate=$lg(pExtraParams,5) флаг создавать ли lock файл во время создания pdf файла 
   set flagLogFileTest=$lg(pExtraParams,6) флаг проверять ли внешний lock файл работы с pdf файлом
-  set pFlagPreview=$lg(pExtraParams,7) флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+  set pFlagPreview=$lg(pExtraParams,7) флаг = "V" - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
 pPDFFileName - по ссылке возвращается или передается имя созданного PDF файла
 Возвращаемое значение:
 Результат создания файла в формате %Status
@@ -147,7 +148,7 @@ pPDFFileName - по ссылке возвращается или передае�
 	set pPDFDir=$lg(pExtraParams,2) //каталог, куда выгружать файл
 	set pOverWritePDF=$lg(pExtraParams,3) //если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
 	set ExtraParamsZen=$lg(pExtraParams,4) //дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
-	set FlagPreview=$lg(pExtraParams,7) //флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+	set FlagPreview=$lg(pExtraParams,7) //флаг = "V" - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
 	
 	// флаг создавать ли lock файл во время создания pdf файла
 	set flagLogFileCreate=$lg(pExtraParams,5) 
@@ -197,7 +198,7 @@ pPDFFileName - по ссылке возвращается или передае�
 	Kill ^||ResultForm.EpisodeTable
 	Do ##class(TCLEx.Report.ResultForm).PCLGlb2TableGlb($Name(^||ResultForm.EpisodePCL),$Name(^||ResultForm.EpisodeTable))
 	set totalpages=##class(TCLEx.Report.ResultForm).PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
-	set params=$lb("",pEpis,pPDF,pLanguage,$Name(^||ResultForm.EpisodeTable),ExtraParamsZen,totalpages)
+	set params=$lb("",pEpis,pPDF,pLanguage,$Name(^||ResultForm.EpisodeTable),ExtraParamsZen,totalpages,FlagPreview)
 	
 	// create lock file
 	if flagLogFileCreate=1 {
@@ -257,10 +258,10 @@ pPDFFileName - по ссылке возвращается или передае�
 		Set %request=##class(%CSP.Request).%New()
 	}
 	
-	Set %request.URL="/csp/"_$ZUtil(5)_"/"_..%ClassName(1)_".xml"
+	Set %request.URL="/csp/healthshare/"_$ZUtil(5)_"/"_..%ClassName(1)_".xml"
 	Set %request.CgiEnvs("SERVER_NAME")="127.0.0.1"
 	Set %request.Data("$CSPTOFILE",1)=1
-	
+	  
 	Set repobj=$ClassMethod(pReportClassName,"%New")
 	Set repobj.OrderNumber=$lg(pParams,1)
 	Set repobj.Episode=$lg(pParams,2)
@@ -269,7 +270,8 @@ pPDFFileName - по ссылке возвращается или передае�
 	Set repobj.DataGlobal=$lg(pParams,5)
 	Set repobj.ExtraParams=$lg(pParams,6)
 	Set repobj.TotalPages=$lg(pParams,7)
-	Set ok=repobj.GenerateReport(pPDFFileName,2)
+	set repobj.IsPreviewResults=$select($lg(pParams,8)="V":1,1:0) 
+	Set ok=repobj.GenerateReport(pPDFFileName,2) b  
 	
 	// Восстанавливаем %request
 	If $Data(oldrequest) {
@@ -330,11 +332,46 @@ pPDFFileName - по ссылке возвращается или передае�
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
   set ok=$$$OK
+  s ^test("par")=$g(pFileReport)_"*"_$g(pPrinterName)
   try
   {	
      if ##class(%File).Exists($get(pFileReport))&&(pPrinterName'="") {
 	     set flagSilence=1
 	     $$$ThrowOnError(##class(TCLEx.Report.FunctionsJava).startPdfBoxFacade(pFileReport,pPrinterName,flagSilence))
+     }
+   } catch(exception)
+  {
+	  set ok=exception.AsStatus()
+  }	
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="printPDFsumatra">
+<Description>
+Печать указанного файла pdf на указанный принтер (через SumatraPDF.exe)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFileReport:%String,pPrinterName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try
+  {	
+     if ##class(%File).Exists($get(pFileReport))&&(pPrinterName'="") {
+	     set sumatraPDF=##class(TCLEx.Function.Printer).getPathToSumatraPDF()
+	     if sumatraPDF'="" set sumatraPDF=sumatraPDF_"\SumatraPDF.exe"
+	     if (sumatraPDF="")&&('##class(%File).Exists(sumatraPDF)) {
+		     set ok=$$$ERROR($$$GeneralError,"Путь к SumatraPDF не найден.")
+		     quit
+	     } 
+	     //set command=""""_##class(TCLEx.Function.Printer).getPathToSumatraPDF()_"\SumatraPDF.exe"_""" -print-to """_pPrinterName_""" """_pFileReport_""""
+	     set command=##class(%File).NormalizeFilenameWithSpaces(sumatraPDF)_" -print-to """_pPrinterName_""" "_##class(%File).NormalizeFilenameWithSpaces(pFileReport)
+	     set ok1=$zf(-1,command)
+	     if ok1=0 {
+		     set ok=1
+	     } else {
+		      set ok=$$$ERROR($$$GeneralError,"Не удалось напечатать файл "_pFileReport)
+	     }
      }
    } catch(exception)
   {
@@ -384,18 +421,213 @@ Id принтера</Description>
 <ProcedureBlock>0</ProcedureBlock>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
-    New PLIST,sqlcode
-	Set result=""
-	Set user=##class(TCLEx.Data.Event).CurrentUser()
-	If user'="" {										// Ищем принтер по умолчанию для пользователя
-		Kill PLIST		
-		Set sqlcode=$$selrow^MVBSSUSR(user)				// ( таблица SS_USER поле CTPrintDestination)
-		If sqlcode=0 {
-			Set result=$Piece(PLIST(13),$Char(1),1)
-		}	
-	}	
-	If result'="" Quit result							// Если для пользователя принтер не заполнен
+	// при одиночной печати просто определяем принтер по пользователю, если пользователь вдруг не задан. тогда принтер по умолчанию
+	//при групповой печати - принтер определяем по курьеру
+	set printer=""
+	if $get(pCourier)'="" {
+		set printerinfo=##class(TCLEx.Function.Printer).getPrinterByCourierDRP(pCourier)
+		set printer=$piece(printerinfo,$char(0),1)
+	    }
+	if printer="" {
+		if $get(pUser)'="" {
+		    set printer=##class(TCLEx.Function.Printer).getUserDefaultPrinter(pUser)
+	    }
+	}    
+    If printer'="" Quit printer							// Если для пользователя принтер не заполнен
 	Quit ##class(TCLEx.Function.Printer).DefaultPrinter()
+]]></Implementation>
+</Method>
+
+<Method name="CreateValuesBuf">
+<Description>
+Загрузить значения полей, необходимых для печати результата
+pEpis - эпизод
+pTestSets - буфер наборов тестов 
+pDepCode - отдел исследований
+pLanguage - язык результата  
+pRepParamGlb - глобал с данными</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pDepCode:%String,pLanguage:%String,pRepParamGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	//s ^test("par22")=pEpis_"*"_pTestSets_"*"_pDepCode_"*"_pLanguage
+
+	Kill @pRepParamGlb
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit
+	//
+	Set @pRepParamGlb@("FullName")=$$RemomeNotPrintableCharacters^KSUTIL1($$NameFormat^KSUTIL1(1,episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1))
+	If $IsObject(episobj.EPVISSpeciesDR) {
+		Set @pRepParamGlb@("Sex")=$$RemomeNotPrintableCharacters^KSUTIL1(episobj.EPVISSpeciesDR.CTSPDesc)
+	}
+	/*
+	If $IsObject(episobj.EPVISDebtorNumberDR) {
+		Set @pRepParamGlb@("MRN")=episobj.EPVISExtra15 //$$RemomeNotPrintableCharacters^KSUTIL1(episobj.EPVISDebtorNumberDR.%Id())
+	}*/
+	set patienttypeobj=episobj.EPVISPatientType
+	set patienttype="" if $IsObject(patienttypeobj) {
+		set patienttype=patienttypeobj.%Id()  
+	}
+	Set @pRepParamGlb@("MRN")=patienttype_$select(patienttype'="":"/",1:"")_episobj.EPVISExtra15
+	
+	Set @pRepParamGlb@("Episode")=pEpis
+	Set age="Неизвестен" 
+	If episobj.EPVISAge'="" {
+		Set age=episobj.EPVISAge
+	}	  
+	//Set @pRepParamGlb@("Age")=age
+	Set @pRepParamGlb@("Age")=$$RemomeNotPrintableCharacters^KSUTIL1(##class(TCLEx.Report.Function).Age(episobj.EPVISDateOfBirth,episobj.EPVISDateOfCollection,pLanguage))
+	
+	Set @pRepParamGlb@("DateOfCollection")=$$DisplayDate^KSPCLUtils(episobj.EPVISDateOfCollection)
+	If episobj.EPVISTimeOfEntry'="" {
+		Set @pRepParamGlb@("TimeOfEntry")=$$DisplayTime^KSPCLUtils(60*episobj.EPVISTimeOfEntry,2)
+	}
+	If $IsObject(episobj.EPVISHospitalCodeOriginalDR) {
+		Set @pRepParamGlb@("HospitalDepartment")=$$RemomeNotPrintableCharacters^KSUTIL1(episobj.EPVISHospitalCodeOriginalDR.CTHOSName)
+	}	
+
+    set @pRepParamGlb@("Doctor")=""
+	Set doctobj=episobj.EPVISDoctorCodeDR
+	If $IsObject(doctobj) Set @pRepParamGlb@("Doctor")=$$RemomeNotPrintableCharacters^KSUTIL1($$FullName^KSPCLUtils(doctobj.CTDRSurname,doctobj.CTDRGivenName))
+	
+	Set depcode=$Piece(pDepCode,$Char(1),1)
+	If (depcode'="")&&(##class(User.CTSuperSet).%ExistsId(depcode)) {
+		Do ##class(TCLEx.Function.SuperSet).CreateItemsBuf(depcode,$NA(^||Report.SuperSetItems))
+		Set firsttestset=$Order(^||Report.SuperSetItems(""))
+		Set depcode=$Extract(firsttestset,1,1)
+	} 
+	Set depobj=##class(User.CTDepartment).%OpenId(depcode,0)
+	If $IsObject(depobj) {
+		Set @pRepParamGlb@("Department")=$$RemomeNotPrintableCharacters^KSUTIL1(depobj.CTDEPName)
+	}
+
+	set priority=""
+	if $IsObject(episobj.EPVISPriorityCodeDR) {
+		if $$seldata^LVBCTPR(episobj.EPVISPriorityCodeDR.%Id(),4)="Y" {
+			set priority="Y"
+		}
+	}
+	Set @pRepParamGlb@("Priority")=priority
+	
+	//
+	Set summarytestset=##class(TCLEx.Function.SuperSet).SummaryTestSet(pDepCode)
+	Set (authtestset,canceltestset,authtestsetWithRealDoctor)=""
+	Set key="",testobj="",canceledobj=""
+	For  {
+		Set testobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testobj) Continue
+		Set testsetid=testobj.%Id()
+		If ..IsTestSet4Department(testsetid,.pTestSets,pDepCode,summarytestset) Continue
+		If ##class(TCLEx.Function.TestSet).IsAuthorised(testobj) {
+			Set authtestset=testsetid
+			Set authdoctor=testobj.VISTSUserAuthorisedDRGetObjectId()														// Врач, который авторизовал набор тестов
+	        Set officialdoctor=##class(TCLEx.Function.TestSet).GetDoctorAuthorisationDefault(testsetid,authdoctor)
+			if authdoctor'=""&&(authdoctor=officialdoctor) set authtestsetWithRealDoctor=testsetid
+			if authtestsetWithRealDoctor'="" Quit
+		}	
+		If ##class(TCLEx.Function.TestSet).IsCanceled(testobj) {
+			Set canceltestset=testsetid
+		}	
+	}
+	Set testsetid=""
+	If (authtestsetWithRealDoctor'="") {						// Либо берем подходящий авторизованный набор тестов
+		Set testsetid=authtestsetWithRealDoctor
+	} Else {
+	    If (authtestset'="") {						// Либо берем подходящий авторизованный набор тестов
+		    Set testsetid=authtestset
+	    } Else {
+		    If (canceltestset'="") {				// (если нет авторизованных, то берем отмененный)
+			    Set testsetid=canceltestset
+		    }
+	    }	
+	}	
+	If testsetid="" Quit
+	Do ..SetTestSetVals(testsetid,pLanguage,pRepParamGlb)
+	//m ^test(1111)=@pRepParamGlb
+]]></Implementation>
+</Method>
+
+<Method name="SetTestSetVals">
+<Description>
+Загрузить значения полей для печати, которые берутся из набора тестов 
+pTestSetId - Id набора тестов
+pTestSets - буфер наборов тестов 
+pLanguage - язык результата  
+pRepParamGlb - глобал с данными</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pLanguage:%String,pRepParamGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj) Quit
+	
+	Set @pRepParamGlb@("TS_ID")=testsetobj.%Id()
+	Set @pRepParamGlb@("TS_DateOfAuthorisation")=$$DisplayDate^KSPCLUtils(testsetobj.VISTSDateOfAuthorisation)
+	;
+	Set cttestsetobj=testsetobj.VISTSTestSetDR
+	If $IsObject(cttestsetobj) { 
+		Set depobj=cttestsetobj.CTTSDepartmentDR
+		If $IsObject(depobj) {
+			Set @pRepParamGlb@("TS_DepartmentName")=depobj.CTDEPName
+			Set @pRepParamGlb@("TS_DepartmentCode")=depobj.%Id()
+		}
+	}	
+	;
+	Set authdoctor=testsetobj.VISTSUserAuthorisedDRGetObjectId()														// Врач, который авторизовал набор тестов
+	Set officialdoctor=##class(TCLEx.Function.TestSet).GetDoctorAuthorisationDefault(pTestSetId,authdoctor)	// Если авторизовал лаборант, то врач по умолчанию для отдела авторизованного набора тестов
+	Set userobj=##class(User.SSUser).%OpenId(officialdoctor,0) //testsetobj.VISTSUserAuthorisedDR
+	If $IsObject(userobj) { 
+		Set @pRepParamGlb@("TS_AuthorisedDoctorId")=userobj.%Id()
+		Set @pRepParamGlb@("TS_AuthorisedDoctor")=userobj.SSUSRName
+	}	
+	;
+	Set specimen=""
+	Set specobj=testsetobj.VISTSSpecimenTypeDR
+	If $IsObject(specobj) Set specimen=specobj.CTSPEDesc
+	If specimen="" Set specimen=$$TestSpecimen^KSReportSQL($Piece(testsetobj.%Id(),"||",2))
+	Set @pRepParamGlb@("TS_Specimen")=specimen
+	;
+	if $get(@pRepParamGlb@("Priority"))="" {
+			if $IsObject(testsetobj.VISTSPriorityDR) {
+				if $$seldata^LVBCTPR(testsetobj.VISTSPriorityDR.%Id(),4)="Y" {
+			        set @pRepParamGlb@("Priority")="Y"
+				}   
+			}
+	}
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Подходит ли объект набора тестов эпизода pTestSetObj для отдела pDepCode
+
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+// для супер-набора также проверяется, что код набора тестов является заключением (pSummaryTestSet) 
+
+]]></Content>
+</UDLText>
+
+<Method name="IsTestSet4Department">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTestSetId:%String,&pTestSets:%String,pDepCode:%String,pSummaryTestSetId:%String]]></FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj) Quit 0
+	Set pSummaryTestSetId=$Get(pSummaryTestSetId)
+	If ##class(User.CTSuperSet).%ExistsId(pDepCode) {
+		If $IsObject(testsetobj.VISTSSuperSetDR)&&(testsetobj.VISTSSuperSetDR.%Id()=pDepCode)&&($IsObject(testsetobj.VISTSTestSetDR)) {
+			If testsetobj.VISTSTestSetDR.%Id()=pSummaryTestSetId Quit 1
+		}	
+	} Else {
+		If ('$Data(pTestSets)||($Data(pTestSets(pTestSetId))))&&($Extract(pTestSetId,1,1)=pDepCode) {
+			Quit 1
+		}	
+	}
+	Quit 0
 ]]></Implementation>
 </Method>
 </Class>
