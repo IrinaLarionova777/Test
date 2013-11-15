@@ -454,7 +454,7 @@ This is used to generate the XSLT stylesheets for both HTML and XSL-FO.</Descrip
 		       set counter=$length(spisTests,",")
 		       for i=1:1:counter {
 			        set test=$piece(spisTests,",",i)
-			        if flagCalc'="Y",$d(^TTAB("TC",test,3,testset)) continue  ;вычисляемые тесты не брать 
+			        if flagCalc'="Y",$p($get(^TTAB("TC",test,3,testset,"EXTRA")),"\",2)="Y" continue  ;вычисляемые тесты не брать  (Шаблон - Тест-Вычисление -Разрешено только рассчитывать (галочка) - тогда считаем вычисляемым)
 			        set rec=$get(^TTAB("TC",test))
 			        set nameTest=$piece(rec,"\",1)
 			        if flagSinonimForTest="Y" set nameTest=$piece(rec,"\",12) if nameTest="" set nameTest=test
@@ -610,7 +610,7 @@ This is used to generate the XSLT stylesheets for both HTML and XSL-FO.</Descrip
 		    }
 	    }
 	    set @refTmp@("hpage")=countPageH
-	    //m ^test("ws","data",typeWS,numWS)=@refTmp
+	   // m ^test("ws","data",typeWS,numWS)=@refTmp
 	}
 	Catch exception
 	{
@@ -670,8 +670,10 @@ This is used to generate the XSLT stylesheets for both HTML and XSL-FO.</Descrip
 	 $$$ThrowOnError(##class(Report.rpt).getPathFileReportGroup(.pathFileReport,$get(USER)))
      
      set fileReport=pathFileReport_"/"_$zn_USER_".pdf"
+     //set ^test(111,"fileReport")=fileReport
      $$$ThrowOnError(##class(ReportZEN.WSrpt).GetPDF(pTypeWorkSheet,pNumWorkSheet,fileReport,flagPrintOnlyLastPages))
      $$$ThrowOnError(##class(Report.rpt).getNamePrinterForReport(reportID,$get(USER),.printerName)) 
+     //set ^test(111,"printerName")=printerName
      if ##class(%File).Exists(fileReport) {
 	     set flagSilence=1
          $$$ThrowOnError(##class(Report.rpt).startPdfBoxFacade(fileReport,printerName,flagSilence))
@@ -699,24 +701,28 @@ This is used to generate the XSLT stylesheets for both HTML and XSL-FO.</Descrip
 /// RenderServer is set to the port of the hot JVM server
 /// There is also a queuing hot JVM server which queues files for PDF rendering later
 /// This is queuing mechanism is never called visually but only by AsynchGenerateReport which always generates PDFs  
-/// Для того, чтобы самотреть какой XSL файл генериться для отчета в каталоге $ZU(12)_"Temp"
-/// Полезно отрубить удаление временных файлов, т.е. комментируем строку
-///  do ..DeleteTempFiles(.xmlfile,.xslfile,.pdffile,.logfile)
-Method %DisplayPDF1(DisplayLog As %Boolean = 1, RenderServer As %String = "", async As %Boolean = 0, ByRef xmlfile As %String, ByRef xslfile As %String, ByRef pdffile As %String, ByRef lockfile As %String) As %Status
+Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", async As %Boolean = 0, ByRef xmlfile As %String, ByRef xslfile As %String, ByRef pdffile As %String, ByRef lockfile As %String, fromGenerateReport As %Boolean, outputfilename As %String) As %Status [ Internal ]
 {
 	Set tSC=$$$OK
 	Do {
 		#; Generate data file and XSLT stylesheet which transforms data to HTML
 		Set tSC = ..%MakeXMLDataFile(.xmlfile,0) Quit:$$$ISERR(tSC)
-		Set tSC = ..%MakeToXSLFOFile(.xslfile) Quit:$$$ISERR(tSC)
+		//Set ..xmlfile = xmlfile
+		Set tSC = ..%MakeToXSLFOFile(.xslfile,xmlfile) Quit:$$$ISERR(tSC)
 
 		#; Generate filenames for log/pdf
 		Set tmpdir=..GetRootDir()
 		Set tRootName=..GetSafeRootName()
 		if tRootName="" Set logfile = tmpdir_##class(%FileBinaryStream).NewFileName("txt",..%GetTempDir())		
 		if tRootName'="" Set logfile = ..MakeFileName(..GetRootDir(),tRootName,".txt")
-		if tRootName="" Set pdffile = tmpdir_##class(%FileBinaryStream).NewFileName("pdf",..%GetTempDir())
-		if tRootName'="" Set pdffile = ..MakeFileName(..GetRootDir(),tRootName,".pdf")
+		; delete logfile so user does not see "ghost" of old logfile when using $REPORTNAME
+		i $g(logfile)'="" Do ##class(%File).Delete(logfile)
+		if (fromGenerateReport=0 || (DisplayLog=1)) {
+			if tRootName="" Set pdffile = tmpdir_##class(%FileBinaryStream).NewFileName("pdf",..%GetTempDir())
+			if tRootName'="" Set pdffile = ..MakeFileName(..GetRootDir(),tRootName,".pdf")
+		} else {
+			Set pdffile = outputfilename
+		}
 		if (async'=0) {
 			if tRootName="" Set lockfile = tmpdir_##class(%FileBinaryStream).NewFileName("lck",..%GetTempDir())
 			if tRootName'="" Set lockfile = ..MakeFileName(..GetRootDir(),tRootName,".lck")
@@ -724,8 +730,9 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 1, RenderServer As %String = "", as
 
 
 		#; Command line callout to FOP or XEP
-		Set tSC = ..%PerformTransform(xmlfile, xslfile, pdffile, logfile, 1, RenderServer, async, $g(lockfile))
+		Set tSC = ..%PerformTransform(xmlfile, xslfile, pdffile, logfile, 1, RenderServer, async, $g(lockfile), DisplayLog)
 
+#if 0 ; 11-04-11
 		If $$$ISOK(tSC),'async {
 			If DisplayLog {
 				Set oid = ##class(%CSP.StreamServer).GetOidForFile(logfile)
@@ -733,20 +740,34 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 1, RenderServer As %String = "", as
 			Else {
 				Set oid = ##class(%CSP.StreamServer).GetOidForFile(pdffile)
 			}
-			if (..#HANG'=0) hang ..#HANG
 			Set stream=##class(%Stream.Object).%Open(oid)
 			$$$SETIO("RAW")
 			Do stream.OutputToDevice()
 		}
+#else		
+		If $$$ISOK(tSC),'async,('fromGenerateReport||(DisplayLog=1)) {
+			Set stream=##class(%FileBinaryStream).%New()
+			If DisplayLog {
+				Set stream.Filename=logfile
+			}
+			Else {
+				Set stream.Filename=pdffile
+			}
+			$$$SETIO("RAW")
+			Do stream.OutputToDevice()
+		}
+#endif		
+		
 		; if in asynch mode generation of PDF is done by queuing hot JVM server which has responsibility for
 		; deleting xmlfile and xslfile.  The queing hot JVM server needs to be connected to a print management system
 		; that has the responsibilty for deleting the pdf file when renered.  No logfile is created when PDF rendering
 		; is done by hot JVM server.
-		//if ('async) do ..DeleteTempFiles(.xmlfile,.xslfile,.pdffile,.logfile)
+		//if ('async) do ..DeleteTempFiles(.xmlfile,.xslfile,.pdffile,.logfile,.xmlfiles,.pdfiles,0,fromGenerateReport)
 	} While (0)
 
 	Quit tSC
-}*/
+}
+*/
 ]]></Content>
 </UDLText>
 </Class>
