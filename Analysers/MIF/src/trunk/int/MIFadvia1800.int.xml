@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFadvia1800" type="INT" languagemode="0"><![CDATA[
+MIFadvia1800(mi) ; own protocol  -  Advia 1800 (Bi-Directional) (Russion GKB12))
+ // from documentation: suppose: mode:17, case <5>, Sample ID: barcode, Sample Feed: Laboratory automation system (LAS)
+ // Order Registration: Real
+ // A single database block can store 10 tests
+ // Automatic test select (Host Query Mode) or Real Test Registration Protocol
+ // Real data output
+ // Maximum frame size = 512 byte (3 blocks)
+ set mi=$get(mi) if '$length(mi) quit
+ kill ^TMIF(mi,10) 
+ //set $ztrap="err^MIF000dop"
+ set $ztrap="err^MIF000"
+ if $$select^LVBMIMP(mi) quit
+ for j=1:1:PLIST set @("par"_j)=PLIST(j)
+ set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21),dc1=$char(11)
+ set lf=$char(10),cr=$char(13)
+ if $$start^MIF000() quit
+ do trace^MIF000(mi,"Started job="_$job,"DEBUG")
+ //set compiled=$listget(^rINDEX($zname,"OBJ"),1)
+ set tcpadr=$get(^TMIF(mi,"TCP")) // если указан ip-адрес, то host - client, иначе host - server
+ for {
+	 if tcpadr'="" {
+		 do Main
+	 } else {
+		 do MainWithCatchError
+	 }
+	 if $$stop^MIF000() quit
+	 //if $listget(^rINDEX($zname,"OBJ"))'=compiled ztrap "EDIT"  // эмуляция ошибки EDIT, если программа-драйвер изменилась
+ }
+ close par4
+ quit
+ 
+ // for lis-client 
+Main 
+ read *R:10
+ ;if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ if $char(R)'=enq quit
+ do receiveENQ
+ quit
+
+ // for lis-server
+MainWithCatchError 
+ try {
+   read *R:10
+   //if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+   if $char(R)'=enq quit
+   do receiveENQ
+ } catch {
+	 do err^MIF000
+ }   
+ quit
+ 
+ ;обработка полученного от прибора ENQ
+receiveENQ
+ set (sample,epis,surname,result,date,time,QC)="" 
+ do trace^MIF000(mi,"ENQ","H<--M")
+ do ACK
+ set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=20,ok=1
+ for {
+	 read *R:10 
+	 if $char(R)=eot quit
+	 if $char(R)=enq do trace^MIF000(mi,"ENQ is recieved at the wrong time","H-->M") do EOT set ok=0 quit
+	 set timeSilence=$piece($horolog,",",2)-timeSilenceStart
+	 if timeSilence>timeSilenceLimit do trace^MIF000(mi,"timeSilence>timeSilenceLimit ("_timeSilence_">"_timeSilenceLimit_")","H-->M") do EOT set ok=0 quit
+     if $char(R)'=stx continue
+     set timeSilenceStart=$piece($horolog,",",2)
+     set record=$$read^MIF000("",lf) if '$length(record)  continue
+     set record=$extract(record,1,$length(record)-1)
+     do trace^MIF000(mi,record,"H<--M")
+     ; check record validity
+     set chsum=$piece(record,etx,2),chrecord=$piece(record,etx,1)_etx
+     if $$CHSUM(chrecord)'=chsum do NAK continue
+     do ACK
+     set record=$piece(record,$char(13),1) // так как при чтении последнего поля по разделителю "|", туда попадает $c(13)_$c(3)_chksum
+     set typerecord=$extract(record,2)
+
+     ; query record
+     if typerecord="Q" {
+	     set epis=$tr($extract(record,11,23)," ","")
+	     if $length(epis) set ^TMP($zname,$job,"ENQ",epis)="" 
+         continue
+     }    
+     ; result record
+     if typerecord="R" {
+	     set blockNumber=+$tr($extract(record,6,7)," ","")
+	     set countTests=$tr($extract(record,8,10)," ","") //Number of tests in a block
+	     set datetr=$extract(record,11,18) if $length(datetr)=8 set date=$zdh(datetr,5)
+	     set cur=19
+	     // for new format
+	     //set timetr=$extract(record,19,24) if $length(timetr)=6 set time=$zth($e(timetr,1,2)_":"_$e(timetr,3,4)_":"_$e(timetr,5,6),1)
+	     //set cur=25
+	     set width=1 set typeSample=$extract(record,cur+1,cur+width) if typeSample="C" set QC="Y"
+	     set cur=cur+width
+	     set cur=cur+1  // пропускаем ID specification
+	     set width=13 set epis=$tr($extract(record,cur+1,cur+width)," ","")
+	     set cur=cur+width
+	     if blockNumber=1 set cur=cur+7+16+16+1+3+8+4+1+1  // first block
+	     else  set cur=cur+7                               // second block and more
+         for ii=1:1:countTests {
+	         set width=3 set test=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width
+	         if test="" quit
+	         set cur=cur+1 // пропускаем Analysis condition 1 byte “M” or “D” or “U” Normally set to “M”
+	         set width=8 set res=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width
+	         set flag=3 set test=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width 
+	         // for new format
+	         //set cur=cur+1+3
+             if $length(res),$isvalidnum(res) set res=+res // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
+             if $length(test),$length(res) set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
+         }
+         do Last
+         continue
+     }
+     set timeSilenceStart=$piece($horolog,",",2)
+ }
+ if ok=1 {
+	 do trace^MIF000(mi,$select($char(R)=eot:"EOT",$char(R)=enq:"ENQ",1:R),"H<--M")
+	 do ORDER
+ }
+ quit
+Last ; file result if exists
+ do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"H<--H")
+ if $length(epis),$length(result) {
+ 	 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ }
+ set (sample,epis,surname,result,date,time,QC)=""
+ quit
+ 
+ // с обработкой приоритета и типа материала образца 
+ORDER 
+ set blockNumber=0
+ set epis="",okSend=0
+ for {
+	 set epis=$order(^TMP($zname,$job,"ENQ",epis)) quit:epis="" 
+     do scanone^MIF000(mi,epis)
+     if $$select^LVBEPVIS(epis,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
+     set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
+     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
+     // приоритет по эпизоду
+     set priority=0 //Routine 
+     //if $$seldata^LVBCTPR(PLIST(17),4)="Y" set priority=1 // STAT
+     kill vsp
+     set tc="" 
+     for {
+	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,epis,tc)) if tc="" quit
+	     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,epis,tc)
+	     if refEpisode="" continue
+	     set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
+	     set rec=$get(^TEPI(epis,1,testset,tscnt))
+	     // код типа образца материала
+         set codeTypeSpecimen=$piece(rec,"\",46)
+         if codeTypeSpecimen="" set codeTypeSpecimen=##class(TCLEx.Function.TestSet).DefaultSpecimen(testset)
+         if codeTypeSpecimen="" set codeTypeSpecimen=0
+         set specimenAnalisator=$select(codeTypeSpecimen="SE":1,codeTypeSpecimen="U":2,1:1)  ;$$getSpecimenAnalisator(codeTypeSpecimen)
+         if specimenAnalisator="" set specimenAnalisator="1"
+         
+         // приоритет по набору тестов
+         // по приоритету пока не делим
+         //set priorityCodeTest=$piece(rec,"\",10)
+         //if (priority=0)&&(priorityCodeTest'="") if $$seldata^LVBCTPR(priorityCodeTest,4)="Y" set priority=1 // STAT
+         set priority="0" 
+         set vsp(priority,specimenAnalisator,tc)=""
+     }
+     set episformat=$extract(epis_$j("",13),1,13) 
+     set reco="O"_" "_"01"_"01"_"000"_"N"_"0"_episformat
+     //Sample classification 1 “N” (4EH) General sample, “I” (49H) Interruption sample (похоже, это cito)
+     set width=7+16+16+1+3+8+4
+     set reco=reco_$j("",width)
+       
+     set priority="",okOrder=0,ordernum=0
+     for {
+	     set priority=$order(vsp(priority),-1) if priority="" quit
+	     set specimen=""
+	     for {
+		     set specimen=$order(vsp(priority,specimen)) if specimen="" quit
+		     set frame=0
+		     set rec=reco_specimen_"1"
+		     set countTest=0 // можно 105 тестов при 512bute строке - поэтому не проверяем
+		     set tc=""  
+		     for {
+			     set tc=$order(vsp(priority,specimen,tc)) if tc="" quit
+			     set rec=rec_$j(tc,3)_"M"
+			     set countTest=countTest+1
+		     }
+		     set rec=rec_$j("",1)
+		     if countTest=0 
+		     else  set $extract(rec,7,9)=$tr($j(countTest,3)," ","0")
+		     set blockNumber=blockNumber+1
+		     set $extract(rec,5,6)=$tr($j(blockNumber,2)," ","0")
+		     set npp=$order(^TMIF(mi,10,""),-1)+1
+		     set ^TMIF(mi,10,npp)=rec
+		     /*
+		     set frame=frame+1
+		     // пытаемся послать 3 раза 
+		     for attemp=1:1:3 {
+ 			     set err=$$SEND(frame#8_rec)
+			     if 'err quit
+		     }*/			     
+	     }
+     }   
+	            
+     kill ^TMP($zname,$job,"ENQ",epis)
+ }
+ // прописываем во всех строках общее ко-во блоков
+ set i=""
+ for {
+	 set i=$order(^TMIF(mi,10,i),1,rec) if i="" quit
+	 set $extract(rec,3,4)=$tr($j(blockNumber,2)," ","0")
+ }
+ set ok=$$Send()
+ 
+ quit
+
+Send() ; send list of orders if exists
+ do ENQ 
+ for j=1:1:5 {
+	 read *R:1 
+	 if ($char(R)=ack)||($char(R)=enq)||($char(R)=eot) quit
+	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
+ }
+ set ch=$char(R)
+ do trace^MIF000(mi,$select(ch=enq:"ENQ",ch=eot:"EOT",ch=ack:"ACK",ch=nak:"NAK",1:ch),"H<--M")
+ if $char(R)=enq do EOT quit 0
+ if $char(R)'=ack do EOT quit 0
+ set x="" 
+ for FRAME=1:1 {
+	 set x=$Order(^TMIF(mi,10,x)) quit:x=""  
+	 set oksend=0 
+	 for attemp=1:1:3 {
+		 set ok1=+$$SEND(FRAME#8_^TMIF(mi,10,x))
+		 if ok1=1 quit  // пропускаем посылку этой строки, пытаемся послеть следующую
+		 if ok1=2 continue
+		 set oksend=1
+		 kill ^TMIF(mi,10,x)
+		 quit
+	 }
+	 //if oksend=0 quit
+ }
+ do EOT
+ set ok=$select($data(^TMIF(mi,10))>0:0,1:1)
+ kill ^TMIF(mi,10) // в любом случпе удаляем то, что хотели отправить
+ quit ok
+ 
+SEND(str) ; send string to instrument
+ set str=str_cr_etx,chsum=$$CHSUM(str)
+ write stx,str,chsum,cr,lf,*-3 
+ do trace^MIF000(mi,str_chsum,"H-->M")
+ for j=1:1:2 {
+	 read *R:1 
+	 quit:($char(R)=ack)!($char(R)=eot)!($char(R)=enq)!($char(R)=dc1)!($char(R)=nak)
+	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
+ }
+ if $char(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
+ if $char(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
+ if $char(R)=enq do trace^MIF000(mi,"ENQ","H<--M") quit 1
+ if $char(R)=dc1 do trace^MIF000(mi,"DC1","H<--M") quit 1
+ if $char(R)=nak do trace^MIF000(mi,"NAK","H<--M") quit 2
+ do trace^MIF000(mi,R,"H<--M")
+ quit 2
+ 
+CHSUM(x) ; calculate check sum
+ new (x) 
+ set z=0 for y=1:1:$length(x) set z=z+$ascii(x,y)
+ quit $translate($justify($zhex(z#256),2)," ","0")
+ 
+ACK write ack,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
+NAK write nak,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
+EOT write eot,*-3 do trace^MIF000(mi,"EOT","H-->M") quit
+ENQ write enq,*-3 do trace^MIF000(mi,"ENQ","H-->M") quit
+]]></Routine>
+</Export>
