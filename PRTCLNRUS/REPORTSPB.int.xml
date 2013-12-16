@@ -14,27 +14,41 @@ ROUTINE(report) s report=$G(report)
  q ""   
  ;=====================================================================================================================
  ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
-FORM(report,user)
- s report=$G(report),user=$G(user)
+ ; par : pathExecuteTiDoc_$char(0)_pathExecuteToExcel
+FORM(report,user,par)
+ s report=$G(report),user=$G(user) s ^test(222)=$g(par)
  New %routine
  s report=$G(^TMP("REPORTSPB",$j)) q:report="" ""        
  s %routine=$p($g(^TTAB("REPORT-GENERIC",report)),"\",1)
  s mas=""
  i $l(%routine) s LineRoutine="FORM^"_%routine i $l($t(@LineRoutine)) x "s mas=$$FORM^"_%routine_"("""_user_""")" 
- if $extract($p($g(^TTAB("REPORT-GENERIC",report)),"\",8),1,8)="ReportVB" if mas'="" do ChangeColon(mas,report)
+ if $extract($p($g(^TTAB("REPORT-GENERIC",report)),"\",8),1,8)="ReportVB" {
+	 if mas'="" {
+		 do ChangeColon(mas,report)
+		 // определить, нужны ли checkbox for excel and word
+		 // Проверить, надо ли активизировать ли checkboxes for Word and Excel
+		 // par : pathExecuteTiDoc_$char(0)_pathExecuteToExcel
+		 if '$data(@mas@("form")) set @mas@("form")=":500:300:Формиров.:Выход" 
+		 set strform=@mas@("form")
+		 set ok=$$CheckFlagsWordExcel(report,$get(par),.strform) 
+		 if ok set @mas@("form")=strform
+	 }
+ }
  q mas
  ;===================================================================================================================== 
  // Раньше в строке описания параметра использовался разделитель ":", в новой dll (RepoerVB.dll) переходим на использование разделителя $char(0)
 ChangeColon(mas,report)
+ new par,rec
  if ($get(mas)="")||('$data(@mas)) quit
  set par=""
  for {
      set par=$order(@mas@(par),1,rec) if par="" quit
      if rec[$char(0) continue
      set @mas@(par)=$translate(rec,":",$char(0))
+     /*
      if par="form" {
 	     set $piece(@mas@(par),$char(0),7)=$select($$GetViwer2(report)="EXCEL":1,1:0)
-     }	 
+     }*/	 
  }
  quit 
  ;=====================================================================================================================
@@ -182,38 +196,118 @@ PARAM(PAR,Mas)
  q
  ;=====================================================================================
  ; Запись результирующего файла на сервер с возвратом пути: \\server\...\user\FileName.htm
-WriteFileLabTrakClient(Glob,FileXSL,Client)
- New R,PathWrite,%Ret,MasEr,i,%Exist
- S $ZT="Err^"_$zn
+ ; output: 0/100 (0-ok,100-ошибка)^Description error^fileResult^execute
+WriteFileLabTrakClient(Glob,FileXSL,Client,pPar) 
+  New (Glob,FileXSL,Client,pPar)
+  set returnValue=""   
+  try {
+    // проверяем, надо ли формировать open xml for openoffice
+    set flagOpenXML=0,exec="EXPLORER"
+    if $get(pPar)["iiiFormatReport" {
+	   set strformatReport=$piece($piece(pPar,"iiiFormatReport",2),$char(2),1)
+	   if strformatReport'="" {
+		 set formatReport=$piece(strformatReport,$char(3),2)
+		 set execReport=$piece(strformatReport,$char(3),3)
+		 if (formatReport="excel")&&((execReport["swriter.exe")||(execReport["scalc.exe")) {
+			 set flagOpenXML=1
+		 }
+		 set exec=$select(formatReport="excel":"EXCEL",formatReport="word":"WINWORD",1:"EXPLORER")
+	   }
+    }
+   // S $ZT="Err^"_$zn
  S R=$C(1)
- S Glob=$G(Glob) Q:Glob="" "*Имя глобала <пусто>"
+ S Glob=$G(Glob) 
+ if Glob="" {
+	 set returnValue="100^Имя глобала <пусто>"
+	 quit
+ }
  S Client=$G(Client) ;Q:Client="" "*Имя клиента(пользователя) <пусто>"  
  s Client="Clients"
  s NameFile=$$NameFile()
  S PathWrite=$$Path() 
- i $E(PathWrite)="*" q PathWrite
+ i $E(PathWrite)="*" {
+	 set returnValue="100^"_PathWrite
+	 quit
+ }
  set resultExtension = ".htm"
- if $d(@Glob@("WriteFileLabTrakClientExtension")) = 1 do
- . set resultExtension = @Glob@("WriteFileLabTrakClientExtension")
- . kill @Glob@("WriteFileLabTrakClientExtension")
- S %Ret=$$ExistDir(PathWrite_"\"_Client)
- I %Ret'="" D  Q:%Ret'="" %Ret
- . S %Ret=$$CreateDir(PathWrite_"\"_Client)
- . S:%Ret'="" %Ret="*CreateDir:"_%Ret
- S %Ret=$$XML(Glob,PathWrite_"\"_Client_"\"_NameFile_".xml",NameFile_".xsl") Q:%Ret'="OK" "*"_%Ret
- S %Ret=$$ExistFile(PathWrite_"\XSL\"_FileXSL) Q:%Ret'="" "*"_%Ret
- S %Ret=$ZF(-1,"copy "_PathWrite_"\XSL\"_FileXSL_" "_PathWrite_"\"_Client_"\"_NameFile_".xsl")
- Q:%Ret'=0 "*"_"Файл "_FileXSL_" не скопирован из "_PathWrite_"\XSL\ в "_PathWrite_"\"_Client_"\"
- S %Ret=$$ExistFile(PathWrite_"\Script\test.wsf")  Q:%Ret'="" "*"_%Ret
- S %Ret=$$DelFile(PathWrite_"\"_Client_"\"_NameFile_".htm.err")
- Q:%Ret'=0 "*Запрет на удаление файла ошибок "_PathWrite_"\"_Client_"\"_NameFile_".htm.err"
- S %Ret=$ZF(-1,"wscript.exe /T:900 """_PathWrite_"\Script\test.wsf"" //job:subXML """_PathWrite_"\"_Client_"\"_NameFile_".xml"" """_PathWrite_"\"_Client_"\"_NameFile_".xsl"" """_PathWrite_"\"_Client_"\"_NameFile_resultExtension_"""")
- S %Exist=$$ExistFile(PathWrite_"\"_Client_"\"_NameFile_".htm.err")
- I %Ret=1 D  Q %Ret
- . I %Exist="" S %Ret="*Ошибка выполнения Script test.wsf "_%Ret_" См.файл "_PathWrite_"\"_Client_"\"_NameFile_".htm.err"
- . E  S %Ret="*Не удается создать файл! ЗАКРОЙТЕ Microsoft (Word,Excel) нажмите на OK и выполните задание заново "
- Q:%Ret'=0 "*Неизвестный код возврата выполнения test.wsf="_%Ret
- Q PathWrite_"\"_Client_"\"_NameFile_resultExtension
+ if $d(@Glob@("WriteFileLabTrakClientExtension")) = 1 {
+    set resultExtension = @Glob@("WriteFileLabTrakClientExtension")
+    kill @Glob@("WriteFileLabTrakClientExtension")
+ }
+ set ok=##class(%File).DirectoryExists(PathWrite_"\"_Client)
+ if 'ok {
+	 set ok=##class(%File).CreateDirectory(PathWrite_"\"_Client)
+	 if 'ok {
+	    set returnValue="100^Не удалось создать директорию "_PathWrite_"\"_Client
+	    quit	 
+	 }
+ }
+
+ set fileXML=PathWrite_"\"_Client_"\"_NameFile_".xml"
+ S %Ret=$$XML(Glob,fileXML,NameFile_".xsl") 
+ if %Ret'="OK" {
+	 set returnValue="100^"_%Ret
+	 quit
+ }
+ set ok=##class(%File).Exists(PathWrite_"\XSL\"_FileXSL)
+ if 'ok {
+	 set returnValue="100^"_"Не удалось создать XML файл"
+	 quit
+ }
+
+ set tempFileXSL=PathWrite_"\"_Client_"\"_NameFile_".xsl"
+ if flagOpenXML=1 {
+	 set FileXSL=$piece(FileXSL,".",1,$length(FileXSL,".")-1)_"excel.xsl"
+ }
+ set fileXSL=PathWrite_"\"_Client_"\"_FileXSL
+ S %Ret=$ZF(-1,"copy "_PathWrite_"\XSL\"_FileXSL_" "_tempFileXSL)
+ if %Ret'=0 {
+	 set returnValue="100^"_"Не удалось скопировать "_"copy "_PathWrite_"\XSL\"_FileXSL_" "_tempFileXSL //Файл "_nameFileXSL_" не скопирован из "_PathWrite_"\XSL\ в "_PathWrite_"\"_Client_"\"
+	 quit
+ }
+
+  // проверяем, надо ли формировать open xml for openoffice
+ if flagOpenXML=1 {
+	set resultFile=PathWrite_"\"_Client_"\"_NameFile_".xml"
+	s ^test("ee0")=$g(fileXML)_"*"_$g(fileXSL)_"*"_$g(resultFile)
+	set ok=##class(TCLEx.Report.FunctionsJava).ExportToExcel(fileXML, tempFileXSL, ##class(%File).GetDirectory(resultFile), resultFile, PathWrite_"\"_Client_"\"_NameFile_".log", 1)
+	if 'ok {
+		set returnValue="100^"_$system.Status.GetErrorText(ok)
+		quit
+	} else {
+		set returnValue="0^^"_resultFile_"^"_exec
+	}
+ }
+ else {
+	 set ok=##class(%File).Exists(PathWrite_"\Script\test.wsf")
+     if 'ok {
+	     set returnValue="100^"_"Не существует файл "_PathWrite_"\Script\test.wsf"
+	     quit
+     }
+     S %Ret=$$DelFile(PathWrite_"\"_Client_"\"_NameFile_".htm.err")
+     if %Ret'=0 {
+	     set returnValue="100^Ошибка: Запрет на удаление файла ошибок "_PathWrite_"\"_Client_"\"_NameFile_".htm.err"
+	     quit
+     }
+     S %Ret=$ZF(-1,"wscript.exe /T:900 """_PathWrite_"\Script\test.wsf"" //job:subXML """_PathWrite_"\"_Client_"\"_NameFile_".xml"" """_PathWrite_"\"_Client_"\"_NameFile_".xsl"" """_PathWrite_"\"_Client_"\"_NameFile_resultExtension_"""")
+     set exist=##class(%File).Exists(PathWrite_"\"_Client_"\"_NameFile_".htm.err")
+     I %Ret=1 {
+        if exist=1 set returnValue="100^Ошибка выполнения Script test.wsf "_%Ret_" См.файл "_PathWrite_"\"_Client_"\"_NameFile_".htm.err"
+        else  set returnValue="100^Не удается создать файл! ЗАКРОЙТЕ Microsoft (Word,Excel) нажмите на OK и выполните задание заново "
+        quit 
+     }
+     if %Ret'=0 {
+	     set returnValue="100^Ошибка: Неизвестный код возврата выполнения test.wsf="_%Ret
+	     quit
+     }
+     set returnValue="0^^"_PathWrite_"\"_Client_"\"_NameFile_resultExtension_"^"_exec //EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ }
+ } catch(e) { 
+     set returnValue="100^"_$ze
+ }
+ if +returnValue'=0 do ##class(TCLEx.Function.General).WriteError($piece(returnValue,"^",2),$zn)
+ quit returnValue
+
  ;=====================================================================================
  ; Формирование узла ошибок для вывода в отчете
 ErrTempFXML(OutObj,temp)
@@ -414,8 +508,6 @@ GetViwer(RoutineName)
  if RoutineName="PRTCLNRUS41" set returnValue="WINWORD"
  if RoutineName="PRTCLNRUS44" set returnValue="WINWORD"
  if RoutineName="PRTCLNRUS46" set returnValue="WINWORD"
- if RoutineName="PRTCLNRUS52" set returnValue="EXCEL"
- if RoutineName="PRTCLNRUS55" set returnValue="EXCEL"
  if RoutineName="PRTCLNRUS57" set returnValue="EXCEL"
  if RoutineName="PRTCLNRUS59" set returnValue="EXCEL"
  if returnValue="" {
@@ -444,7 +536,7 @@ GetViwer2(ReportName)
  if ReportName="CLNRUS07" set returnValue="EXCEL"
  if ReportName="CLNRUS09" set returnValue="EXCEL"
  if ReportName="CLNRUS12" set returnValue="WINWORD"
- if ReportName="CLNRUS14" set returnValue="WINWORD"
+ if ReportName="CLNRUS14" set returnValue="EXCEL" //"WINWORD"
  if ReportName="CLNRUS15" set returnValue="WINWORD"
  if ReportName="CLNRUS19" set returnValue="WINWORD"
  if ReportName="CLNRUS22" set returnValue="WINWORD"
@@ -461,8 +553,6 @@ GetViwer2(ReportName)
  if ReportName="CLNRUS41" set returnValue="WINWORD"
  if ReportName="CLNRUS44" set returnValue="WINWORD"
  if ReportName="CLNRUS46" set returnValue="WINWORD"
- if ReportName="CLNRUS52" set returnValue="EXCEL"
- if ReportName="CLNRUS55" set returnValue="EXCEL"
  if ReportName="CLNRUS57" set returnValue="EXCEL"
  if ReportName="CLNRUS59" set returnValue="EXCEL"
  if returnValue="" {
@@ -495,5 +585,74 @@ PathClient(pUser)
  } 
  quit resultValue
  
+ // Получить файл с расширением doc для определения программы-обработчика файлов с расширением doc на клиенте
+GetFileTestWord() 
+  set path=$piece($get(^CF("SM",1)),"^",2)
+  if path="" quit ""
+  set file=path_ "\testdoc.doc"
+  if '##class(%File).Exists(file) {
+	  Set stream=##class(%FileCharacterStream).%New()
+	  set stream.Filename=file
+	  do stream.WriteLine("aaa")
+	  set ok=stream.SaveStream()
+	  if 'ok quit ""
+  }
+  quit file
+  
+ // Получить файл с расширением xls для определения программы-обработчика файлов с расширением xls на клиенте
+GetFileTestExcel() 
+  set path=$piece($get(^CF("SM",1)),"^",2)
+  if path="" quit ""
+  set file=path_ "\testexcel.xls"
+  if '##class(%File).Exists(file) {
+	  Set stream=##class(%FileCharacterStream).%New()
+	  set stream.Filename=file
+	  do stream.WriteLine("aaa")
+	  set ok=stream.SaveStream()
+	  if 'ok quit ""
+  }
+  quit file  
+  
+  // Корректировка строки для @par@("form") по поводу показывать ли checkbox Word Excel
+CheckFlagsWordExcel(pReport,pPar,pStrForm) public
+ s ^test(111)=$g(pReport)_"*"_$g(pPar)
+ set ok=1
+ try {
+	 set flagWord=0,flagExcel=0
+	 set execWord=$piece(pPar,$char(0),1)
+	 set execExcel=$piece(pPar,$char(0),2)
+	 set pathToXSL=$$PathXSL()
+	 if execWord'="" {
+		 // если для обработки doc прикреплен OpenOffice, то надо проверить наличие файла xsl for Word 
+		 if (execWord["scalc.exe")||(execWord["swriter.exe") {
+			 if ##class(%File).Exists(pathToXSL_"\"_pReport_"word.xsl") {
+				 set flagWord=1
+			 }
+		 } else {
+			 set flagWord=1
+		 } 
+	 }
+	 if execExcel'="" {
+		 // если для обработки doc прикреплен OpenOffice, то надо проверить наличие файла xsl for Word 
+		 if (execExcel["scalc.exe")||(execExcel["swriter.exe") {
+			 if ##class(%File).Exists(pathToXSL_"\"_pReport_"excel.xsl") {
+				 set flagExcel=1   
+			 }
+		 } else {
+			 set flagExcel=1
+		 } 
+	 }
+	 set defaultFormat=$$GetViwer2(pReport)
+	 set $piece(pStrForm,$char(0),6)=1 // флаг вообще показывать ли вообще checkbox Word Excel (активные или неактивные)
+	 set $piece(pStrForm,$char(0),7)=$select((flagWord=1)&&(defaultFormat'="WINWORD"):1,(flagWord=1)&&(defaultFormat="WINWORD"):2,1:"") // флаг, активизировать ли флаг Word
+	 set $piece(pStrForm,$char(0),8)=$select((flagExcel=1)&&(defaultFormat'="EXCEL"):1,(flagExcel=1)&&(defaultFormat="EXCEL"):2,1:"") // флаг, активизировать ли флаг Excel
+	 set $piece(pStrForm,$char(0),9)=$select(flagWord=1:execWord,1:"") // executiv for files doc
+	 set $piece(pStrForm,$char(0),10)=$select(flagExcel=1:execExcel,1:"") // executiv for files xls
+	 
+ } catch(e) { set ok=e.AsStatus() }
+ quit ok 
+PathXSL() 
+ quit $$Path()_"\XSL" 
+
 ]]></Routine>
 </Export>
