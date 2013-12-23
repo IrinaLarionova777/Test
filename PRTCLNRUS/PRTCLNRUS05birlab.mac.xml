@@ -2,6 +2,7 @@
 <Export generator="Cache" version="24">
 <Routine name="PRTCLNRUS05birlab" type="MAC" languagemode="0"><![CDATA[
 PRTCLNRUS05birlab ;SPARM; Деятельность лаборатории (по плательщикам) ;
+ ; с учетом особенностей BiRLab
  q
  ; Отчет CLNRUS05  +  CLNRUS05.xsl  + DLL: CLNSPARM007.clsSTART
  ;            
@@ -22,12 +23,13 @@ PRTCLNRUS05birlab ;SPARM; Деятельность лаборатории (по 
  ;==============================================================================================                      
 FORM(USER) new (USER) s USER=$G(USER) 
  S Par=$name(^TEMP($J)) k @Par 
+ /*
  set ok=##class(TCLEx.Report.Function).TestAccessUserToReport(USER) 
  if 'ok {
     set @Par@("PAR1")="Label   : 100 : 200 : 1100 : 600 : Доступ запрещен"
     set @Par@("form")="Деятельность лаборатории (по плательщикам) ("_$G(USER)_"):500:300::Выход"
     quit Par
- }
+ }*/
  ; период дат
  s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
  s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
@@ -91,7 +93,7 @@ CREATE(REPID,PAR,USER,%msql) ; create report
  ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
  ;             100^сообщение об ошибке
  ; 
-START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) s ^test(11)=PAR
  Set oldtime=$ZH
  i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
  ;
@@ -99,7 +101,9 @@ START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR)
  k ^TEMP($J)
  s Mas="^TEMP($zn,$J)" k @Mas
  s MSGERROR=""            
- d INIT i $g(MSGERROR)'="" quit MSGERROR
+ set ok=$$INIT s ^test(3)=ok
+ if 'ok set MSGERROR="100^"_$system.Status.GetErrorText(ok)
+ i $g(MSGERROR)'="" quit MSGERROR
  set okCreateTempGlob=0 // флаг, создана ли временная глобаль для определения цены без испльзования Birlab
  if ##class(BiRLab.Function.Report).GetFlagUseBirlab()=1 {
 	 set boundDate=##class(BiRLab.Function.Report).GetDateStartUseBirlab() //$zdh("01/12/2012",4)
@@ -111,15 +115,24 @@ START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR)
  }
  //kill ^test("compare","05birlab"),^test("compare","05ras")
 
- i $G(FlagReport)=1 do BODY1	;поиск по дате разрешения (дата авторизации набора тестов)
- i $G(FlagReport)=2 do BODY2	;поиск по дате назначения (дата передачи набора тестов)
- d XML
+ i $G(FlagReport)=1 {  ;поиск по дате разрешения (дата авторизации набора тестов)
+	 set ok=$$BODY1()
+ }
+ i $G(FlagReport)=2 {	;поиск по дате назначения (дата передачи набора тестов)
+    set ok=$$BODY2()
+ }
+ if ok {
+	 set ok=$$XML()
+ }
  k ^TEMP($zn,$J),^TEMP($j)
  Set ^xxxTimeTest($zn,$I(^xxxTimeTest($zn)))=$ZH-oldtime
+ if 'ok quit "100^"_$system.Status.GetErrorText(ok)	
  //s ^test("MSGERROR")=$g(MSGERROR)
  q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
  ;------------------------------------------------
-INIT ; инициализация входных параметров
+INIT() ; инициализация входных параметров
+ set ok=1,MSGERROR=""
+ try {
  d PARAM^REPORTSPB(PAR,"mas")
  s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
  ; период дат
@@ -169,7 +182,9 @@ INIT ; инициализация входных параметров
  s FlagPayPat=+$G(PAR14)
  ; log
  ;s ^zz("INIT")="PAR1="_PAR1_"  PAR2="_PAR2_"  PAR3="_PAR3_"  PAR4="_PAR4_"; PAR5="_PAR5_"; PAR6="_PAR6   ;@@@
- quit
+ } catch(e) { set ok=e.AsStatus() }
+ 
+ quit ok
  ;
  ;инверсии к CT_Schedule_PaymentCode
 CreateIndex(pRef)
@@ -193,9 +208,11 @@ CreateIndex(pRef)
  quit
 
  ;------------------------------
-BODY1  ; обработка данных...
+BODY1()  ; обработка данных...
  ; поиск по дате разрешения (дата авторизации набора тестов)
  ; ^TEPIi("AUTHORISED",{VISTS DateOfAuthorisation},{EP VisitNumber.EPVIS VisitNumber},{VISTS TestSet DR},{VISTS TestSetCounter}) 
+ set ok=1
+ try {
  Kill ^||Report.Amount
  ;m ^test("price")=^||inv
  set date=PAR1-1 
@@ -343,11 +360,16 @@ BODY1  ; обработка данных...
              }
       }
  }
- quit
+ } catch(e) {
+    set ok=e.AsStatus()	 
+ }
+ quit ok
  ;------------------------------------------------
-BODY2  ; обработка данных...
+BODY2()  ; обработка данных...
  ; поиск по дате назначения (дата передачи набора тестов)
  ; ^TDAY(4,{EPVIS DateOfEntry},{EPVIS StatusPatient},{EPVIS VisitNumber}) 
+ set ok=1 
+ try {
  Kill ^||Report.Amount 
  set date=PAR1-1 
  for {
@@ -467,9 +489,12 @@ BODY2  ; обработка данных...
          }
 	 }
  }
- quit
+ } catch(e) { set ok=e.AsStatus() }
+ quit ok
  ; ----------------------------------------------------- 
-XML      ; Формирование XML...
+XML()      ; Формирование XML...
+ set ok=1,MSGERROR=""
+ try {
  i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
  ; ---
  S MasO="^TEMP($zn,$J,""XML"")"
@@ -588,11 +613,13 @@ XML      ; Формирование XML...
  ;
  ;M ^zz=@MasO     ;@@@
  ;
- S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS05.xsl",USER)
- i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ S MSGERROR=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS05.xsl",USER,$get(PAR))
+ ;i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
- s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
- quit
+ ;s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ } catch(e) { set ok=e.AsStatus() }
+ if 'ok set MSGERROR="100^"_$system.Status.GetErrorText(ok)
+ quit ok
 
 	// Стоиммость pBillingItem для плательщика pPayer по эпизоду pEpis на дату авторизации pAuthDate
 GetBillingItemAmount(pPayer,pEpis, pAuthDate, pBillingItem, pCito) public 
