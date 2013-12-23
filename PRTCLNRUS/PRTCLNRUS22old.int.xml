@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS22old" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS22   ;SPARM; Сервис - Список тестов;@gol;
+ ;
+ q
+ ; Отчет CLNRUS22  +  CLNRUS22.xsl  + DLL: CLNSPARM007.clsSTART
+ ;==================================================================================================================
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ ; список отделов
+ s @Par@("PAR1a")="Label   : 100 : 100 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR1")
+ s @Par@("PAR1")="ComboBox: 1000 : 100 : 4000 : 300 : :True: "_default_" :List"         ;Standart
+ ; 
+ ; флаг "Выводить только активные тесты"
+ s @Par@("PAR2")="CheckBox: 100 : 600 : 200  : 300 : : : 1 "
+ s @Par@("PAR2a")="Label   : 500 : 600 : 5000 : 300 : Только активные тесты:"
+ ;
+ ; флаги для настройки вывода полей таблицы
+ s @Par@("PAR3a")="Label   : 100 : 1200 : 5000 : 300 : Дополнительная настройка полей таблицы:"
+ s @Par@("PAR4")="CheckBox: 100 : 1500 : 200  : 300 : : : 0 "
+ s @Par@("PAR4a")="Label   : 500 : 1500 : 5000 : 300 : Формат результата + Длина + Десятич.число:"
+ s @Par@("PAR5")="CheckBox: 100 : 1800 : 200  : 300 : : : 0 "
+ s @Par@("PAR5a")="Label   : 500 : 1800 : 5000 : 300 : Наборы тестов:"
+ s @Par@("PAR6")="CheckBox: 100 : 2100 : 200  : 300 : : : 0 "
+ s @Par@("PAR6a")="Label   : 500 : 2100 : 5000 : 300 : Рабочий лист:"
+ s @Par@("PAR7")="CheckBox: 100 : 2400 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 500 : 2400 : 5000 : 300 : Анализатор [ID-канала]:"
+ s @Par@("PAR8")="CheckBox: 100 : 2700 : 200  : 300 : : : 0 "
+ s @Par@("PAR8a")="Label   : 500 : 2700 : 5000 : 300 : Формулы вычисления:"
+ ;
+ 
+ s @Par@("PAR9")="CheckBox: 100 : 3200 : 200  : 300 : : : 0 "
+ s @Par@("PAR9a")="Label   : 500 : 3200 : 5000 : 600 : Дополнительно вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов:"
+ ;
+ ; настройка формы
+ s @Par@("form")="Список тестов:500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j),^TEMP($zn,$J)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; отдел
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Отдел>" q
+ k DEP
+ if PAR1="0" do     ;* Все
+ . s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ else  do  q:MSGERROR'=""
+ . i '$D(^TTAB("DEP",PAR1)) s MSGERROR="100^В Labtrake нет кода отдела <"_DEP_">" q
+ . s DEP(PAR1)=""
+ ; флаг "Выводить только активные наборы тестов"
+ s FlagActiveTC=+$G(PAR2)
+ ; флаги для настройки вывода полей таблицы
+ s FlagFR=+$G(PAR4)		;Формат результата + Длина + Десятич.число
+ s FlagTS=+$G(PAR5)		;Наборы тестов
+ s FlagWS=+$G(PAR6)		;Рабочий лист
+ s FlagMIF=+$G(PAR7)	;Анализатор
+ s FlagCAL=+$G(PAR8)	;Формулы вычисления
+ ; флаг "Вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов"
+ s FlagDifDep=+$G(PAR9)	
+ ; log
+ ;s ^zz("INIT")="PAR1="_PAR1_"  PAR2="_PAR2_"  PAR3="_PAR3_"  PAR4="_PAR4_"; PAR5="_PAR5_"; PAR6="_PAR6   ;@@@
+ quit
+ ;------------------------------------------------
+XML    ; обработка данных и формирование XML ...
+  s Mas="^TEMP($zn,$J)" k @Mas
+  S MasXML="^TEMP($zn,$J,""XML"")" 
+  ; 
+  d Format	; формируем массив для вывода формата результата (MasFormat)
+  ;
+  S (NN1,NN2)=0,dep="" f  s dep=$O(DEP(dep)) q:dep=""  do
+  . s tc=dep f  s tc=$O(^TTAB("TC",tc)) q:tc=""  q:$E(tc,1)'=dep  do
+  .. s str=$G(^TTAB("TC",tc)) q:str=""
+  .. i $G(FlagActiveTC)=1 i $p(str,"\",19)="N" quit
+  .. S NN1=$i(NN1)
+  .. ; N п/п
+  .. s @MasXML@("User",1,"Next",NN1,"NN")=NN1
+  .. ; код теста
+  .. s @MasXML@("User",1,"Next",NN1,"Code")=tc       
+  .. ; наименование теста
+  .. s @MasXML@("User",1,"Next",NN1,"Desc")=$$trans($p(str,"\",1))
+  .. ; синоним теста
+  .. s @MasXML@("User",1,"Next",NN1,"Synon")=$$trans($p(str,"\",12))
+  .. ; ед.измерения (Units)
+  .. s @MasXML@("User",1,"Next",NN1,"Units")=$$trans($p(str,"\",2))
+  .. ; флаг Active
+  .. s @MasXML@("User",1,"Next",NN1,"FlagActive")=$p(str,"\",19)         
+  .. ; Формат результата + Длина + Десятич.число
+  .. i $G(FlagFR)=1 do
+  ... s Format=$p(str,"\",3)
+  ... s FormatLan=$S(Format="":"",$E(Format,1)="N":"Число",1:$G(MasFormat(Format)))
+  ... s @MasXML@("User",1,"Next",NN1,"ResultFormat")=FormatLan			;Result Format
+  ... s @MasXML@("User",1,"Next",NN1,"ResultLength")=$p(str,"\",4)		;Result Length
+  ... s:$E(Format,1)="N" @MasXML@("User",1,"Next",NN1,"ResultDec")=$E(Format,2)			; 
+  .. ; Дополнительные настройки для теста
+  .. i $G(FlagDop)=1 do
+  ... s @MasXML@("User",1,"Next",NN1,"ComboBox")=$p(str,"\",5) 		; Combo Box
+  ... s @MasXML@("User",1,"Next",NN1,"ResultCopy")=$p(str,"\",6) 	; Result Copy 
+  ... s @MasXML@("User",1,"Next",NN1,"ShowInCum")=$p(str,"\",7) 	; Show In Cummulative 
+  ... s @MasXML@("User",1,"Next",NN1,"Metod")=$p(str,"\",11) 		; CTTC_TestMethod_DR (DesRef CT_TestMethod) 
+  .. ; ---
+  .. ; Наборы тестов
+  .. i $G(FlagTS)=1 do
+  ... s Str="",i="" f  s i=$O(^TTAB("TC",tc,1,i)) q:i=""  s Str=$S(Str="":"",1:Str_"; ")_"("_i_") "_$P($G(^TTAB("TS",i)),"\",1)
+  ... s @MasXML@("User",1,"Next",NN1,"TestSet")=Str
+  .. ; ---
+  .. ; Флаг "Рабочий лист"
+  .. i $G(FlagWS)=1 do
+  ... k MasWS s ts="" f  s ts=$O(^TTAB("TC",tc,1,ts)) q:ts=""  do
+  .... ; ^TTAB("TS",{WKSTS TestSet DR},6,{WS WorkSheet.WKS Code},{WKSTS Sequence}) 
+  .... s ws="" f  s ws=$O(^TTAB("TS",ts,6,ws)) q:ws=""  do
+  ..... s tsseq="" f  s tsseq=$O(^TTAB("TS",ts,6,ws,tsseq)) q:tsseq=""  do
+  ...... s strws=$G(^TTAB("WS",ws,0,tsseq)) q:strws=""
+  ...... s flag=0
+  ...... ;If $P(strws,"\",3)'="N" s flag=1       ;All Items
+  ...... If $P(strws,"\",2)'="Y" s flag=1       ;All Items
+  ...... Else  i $p(strws,"\",4)[(","_tc_",") s flag=1
+  ...... S:flag=1 MasWS(ws,"ts",ts)=""
+  ... s Str="",ws="" f  s ws=$O(MasWS(ws)) q:ws=""  s ts="" f  s ts=$O(MasWS(ws,"ts",ts)) q:ts=""  do 
+  .... s Str=$S(Str="":"",1:Str_"; ")_ws_" ["_ts_"]" 
+  ... s @MasXML@("User",1,"Next",NN1,"WorkSheet")=Str
+  .. ; ---
+  .. ; Флаг "Анализатор"  (MIF_MachineTestCodes)
+  .. i $G(FlagMIF)=1 do
+  ... s Str="",i="" f  s i=$O(^TMIF(i)) q:i=""  do:$P($G(^TMIF(i,2,tc)),"\",3)="Y"
+  .... s Str=$S(Str="":"",1:Str_"; ")_i_" ["_$P($G(^TMIF(i,2,tc)),"\",1)_"]"
+  ... s @MasXML@("User",1,"Next",NN1,"Machine")=Str
+  .. ; ---
+  .. ; флаг "Вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов"
+  .. i +$G(FlagDifDep)=1 do
+  ... k masdifdep s i="" f  s i=$O(^TTAB("TC",tc,1,i)) q:i=""  s x=$E(i,1) s:x'=dep masdifdep(x)=""
+  ... q:'$D(masdifdep)
+  ... s Str=$E(tc,1),x="" f  s x=$O(masdifdep(x)) q:x=""  s Str=$S(Str="":"",1:Str_"; ")_x
+  ... s NN2=$i(NN2)
+  ... s @MasXML@("User",1,"DifDep",NN2,"NN")=NN2
+  ... s @MasXML@("User",1,"DifDep",NN2,"Code")=tc
+  ... s @MasXML@("User",1,"DifDep",NN2,"Desc")=$$trans($p(^TTAB("TC",tc),"\",1))
+  ... s @MasXML@("User",1,"DifDep",NN2,"Dep")=Str
+  .. ; ---
+  .. ; Флаг "Формулы вычисления"
+  .. i +$G(FlagCAL)=1 do:$D(^TTAB("TC",tc,3))
+  ... ; ^TTAB("TC","Б0014",3,"Б012")=Б0010-Б0012
+  ... ; ^TTAB("TC","Б0014",3,"Б012","EXTRA")=Y\N
+  ... s NN3=0,ts="" f  s ts=$O(^TTAB("TC",tc,3,ts)) q:ts=""  do:$G(^TTAB("TC",tc,3,ts))'=""
+  .... s NN3=$i(NN3)
+  .... s @MasXML@("User",1,"Next",NN1,"Calculate",NN3,"NN")=NN3
+  .... s @MasXML@("User",1,"Next",NN1,"Calculate",NN3,"CodeTS")=ts
+  .... s @MasXML@("User",1,"Next",NN1,"Calculate",NN3,"Formula")=$G(^TTAB("TC",tc,3,ts))
+  .... s @MasXML@("User",1,"Next",NN1,"Calculate",NN3,"Flag")=$G(^TTAB("TC",tc,3,ts,"EXTRA"))
+  ;
+  ; входные параметры
+  S @MasXML@("User",1,"Department")=$S(PAR1="":"",PAR1="0":"* Все",1:PAR1_" - "_$P($G(^TTAB("DEP",PAR1)),"\",1))
+  S @MasXML@("User",1,"FlagActiveTC")=+$G(FlagActiveTC)	;флаг "Выводить только активные тесты"
+  S @MasXML@("User",1,"FlagFR")=+$G(FlagFR)   ; Флаг "Формат результата + Длина + Десятич.число"
+  S @MasXML@("User",1,"FlagTS")=+$G(FlagTS)   ; Флаг "Наборы тестов"
+  S @MasXML@("User",1,"FlagWS")=+$G(FlagWS)   ; Флаг "Рабочий лист"
+  S @MasXML@("User",1,"FlagMIF")=+$G(FlagMIF) ; Флаг "Анализатор"
+  S @MasXML@("User",1,"FlagCAL")=+$G(FlagCAL) ; Флаг "Формулы вычисления"
+  ; флаг "Вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов"
+  i '$D(@MasXML@("User",1,"DifDep")) s FlagDifDep=0
+  S @MasXML@("User",1,"FlagDifDep")=+$G(FlagDifDep)
+  ;
+  s @MasXML@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+  S @MasXML@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+  ;
+  ;log
+  ;k ^zz M ^zz("XML")=@MasXML     ;@@@
+  ;
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS22.xsl",USER)
+  i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+  s MSGERROR="0^^"_%Ret_"^"_$$GetViwer^REPORTSPB($zn)  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+  quit 
+  ;---------------
+trans(res) 
+  q $tr(res,$c(16,17,18,5,6,11,12),"^\|{}[]")
+  ;---------------
+Format	; формируем массив для вывода формата результата
+  k MasFormat
+  s MasFormat("N")="Число"								; Numeric
+  s MasFormat("M")="Число *1000 или +, -"				; Number *1000 or +,-
+  s MasFormat("S")="Станд.коммент."						; Standard Comment
+  s MasFormat("X")="Произвольный текст"					; Free Text Field
+  s MasFormat("V")="Код Микроорганизма"					; Microbiology Pathogen Field
+  s MasFormat("D")="Дата"								; Date field
+  s MasFormat("B1")="Реакция"							; Reactions
+  s MasFormat("B2")="Группа крови"						; Blood Group
+  s MasFormat("B3")="Antibodies"						; Antibodies
+  s MasFormat("A")="AuditControl"						; Audit
+  s MasFormat("C")="CoagControl"						; Coag Control
+  s MasFormat("Z1")="Журнал, Accession номер"			; Day Book Lab Number
+  s MasFormat("Z2")="Журнал, тип образца"				; Day Book Specimen Type
+  s MasFormat("Z3")="Журнал, место"						; Day Book Site
+  s MasFormat("Z4")="Журнал, непомеченный образец"		; Specimen Unlabeled
+  s MasFormat("Z5")="Код Ракового регистра"				; Cancer Council Codes
+  s MasFormat("Z6")="Моча 24 ч, объем"					; 24 Hr Urine Volume
+  s MasFormat("Z7")="Моча 24 ч, время"					; 24 Hr Urine Time
+  s MasFormat("Z8")="Лекарств.средство, доза"			; Theraputic Drug Dosage
+  s MasFormat("Z9")="Лекарств.средство, продолж."		; Theraputic Drug Duration
+  s MasFormat("Z10")="Код Snomed"						; Snomed Codes
+  s MasFormat("Z11")="Дата последнего XM"				; Date of last XM
+  s MasFormat("Z12")="Дата последнего AB Reg"			; Date of last AB Reg
+  s MasFormat("Z13")="Недели берем."					; Weeks pregnant
+  s MasFormat("Z14")="Дата удержания сыв-ки (после XM)"	; Serum Hold Date
+  s MasFormat("Z15")="Дата последнего Переливания"		; Last Transfusion Date
+  s MasFormat("Z16")="Анатомическое местоположение"		; Anatomical Site
+  s MasFormat("Z17")="Тип образца"   					; Specimen Type
+  s MasFormat("Z18")="Голодание"						; Fasting
+  s MasFormat("Z19")="Журнал, все Accession номера"  	; All Day Book Numbers
+  s MasFormat("Z20")="Номер Аэробной бутылки"			; Aerobic bottle number
+  s MasFormat("Z21")="Номер Анаэробной бутылки"   		; Anaerobic bottle number
+  s MasFormat("Z22")="Заключительная строка диагноза"	; Final Line of Diagnosis
+  s MasFormat("Z25")="Журнал, результат"				; Day Book Result
+  quit
+]]></Routine>
+</Export>
