@@ -34,9 +34,14 @@ FORM(USER) new (USER) s USER=$G(USER)
  s @Par@("PAR8")="CheckBox: 100 : 2700 : 200  : 300 : : : 0 "
  s @Par@("PAR8a")="Label   : 500 : 2700 : 5000 : 300 : Формулы вычисления:"
  ;
- 
  s @Par@("PAR9")="CheckBox: 100 : 3200 : 200  : 300 : : : 0 "
  s @Par@("PAR9a")="Label   : 500 : 3200 : 5000 : 600 : Дополнительно вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов:"
+ ;
+ s @Par@("PAR10")="CheckBox: 100 : 3700 : 200  : 300 : : : 0 "
+ s @Par@("PAR10a")="Label   : 500 : 3700 : 5000 : 600 : Референсные границы:"
+ ;
+ s @Par@("PAR11")="CheckBox: 100 : 4300 : 200  : 300 : : : 0 "
+ s @Par@("PAR11a")="Label   : 500 : 4300 : 5000 : 600 : Нац. номер:"
  ;
  ; настройка формы
  s @Par@("form")="Список тестов:500:300:Формиров.:Выход"
@@ -81,6 +86,8 @@ INIT ; инициализация входных параметров
  s FlagCAL=+$G(PAR8)	;Формулы вычисления
  ; флаг "Вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов"
  s FlagDifDep=+$G(PAR9)	
+ set FlagRanges=$get(PAR10) ;выводить референсные границы
+ set FlagNationNum=$get(PAR11) ;выводить нац. номер
  ; log
  ;s ^zz("INIT")="PAR1="_PAR1_"  PAR2="_PAR2_"  PAR3="_PAR3_"  PAR4="_PAR4_"; PAR5="_PAR5_"; PAR6="_PAR6   ;@@@
  quit
@@ -88,6 +95,11 @@ INIT ; инициализация входных параметров
 XML    ; обработка данных и формирование XML ...
   s Mas="^TEMP($zn,$J)" k @Mas
   S MasXML="^TEMP($zn,$J,""XML"")" 
+  set dateCur=+$h+0.5
+  set FlagRanges=+$G(FlagRanges)
+  set FlagFR=$select(FlagRanges=1:1,1:+$G(FlagFR))   ; Флаг "Формат результата + Длина + Десятич.число"
+  set FlagTS=$select(FlagRanges=1:1,1:+$G(FlagTS))   ; Флаг "Наборы тестов"
+
   ; 
   d Format	; формируем массив для вывода формата результата (MasFormat)
   ;
@@ -170,15 +182,56 @@ XML    ; обработка данных и формирование XML ...
   .... s @MasXML@("User",1,"Next",NN1,"Calculate",NN3,"CodeTS")=ts
   .... s @MasXML@("User",1,"Next",NN1,"Calculate",NN3,"Formula")=$G(^TTAB("TC",tc,3,ts))
   .... s @MasXML@("User",1,"Next",NN1,"Calculate",NN3,"Flag")=$G(^TTAB("TC",tc,3,ts,"EXTRA"))
+  .. ; референсные границы
+  .. if FlagRanges=1 do  ;
+  ... kill ranges
+  ... set date=$order(^TTAB("TC",tc,4,dateCur),-1)
+  ... if date="" set date=$order(^TTAB("TC",tc,4,""),-1)
+  ... if date'="" do
+  .... set rangesType="0" ;- общие/амб пациент (есть еще 0-IN - для стационарных пациентов, пок ане используем и не печатаем) 
+  .... set NN4=0
+  .... set npp="" for  set npp=$order(^TTAB("TC",tc,4,date,rangesType,npp)) q:npp=""  do  ;
+  ..... set rec=^(npp)
+  ..... set sex=$piece(rec,"\",22),age=$piece(rec,"\",23)
+  ..... set key=sex_$char(1)_age
+  ..... set ranges(key,npp,"Sex")=sex
+  ..... set ranges(key,npp,"Age")=age
+  ..... set codeClinicalCondition=$piece(rec,"\",21)
+  ..... set ranges(key,npp,"CLC")=$select(codeClinicalCondition'="":$piece($get(^TTAB("CLC",codeClinicalCondition)),"\",1),1:"") //CTTCR_ClinicalConditions_DR ^TTAB( "CLC", 
+  ..... set ranges(key,npp,"Low")=$piece(rec,"\",1)
+  ..... set ranges(key,npp,"High")=$piece(rec,"\",2)
+  ..... set ranges(key,npp,"LowPregnant")=$piece(rec,"\",9)
+  ..... set ranges(key,npp,"HighPregnant")=$piece(rec,"\",10)
+  ..... set ranges(key,npp,"LowBad")=$piece(rec,"\",17)
+  ..... set ranges(key,npp,"HighBad")=$piece(rec,"\",18)
+  ..... set ranges(key,npp,"LowBadPregnant")=$piece(rec,"\",19)
+  ..... set ranges(key,npp,"HighBadPregnant")=$piece(rec,"\",20)
+  ..... set ranges(key,npp,"LowPanic")=$piece(rec,"\",5)
+  ..... set ranges(key,npp,"HighPanic")=$piece(rec,"\",6)
+  ..... set ranges(key,npp,"LowPanicPregnant")=$piece(rec,"\",13)
+  ..... set ranges(key,npp,"HighPanicPregnant")=$piece(rec,"\",14)
+  ...;
+  ... set key="" for  set key=$order(ranges(key)) q:key=""  do  ;
+  .... set npp="" for  set npp=$order(ranges(key,npp)) q:npp=""  do  ;
+  ..... set NN4=$i(NN4)
+  ..... merge @MasXML@("User",1,"Next",NN1,"Norms",NN4)=ranges(key,npp)
+  ... kill ranges
+  ... set @MasXML@("User",1,"Next",NN1,"NormsExist")=$select($data(@MasXML@("User",1,"Next",NN1,"Norms")):"1",1:"0")
+  .. ; нац. номер
+  .. if $get(FlagNationNum)=1 do  ;
+  ... s @MasXML@("User",1,"Next",NN1,"NationNum")=$p(str,"\",16)
   ;
   ; входные параметры
+  // так как не могу задать в переменной colspan для строки, содержащей таблицу с референсными значениями, то жетско задаю столбы в этом случае
   S @MasXML@("User",1,"Department")=$S(PAR1="":"",PAR1="0":"* Все",1:PAR1_" - "_$P($G(^TTAB("DEP",PAR1)),"\",1))
-  S @MasXML@("User",1,"FlagActiveTC")=+$G(FlagActiveTC)	;флаг "Выводить только активные тесты"
+  S @MasXML@("User",1,"FlagActiveTC")=$select(FlagRanges=1:1,1:+$G(FlagActiveTC))	;флаг "Выводить только активные тесты"
   S @MasXML@("User",1,"FlagFR")=+$G(FlagFR)   ; Флаг "Формат результата + Длина + Десятич.число"
   S @MasXML@("User",1,"FlagTS")=+$G(FlagTS)   ; Флаг "Наборы тестов"
   S @MasXML@("User",1,"FlagWS")=+$G(FlagWS)   ; Флаг "Рабочий лист"
   S @MasXML@("User",1,"FlagMIF")=+$G(FlagMIF) ; Флаг "Анализатор"
   S @MasXML@("User",1,"FlagCAL")=+$G(FlagCAL) ; Флаг "Формулы вычисления"
+  S @MasXML@("User",1,"FlagRanges")=+$G(FlagRanges) ; Флаг "Референсные границы"
+  S @MasXML@("User",1,"FlagNationNum")=+$G(FlagNationNum) ; Флаг "Нац. номер"
   ; флаг "Вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов"
   i '$D(@MasXML@("User",1,"DifDep")) s FlagDifDep=0
   S @MasXML@("User",1,"FlagDifDep")=+$G(FlagDifDep)
@@ -189,10 +242,10 @@ XML    ; обработка данных и формирование XML ...
   ;log
   ;k ^zz M ^zz("XML")=@MasXML     ;@@@
   ;
-  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS22.xsl",USER)
+  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS22a.xsl",USER)
   i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
   ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
-  s MSGERROR="0^^"_%Ret_"^"_$$GetViwer^REPORTSPB($zn)  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+  s MSGERROR="0^^"_%Ret_"^"_$$GetViwer^REPORTSPB()  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
   quit 
   ;---------------
 trans(res) 
