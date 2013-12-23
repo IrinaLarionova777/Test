@@ -1,0 +1,495 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS09old" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS09 ;SPARM; Деятельность лаборатории (по местоположениям) ;Салехард;@gol;
+ q
+ ; Отчет CLNRUS09  +  CLNRUS09.xsl  + DLL: CLNSPARM007.clsSTART
+ ; 
+ ; Вид отчета:
+ ; Отдел ; Код/Наименование набора тестов (теста) ; Всего ; Расшифровка кол-ва по местоположениям пациентов
+ ; 
+ ; Обработка данных: 
+ ; 1) идем по индексу ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ; 2) отбираем только заданные местоположения пациента
+ ;==================================================================================================================
+FORM(USER) New (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1500: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 100: 600 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 1500: 600 : 1100 : 300 : t:True"
+ ; 
+ ; список отделов
+ s @Par@("PAR3a")="Label   : 100 : 1000 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR3")
+ s @Par@("PAR3")="ComboBox: 1500 : 1000 : 5000 : 300 : :True: "_$G(default)_" :List"         ;Standart
+ ; 
+ ; список Местоположений пациентов (CT_Hospital)
+ s @Par@("PAR4a")="Label   : 100 : 1400 : 1400 : 300 : Местоположение:"
+ s cnt=0,code="" f  s code=$O(^TTAB("RH",code)) q:code=""  d:code'=$C(1)
+ . s cnt=cnt+1
+ . s @Par@("PAR4",code)=code_" - "_$P($G(^TTAB("RH",code)),"\",1) 
+ if cnt>1 s @Par@("PAR4","0")="* Все местоположения"
+ ; s ^test(222,"PRTCLMRUS09","count")=cnt
+ s default=$S(cnt>1:0,1:$O(@Par@("PAR4","")))
+ s @Par@("PAR4")="ComboBox: 1500 : 1400 : 5000 : 300 : :True: "_default_" :List"         ;Standart
+ ; 
+ ; флаг "Группировать местоположения по Курьерам"
+ s @Par@("PAR10")="CheckBox: 1500 : 1800 : 200  : 300 : : : 0 "
+ s @Par@("PAR10a")="Label   : 1800 : 1800 : 5000 : 500 : Группировать местоположения по ""Курьерам печати"":"
+ ;
+ ; флаг (радио-кнопки)
+ s @Par@("PAR5")="RadioButton : 500 : 2300 : 5000 : 1200 :  Тип отчета :True: 1 :List"    
+ s @Par@("PAR5",1)="Сводный по отделам (без разбивки по наборам тестов)"
+ s @Par@("PAR5",2)="Расшифровка по наборам тестов"
+ s @Par@("PAR5",3)="Расшифровка по тестам"
+ s @Par@("PAR5",4)="Расшифровка по группам наборов тестов"
+ ; флаг
+ s @Par@("PAR6")="CheckBox: 100 : 3900 : 200  : 300 : : : 1 "
+ s @Par@("PAR6a")="Label   : 500 : 3900 : 5000 : 500 : Доп.итоги по типу местоположения (стационар/амбулатория/прочее):"
+ ; флаг
+ s @Par@("PAR7")="CheckBox: 100 : 4500 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 500 : 4500 : 6000 : 300 : Расшифровка кол-ва (Medtrak/Labtrak):"
+ ; флаг
+ s @Par@("PAR8")="CheckBox: 100 : 4900 : 200  : 300 : : : 0 "
+ s @Par@("PAR8a")="Label   : 500 : 4900 : 6000 : 300 : Развернуть таблицу (строки - местоположения; столбцы - отделы):"
+ ; флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ s @Par@("PAR9")="CheckBox: 100 : 5300 : 200  : 300 : : : 1 "
+ s @Par@("PAR9a")="Label   : 500 : 5300 : 5000 : 500 : Не считать расчетные тесты (для которых введены формулы вычисления):"
+ ;
+ s @Par@("PAR11")="CheckBox: 100 : 5800 : 200  : 300 : : : 0 "
+ s @Par@("PAR11a")="Label   : 500 : 5800 : 5000 : 300 : Подсчитать время выполнения для набора тестов (мин):"
+ ;
+ ; настройка формы
+ s @Par@("form")="Деятельность лаборатории (по местополож.пациентов) ("_$G(USER)_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;------------------------------------------------
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ quit
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) New (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   
+ s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d BODY,XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ; отдел
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Отдел>" q
+ k DEP
+ if PAR3="0" do     ;* Все
+ . s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ else  do  q:MSGERROR'=""
+ . i '$D(^TTAB("DEP",PAR3)) s MSGERROR="100^В Labtrake нет кода отдела <"_DEP_">" q
+ . s DEP(PAR3)=""
+ ; местоположение пациента
+ i $G(PAR4)="" s MSGERROR="100^Не определено значение <Местоположение пациента>" q
+ s LocPat=PAR4
+ i LocPat=0 s LocPat=""    ;* Все
+ ; Флаг "Тип отчета"
+ ; 1 = "Сводный по отделам (без разбивки по наборам тестов)"
+ ; 2 = "Расшифровка по наборам тестов"
+ ; 3 = "Расшифровка по тестам"
+ ; 4 = "Расшифровка по группам наборов тестов"
+ s FlagReport=+$G(PAR5) ;s MSGERROR="100^FlagReport="_FlagReport q
+ ; Флаг "Доп.итоги по типу местоположения (амбулаторный/стационарный/прочее):"
+ s FlagTypeLoc=+$G(PAR6)
+ i LocPat'="" s FlagTypeLoc=0  ;не требуется разбивка по типам, т.к. выбрано только одно местоположение
+ ; Расшифровка кол-ва (Medtrak/Labtrak):"
+ s FlagSystem=+$G(PAR7)
+ ; если выбран сводный отчет + все местоположения 
+ ; => разворачиваем таблицу (строки - местоположения; столбцы - отделы)
+ s FlagTurnRound=+$G(PAR8)
+ i FlagTurnRound=1,FlagReport'=1 s MSGERROR="100^Таблицу можно развернуть только для сводного отчета!!!" q
+ ; флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ s FlagNotCalcul=+$G(PAR9)
+ ; флаг "Группировать местоположения по Курьерам"
+ s FlagGrCourier=+$G(PAR10)
+ ; Флаг "Время выполнения для набора тестов"
+ s FlagTimeTS=+$G(PAR11) s:+$G(FlagReport)=3 FlagTimeTS=0
+ quit
+ ;------------------------------------------------
+BODY  ; обработка данных...
+ ; Флаг "Расшифровка по группам наборов тестов" -> формируем обратный массив (набор тестов - группы)
+ i $G(FlagReport)=4 d
+ . s group="" f  s group=$o(^TTAB("GR",group)) q:group=""  d
+ .. s ts="" f  s ts=$o(^TTAB("GR",group,"TS",ts)) q:ts=""  do
+ ... s dept=$e(ts,1) q:dept=""  quit:'$D(DEP(dept))
+ ... s @Mas@("TWG",ts,group)=""
+ ;
+ ; поиск по дате разрешения (дата авторизации набора тестов)
+ s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
+ . s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ .. s (location,courier,loctype,Nseq,key)=""
+ .. s location=$P($G(^TEPI(epis)),"\",20)  ;EPVIS_HospitalCode_DR (Patient Location Current)
+ .. ; местоположение пациента (ограничение)
+ .. i LocPat'="" i location'=LocPat quit   
+ .. ; флаг "Группировать местоположения по Курьерам печати"
+ .. s courier=$S(location="":"",1:$P($G(^TTAB("RH",location)),"\",12)) s:courier="" courier="?"
+ .. s:location="" location="?"
+ .. ; номер последоват. вывода
+ .. s Nseq=$S(location="?"!(courier="?"):"99999",$G(FlagGrCourier)=1:$P($G(^TTAB("CR",courier)),"\",9),1:$P($G(^TTAB("RH",location)),"\",23))
+ .. ; Флаг "Доп.итоги по типу местоположения (стационарный/амбулаторный/прочее)"
+ .. if +$G(FlagTypeLoc)=1 do   
+ ... ; Location Type [ MultiChoice: In-Patient||Y, Out-Patient||N, GP practice||GP, Primary||P, Others||O ]
+ ... s type=$P($G(^TTAB("RH",location)),"\",16)
+ ... s loctype=$S(type="Y":"IN",type="N":"OUT",1:"OTHER")  ;IN-стац; OUT-амб; OTHER-прочее
+ .. else  s loctype="OTHER"
+ .. ; ключ сортировки местоположений: N п/п_$C(1)_Код_$C(1)_Тип
+ .. s key=$J(Nseq,5)_$C(1)_$S($G(FlagGrCourier)=1:$G(courier),1:$G(location))_$C(1)_$g(loctype)
+ .. ; ---
+ .. ; проверяем по номеру МК, где был зарегистрован образец
+ .. s mrn=$P(^TEPI(epis),"\",18) q:mrn=""  
+ .. s sys=$S($E(mrn,1)="M":"LT",1:"MT")
+ .. ; наборы тестов для лаб.эпизода (ограничение по отделам)
+ .. s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  do
+ ... s dept=$e(ts,1) q:dept=""  quit:'$D(DEP(dept))
+ ... s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
+ .... s vtsRID=epis_"||"_ts_"||"_tscnt 
+ .... i '$$select^LVBVISTS(vtsRID,"Y",USER) d:$G(PLIST(33))="A"     ;считаем только "РАЗРЕШЕННЫЕ" наборы тестов
+ ..... ; ---
+ ..... ; считаем итоги с разбивкой по тестам
+ ..... i $G(FlagReport)=3 d BODY2 quit
+ ..... ; ---
+ ..... ; считаем итоги с разбивкой по группам наборов тестов (Дополнительный цикл по группе)
+ ..... i $G(FlagReport)=4  do  quit
+ ...... s group="" f  s group=$O(@Mas@("TWG",ts,group)) q:group=""  s dept=group d BODY1
+ ..... ; ---
+ ..... ; строим таблицу (строки - отделы; столбцы - местоположения)
+ ..... if +$g(FlagTurnRound)=0 d BODY1 quit
+ ..... ; ----------------------------------------------------------------------------
+ ..... ; разворачиваем таблицу (строки - местоположения; столбцы - отделы) - только для сводного отчета!
+ ..... if +$g(FlagTurnRound)=1 do
+ ...... ; считаем итоги по местоположениям и отелам
+ ...... s @Mas@("REPORT",loctype,"loc",key,"dept",dept)=$g(@Mas@("REPORT",loctype,"loc",key,"dept",dept))+1 
+ ...... s @Mas@("REPORT",loctype,"loc",key,"dept",dept,"sys",sys)=$g(@Mas@("REPORT",loctype,"loc",key,"dept",dept,"sys",sys))+1 
+ ...... s @Mas@("REPORT",loctype,"dept",dept)=$g(@Mas@("REPORT",loctype,"dept",dept))+1 
+ ...... s @Mas@("REPORT",loctype,"loc",key)=$g(@Mas@("REPORT",loctype,"loc",key))+1 
+ ...... s @Mas@("REPORT",loctype)=$g(@Mas@("REPORT",loctype))+1
+ ...... s @Mas@("REPORT")=$g(@Mas@("REPORT"))+1 
+ ...... ; Расшифровка кол-ва (Medtrak/Labtrak)
+ ...... i +$G(FlagSystem)=1 do 
+ ....... s @Mas@("REPORT",loctype,"loc",key,"sys",sys)=$g(@Mas@("REPORT",loctype,"loc",key,"sys",sys))+1 
+ ....... s @Mas@("REPORT",loctype,"dept",dept,"sys",sys)=$g(@Mas@("REPORT",loctype,"dept",dept,"sys",sys))+1 
+ ....... s @Mas@("REPORT",loctype,"sys",sys)=$g(@Mas@("REPORT",loctype,"sys",sys))+1
+ ....... s @Mas@("System",sys)=$g(@Mas@("System",sys))+1
+ ...... ; формируем индексы для построения динамического заголовка таблицы 
+ ...... s @Mas@("SORT",dept)=$g(@Mas@("SORT",dept))+1 
+ ...... i +$G(FlagSystem)=1 do
+ ....... s @Mas@("SORT",dept,"sys",sys)=$g(@Mas@("SORT",dept,"sys",sys))+1 
+ quit
+ ;----------------------------------------------------------------------------
+BODY1 ;формируем индексы по наборам тестов
+ Do
+ . ; считаем итоги с разбивкой по наборам тестов
+ . i +$G(FlagReport)=2!(+$G(FlagReport)=4) do
+ .. s @Mas@("REPORT",dept,"ts",ts)=$g(@Mas@("REPORT",dept,"ts",ts))+1              
+ .. s @Mas@("REPORT",dept,"ts",ts,"loc",key)=$g(@Mas@("REPORT",dept,"ts",ts,"loc",key))+1 
+ .. ; Расшифровка кол-ва (Medtrak/Labtrak)
+ .. i +$G(FlagSystem)=1 do 
+ ... s @Mas@("REPORT",dept,"ts",ts,"loc",key,"sys",sys)=$g(@Mas@("REPORT",dept,"ts",ts,"loc",key,"sys",sys))+1 
+ ... s @Mas@("REPORT",dept,"ts",ts,"sys",sys)=$G(@Mas@("REPORT",dept,"ts",ts,"sys",sys))+1
+ . ; считаем итоги по отелам и местоположениям
+ . s @Mas@("REPORT",dept,"loc",key)=$g(@Mas@("REPORT",dept,"loc",key))+1 
+ . s @Mas@("REPORT",dept,"Kol-"_loctype)=$g(@Mas@("REPORT",dept,"Kol-"_loctype))+1 
+ . s @Mas@("REPORT",dept)=$g(@Mas@("REPORT",dept))+1   
+ . s @Mas@("REPORT")=$g(@Mas@("REPORT"))+1    
+ . s @Mas@("Kol-"_loctype)=$g(@Mas@("Kol-"_loctype))+1 
+ . ; ---
+ . i +$G(FlagReport)=1,+$G(FlagTimeTS)=1 s @Mas@("REPORT",dept,"ts",ts)=$g(@Mas@("REPORT",dept,"ts",ts))+1   ;@@@
+ . ; ---
+ . ; Расшифровка кол-ва (Medtrak/Labtrak)
+ . i +$G(FlagSystem)=1 do
+ .. s @Mas@("REPORT",dept,"loc",key,"sys",sys)=$g(@Mas@("REPORT",dept,"loc",key,"sys",sys))+1 
+ .. s @Mas@("REPORT",dept,"sys",sys)=$g(@Mas@("REPORT",dept,"sys",sys))+1 
+ .. s @Mas@("REPORT",dept,"Kol-"_loctype,"sys",sys)=$g(@Mas@("REPORT",dept,"Kol-"_loctype,"sys",sys))+1 
+ .. s @Mas@("Kol-"_loctype,"sys",sys)=$g(@Mas@("Kol-"_loctype,"sys",sys))+1 
+ .. s @Mas@("System",sys)=$g(@Mas@("System",sys))+1         
+ . i +$G(FlagReport)=2!(+$G(FlagReport)=4) do
+ .. s @Mas@("REPORT",dept,"ts",ts,"Kol-"_loctype)=$g(@Mas@("REPORT",dept,"ts",ts,"Kol-"_loctype))+1 
+ .. i +$G(FlagSystem)=1 do
+ ... s @Mas@("REPORT",dept,"ts",ts,"Kol-"_loctype,"sys",sys)=$g(@Mas@("REPORT",dept,"ts",ts,"Kol-"_loctype,"sys",sys))+1 
+ . ; индексы для динамич. построения столбцов по типам местоположений
+ . s @Mas@("SORT",key)=$g(@Mas@("SORT",key))+1 
+ . s @Mas@("SORT-TYPE",loctype)=$g(@Mas@("SORT-TYPE",loctype))+1 
+ . s @Mas@("SORT-TYPE",loctype,key)=$G(@Mas@("SORT-TYPE",loctype,key))+1
+ . i +$G(FlagSystem)=1 do
+ .. s @Mas@("SORT",key,"sys",sys)=$g(@Mas@("SORT",key,"sys",sys))+1 
+ quit
+ ; ----------------------------------------------------- 
+BODY2 ;формируем индексы для типа отчета 3 - расшифровка по тестам
+ Do
+ . s tc="" f  s tc=$o(^TEPI(epis,1,ts,tscnt,"DATA",tc)) q:tc=""  d
+ .. ; флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ .. i $G(FlagNotCalcul)=1 i $d(^TTAB("TC",tc,3,ts)) quit   
+ .. ; ---
+ .. s @Mas@("REPORT",dept,"ts",tc)=$g(@Mas@("REPORT",dept,"ts",tc))+1
+ .. s @Mas@("REPORT",dept,"ts",tc,"loc",key)=$g(@Mas@("REPORT",dept,"ts",tc,"loc",key))+1 
+ .. ; Расшифровка кол-ва (Medtrak/Labtrak)
+ .. i +$G(FlagSystem)=1 do 
+ ... s @Mas@("REPORT",dept,"ts",tc,"loc",key,"sys",sys)=$g(@Mas@("REPORT",dept,"ts",tc,"loc",key,"sys",sys))+1 
+ ... s @Mas@("REPORT",dept,"ts",tc,"sys",sys)=$G(@Mas@("REPORT",dept,"ts",tc,"sys",sys))+1
+ .. ; считаем итоги по отелам и местоположениям
+ .. s @Mas@("REPORT",dept,"loc",key)=$g(@Mas@("REPORT",dept,"loc",key))+1 
+ .. s @Mas@("REPORT",dept,"Kol-"_loctype)=$g(@Mas@("REPORT",dept,"Kol-"_loctype))+1 
+ .. s @Mas@("REPORT",dept)=$g(@Mas@("REPORT",dept))+1   
+ .. s @Mas@("REPORT")=$g(@Mas@("REPORT"))+1    
+ .. s @Mas@("Kol-"_loctype)=$g(@Mas@("Kol-"_loctype))+1 
+ .. s @Mas@("REPORT",dept,"ts",tc,"Kol-"_loctype)=$g(@Mas@("REPORT",dept,"ts",tc,"Kol-"_loctype))+1 
+ .. ; Расшифровка кол-ва (Medtrak/Labtrak)
+ .. i +$G(FlagSystem)=1 do
+ ... s @Mas@("REPORT",dept,"loc",key,"sys",sys)=$g(@Mas@("REPORT",dept,"loc",key,"sys",sys))+1 
+ ... s @Mas@("REPORT",dept,"sys",sys)=$g(@Mas@("REPORT",dept,"sys",sys))+1 
+ ... s @Mas@("REPORT",dept,"Kol-"_loctype,"sys",sys)=$g(@Mas@("REPORT",dept,"Kol-"_loctype,"sys",sys))+1 
+ ... s @Mas@("Kol-"_loctype,"sys",sys)=$g(@Mas@("Kol-"_loctype,"sys",sys))+1 
+ ... s @Mas@("System",sys)=$g(@Mas@("System",sys))+1         
+ ... s @Mas@("REPORT",dept,"ts",tc,"Kol-"_loctype,"sys",sys)=$g(@Mas@("REPORT",dept,"ts",tc,"Kol-"_loctype,"sys",sys))+1 
+ .. ; индексы для динамич. построения столбцов по типам местоположений
+ .. s @Mas@("SORT",key)=$g(@Mas@("SORT",key))+1 
+ .. s @Mas@("SORT-TYPE",loctype)=$g(@Mas@("SORT-TYPE",loctype))+1 
+ .. s @Mas@("SORT-TYPE",loctype,key)=$G(@Mas@("SORT-TYPE",loctype,key))+1
+ .. i +$G(FlagSystem)=1 do
+ ... s @Mas@("SORT",key,"sys",sys)=$g(@Mas@("SORT",key,"sys",sys))+1 
+ quit 
+ ;----------------------------------------------------------------------------
+XML      ; Формирование XML...
+ i '$D(@Mas@("REPORT"))!('$D(@Mas@("SORT"))) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+ ;
+ S MasO="^TEMP($zn,$J,""XML"")"
+ ; I ВАРИАНТ =>  строим таблицу (строки - отделы; динамические столбцы - местоположения)
+ if +$g(FlagTurnRound)=0 d XML1
+ ; II ВАРИАНТ =>  разворачиваем таблицу (строки - местоположения; динамические столбцы - отделы)
+ if +$g(FlagTurnRound)=1 d XML2
+ ;
+ ; входные параметры
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(PAR1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(PAR2),"/",".")
+ S @MasO@("User",1,"Department")=$S(PAR3="0":"* Все",1:PAR3_" - "_$P($G(^TTAB("DEP",PAR3)),"\",1))
+ S @MasO@("User",1,"PatLocation")=$S($G(LocPat)="":"* Все",1:LocPat_"-"_$P($G(^TTAB("RH",LocPat)),"\",1))
+ S @MasO@("User",1,"FlagReport")=+$G(FlagReport)		;Флаг 1/2/3 - Сводный/наборы тестов/тесты
+ S @MasO@("User",1,"FlagTypeLoc")=+$G(FlagTypeLoc)		;Флаг "Доп.итоги по типу местоположения (амбулат/стацион/прочее)"
+ S @MasO@("User",1,"FlagTurnRound")=+$G(FlagTurnRound)	;Флаг "Развернуть таблицу"
+ S @MasO@("User",1,"FlagSystem")=+$G(FlagSystem)		;Флаг "Расшифровка кол-ва (Medtrak/Labtrak)"
+ S @MasO@("User",1,"FlagNotCalcul")=+$G(FlagNotCalcul)	;флаг "Не считать расчетные тесты (для которых введены формулы вычисления)"
+ S @MasO@("User",1,"FlagTimeTS")=+$G(FlagTimeTS)		;Флаг "Время выполнения для набора тестов"
+ ;
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ;
+ ;log
+ ;k ^zz1 M ^zz1=@Mas     ;@@@
+ m ^test("old")=@Mas
+ ;
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS09old.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ s MSGERROR="0^^"_%Ret_"^"_$$GetViwer^REPORTSPB($zn)   ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ quit
+ ; 
+ ; ------------------------------------------------------------------------------------------
+XML1  ; I ВАРИАНТ =>  строим таблицу (строки - отделы; динамические столбцы - местоположения)
+ ; 
+ ; формируем динамический заголовок таблицы (местоположение пациента)
+ ; Флаг "Доп.итоги по типу местоположения (стационарный/амбулаторный/прочее)"
+ k SortCol s ind1=0 F type="IN","OUT","OTHER" do
+ . s ind2=0,key="" f  s key=$o(@Mas@("SORT-TYPE",type,key)) q:key=""  d 
+ .. s ind1=$i(ind1),SortCol=ind1
+ .. s location=$P(key,$C(1),2)
+ .. s SortCol(key)=ind1
+ .. s ind2=$i(ind2)
+ .. s @MasO@("User",1,"Column"_type)=ind2
+ .. s @MasO@("User",1,"Column"_type,ind2,"Code")=location
+ .. s name=$S(location="":"",$G(FlagGrCourier)=1:$P($G(^TTAB("CR",location)),"\",1),1:$P($G(^TTAB("RH",location)),"\",1))
+ .. s @MasO@("User",1,"Column"_type,ind2,"Desc")=$S(name="":"?",1:name)
+ ;
+ ;m ^zz("SortCol-XML1")=SortCol  ;@@@
+ ;
+ ; итоги по отделам / местоположению пациентов
+ s NGr=0,dep="" f  s dep=$o(@Mas@("REPORT",dep)) q:dep=""  d
+ . s NGr=$i(NGr)
+ . S @MasO@("User",1,"Gr",NGr,"Npp")=NGr
+ . ;наименование отдела/группы наборов тестов
+ . s name=$S(FlagReport=4:"["_dep_"] "_$P($G(^TTAB("GR",dep)),"\",1),1:$P($G(^TTAB("DEP",dep)),"\",1))
+ . S @MasO@("User",1,"Gr",NGr,"Code")=name    	
+ . S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT",dep))           ;кол-во наборов по отделу
+ . ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ . i +$G(FlagSystem)=1 do
+ .. S @MasO@("User",1,"Gr",NGr,"Kol-MT")=+$G(@Mas@("REPORT",dep,"sys","MT"))
+ .. S @MasO@("User",1,"Gr",NGr,"Kol-LT")=+$G(@Mas@("REPORT",dep,"sys","LT"))
+ . ; Доп.итоги по типу местоположения (стационарный/амбулаторный/прочее)"
+ . i +$G(FlagTypeLoc)=1 do   
+ .. f loctype="IN","OUT","OTHER" do
+ ... S @MasO@("User",1,"Gr",NGr,"Kol-"_loctype)=+$G(@Mas@("REPORT",dep,"Kol-"_loctype)) 
+ ... ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ ... i +$G(FlagSystem)=1 do
+ .... S @MasO@("User",1,"Gr",NGr,"Kol-"_loctype_"-MT")=+$G(@Mas@("REPORT",dep,"Kol-"_loctype,"sys","MT"))
+ .... S @MasO@("User",1,"Gr",NGr,"Kol-"_loctype_"-LT")=+$G(@Mas@("REPORT",dep,"Kol-"_loctype,"sys","LT"))
+ . ; --------
+ . ; разбивка по местоположениям пациентов
+ . S location="" f  s location=$o(SortCol(location)) q:location=""  s ind=$g(SortCol(location)) d:ind'=""
+ .. S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol")=$G(@Mas@("REPORT",dep,"loc",location))     
+ .. ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ .. i +$G(FlagSystem)=1 do
+ ... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol-MT")=+$G(@Mas@("REPORT",dep,"loc",location,"sys","MT"))
+ ... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol-LT")=+$G(@Mas@("REPORT",dep,"loc",location,"sys","LT"))
+ . ; ----------
+ . ; расшифровка по наборам тестов (2) / по тестам (3) / по группам наборов тестов (4)
+ . i +$G(FlagReport)>1 do
+ .. s NGr2=0,ts="" f  s ts=$o(@Mas@("REPORT",dep,"ts",ts)) q:ts=""  d
+ ... s NGr2=$i(NGr2)
+ ... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Npp")=NGr2
+ ... ; наименование набора/теста (код-описание)
+ ... s name=$e(ts_$j("",6),1,6)_$S(FlagReport=3:$P($G(^TTAB("TC",ts)),"\",1),1:$P($G(^TTAB("TS",ts)),"\",1))
+ ... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Code")=name
+ ... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol")=$G(@Mas@("REPORT",dep,"ts",ts))
+ ... ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ ... i +$G(FlagSystem)=1 do
+ .... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol-MT")=+$G(@Mas@("REPORT",dep,"ts",ts,"sys","MT"))
+ .... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol-LT")=+$G(@Mas@("REPORT",dep,"ts",ts,"sys","LT"))
+ ... ; Доп.итоги по типу местоположения (стационарный/амбулаторный/прочее)"
+ ... i +$G(FlagTypeLoc)=1 do   
+ .... f loctype="IN","OUT","OTHER" do
+ ..... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol-"_loctype)=+$G(@Mas@("REPORT",dep,"ts",ts,"Kol-"_loctype)) 
+ ..... ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ ..... i +$G(FlagSystem)=1 do
+ ...... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol-"_loctype_"-MT")=+$G(@Mas@("REPORT",dep,"ts",ts,"Kol-"_loctype,"sys","MT"))
+ ...... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol-"_loctype_"-LT")=+$G(@Mas@("REPORT",dep,"ts",ts,"Kol-"_loctype,"sys","LT"))
+ ... ; --------
+ ... ; разбивка по местоположениям пациентов
+ ... S location="" f  s location=$o(SortCol(location)) q:location=""  s ind=$g(SortCol(location)) d:ind'=""
+ .... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Col",ind,"Kol")=$G(@Mas@("REPORT",dep,"ts",ts,"loc",location))
+ .... ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ .... i +$G(FlagSystem)=1 do
+ ..... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Col",ind,"Kol-MT")=+$G(@Mas@("REPORT",dep,"ts",ts,"loc",location,"sys","MT"))
+ ..... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Col",ind,"Kol-LT")=+$G(@Mas@("REPORT",dep,"ts",ts,"loc",location,"sys","LT"))
+ ... ; ---------
+ ... i +$G(FlagTimeTS)=1 do:+$G(FlagReport)'=3
+ .... ; CTTS_CompletionTime (время выполнения набора тестов)
+ .... ;  time1 - время на 1 исследование в день ; 
+ .... ;  time2 - на каждое последующее исслед. в течении дня
+ .... ;  time3 - время на "срочное" исследование (cito)
+ .... s time=$TR($TR($P($G(^TTAB("TS",ts)),"\",9)," ",""),",",".")
+ .... s time1=+$P(time,"/",1),time2=+$P(time,"/",2),time3=+$P(time,"/",3) s:time2=0 time2=time1 s:time3=0 time3=time1
+ .... s @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Time")=time1
+ .... s @MasO@("User",1,"Gr",NGr,"TS",NGr2,"TimeExec")=time1*$G(@MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol"))
+ .... s @MasO@("User",1,"Gr",NGr,"TimeExec")=$G(@MasO@("User",1,"Gr",NGr,"TimeExec"))+$G(@MasO@("User",1,"Gr",NGr,"TS",NGr2,"TimeExec"))
+ .... S @MasO@("User",1,"ItogoTimeExec")=$G(@MasO@("User",1,"ItogoTimeExec"))+$G(@MasO@("User",1,"Gr",NGr,"TS",NGr2,"TimeExec"))
+ . ; ---
+ . i +$G(FlagReport)=1,+$G(FlagTimeTS)=1 do
+ .. s ts="" f  s ts=$o(@Mas@("REPORT",dep,"ts",ts)) q:ts=""  d
+ ... s time=$TR($TR($P($G(^TTAB("TS",ts)),"\",9)," ",""),",",".")
+ ... s time1=+$P(time,"/",1),time2=+$P(time,"/",2),time3=+$P(time,"/",3) s:time2=0 time2=time1 s:time3=0 time3=time1
+ ... s TimeExec=time1*$G(@Mas@("REPORT",dep,"ts",ts))
+ ... s @MasO@("User",1,"Gr",NGr,"TimeExec")=$G(@MasO@("User",1,"Gr",NGr,"TimeExec"))+$G(TimeExec)
+ ... S @MasO@("User",1,"ItogoTimeExec")=$G(@MasO@("User",1,"ItogoTimeExec"))+$G(TimeExec)
+ ; 
+ ; итоги общие
+ S @MasO@("User",1,"ItogoTS")=+$G(@Mas@("REPORT"))
+ S @MasO@("User",1,"ItogoTS-MT")=+$G(@Mas@("System","MT"))
+ S @MasO@("User",1,"ItogoTS-LT")=+$G(@Mas@("System","LT"))
+ ; Доп.итоги по типу местоположения (стационарный/амбулаторный/прочее)"
+ i +$G(FlagTypeLoc)=1 do
+ . f loctype="IN","OUT","OTHER" do
+ .. S @MasO@("User",1,"Itogo-"_loctype)=+$G(@Mas@("Kol-"_loctype))  
+ .. ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ .. i +$G(FlagSystem)=1 do
+ ... S @MasO@("User",1,"Itogo-"_loctype_"-MT")=+$G(@Mas@("Kol-"_loctype,"sys","MT"))
+ ... S @MasO@("User",1,"Itogo-"_loctype_"-LT")=+$G(@Mas@("Kol-"_loctype,"sys","LT"))
+ ; разбивка по местоположениям пациентов
+ S location="" f  s location=$o(SortCol(location)) q:location=""  s ind=$g(SortCol(location)) d:ind'=""
+ . S @MasO@("User",1,"ItogoCol",ind,"Kol")=+$G(@Mas@("SORT",location))   
+ . ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ . i +$G(FlagSystem)=1 do
+ .. S @MasO@("User",1,"ItogoCol",ind,"Kol-MT")=+$G(@Mas@("SORT",location,"sys","MT"))   
+ .. S @MasO@("User",1,"ItogoCol",ind,"Kol-LT")=+$G(@Mas@("SORT",location,"sys","LT"))   
+ ; счетчик столбцов
+ S @MasO@("User",1,"ColIN")=+$G(@MasO@("User",1,"ColumnIN"))		;кол-во столбцов для Стац. местополож.
+ S @MasO@("User",1,"ColOUT")=+$G(@MasO@("User",1,"ColumnOUT"))		;кол-во столбцов для Амбулат. местополож.
+ S @MasO@("User",1,"ColOTHER")=+$G(@MasO@("User",1,"ColumnOTHER"))	;кол-во столбцов для Прочих местополож.
+ quit
+ ; -------------------------------------------------------------------------------------------------
+XML2 ; II ВАРИАНТ =>  разворачиваем таблицу (строки - местоположения; динамические столбцы - отделы)
+ ;
+ ; формируем динамический заголовок таблицы (отделы)
+ k SortCol s ind=0,department="" f  s department=$o(@Mas@("SORT",department)) q:department=""  d 
+ . s ind=$i(ind),SortCol=ind
+ . s SortCol(department)=ind
+ . s @MasO@("User",1,"Column")=ind
+ . s @MasO@("User",1,"Column",ind,"Code")=department
+ . s @MasO@("User",1,"Column",ind,"Desc")=$P($G(^TTAB("DEP",department)),"\",1)
+ ;
+ ;m ^zz("SortCol-XML2")=SortCol  ;@@@
+ ;
+ ; итоги по отделам / местоположению пациентов
+ s NGr=0 f loctype="IN","OUT","OTHER" do
+ . ; Доп.итоги по типу местоположения (стационарный/амбулаторный/прочее)"
+ . i +$G(FlagTypeLoc)=1 do   
+ .. s NGr=$i(NGr)
+ .. S @MasO@("User",1,"Gr",NGr,"Npp")=NGr
+ .. S @MasO@("User",1,"Gr",NGr,"Code")=$S(loctype="IN":"Стационар",loctype="OUT":"Амбулатория",loctype="OTHER":"Прочее")    ;тип местоположения
+ .. S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT",loctype))       
+ .. ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ .. i +$G(FlagSystem)=1 do
+ ... S @MasO@("User",1,"Gr",NGr,"Kol-MT")=+$G(@Mas@("REPORT",loctype,"sys","MT"))
+ ... S @MasO@("User",1,"Gr",NGr,"Kol-LT")=+$G(@Mas@("REPORT",loctype,"sys","LT"))
+ .. ; разбивка по отделам
+ .. S dept="" f  s dept=$o(SortCol(dept)) q:dept=""  s ind=$g(SortCol(dept)) d:ind'=""
+ ... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol")=$G(@Mas@("REPORT",loctype,"dept",dept))     
+ ... ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ ... i +$G(FlagSystem)=1 do
+ .... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol-MT")=+$G(@Mas@("REPORT",loctype,"dept",dept,"sys","MT"))
+ .... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol-LT")=+$G(@Mas@("REPORT",loctype,"dept",dept,"sys","LT"))
+ . ; --- 
+ . ; местоположения пациента
+ . S key="",NGr2=0 f  s key=$o(@Mas@("REPORT",loctype,"loc",key)) q:key=""  d
+ .. s location=$P(key,$C(1),2)  ;N п/п_$C(1)_код
+ .. s name=$S(location="":"",$G(FlagGrCourier)=1:$P($G(^TTAB("CR",location)),"\",1),1:$P($G(^TTAB("RH",location)),"\",1))
+ .. s NGr2=$i(NGr2)
+ .. S @MasO@("User",1,"Gr",NGr,"Gr2",NGr2,"Npp")=NGr2
+ .. S @MasO@("User",1,"Gr",NGr,"Gr2",NGr2,"Code")="["_location_"] "_name ;$P($G(^TTAB("RH",location)),"\",1)
+ .. S @MasO@("User",1,"Gr",NGr,"Gr2",NGr2,"Kol")=+$G(@Mas@("REPORT",loctype,"loc",key))
+ .. ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ .. i +$G(FlagSystem)=1 do
+ ... S @MasO@("User",1,"Gr",NGr,"Gr2",NGr2,"Kol-MT")=+$G(@Mas@("REPORT",loctype,"loc",key,"sys","MT"))
+ ... S @MasO@("User",1,"Gr",NGr,"Gr2",NGr2,"Kol-LT")=+$G(@Mas@("REPORT",loctype,"loc",key,"sys","LT"))
+ .. ; разбивка по отделам
+ .. S dept="" f  s dept=$o(SortCol(dept)) q:dept=""  s ind=$g(SortCol(dept)) d:ind'=""
+ ... S @MasO@("User",1,"Gr",NGr,"Gr2",NGr2,"Col",ind,"Kol")=$G(@Mas@("REPORT",loctype,"loc",key,"dept",dept))     
+ ... ; Расшифровка кол-ва (Medtrak/Labtrak)"
+ ... i +$G(FlagSystem)=1 do
+ .... S @MasO@("User",1,"Gr",NGr,"Gr2",NGr2,"Col",ind,"Kol-MT")=+$G(@Mas@("REPORT",loctype,"loc",key,"dept",dept,"sys","MT"))
+ .... S @MasO@("User",1,"Gr",NGr,"Gr2",NGr2,"Col",ind,"Kol-LT")=+$G(@Mas@("REPORT",loctype,"loc",key,"dept",dept,"sys","LT"))
+ ; итоги общие
+ S @MasO@("User",1,"ItogoTS")=+$G(@Mas@("REPORT"))
+ S @MasO@("User",1,"ItogoTS-MT")=+$G(@Mas@("System","MT"))
+ S @MasO@("User",1,"ItogoTS-LT")=+$G(@Mas@("System","LT"))
+ ; разбивка по отделам
+ S department="" f  s department=$o(SortCol(department)) q:department=""  s ind=$g(SortCol(department)) d:ind'=""
+ . S @MasO@("User",1,"ItogoCol",ind,"Kol")=+$G(@Mas@("SORT",department))   
+ . S @MasO@("User",1,"ItogoCol",ind,"Kol-MT")=+$G(@Mas@("SORT",department,"sys","MT"))   
+ . S @MasO@("User",1,"ItogoCol",ind,"Kol-LT")=+$G(@Mas@("SORT",department,"sys","LT"))   
+ ; счетчик столбцов
+ S @MasO@("User",1,"ColDEP")=+$G(@MasO@("User",1,"Column"))		;кол-во столбцов для отделов
+ quit
+]]></Routine>
+</Export>
