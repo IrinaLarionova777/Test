@@ -171,13 +171,26 @@ BODY  ; обработка данных...
  ; поиск по дате разрешения (дата авторизации набора тестов)
  s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
  . s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d:$D(^TEPI(epis))
- .. s categ=$P($G(^TEPI(epis)),"\",49)  ;CT PatientCategory
+ .. set rec=$G(^TEPI(epis))
+ .. s categ=$P(rec,"\",49)  ;CT PatientCategory
  .. ; категория пациента (ограничение)
  .. i MasCatPat'="*" q:categ=""  q:'$D(MasCatPat(categ))
  .. s:categ="" categ="?"
  .. ; ключ сортировки данных
- .. s mrn=$P($G(^TEPI(epis)),"\",18) ;номер МК
+ .. s mrn=$P(rec,"\",18) ;номер МК
  .. s key=$E($$ALPHAUP^SSUTIL4($TR($P($G(^TEPI(epis)),"\",1,2),"\","")),1,50)_$C(1)_mrn
+ .. if +FlagPayment=1 do  ;
+ ... // при использовании BiRLab плательщик определяется по коду ЛПУ (и только на уровне EPVisitNumber) (поле EPVIS_PaymentCode_DR пусто)
+ ... set hospitalcode=$piece(rec,"\",20)
+ ... set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
+ ... set payer="",payername=""
+ ... // для эпизодов, которые были до внедрения BiRLab
+ ... set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
+ ... set flagBiRLab=0 
+ ... if (payepis="")&&(payepisnew'="") do  ;
+ .... set flagBiRLab=1	
+ .... set payer=payepisnew
+ .... set payername=##class(BiRLab.Function.Report).GetPayerInfo(payepisnew,"nameshort",1)
  .. ; наборы тестов для лаб.эпизода (ограничение по отделам)
  .. s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  do
  ... s dept=$e(ts,1) q:dept=""  quit:'$D(DEP(dept))
@@ -188,10 +201,13 @@ BODY  ; обработка данных...
  .... s @Mas@("REPORT",key,"epis",epis,"ts")=$G(@Mas@("REPORT",key,"epis",epis,"ts"))+1
  .... s @Mas@("REPORT",key,"epis",epis,"ts",ts)=$g(@Mas@("REPORT",key,"epis",epis,"ts",ts))+1              
  .... ; Плательщик (на уровне лаб.номера/набора тестов)
+ .... ; Плательщик (на уровне лаб.номера/набора тестов)
  .... i +$G(FlagPayment)=1 do
- ..... s pay=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 	;VISTS_PaymentCode_DR
- ..... s:pay="" pay=$P($G(^TEPI(epis)),"\",7) q:pay=""
- ..... s @Mas@("REPORT",key,"epis",epis,"Payment",pay)=$P($G(^TTAB("BI",pay)),"\",1)
+ ..... if flagBiRLab=0 do   ;
+ ...... s payer=$p($G(^TEPI(epis,1,ts,tscnt)),"\",23) 	;VISTS_PaymentCode_DR
+ ...... if payer="" set payer=payepis
+ ...... set payername=##class(BiRLab.Function.Report).GetPayerInfo(payer,"nameshort",0)
+ ..... if payer'="" set @Mas@("REPORT",key,"epis",epis,"Payment",payer)=payername
  .... ; ---
  .... ; тип отчета 1 - "список пациентов"
  .... i $G(FlagReport)=1 quit
@@ -349,21 +365,7 @@ XML      ; Формирование XML...
  S MSGERROR=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS30.xsl",USER,$get(PAR))
  ;i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
-<<<<<<< .mine
-<<<<<<< .mine
-<<<<<<< .mine
  ;s MSGERROR="0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
-=======
- ;s MSGERROR="0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
- s MSGERROR="0^^"_%Ret_"^"_$$GetViwer^REPORTSPB($zn)  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
-=======
- s MSGERROR="0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
-=======
- ;s MSGERROR="0^^"_%Ret_"^EXCEL"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
- s MSGERROR="0^^"_%Ret_"^"_$$GetViwer^REPORTSPB($zn)  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
->>>>>>> .r250
->>>>>>> .r195
->>>>>>> .r250
  quit
  ;-------------------------------------------------------
 Desc(val,type) s val=$G(val),type=$G(type),FlagTest=$G(FlagTest) q:val="" ""
