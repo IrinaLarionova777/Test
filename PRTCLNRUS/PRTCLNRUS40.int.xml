@@ -146,6 +146,7 @@ CREATE(REPID,PAR,USER,%msql) ; create report
  ;             100^сообщение об ошибке
  ; 
 START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ ;s ^test("par")=$g(USER)_"*"_$g(PAR)
  i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
  ;
  ;k ^zz   ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
@@ -153,7 +154,9 @@ START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR)
  s Mas="^TEMP($zn,$J)" k @Mas
  s MSGERROR=""            
  d INIT i $g(MSGERROR)'="" quit MSGERROR
- d BODY,XML
+ set ok=$$BODY()
+ if 'ok s MSGERROR="100^Ошибка:"_$system.Status.GetErrorText(ok)
+ if ok do XML
  k ^TEMP($zn,$J),^TEMP($j)
  q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
  ;------------------------------------------------
@@ -219,62 +222,97 @@ INIT ; инициализация входных параметров
  s FlagStatTS=+$G(PAR22)	; Список назначений, ктр. были выполнены ранее или еще не выполнены
  quit
  ;------------------------------------------------
-BODY  ; поиск по дате разрешения (дата авторизации набора тестов)
+BODY()  ; поиск по дате разрешения (дата авторизации набора тестов)
+ set ok=1
+ try {
  ; ^TEPIi("AUTHORISED",{VISTS DateOfAuthorisation},{EP VisitNumber.EPVIS VisitNumber},{VISTS TestSet DR},{VISTS TestSetCounter}) 
- s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
- . s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d:$D(^TEPI(epis))
- .. do GetPayer
- .. if PAYMENT'="*",'$D(PAYMENT(payment)) quit
- .. ; ---
- .. s fam=$$seldata^LVBEPVIS(epis,3),name=$$seldata^LVBEPVIS(epis,4)
- .. s mrn=$$seldata^LVBEPVIS(epis,20) ;номер МК
- .. ; ---
- .. ; наборы тестов для лаб.эпизода (ограничение по отделам)
- .. s ts=$O(DEP("")) f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  do  
- ... s dep=$e(ts,1) q:dep=""  quit:'$D(DEP(dep))   		;ограничение по отделу
- ... i $G(group)'="" q:'$D(@Mas@("TWG",ts))    			;ограничение по группе наб.тестов
- ... ; ---
- ... s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
- .... ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
- .... s status=$p(^TEPI(epis,1,ts,tscnt),"\",31) q:status'="A"   
- .... ; проверяем местоположение пользователя на уровне эпизод/набор тестов
- .... ;i $G(USLOC)'="",USLOC'=$p($G(^TEPI(epis,1,ts,tscnt)),"\",29) quit      ;VISTS_UserSite_DR
- .... i $G(USLOC)'="" i $$site^LVBVISTS(epis_"||"_ts_"||"_tscnt)'=USLOC quit
- .... ; ---
- .... ; формируем индексы для печати (сортировка по фио)
- .... s key=$E($$ALPHAUP^SSUTIL4(fam)_$C(1)_$$ALPHAUP^SSUTIL4(name),1,30),mrn=$g(mrn,"?")
- .... s @Mas@("REPORT",key,"mrn",mrn,"epis",epis)=payment 
- .... s @Mas@("REPORT",key,"mrn",mrn,"epis",epis,ts,tscnt)=""
+ s date=PAR1-1 
+ for {
+	 s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  
+     s epis="" 
+     for {
+	     s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  
+	     if '$D(^TEPI(epis)) continue
+         do GetPayer
+         if PAYMENT'="*",'$D(PAYMENT(payment)) continue
+         ; ---
+         s fam=$$seldata^LVBEPVIS(epis,3),name=$$seldata^LVBEPVIS(epis,4)
+         s mrn=$$seldata^LVBEPVIS(epis,20) ;номер МК
+         ; ---
+         ; наборы тестов для лаб.эпизода (ограничение по отделам)
+         s ts=$O(DEP("")) 
+         for {
+	         s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""    
+             s dep=$e(ts,1) q:dep=""  quit:'$D(DEP(dep))   		;ограничение по отделу
+             i $G(group)'="" if '$D(@Mas@("TWG",ts)) continue    			;ограничение по группе наб.тестов
+             ; ---
+             s tscnt="" 
+             for {
+	             s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  
+                 ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
+                 s status=$p(^TEPI(epis,1,ts,tscnt),"\",31) if status'="A" continue
+                 ; проверяем местоположение пользователя на уровне эпизод/набор тестов
+                 ;i $G(USLOC)'="",USLOC'=$p($G(^TEPI(epis,1,ts,tscnt)),"\",29) quit      ;VISTS_UserSite_DR
+                 i $G(USLOC)'="" i $$site^LVBVISTS(epis_"||"_ts_"||"_tscnt)'=USLOC continue
+                 ; ---
+                 ; формируем индексы для печати (сортировка по фио)
+                 s key=$E($$ALPHAUP^SSUTIL4(fam)_$C(1)_$$ALPHAUP^SSUTIL4(name),1,30),mrn=$g(mrn,"?")
+                 s @Mas@("REPORT",key,"mrn",mrn,"epis",epis)=payment 
+                 s @Mas@("REPORT",key,"mrn",mrn,"epis",epis,ts,tscnt)=""
+             }
+         }
+     }
+ }
  ;
  ;m ^zz=@Mas
  ; ---
  ; причина невыполнения
  ; ^TEPIi("REASON",61681,"ОТМЕН","000005","Б004",1)= 
- s date=PAR1-1 f  s date=$o(^TEPIi("REASON",date)) q:date=""  q:date>PAR2  d
- . s reason="" f  s reason=$o(^TEPIi("REASON",date,reason)) q:reason=""  d
- .. s epis="" f  s epis=$o(^TEPIi("REASON",date,reason,epis)) q:epis=""  d:$D(^TEPI(epis))
- ... ; плательщик (на уровне лаб.номера)
- ... do GetPayer
- ... i PAYMENT'="*",'$D(PAYMENT(payment)) quit     
- ... ; ---
- ... s fam=$$seldata^LVBEPVIS(epis,3),name=$$seldata^LVBEPVIS(epis,4)
- ... s mrn=$$seldata^LVBEPVIS(epis,20) ;номер МК
- ... ; ---
- ... ; наборы тестов для лаб.эпизода (ограничение по отделам)
- ... s ts=$O(DEP("")) f  s ts=$o(^TEPIi("REASON",date,reason,epis,ts)) q:ts=""  do  
- .... s dep=$e(ts,1) q:dep=""  quit:'$D(DEP(dep))
- .... i $G(group)'="" q:'$D(@Mas@("TWG",ts))    			;ограничение по группе наб.тестов
- .... ; ---
- .... s tscnt="" f  s tscnt=$o(^TEPIi("REASON",date,reason,epis,ts,tscnt)) q:tscnt=""  d
- ..... ; проверяем местоположение пользователя на уровне эпизод/набор тестов
- ..... ;i $G(USLOC)'="",USLOC'=$p($G(^TEPI(epis,1,ts,tscnt)),"\",29) quit      ;VISTS_UserSite_DR
- ..... i $G(USLOC)'="" i $$site^LVBVISTS(epis_"||"_ts_"||"_tscnt)'=USLOC quit
- ..... ; ---
- ..... ; формируем индексы для печати (сортировка по фио)
- ..... s key=$E($$ALPHAUP^SSUTIL4(fam)_$C(1)_$$ALPHAUP^SSUTIL4(name),1,30),mrn=$g(mrn,"?")
- ..... s @Mas@("REPORT",key,"mrn",mrn,"epis",epis)=payment
- ..... s @Mas@("REPORT",key,"mrn",mrn,"epis",epis,ts,tscnt)=""
- quit
+ s date=PAR1-1 
+ for {
+	 s date=$o(^TEPIi("REASON",date)) q:date=""  q:date>PAR2  
+     s reason="" 
+     for {
+	     s reason=$o(^TEPIi("REASON",date,reason)) q:reason=""  
+         s epis="" 
+         for {
+	         s epis=$o(^TEPIi("REASON",date,reason,epis)) q:epis=""  
+	         if '$D(^TEPI(epis)) continue
+             ; плательщик (на уровне лаб.номера)
+             do GetPayer
+             i PAYMENT'="*",'$D(PAYMENT(payment)) continue    
+             ; ---
+             s fam=$$seldata^LVBEPVIS(epis,3),name=$$seldata^LVBEPVIS(epis,4)
+             s mrn=$$seldata^LVBEPVIS(epis,20) ;номер МК
+             ; ---
+             ; наборы тестов для лаб.эпизода (ограничение по отделам)
+             s ts=$O(DEP("")) 
+             for {
+	             s ts=$o(^TEPIi("REASON",date,reason,epis,ts)) q:ts=""   
+                 s dep=$e(ts,1) if dep="" continue  
+                 if '$D(DEP(dep)) continue
+                 i $G(group)'="" if '$D(@Mas@("TWG",ts)) continue    			;ограничение по группе наб.тестов
+                 ; ---
+                 s tscnt="" 
+                 for {
+	                 s tscnt=$o(^TEPIi("REASON",date,reason,epis,ts,tscnt)) q:tscnt=""  
+                     ; проверяем местоположение пользователя на уровне эпизод/набор тестов
+                     ;i $G(USLOC)'="",USLOC'=$p($G(^TEPI(epis,1,ts,tscnt)),"\",29) quit      ;VISTS_UserSite_DR
+                     i $G(USLOC)'="" i $$site^LVBVISTS(epis_"||"_ts_"||"_tscnt)'=USLOC continue
+                     ; ---
+                     ; формируем индексы для печати (сортировка по фио)
+                     s key=$E($$ALPHAUP^SSUTIL4(fam)_$C(1)_$$ALPHAUP^SSUTIL4(name),1,30),mrn=$g(mrn,"?")
+                     s @Mas@("REPORT",key,"mrn",mrn,"epis",epis)=payment
+                     s @Mas@("REPORT",key,"mrn",mrn,"epis",epis,ts,tscnt)=""
+                 }
+             }
+         }
+     }
+ }
+ } catch(e) { 
+    set ok=e.AsStatus()
+ }
+ quit ok
  
  // контекстная функция
 GetPayer
@@ -492,8 +530,9 @@ XML      ; Формирование XML...
  S @MasO@("KolEpis")=+$G(KolEpis)
  S @MasO@("KolTS")=+$G(KolTS)
  ; ---
- k ^zz M ^zz=@MasO     ;@@@
+ ;k ^zz M ^zz=@MasO     ;@@@
  ; ---
+ ;s ^test("PAR2")=$g(PAR)
  S MSGERROR=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS40.xsl",USER,$get(PAR))
  ;i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
