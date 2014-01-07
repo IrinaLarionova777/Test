@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS13old" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS13   ;SPARM; СВОДНАЯ Статистика выполнения исследований по ГОДАМ/МЕСЯЦАМ/ДНЯМ ;;@gol;
+ ;
+ q
+ ; Отчет CLNRUS13  +  CLNRUS13.xsl  + DLL: CLNSPARM007.clsSTART
+ ; 
+ ; идем по индексу ^TEPIi("AUTHORISED","дата разрешения",epis,ts,tscnt) 
+ ; и считаем кол-во выполненных (авторизированных) наб.тестов за заданный период по ГОДАМ !
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+ ;                        
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par 
+ ; период дат
+ s date1=$$extdate^SSUTIL4(+$h)  ; convert $h format to external date format (dd/mm/{yy}yy)
+ i date1<0 s date1=""
+ else  s date1="01."_$P(date1,"/",2,3)
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 :"_date1_" :True"
+ s @Par@("PAR2a")="Label   : 100: 700 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 1300: 700 : 1100 : 300 : t:True"
+ ; 
+ ; список отделов
+ s @Par@("PAR3a")="Label   : 100 : 1300 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR3")
+ s @Par@("PAR3")="ComboBox: 1300 : 1300 : 3800 : 300 : :True: "_default_" :List"         ;Standart
+ ;
+ ; флаг "Расшифровка по наборам тестов"
+ s @Par@("PAR4")="CheckBox: 1300 : 1800 : 200  : 300 : : : 0 "
+ s @Par@("PAR4a")="Label   : 1700 : 1800 : 3500 : 300 : Расшифровка по наборам тестов:"
+ ; флаг (радио-кнопки)
+ s @Par@("PAR5")="RadioButton : 3500 : 50 : 1500 : 800 : Подсчет по : True: 1 :List"    
+ s @Par@("PAR5",1)="Месяцам"
+ s @Par@("PAR5",2)="Годам"
+ s @Par@("PAR5",3)="Дням"
+ ; флаг (радио-кнопки)
+ s @Par@("PAR6")="RadioButton : 100 : 1700 : 1000 : 600 : Вывод : True: 1 :List"    
+ s @Par@("PAR6",1)="Excel"
+ s @Par@("PAR6",2)="Word"
+ ; флаг "Подписать дни недели (для подсчета по ""Дням"")"
+ s @Par@("PAR7")="CheckBox: 1300 : 2300 : 200  : 300 : : : 0 "
+ s @Par@("PAR7a")="Label   : 1700 : 2300 : 2000 : 500 : Подписать дни недели (для подсчета по ""Дням""):"
+ ;
+ ; настройка формы
+ s @Par@("form")="СВОДНАЯ Статистика выполненных исследований:500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;------------------------------------------------
+CREATE(REPID,PAR,USER,%msql) ; create report
+ n (REPID,PAR,USER,%msql) k ^TMP($zn,$j)
+ q
+ ;==================================================================================================================
+ ; Формирование отчета согласно заданным критериям (передаются из формы VB)
+ ; Формат PAR = поле $С(3) значение { $C(1) значение $C(1) значение } $C(2) поле $С(3) значение { $C(2) поле ... }
+ ; Возвращает:   0^сообщение^имя файла^программ для открытия файла ( EXPLORER, EXCEL, WINWORD )
+ ;             100^сообщение об ошибке
+ ; 
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz   m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR       ;@@@
+ k ^TEMP($j),^TEMP($zn,$J)
+ s Mas="^TEMP($zn,$J)" k @Mas
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ d BODY,XML
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,str1,str2,i,j,pay
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ ; отдел
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Отдел>" q
+ k DEP
+ if PAR3="0" do     ;* Все
+ . s default=$$ListDep^UDFSPARM001($G(USER),"INIT","DEP") m DEP=^TEMP($J,"DEP")
+ else  do  q:MSGERROR'=""
+ . i '$D(^TTAB("DEP",PAR3)) s MSGERROR="100^В Labtrake нет кода отдела <"_DEP_">" q
+ . s DEP(PAR3)=""
+ ; Флаг "Расшифровка по наборам тестов"
+ s FlagDetailsTS=+$G(PAR4)
+ ; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2) / по ДНЯМ (3)
+ s FlagReport=+$G(PAR5) s:FlagReport=0 FlagReport=1
+ i FlagReport=3 i (PAR2-PAR1)>100 s MSGERROR="100^Для расшифровки по ДНЯМ интервал дат должен быть не больше 100 дней!" q
+ ; Вывод отчета:  1="Excel" ; 2="Word"
+ s FlagExcel=$S(+$G(PAR6)=1:1,1:0)
+ ; Флаг "Подписать дни недели (для подсчета по ""Дням"")"
+ s FlagDescWeek=+$G(PAR7) s:+$G(FlagReport)'=3 FlagDescWeek=0
+ ;
+ ; log
+ ;s ^zz("INIT")="PAR1="_PAR1_"  PAR2="_PAR2_"  PAR3="_PAR3_"  PAR4="_PAR4_"; PAR5="_PAR5_"; PAR6="_PAR6   ;@@@
+ q
+ ;------------------------------------------------
+BODY  ; обработка данных...
+ ; поиск по дате разрешения (дата авторизации набора тестов)
+ s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
+ . s dateOUT=$$extdate2^SSUTIL4(date)  ;dd/mm/yy
+ . ; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2) / по ДНЯМ (3)
+ . i +$G(FlagReport)=1 s key=$p(dateOUT,"/",3)_$p(dateOUT,"/",2)
+ . i +$G(FlagReport)=2 s key=$p(dateOUT,"/",3)
+ . i +$G(FlagReport)=3 s key=$p(dateOUT,"/",3)_$p(dateOUT,"/",2)_$p(dateOUT,"/",1)
+ . s:key="" key=" "
+ . ; --- наборы тестов --- для лаб.эпизода (ограничение по отделам)
+ . s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d
+ .. s ts="" f  s ts=$o(^TEPIi("AUTHORISED",date,epis,ts)) q:ts=""  do
+ ... s dept=$e(ts,1) q:dept=""  quit:'$D(DEP(dept))
+ ... s Ndept=$P($G(^TTAB("DEP",dept)),"\",3) s:Ndept="" Ndept=999   ;номер последов. печати отдела 
+ ... s tscnt="" f  s tscnt=$o(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) q:tscnt=""  d
+ .... s vtsRID=epis_"||"_ts_"||"_tscnt 
+ .... i '$$select^LVBVISTS(vtsRID,"Y",USER) d:$G(PLIST(33))="A"                  ;считаем только "РАЗРЕШЕННЫЕ" наборы тестов
+ ..... ; формируем индексы для построения динамического заголовка таблицы (года)
+ ..... s @Mas@("REPORT",Ndept,dept,"ts",ts,"key",key)=$g(@Mas@("REPORT",Ndept,dept,"ts",ts,"key",key))+1 
+ ..... s @Mas@("REPORT",Ndept,dept,"ts",ts)=$g(@Mas@("REPORT",Ndept,dept,"ts",ts))+1 
+ ..... s @Mas@("REPORT",Ndept,dept,"ts")=$g(@Mas@("REPORT",Ndept,dept,"ts"))+1 
+ ..... s @Mas@("REPORT",Ndept,dept,"key",key)=$g(@Mas@("REPORT",Ndept,dept,"key",key))+1                             
+ ..... s @Mas@("REPORT",Ndept,dept)=$g(@Mas@("REPORT",Ndept,dept))+1                 ;кол-во вып.наборов тестов по отделу
+ ..... s @Mas@("REPORT")=$g(@Mas@("REPORT"))+1                                       ;общее кол-во
+ ..... ; индексы для динамич. построения столбцов
+ ..... s @Mas@("SORT",key)=$g(@Mas@("SORT",key))+1 
+ ;
+ ;m ^zz=@Mas   ;@@@
+ q
+ ;--------------------------------------------------------------------------
+XML      ; Формирование XML...
+ i '$D(@Mas@("REPORT"))!('$D(@Mas@("SORT"))) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
+ ;
+ S MasO="^TEMP($zn,$J,""XML"")"
+ ; динамический заголовок таблицы (года)
+ k SortCol s ind=0,key="" f  s key=$o(@Mas@("SORT",key)) q:key=""  d 
+ . s ind=ind+1,SortCol=ind
+ . s SortCol(key)=ind
+ . ; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2) / по ДНЯМ (3)
+ . s name=$S(+$G(FlagReport)=1:$e(key,5,6)_"."_$e(key,1,4),+$G(FlagReport)=3:$e(key,7,8)_"."_$e(key,5,6)_"."_$e(key,3,4),1:key)
+ . i +$G(FlagDescWeek)=1,+$G(FlagReport)=3 do
+ .. s dt=$e(key,5,6)_"/"_$e(key,7,8)_"/"_$e(key,1,4)
+ .. s dt=$$intdate^SSUTIL4(dt) q:dt<0  					;convert mm/dd/yyyy to $h format
+ .. s name=name_" "_$$DayWeek^UDFSPARM001(dt,1)  		;возвращает день недели для даты (формат $h)
+ . s @MasO@("User",1,"Col",ind,"Code")="'"_name
+ ;
+ ;m ^zz("SortCol")=SortCol  ;@@@
+ ;
+ ; итоги по отделам / по годам
+ s (NGr,Npp)=0,Ndep="" f  s Ndep=$o(@Mas@("REPORT",Ndep)) q:Ndep=""  d
+ . s dep="" f  s dep=$o(@Mas@("REPORT",Ndep,dep)) q:dep=""  d
+ .. s NGr=$i(NGr)
+ .. S @MasO@("User",1,"Gr",NGr,"NGr")=Npp
+ .. S @MasO@("User",1,"Gr",NGr,"Code")=$P($G(^TTAB("DEP",dep)),"\",1)    ;наименование отдела
+ .. S @MasO@("User",1,"Gr",NGr,"Kol")=+$G(@Mas@("REPORT",Ndep,dep))      ;кол-во выполненных наборов тестов по отделу
+ .. ; разбивка по годам
+ .. S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ... S @MasO@("User",1,"Gr",NGr,"Col",ind,"Kol")=+$G(@Mas@("REPORT",Ndep,dep,"key",key))     
+ .. ; расшифровка по наборам тестов
+ .. i $G(FlagDetailsTS)=1 do
+ ... s NGr2=0,ts="" f  s ts=$o(@Mas@("REPORT",Ndep,dep,"ts",ts)) q:ts=""  d
+ .... S NGr2=$i(NGr2)
+ .... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"NGr")=NGr2
+ .... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Code")=$e(ts_$j("",6),1,6)_$P($G(^TTAB("TS",ts)),"\",1)  ;набор тестов (код-описание)
+ .... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Kol")=+$G(@Mas@("REPORT",Ndep,dep,"ts",ts))
+ .... ; разбивка по годам
+ .... S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ ..... S @MasO@("User",1,"Gr",NGr,"TS",NGr2,"Col",ind,"Kol")=+$G(@Mas@("REPORT",Ndep,dep,"ts",ts,"key",key))     
+ ; итоги общие
+ Do
+ . S @MasO@("User",1,"Itogo-Kol")=+$G(@Mas@("REPORT"))
+ . S key="" f  s key=$o(SortCol(key)) q:key=""  s ind=$g(SortCol(key)) d:ind'=""
+ .. S @MasO@("User",1,"ItogoCol",ind,"Kol")=+$G(@Mas@("SORT",key))     
+ ;    
+ ; входные параметры
+ s date1=$o(^TEPIi("AUTHORISED",PAR1-1)),date2=$o(^TEPIi("AUTHORISED",PAR2+1),-1)
+ S @MasO@("User",1,"Date1")=$TR($$extdate2^SSUTIL4(date1),"/",".")
+ S @MasO@("User",1,"Date2")=$TR($$extdate2^SSUTIL4(date2),"/",".")
+ S @MasO@("User",1,"Department")=$S(PAR3="0":"* Все",1:PAR3_" - "_$P($G(^TTAB("DEP",PAR3)),"\",1))
+ S @MasO@("User",1,"FlagDetailsTS")=+$G(FlagDetailsTS)
+ S @MasO@("User",1,"ColCat")=+$G(SortCol)
+ S @MasO@("User",1,"FlagReport")=+$G(FlagReport)  				; Тип отчета: Подсчет по МЕСЯЦАМ (1) / по ГОДАМ (2)
+ S @MasO@("User",1,"TypeReport")=$S($G(FlagReport)=2:"ГОДАМ",$G(FlagReport)=3:"ДНЯМ",1:"МЕСЯЦАМ")
+ ;
+ s @MasO@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
+ S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+ ;
+ ;log
+ ;k ^zz M ^zz("XML")=@MasO     ;@@@
+ ;
+ S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"CLNRUS13.xsl",USER)
+ i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
+ ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
+ set viewer=$$GetViwer^REPORTSPB($zn) 
+ s MSGERROR="0^^"_%Ret_"^"_$S(viewer'="":viewer,+$G(FlagExcel)=1:"EXCEL",1:"WINWORD")  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ quit
+]]></Routine>
+</Export>
