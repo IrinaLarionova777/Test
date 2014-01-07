@@ -52,7 +52,7 @@ FORM(USER) new (USER) s USER=$G(USER)
  ;k PLIST s err=$$getall^LVBCTPC("","","","Y","","","","")
  ;s cnt=1,ind="" f  s ind=$O(PLIST(ind)) q:ind=""  d
  ;. s code=$P(PLIST(ind),$C(2),1) s:code'="" @Par@("PAR4",code)=code_"   "_$P(PLIST(ind),$C(2),2) s cnt=$i(cnt)
- kill @Par@("PAR4") do getAllPaiments($name(@Par@("PAR4")))
+ kill @Par@("PAR4") set sc=##class(BiRLab.Function.Report).GetPayersAll($name(@Par@("PAR4"))) //do getAllPaiments($name(@Par@("PAR4")))
  s @Par@("PAR4","0")="* Все плательщики"
  s @Par@("PAR4")="ListBox : 100 : 1300 : 5900 : 3000 : :True: 0 : Checkbox  "   
  ; строка-подсказка
@@ -182,10 +182,14 @@ INIT ; инициализация входных параметров
  ; плательщик
  i $G(PAR4)="" s MSGERROR="100^Не определено значение <Плательщик>" q
  k PAYMENT s PAYMENT=""
- f i=1:1:$L(PAR4,$C(1)) s pay=$P(PAR4,$C(1),i) d:pay'="" 
- . i pay="0" s PAYMENT("*")="" quit     ;* Все
- . s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
- . s PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+ set flagUseBirlab=##class(BiRLab.Function.Report).GetFlagUseBirlab()
+ for i=1:1:$L(PAR3,$C(1)) {
+		 s pay=$P(PAR3,$C(1),i) if pay="" continue 
+         i pay="0" s PAYMENT("*")="" quit     ;* Все
+         if flagUseBirlab=0 s PAYMENT(pay)=$P($G(^TTAB("BI",pay)),"\",1)
+         else  s PAYMENT(pay)=##class(BiRLab.Function.Report).GetPayerInfo(pay,"nameshort",1)
+         s PAYMENT=PAYMENT_$S(PAYMENT="":"",1:",")_pay_"-"_$G(PAYMENT(pay)) ;собираем значения в одну строку (для шапки)
+	 }
  i $D(PAYMENT("*")) s PAYMENT="*",pay="" f  s pay=$O(^TTAB("BI",pay)) q:pay=""  s PAYMENT(pay)=""
  i '$D(PAYMENT)="" s MSGERROR="100^Не определено значение <Плательщик>" q
  ; ДОПОЛНИТЕЛЬНАЯ настройка для вывода полей таблицы
@@ -219,9 +223,8 @@ BODY  ; поиск по дате разрешения (дата авториза
  ; ^TEPIi("AUTHORISED",{VISTS DateOfAuthorisation},{EP VisitNumber.EPVIS VisitNumber},{VISTS TestSet DR},{VISTS TestSetCounter}) 
  s date=PAR1-1 f  s date=$o(^TEPIi("AUTHORISED",date)) q:date=""  q:date>PAR2  d
  . s epis="" f  s epis=$o(^TEPIi("AUTHORISED",date,epis)) q:epis=""  d:$D(^TEPI(epis))
- .. ; плательщик (на уровне лаб.номера)
- .. s payepis=$p($g(^TEPI(epis)),"\",7) s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
- .. i PAYMENT'="*",'$D(PAYMENT(payepis)) quit     
+ .. do GetPayer
+ .. if PAYMENT'="*",'$D(PAYMENT(payment)) quit
  .. ; ---
  .. s fam=$$seldata^LVBEPVIS(epis,3),name=$$seldata^LVBEPVIS(epis,4)
  .. s mrn=$$seldata^LVBEPVIS(epis,20) ;номер МК
@@ -240,6 +243,7 @@ BODY  ; поиск по дате разрешения (дата авториза
  .... ; ---
  .... ; формируем индексы для печати (сортировка по фио)
  .... s key=$E($$ALPHAUP^SSUTIL4(fam)_$C(1)_$$ALPHAUP^SSUTIL4(name),1,30),mrn=$g(mrn,"?")
+ .... s @Mas@("REPORT",key,"mrn",mrn,"epis",epis)=payment 
  .... s @Mas@("REPORT",key,"mrn",mrn,"epis",epis,ts,tscnt)=""
  ;
  ;m ^zz=@Mas
@@ -250,8 +254,8 @@ BODY  ; поиск по дате разрешения (дата авториза
  . s reason="" f  s reason=$o(^TEPIi("REASON",date,reason)) q:reason=""  d
  .. s epis="" f  s epis=$o(^TEPIi("REASON",date,reason,epis)) q:epis=""  d:$D(^TEPI(epis))
  ... ; плательщик (на уровне лаб.номера)
- ... s payepis=$p($g(^TEPI(epis)),"\",7) s:$g(payepis)="" payepis="?"  ;если был зарегистрирован через LT
- ... i PAYMENT'="*",'$D(PAYMENT(payepis)) quit     
+ ... do GetPayer
+ ... i PAYMENT'="*",'$D(PAYMENT(payment)) quit     
  ... ; ---
  ... s fam=$$seldata^LVBEPVIS(epis,3),name=$$seldata^LVBEPVIS(epis,4)
  ... s mrn=$$seldata^LVBEPVIS(epis,20) ;номер МК
@@ -268,8 +272,28 @@ BODY  ; поиск по дате разрешения (дата авториза
  ..... ; ---
  ..... ; формируем индексы для печати (сортировка по фио)
  ..... s key=$E($$ALPHAUP^SSUTIL4(fam)_$C(1)_$$ALPHAUP^SSUTIL4(name),1,30),mrn=$g(mrn,"?")
+ ..... s @Mas@("REPORT",key,"mrn",mrn,"epis",epis)=payment
  ..... s @Mas@("REPORT",key,"mrn",mrn,"epis",epis,ts,tscnt)=""
  quit
+ 
+ // контекстная функция
+GetPayer
+ ; плательщик (на уровне лаб.номера)
+ set payment=""
+ set rec=$get(^TEPI(epis))
+ // при использовании BiRLab плательщик определяется по коду ЛПУ (и только на уровне EPVisitNumber) (поле EPVIS_PaymentCode_DR пусто)
+ set hospitalcode=$piece(rec,"\",20)
+ set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
+ // для эпизодов, которые были до внедрения BiRLab
+ set payment=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
+ set flagBiRLab=0 
+ if (payment="")&&(payepisnew'="") {
+    set flagBiRLab=1
+    set payment=payepisnew
+ }
+ s:$g(payment)="" payment="?" 
+ quit
+ 
  ; ----------------------------------------------------- 
 XML      ; Формирование XML...
  i '$D(@Mas@("REPORT")) s MSGERROR="100^Нет данных согласно заданному критерию поиска!" quit
@@ -318,7 +342,7 @@ XML      ; Формирование XML...
  s NGr1=0,key="" f  s key=$O(@Mas@("REPORT",key)) q:key=""  do
  . s mrn="" f  s mrn=$O(@Mas@("REPORT",key,"mrn",mrn)) q:mrn=""  do
  .. s KolPat=$i(KolPat)
- .. s epis="" f  s epis=$O(@Mas@("REPORT",key,"mrn",mrn,"epis",epis)) q:epis=""  do
+ .. s epis="" f  s epis=$O(@Mas@("REPORT",key,"mrn",mrn,"epis",epis),1,payment) q:epis=""  do
  ... ; ---
  ... ; сведения о лаб.эпизоде
  ... i $$select^LVBEPVIS(epis) quit
@@ -334,7 +358,12 @@ XML      ; Формирование XML...
  ... i +$G(FlagMRNPat)=1 do
  .... s mrnQ=$p($G(VISIT(65)),",",2)
  .... S @MasO@("Epis",NGr1,"MRN")=mrn_$S(mrnQ=""!(mrnQ=mrn):"",1:" / ИБ № "_mrnQ)
- ... i +$G(FlagPayPat)=1 S @MasO@("Epis",NGr1,"Payment")=$P($G(VISIT(9)),$C(1),2) 	 	;плательщик
+ ... ; плательщик (на уровне лаб.номера)
+ ... i +$G(FlagPayPat)=1 do  ;
+ .... set payername=##class(BiRLab.Function.Report).GetPayerInfo(payment,"nameshort",1)
+ .... if payername="" set payername=##class(BiRLab.Function.Report).GetPayerInfo(payment,"nameshort",1)
+ .... S @MasO@("Epis",NGr1,"Payment")=payername 	 	;плательщик
+ ... ;i +$G(FlagPayPat)=1 S @MasO@("Epis",NGr1,"Payment")=$P($G(VISIT(9)),$C(1),2) 	 	;плательщик
  ... i +$G(FlagCategPat)=1 S @MasO@("Epis",NGr1,"Categ")=$P($G(VISIT(94)),$c(1),2)      ;категория
  ... i +$G(FlagLocPat)=1 S @MasO@("Epis",NGr1,"LocPat")=$p($G(VISIT(22)),$c(1),2)	    ;местоположение пациента
  ... i +$G(FlagColDT)=1 do
@@ -468,7 +497,7 @@ XML      ; Формирование XML...
  S %Ret=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS40.xsl",USER)
  i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
  ; Возвращаем:  0^сообщение^имя файла^программа для открытия файла ( EXPLORER, EXCEL, WINWORD ) / 100^сообщение об ошибке
- s MSGERROR="0^^"_%Ret_"^"_$$GetViwer^REPORTSPB($zn)  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
+ s MSGERROR="0^^"_%Ret_"^WINWORD"  ;"^WINWORD  ;^EXCEL"  ;^EXPLORER"
  quit
  ;-------------------------- форматирование результатов -----------------------
  ; из  RES(dep,ts)="наименование набора тестов"
@@ -490,8 +519,7 @@ StatST  ;формирование доп.сведений о наборах те
  .. i status="A" q:data>(PAR1-1)&(data<(PAR2+2))
  .. ; причина невыполнения набора тестов
  .. s reason=$p(str,"\",52) i reason'="" s data=$p(str,"\",54)  ;дата установления причины
- .. set reasonText="" if reason'="" set reasonText=$piece($get(^TTAB("CTR",reason)),"\",1) 
- .. S statusDR=$S(reason'="":"Причина невыполнения ("_$select(reasonText'="":reasonText,1:reason)_")",status="A":"Разрешены",1:"Не выполнены")
+ .. S statusDR=$S(reason'="":"Причина невыполнения ("_reason_")",status="A":"Разрешены",1:"Не выполнены")
  .. s:data="" data=" "
  .. S TestSet(statusDR,data,ts)=""
  q:'$D(TestSet) 
