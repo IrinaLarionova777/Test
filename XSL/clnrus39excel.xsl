@@ -92,7 +92,7 @@
 </x:PageSetup>
 </x:WorksheetOptions>
 <Table x:FullColumns="1" x:FullRows="1">
-  <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="40"/>
+  <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
   <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="160"/>
 <xsl:if test='$FlagActiveWS = 0' >
   <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="24"/>
@@ -158,7 +158,7 @@
   <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="120"/>
 </xsl:if>
 <xsl:if test='$FlagDep = 1' >
-  <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="24"/>
+  <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="80"/>
 </xsl:if>
 <xsl:if test='$FlagTS = 1' >
   <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="120"/>

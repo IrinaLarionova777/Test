@@ -139,6 +139,7 @@
    </xsl:for-each>
   </table>
 
+<!-- NextWorkSheet -->
  <!--  "Расшифровка по группам наборам тестов" -->
  <xsl:if test='$FlagDetailsGR = 1'>
   <br/><p class="Cur14"><b>Расшифровка по группам наборов тестов:</b></p>
@@ -187,6 +188,7 @@
   </table>
  </xsl:if>
  
+<!-- NextWorkSheet -->
  <!--  "Расшифровка по наборам тестов" -->
  <xsl:if test='$FlagDetailsTS = 1'>
   <br/><p class="Cur14"><b>Расшифровка по выполненным наборам тестов:</b></p>
@@ -256,6 +258,7 @@
   </table>
  </xsl:if>
 
+<!-- NextWorkSheet -->
  <!--  "Расшифровка по тестам" -->
  <xsl:if test='$FlagDetailsTC = 1'>
   <br/><p class="Cur14"><b>Расшифровка по выполненым тестам:</b></p>
@@ -299,6 +302,7 @@
   </table>
  </xsl:if>
 
+<!-- NextWorkSheet -->
  <!--  "Расшифровка по полученным образцам (пробиркам)" -->
  <xsl:if test='$FlagSpecimen = 1'>
   <br/>

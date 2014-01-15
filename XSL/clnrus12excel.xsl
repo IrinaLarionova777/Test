@@ -47,6 +47,14 @@
       <xsl:value-of select="FlagCito" />
   </xsl:variable >
 <Worksheet ss:Name="Деятельность лаборатории" >
+<x:WorksheetOptions>
+  <x:PageSetup>
+     <x:Layout x:Orientation="Landscape"/>
+     <x:Header x:Margin="0.3"/>
+     <x:Footer x:Margin="0.3"/>
+     <x:PageMargins x:Bottom="0.75" x:Left="0.25" x:Right="0.25" x:Top="0.75"/>
+  </x:PageSetup>
+</x:WorksheetOptions>
 <Table x:FullColumns="1" x:FullRows="1">
 <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="25"/>
 <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="275"/>
@@ -246,14 +254,6 @@
   </Row>
 </Table>
 
-<x:WorksheetOptions>
-  <x:PageSetup>
-     <x:Layout x:Orientation="Landscape"/>
-     <x:Header x:Margin="0.3"/>
-     <x:Footer x:Margin="0.3"/>
-     <x:PageMargins x:Bottom="0.75" x:Left="0.25" x:Right="0.25" x:Top="0.75"/>
-  </x:PageSetup>
-</x:WorksheetOptions>
 
 </Worksheet>
 <!-- NextWorkSheet starttitle Расшифровка по группам наборам тестов endtitle -->

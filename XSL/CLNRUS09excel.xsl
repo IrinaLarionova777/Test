@@ -34,6 +34,14 @@
       <xsl:value-of select="FlagNOCITO" />
   </xsl:variable >
 <Worksheet ss:Name="     Деятельность лаборатории (по местоположениям пациентов)" >
+<x:WorksheetOptions>
+<x:PageSetup>
+<x:Layout x:Orientation="Landscape"/>
+<x:Header x:Margin="0.3"/>
+<x:Footer x:Margin="0.3"/>
+<x:PageMargins x:Bottom="0.75" x:Left="0.25" x:Right="0.25" x:Top="0.75"/>
+</x:PageSetup>
+</x:WorksheetOptions>
 <Table x:FullColumns="1" x:FullRows="1">	
 	<!-- ..............................................................................................
      I ВАРИАНТ COLUMNS
@@ -56,13 +64,13 @@
 <xsl:if test='$FlagSystem = 1' >
 <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
 </xsl:if>
-	<xsl:if test='ColIN > 0' >
+	<xsl:if test='ColIN1 > 0' >
 		<Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
 	</xsl:if>
-	<xsl:if test='ColOUT > 0'  >
+	<xsl:if test='ColOUT1 > 0'  >
 		<Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
 	</xsl:if>
-<xsl:if test='ColOTHER > 0' >
+<xsl:if test='ColOTHER1 > 0' >
 <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
 </xsl:if>
 <xsl:if test='$FlagTimeTS = 1' >
@@ -94,13 +102,13 @@
 	<xsl:if test='$FlagSystem = 1' >
 		<Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
 	</xsl:if>
-	<xsl:if test='ColIN >0' >
+	<xsl:if test='ColIN1 >0' >
 		<Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
 	</xsl:if>
-	<xsl:if test='ColOUT >0' >
+	<xsl:if test='ColOUT1 >0' >
 		<Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
 	</xsl:if>
-	<xsl:if test='ColOTHER >0' >
+	<xsl:if test='ColOTHER1 >0' >
 		<Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
 	</xsl:if>
 	<xsl:if test='$FlagTimeTS = 1' >
@@ -162,7 +170,7 @@
        </Cell>
     </xsl:if>
     <xsl:if test='$FlagSystem = 1' >
-       <Cell ss:MergeAcross='{ColOTHER}'>
+       <Cell ss:MergeAcross='{ColOTHER1}'>
          <Data ss:Type="String">Местоположения</Data>
        </Cell>
     </xsl:if>
@@ -173,14 +181,14 @@
          <xsl:if test='$FlagSystem = 1' >
             <Cell ss:MergeAcross='5'><Data ss:Type="String">Количество выполн. наборов тестов</Data></Cell>
          </xsl:if>
-         <xsl:if test='ColIN > 0' >
-            <Cell ss:MergeAcross='{ColIN}'><Data ss:Type="String">Стационар</Data></Cell>
+         <xsl:if test='ColIN1 > 0' >
+            <Cell ss:MergeAcross='{ColIN1}'><Data ss:Type="String">Стационар</Data></Cell>
          </xsl:if>
-         <xsl:if test='ColOUT > 0'  >
-            <Cell ss:MergeAcross='{ColOUT}'><Data ss:Type="String">Амбулатория</Data></Cell>
+         <xsl:if test='ColOUT1 > 0'  >
+            <Cell ss:MergeAcross='{ColOUT1}'><Data ss:Type="String">Амбулатория</Data></Cell>
          </xsl:if>
-         <xsl:if test='ColOTHER > 0'  >
-            <Cell ss:MergeAcross='{ColOTHER}'><Data ss:Type="String">Прочее</Data></Cell>
+         <xsl:if test='ColOTHER1 > 0'  >
+            <Cell ss:MergeAcross='{ColOTHER1}'><Data ss:Type="String">Прочее</Data></Cell>
          </xsl:if>
 	  </xsl:if>
       <xsl:if test='$FlagTimeTS = 1' >
@@ -192,7 +200,7 @@
   <Row>
 	  <xsl:if test='$FlagTypeLoc = 0'>
 		  <xsl:if test='$FlagSystem = 1'>
-              <Cell ss:StyleID="DefaultLeftBold"><Data ss:Type="String">Всего</Data></Cell>
+              <Cell ss:StyleID="DefaultLeftBold" ss:Index="2" ><Data ss:Type="String">Всего</Data></Cell>
               <Cell ss:StyleID="DefaultLeftBold"><Data ss:Type="String">MT</Data></Cell>
               <Cell ss:StyleID="DefaultLeftBold"><Data ss:Type="String">LT</Data></Cell>
           </xsl:if>
@@ -250,84 +258,84 @@
 	  </xsl:for-each>
   </Row>
 	<!--  1 строка: общие итоги "ВСЕГО"  -->
-  <Row ss:StyleID="DefaultTableLineBackground" >
-    <Cell ss:StyleID="DefaultLeftBold">
+  <Row >
+    <Cell ss:StyleID="DefaultTableLineBackgroundBold">
       <Data ss:Type="String">ВСЕГО</Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS" /></Data>
     </Cell>
 <xsl:if test='$FlagSystem = 1' >
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-MT" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-LT" /></Data>
     </Cell>
 </xsl:if>
 	  <xsl:if test='$FlagTypeLoc = 1'>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Itogo-IN" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Itogo-IN-MT" />/<xsl:value-of select="Itogo-IN-LT" />)</xsl:if ></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Itogo-OUT" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Itogo-OUT-MT" />/<xsl:value-of select="Itogo-OUT-LT" />)</xsl:if ></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Itogo-OTHER" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Itogo-OTHER-MT" />/<xsl:value-of select="Itogo-OTHER-LT" />)</xsl:if ></Data>
     </Cell>
 </xsl:if>
 	  <xsl:for-each select="OItogoCol">
-		  <Cell ss:StyleID="DefaultRightBold">
+		  <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Kol" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Kol-MT" />/<xsl:value-of select="Kol-LT" />)</xsl:if ></Data>
     </Cell>
      </xsl:for-each>
 <xsl:if test='$FlagTimeTS = 1' >
-	<Cell ss:StyleID="DefaultLeft">
+	<Cell ss:StyleID="DefaultTableLineBackgroundLeft">
 		<Data ss:Type="String"></Data>
 	</Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTimeExec" /></Data>
     </Cell>
 </xsl:if>
   </Row>
 	<!--  2 строка: общие итоги "ВСЕГО" обыч -->
 <xsl:if test='$FlagNOCITO = 1'>
-  <Row ss:StyleID="DefaultTableLineBackground" >
-    <Cell ss:StyleID="DefaultLeftBold">
+  <Row>
+    <Cell ss:StyleID="DefaultTableLineBackgroundBold">
       <Data ss:Type="String">В т.ч. обыч.</Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTSnocito" /></Data>
     </Cell>
 <xsl:if test='$FlagSystem = 1' >
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-MTnocito" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-LTnocito" /></Data>
     </Cell>
 </xsl:if>
  <xsl:if test='$FlagTypeLoc = 1'>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Itogo-INnocito" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Itogo-IN-MTnocito" />/<xsl:value-of select="Itogo-IN-LTnocito" />)</xsl:if ></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Itogo-OUTnocito" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Itogo-OUT-MTnocito" />/<xsl:value-of select="Itogo-OUT-LTnocito" />)</xsl:if ></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Itogo-OTHERnocito" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Itogo-OTHER-MTnocito" />/<xsl:value-of select="Itogo-OTHER-LTnocito" />)</xsl:if ></Data>
     </Cell>
 </xsl:if>
 	  <xsl:for-each select="OItogoColnocito">
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Kol" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Kol-MT" />/<xsl:value-of select="Kol-LT" />)</xsl:if ></Data>
     </Cell>
 </xsl:for-each>
 	  <xsl:if test='$FlagTimeTS = 1' >
-    <Cell ss:StyleID="DefaultLeftBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundBold">
       <Data ss:Type="String"></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTimeExecnocito" /></Data>
     </Cell>
 </xsl:if>
@@ -335,34 +343,34 @@
 </xsl:if>
 	<!--  3 строка: общие итоги "ВСЕГО" CITO -->
 <xsl:if test='$FlagCITO = 1'>
-  <Row ss:StyleID="DefaultTableLineBackground" >
-    <Cell ss:StyleID="DefaultLeftBold">
+  <Row>
+    <Cell ss:StyleID="DefaultTableLineBackgroundBold">
       <Data ss:Type="String">В т.ч. CITO</Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTScito" /></Data>
     </Cell>
 <xsl:if test='$FlagSystem = 1' >
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-MTcito" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-LTcito" /></Data>
     </Cell>
 </xsl:if>
   <xsl:if test='$FlagTypeLoc = 1'>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Itogo-INcito" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Itogo-IN-MTcito" />/<xsl:value-of select="Itogo-IN-LTcito" />)</xsl:if ></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Itogo-OUTcito" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Itogo-OUT-MTcito" />/<xsl:value-of select="Itogo-OUT-LTcito" />)</xsl:if ></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Itogo-OTHERcito" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Itogo-OTHER-MTcito" />/<xsl:value-of select="Itogo-OTHER-LTcito" />)</xsl:if ></Data>
     </Cell>
 </xsl:if>
 <xsl:for-each select="OItogoColcito">  
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Kol" /><xsl:if test='$FlagSystem = 1' >(<xsl:value-of select="Kol-MT" />/<xsl:value-of select="Kol-LT" />)</xsl:if ></Data>
     </Cell>
 </xsl:for-each>
@@ -370,7 +378,7 @@
 		  <Cell ss:StyleID="DefaultLeftBold">
       <Data ss:Type="String"></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTimeExeccito" /></Data>
     </Cell>
 </xsl:if>
@@ -378,7 +386,7 @@
 </xsl:if>
 	<!--  4 строка: пустая -->
 	<Row>
-		<Cell ss:StyleID="DefaultLeftBold">
+		<Cell ss:StyleID="DefaultTableLineBackgroundBold">
 			<Data ss:Type="String">Из них:</Data>
 		</Cell>
 	</Row>
@@ -499,18 +507,18 @@
       <Data ss:Type="String">Количество выполн. исследований</Data>
     </Cell>
 </xsl:if>
-<xsl:if test='ColIN > 0' >
-    <Cell ss:MergeAcross="{ColIN}" >
+<xsl:if test='ColIN1 > 0' >
+    <Cell ss:MergeAcross="{ColIN1}" >
       <Data ss:Type="String">Стационар</Data>
     </Cell>
 </xsl:if>
-<xsl:if test='ColOUT > 0' >
-    <Cell ss:MergeAcross="{ColOUT}">
+<xsl:if test='ColOUT1 > 0' >
+    <Cell ss:MergeAcross="{ColOUT1}">
       <Data ss:Type="String">Амбулатория</Data>
     </Cell>
 </xsl:if>
-<xsl:if test='ColOTHER > 0' >
-    <Cell ss:MergeAcross="{ColOTHER}">
+<xsl:if test='ColOTHER1 > 0' >
+    <Cell ss:MergeAcross="{ColOTHER1}">
       <Data ss:Type="String">Прочее</Data>
     </Cell>
 </xsl:if>
@@ -921,20 +929,20 @@
     </Cell>
 	
 </xsl:if>
-	  <Cell ss:MergeAcross="{ColDEP}">
+	  <Cell ss:MergeAcross="{ColDEP1}">
       <Data ss:Type="String">Отделы лаборатории</Data>
     </Cell>
   </Row>
 	!--  вторая строка шапки -->
-<Row ss:Height="30">
+<Row ss:Height="30" >
 <xsl:if test='$FlagSystem = 1'>
-    <Cell ss:StyleID="DefaultLeftBold">
+    <Cell ss:StyleID="DefaultHeaderTable" ss:Index="2" >
       <Data ss:Type="String">Всего</Data>
     </Cell>
-    <Cell ss:StyleID="DefaultLeftBold">
+    <Cell ss:StyleID="DefaultHeaderTable">
       <Data ss:Type="String">MT</Data>
     </Cell>
-    <Cell ss:StyleID="DefaultLeftBold">
+    <Cell ss:StyleID="DefaultHeaderTable">
       <Data ss:Type="String">LT</Data>
     </Cell>
 </xsl:if>
@@ -949,23 +957,23 @@
     </xsl:for-each>
   </Row>
 	<!--  1 строка: общие итоги "ВСЕГО" -->
-  <Row ss:StyleID="DefaultTableLineBackground" >
-    <Cell ss:StyleID="DefaultLeftBold">
+  <Row>
+    <Cell ss:StyleID="DefaultTableLineBackgroundBold">
       <Data ss:Type="String">ВСЕГО</Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS" /></Data>
     </Cell>
 <xsl:if test='$FlagSystem = 1' >
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-MT" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-LT" /></Data>
     </Cell>
 </xsl:if>
 <xsl:for-each select="OItogoCol">
-	<Cell ss:StyleID="DefaultRightBold">
+	<Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 		<Data ss:Type="String">
 			<xsl:value-of select="Kol" />
 			<xsl:if test='Kol  >0' >
@@ -979,23 +987,23 @@
 </Row>
 	<!--  2 строка: общие итоги "ВСЕГО" обыч. -->
 <xsl:if test='$FlagNOCITO = 1'>	
-  <Row ss:StyleID="DefaultTableLineBackground" >
-    <Cell ss:StyleID="DefaultLeft">
+  <Row>
+    <Cell ss:StyleID="DefaultTableLineBackground">
       <Data ss:Type="String">В т.ч. обыч.</Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTSnocito" /></Data>
     </Cell>
 <xsl:if test='$FlagSystem = 1' >
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-MTnocito" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="ItogoTS-LTnocito" /></Data>
     </Cell>
 </xsl:if>
 	  <xsl:for-each select="OItogoColnocito">
-		  <Cell ss:StyleID="DefaultRightBold">
+		  <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 			  <Data ss:Type="String">
 				  <xsl:value-of select="Kolnocito" />
 				  <xsl:if test='Kol  >0' >
@@ -1010,29 +1018,29 @@
 </xsl:if>
 	<!--  3 строка: общие итоги "ВСЕГО" CITO -->
 	<xsl:if test='$FlagNOCITO = 1'>
-		<Row ss:StyleID="DefaultTableLineBackground" >
-			<Cell ss:StyleID="DefaultLeft">
+		<Row>
+			<Cell ss:StyleID="DefaultTableLineBackground">
 				<Data ss:Type="String">В т.ч. CITO</Data>
 			</Cell>
-			<Cell ss:StyleID="DefaultRightBold">
+			<Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 				<Data ss:Type="String">
 					<xsl:value-of select="ItogoTScito" />
 				</Data>
 			</Cell>
 			<xsl:if test='$FlagSystem = 1' >
-				<Cell ss:StyleID="DefaultRightBold">
+				<Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 					<Data ss:Type="String">
 						<xsl:value-of select="ItogoTS-MTcito" />
 					</Data>
 				</Cell>
-				<Cell ss:StyleID="DefaultRightBold">
+				<Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 					<Data ss:Type="String">
 						<xsl:value-of select="ItogoTS-LTcito" />
 					</Data>
 				</Cell>
 			</xsl:if>
 			<xsl:for-each select="OItogoColcito">
-				<Cell ss:StyleID="DefaultRightBold">
+				<Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 					<Data ss:Type="String">
 						<xsl:value-of select="Kolcito" />
 						<xsl:if test='Kol  >0' >
@@ -1054,7 +1062,7 @@
 	<!--  цикл по типам местоположений (стационарный/амбулаторный/прочее) -->
 <xsl:for-each select="OGr">
 <xsl:if test='$FlagTypeLoc = 1'>	
-  <Row ss:StyleID="DefaultTableLineBackground" >
+  <Row>
     <Cell ss:StyleID="DefaultLeft">
       <Data ss:Type="String"><xsl:value-of select="Code" /></Data>
     </Cell>
@@ -1083,23 +1091,23 @@
 	  </xsl:for-each>  
 </Row>
 	<!-- строка по обыч -->
-  <Row ss:StyleID="DefaultTableLineBackground" >
-    <Cell ss:StyleID="DefaultLeft">
+  <Row>
+    <Cell ss:StyleID="DefaultTableLineBackground">
       <Data ss:Type="String"><xsl:value-of select="Codenocito" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Kolnocito" /></Data>
     </Cell>
 <xsl:if test='$FlagSystem = 1' >
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Kol-MTnocito" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultRightBold">
+    <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
       <Data ss:Type="String"><xsl:value-of select="Kol-LTnocito" /></Data>
     </Cell>
 </xsl:if>
 	  <xsl:for-each select="OColnocito">
-		  <Cell ss:StyleID="DefaultRightBold">
+		  <Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 			  <Data ss:Type="String">
 				  <xsl:value-of select="Kolnocito" />
 				  <xsl:if test='Kol  >0' >
@@ -1112,31 +1120,31 @@
 	  </xsl:for-each>
   </Row>
 	<!-- строка по CITO -->
-	<Row ss:StyleID="DefaultTableLineBackground" >
-		<Cell ss:StyleID="DefaultLeft">
+	<Row>
+		<Cell ss:StyleID="DefaultTableLineBackground">
 			<Data ss:Type="String">
 				<xsl:value-of select="Codecito" />
 			</Data>
 		</Cell>
-		<Cell ss:StyleID="DefaultRightBold">
+		<Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 			<Data ss:Type="String">
 				<xsl:value-of select="Kolcito" />
 			</Data>
 		</Cell>
 		<xsl:if test='$FlagSystem = 1' >
-			<Cell ss:StyleID="DefaultRightBold">
+			<Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 				<Data ss:Type="String">
 					<xsl:value-of select="Kol-MTcito" />
 				</Data>
 			</Cell>
-			<Cell ss:StyleID="DefaultRightBold">
+			<Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 				<Data ss:Type="String">
 					<xsl:value-of select="Kol-LTcito" />
 				</Data>
 			</Cell>
 		</xsl:if>
 		<xsl:for-each select="OColnocito">
-			<Cell ss:StyleID="DefaultRightBold">
+			<Cell ss:StyleID="DefaultTableLineBackgroundRightBold">
 				<Data ss:Type="String">
 					<xsl:value-of select="Kolcito" />
 					<xsl:if test='Kol  >0' >

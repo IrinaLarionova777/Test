@@ -35,6 +35,32 @@
  <xsl:variable name="FlagDifDep"><xsl:value-of select="FlagDifDep"/></xsl:variable>
  <!-- флаг 1/0  "Вывести формулы вычисления для теста"  -->
  <xsl:variable name="FlagCAL"><xsl:value-of select="FlagCAL"/></xsl:variable>
+<!-- Флаг "Референсные границы"-->
+ <xsl:variable name="FlagRanges"><xsl:value-of select="FlagRanges"/></xsl:variable>
+ <!-- флаг 1/0  "Вывести нац. номер"  -->
+ <xsl:variable name="FlagNationNum"><xsl:value-of select="FlagNationNum"/></xsl:variable>
+<!-- Заголовок подтаблицы для референсных границ-->
+<xsl:variable name="header">
+  <thead> 
+         <tr>
+            <td width="8%" align="center"><b>Пол</b></td>
+            <td width="12%" align="center"><b>Возраст</b></td>
+            <td width="20%" align="center"><b>Клинич.<br/>условия</b></td>
+            <td width="7%" align="center"><b>Ниж.<br/>гр.</b></td>     
+            <td width="7%" align="center"><b>Вер.<br/>гр.</b></td>
+            <td width="5%" align="center"><b>НГ<br/>берем</b></td>
+            <td width="5%" align="center"><b>ВГ<br/>берем</b></td>
+            <td width="5%" align="center"><b>НГ недоп</b></td>     
+            <td width="5%" align="center"><b>ВГ недоп</b></td>
+            <td width="5%" align="center"><b>НГ недоп<br/>берем.</b></td>
+            <td width="5%" align="center"><b>ВГ недоп<br/>берем.</b></td>
+            <td width="4%" align="center"><b>НГ трев.</b></td>     
+            <td width="4%" align="center"><b>ВГ трев.</b></td>
+            <td width="4%" align="center"><b>НГ трев.<br/>берем.</b></td>
+            <td width="4%" align="center"><b>ВГ трев.<br/>берем.</b></td>
+         </tr>
+      </thead>  
+</xsl:variable>
 
   <title>Список тестов</title>
   <xsl:value-of select="$pass" disable-output-escaping="yes"/>
@@ -77,9 +103,11 @@
         <xsl:if test='$FlagWS = 1'><td width="10%" align="center"><b>Рабочий лист [код набора]</b></td></xsl:if>
         <xsl:if test='$FlagMIF = 1'><td width="10%" align="center"><b>Анализатор [ID]</b></td></xsl:if>
         <xsl:if test='$FlagCAL = 1'><td width="10%" align="center"><b>Набор тестов [Формула]</b></td></xsl:if>
+        <xsl:if test='$FlagNationNum = 1'><td width="10%" align="center"><b>Нац. номер</b></td></xsl:if>
       </tr>
       </thead>      
-      <xsl:for-each select="ONext">	
+      <xsl:for-each select="ONext">
+       <xsl:if test='$FlagRanges=0'>
          <tr>
           <td align="center"><xsl:value-of select="Code"/></td>
           <td align="left"><xsl:value-of select="Desc"/></td>
@@ -100,8 +128,97 @@
                      <b><xsl:value-of select="CodeTS"/></b> [ <xsl:value-of select="Formula"/> ] [<xsl:value-of select="Flag"/>]<br/>
                   </xsl:for-each>
               </td>
-          </xsl:if>    
+          </xsl:if> 
+          <xsl:if test='$FlagNationNum = 1'><td align="left"><xsl:value-of select="NationNum"/></td></xsl:if> 
+
          </tr>
+      </xsl:if>
+      <xsl:if test='$FlagRanges=1'>
+         <tr style='background:#D9D9D9'>
+          <td align="center"><xsl:value-of select="Code"/></td>
+          <td align="left"><xsl:value-of select="Desc"/></td>
+          <td align="center"><xsl:value-of select="Synon"/></td>
+          <td align="center"><xsl:value-of select="Units"/></td>
+          <xsl:if test='$FlagActiveTC = 0'><td align="center"><xsl:value-of select="FlagActive"/></td></xsl:if>
+          <xsl:if test='$FlagFR = 1'>
+              <td align="center"><xsl:value-of select="ResultFormat"/></td>
+              <td align="center"><xsl:value-of select="ResultLength"/></td>
+              <td align="center"><xsl:value-of select="ResultDec"/></td>
+          </xsl:if>
+          <xsl:if test='$FlagTS = 1'><td align="left"><xsl:value-of select="TestSet"/></td></xsl:if>          
+          <xsl:if test='$FlagWS = 1'><td align="left"><xsl:value-of select="WorkSheet"/></td></xsl:if>          
+          <xsl:if test='$FlagMIF = 1'><td align="left"><xsl:value-of select="Machine"/></td></xsl:if>    
+          <xsl:if test='$FlagCAL = 1'>
+              <td align="left">
+                  <xsl:for-each select="OCalculate">	
+                     <b><xsl:value-of select="CodeTS"/></b> [ <xsl:value-of select="Formula"/> ] [<xsl:value-of select="Flag"/>]<br/>
+                  </xsl:for-each>
+              </td>
+          </xsl:if> 
+          <xsl:if test='$FlagNationNum = 1'><td align="left"><xsl:value-of select="NationNum"/></td></xsl:if>    
+         </tr>
+      </xsl:if>
+ 
+       
+<xsl:if test='NormsExist = 1'>
+ <tr style="padding:0cm 0 0cm 0">
+ <td colspan="9">
+    <table class="Cur10" border="1" sellspacing="0" width="100%" bordercolor="#000000" 
+           style="border-collapse: collapse; padding-left: 0px; padding-right: 0px; border-bottom:none windowtext 1.0pt;border-top:none windowtext 1.0pt; padding:0cm 5.4pt 0cm 5.4pt">  
+       <xsl:copy-of select="$header" /> 
+         <xsl:for-each select="ONorms">
+           <tr class="Cur10">
+            <td align="center">
+               <xsl:value-of select="Sex" /> 
+             </td>
+            <td align="center">
+               <xsl:value-of select="Age" /> 
+             </td>
+             <td align="left">
+               <xsl:value-of select="CLC" /> 
+             </td>
+             <td align="center">
+               <xsl:value-of select="Low" /> 
+             </td>
+             <td align="center">
+               <xsl:value-of select="High" /> 
+             </td>
+             <td align="center">
+               <xsl:value-of select="LowPregnant" /> 
+             </td>
+           <td align="center">
+               <xsl:value-of select="HighPregnant" /> 
+             </td>
+             <td align="center">
+               <xsl:value-of select="LowBad" /> 
+             </td>
+             <td align="center">
+               <xsl:value-of select="HighBad" /> 
+             </td>
+             <td align="center">
+               <xsl:value-of select="LowBadPregnant" /> 
+             </td>
+           <td align="center">
+               <xsl:value-of select="HighBadPregnant" /> 
+             </td>
+<td align="center">
+               <xsl:value-of select="LowPanic" /> 
+             </td>
+             <td align="center">
+               <xsl:value-of select="HighPanic" /> 
+             </td>
+             <td align="center">
+               <xsl:value-of select="LowPanicPregnant" /> 
+             </td>
+           <td align="center">
+               <xsl:value-of select="HighPanicPregnant" /> 
+             </td>
+          </tr>
+         </xsl:for-each>
+     </table>
+</td>
+</tr>
+</xsl:if> 
       </xsl:for-each>
    </table> 
  <!-- флаг 1/0  "Вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов"  -->

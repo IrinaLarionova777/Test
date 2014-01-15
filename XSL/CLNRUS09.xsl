@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="windows-1251"?>
-<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform">
+<xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform" xmlns="http://www.w3.org/1999/xhtml">
 <xsl:output method="xml" encoding="Windows-1251" omit-xml-declaration="no"/>
 <xsl:variable name="pass">
  <![CDATA[
@@ -30,6 +30,12 @@
  <xsl:variable name="FlagSystem"><xsl:value-of select="FlagSystem"/></xsl:variable>
  <!-- флаг 1/0 Время выполнения набора тестов -->
  <xsl:variable name="FlagTimeTS"><xsl:value-of select="FlagTimeTS"/></xsl:variable>
+
+ <!-- флаг 1/0 Есть ли данные по CITO в итого -->
+ <xsl:variable name="FlagCITO"><xsl:value-of select="FlagCITO"/></xsl:variable>
+<!-- флаг 1/0 Есть ли данные по NOCITO в итого -->
+ <xsl:variable name="FlagNOCITO"><xsl:value-of select="FlagNOCITO"/></xsl:variable>
+
  
   <title>Деятельность лаборатории (по местоположениям пациентов)</title>
   <xsl:value-of select="$pass" disable-output-escaping="yes"/>
@@ -160,6 +166,70 @@
               <td align="right" style='background:#D9D9D9'><b><xsl:value-of select="ItogoTimeExec"/></b></td>
           </xsl:if>
       </tr>
+
+   <!--  2 строка: общие итоги "ВСЕГО" обыч -->
+   <xsl:if test='$FlagNOCITO = 1'>
+      <tr style='background:#D9D9D9'>
+          <td><b>В т.ч. обыч.</b></td>
+          <td align="right"><b><xsl:value-of select="ItogoTSnocito"/></b></td>
+          <xsl:if test='$FlagSystem = 1'>
+              <td align="right"><b><xsl:value-of select="ItogoTS-MTnocito"/></b></td>
+              <td align="right"><b><xsl:value-of select="ItogoTS-LTnocito"/></b></td>
+          </xsl:if> 
+          <xsl:if test='$FlagTypeLoc = 1'>
+              <td align="right"><b><xsl:value-of select="Itogo-INnocito"/></b>
+                  <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-IN-MTnocito"/> / <xsl:value-of select="Itogo-IN-LTnocito"/>)</xsl:if>
+              </td> 
+              <td align="right"><b><xsl:value-of select="Itogo-OUTnocito"/></b>
+                  <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-OUT-MTnocito"/> / <xsl:value-of select="Itogo-OUT-LTnocito"/>)</xsl:if>
+              </td> 
+              <td align="right"><b><xsl:value-of select="Itogo-OTHERnocito"/></b>
+                <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-OTHER-MTnocito"/> / <xsl:value-of select="Itogo-OTHER-LTnocito"/>)</xsl:if>
+              </td> 
+          </xsl:if>
+          <xsl:for-each select="OItogoColnocito">	
+              <td align="right"><b><xsl:value-of select="Kol"/></b>
+                  <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MT"/> / <xsl:value-of select="Kol-LT"/>)</xsl:if>  
+              </td>
+          </xsl:for-each>               
+          <xsl:if test='$FlagTimeTS = 1'> 
+              <td align="right" style='background:#D9D9D9'></td>
+              <td align="right" style='background:#D9D9D9'><b><xsl:value-of select="ItogoTimeExecnocito"/></b></td>
+          </xsl:if>
+      </tr>
+   </xsl:if>
+
+      <!--  3 строка: общие итоги "ВСЕГО" CITO -->
+   <xsl:if test='$FlagCITO = 1'>
+      <tr style='background:#D9D9D9'>
+          <td><b>В т.ч. CITO</b></td>
+          <td align="right"><b><xsl:value-of select="ItogoTScito"/></b></td>
+          <xsl:if test='$FlagSystem = 1'>
+              <td align="right"><b><xsl:value-of select="ItogoTS-MTcito"/></b></td>
+              <td align="right"><b><xsl:value-of select="ItogoTS-LTcito"/></b></td>
+          </xsl:if> 
+          <xsl:if test='$FlagTypeLoc = 1'>
+              <td align="right"><b><xsl:value-of select="Itogo-INcito"/></b>
+                  <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-IN-MTcito"/> / <xsl:value-of select="Itogo-IN-LTcito"/>)</xsl:if>
+              </td> 
+              <td align="right"><b><xsl:value-of select="Itogo-OUTcito"/></b>
+                  <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-OUT-MTcito"/> / <xsl:value-of select="Itogo-OUT-LTcito"/>)</xsl:if>
+              </td> 
+              <td align="right"><b><xsl:value-of select="Itogo-OTHERcito"/></b>
+                <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-OTHER-MTcito"/> / <xsl:value-of select="Itogo-OTHER-LTcito"/>)</xsl:if>
+              </td> 
+          </xsl:if>
+          <xsl:for-each select="OItogoColcito">	
+              <td align="right"><b><xsl:value-of select="Kol"/></b>
+                  <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MT"/> / <xsl:value-of select="Kol-LT"/>)</xsl:if>  
+              </td>
+          </xsl:for-each>               
+          <xsl:if test='$FlagTimeTS = 1'> 
+              <td align="right" style='background:#D9D9D9'></td>
+              <td align="right" style='background:#D9D9D9'><b><xsl:value-of select="ItogoTimeExeccito"/></b></td>
+          </xsl:if>
+      </tr>
+   </xsl:if>
       <!--  2 строка: пустая -->
       <tr>
           <td><b>Из них:</b></td>
@@ -197,8 +267,9 @@
                 <td align="right" style='background:#D9D9D0'></td>
                 <td align="right" style='background:#D9D9D0'><b><xsl:value-of select="TimeExec"/></b></td>
             </xsl:if>                       
-        </tr>   
-      </xsl:for-each>
+       </tr>
+
+       </xsl:for-each>
     </table>
  </xsl:if> <!-- дял FlagReport=1 -->
 </xsl:if> <!-- дял FlagTurnRound=0 -->
@@ -285,6 +356,71 @@
               <td align="right"><b><xsl:value-of select="ItogoTimeExec"/></b></td>
       </xsl:if>                   
    </tr>
+
+  <!--  2 dop строка: общие итоги "ВСЕГО обыч."   -->
+ <xsl:if test='$FlagNOCITO = 1'>
+   <tr style='background:#D9D9D9'>
+     <td><b>В т.ч. обыч.</b></td>
+     <td align="right"><b><xsl:value-of select="ItogoTSnocito"/></b></td>
+     <xsl:if test='$FlagSystem = 1'>
+           <td align="right"><b><xsl:value-of select="ItogoTS-MTnocito"/></b></td>
+           <td align="right"><b><xsl:value-of select="ItogoTS-LTnocito"/></b></td>
+     </xsl:if> 
+     <xsl:if test='$FlagTypeLoc = 1'>
+        <td align="right"><b><xsl:value-of select="Itogo-INnocito"/></b>
+             <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-IN-MTnocito"/> / <xsl:value-of select="Itogo-IN-LTnocito"/>)</xsl:if>
+        </td>
+        <td align="right"><b><xsl:value-of select="Itogo-OUTnocito"/></b>
+            <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-OUT-MTnocito"/> / <xsl:value-of select="Itogo-OUT-LTnocito"/>)</xsl:if>
+        </td>  
+        <td align="right"><b><xsl:value-of select="Itogo-OTHERnocito"/></b>
+            <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-OTHER-MTnocito"/> / <xsl:value-of select="Itogo-OTHER-LTnocito"/>)</xsl:if>
+        </td> 
+     </xsl:if>
+     <xsl:for-each select="OItogoColnocito">	
+        <td align="right"><b><xsl:value-of select="Kolnocito"/></b>
+            <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MTnocito"/> / <xsl:value-of select="Kol-LTnocito"/>)</xsl:if>  
+        </td>
+     </xsl:for-each>
+     <xsl:if test='$FlagTimeTS = 1'> 
+              <td align="right"></td>
+              <td align="right"><b><xsl:value-of select="ItogoTimeExecnocito"/></b></td>
+      </xsl:if>                   
+   </tr>
+ </xsl:if>
+
+   <!--  3 dop строка: общие итоги "ВСЕГО CITO"   -->
+ <xsl:if test='$FlagCITO = 1'>
+   <tr style='background:#D9D9D9'>
+     <td><b>В т.ч. CITO</b></td>
+     <td align="right"><b><xsl:value-of select="ItogoTScito"/></b></td>
+     <xsl:if test='$FlagSystem = 1'>
+           <td align="right"><b><xsl:value-of select="ItogoTS-MTcito"/></b></td>
+           <td align="right"><b><xsl:value-of select="ItogoTS-LTcito"/></b></td>
+     </xsl:if> 
+     <xsl:if test='$FlagTypeLoc = 1'>
+        <td align="right"><b><xsl:value-of select="Itogo-INcito"/></b>
+             <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-IN-MTcito"/> / <xsl:value-of select="Itogo-IN-LTcito"/>)</xsl:if>
+        </td>
+        <td align="right"><b><xsl:value-of select="Itogo-OUTcito"/></b>
+            <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-OUT-MTcito"/> / <xsl:value-of select="Itogo-OUT-LTcito"/>)</xsl:if>
+        </td>  
+        <td align="right"><b><xsl:value-of select="Itogo-OTHERcito"/></b>
+            <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Itogo-OTHER-MTcito"/> / <xsl:value-of select="Itogo-OTHER-LTcito"/>)</xsl:if>
+        </td> 
+     </xsl:if>
+     <xsl:for-each select="OItogoColcito">	
+        <td align="right"><b><xsl:value-of select="Kolcito"/></b>
+            <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MTcito"/> / <xsl:value-of select="Kol-LTcito"/>)</xsl:if>  
+        </td>
+     </xsl:for-each>
+     <xsl:if test='$FlagTimeTS = 1'> 
+              <td align="right"></td>
+              <td align="right"><b><xsl:value-of select="ItogoTimeExeccito"/></b></td>
+      </xsl:if>                   
+   </tr>
+ </xsl:if>
+
    <!--  2 строка: пустая -->
    <tr>
      <td><b>Из них:</b></td>
@@ -322,6 +458,72 @@
               <td align="right"><b><xsl:value-of select="TimeExec"/></b></td>
       </xsl:if>                
     </tr>
+
+    <!-- Строка по обыч  -->
+    <tr style='background:#D9D9D0'>
+      <td><b><xsl:value-of select="Codenocito"/></b></td>
+      <td align="right"><b><xsl:value-of select="Kolnocito"/></b></td>
+      <xsl:if test='$FlagSystem = 1'>
+           <td style='background:#D9D9D0' align="right"><xsl:value-of select="Kol-MTnocito"/></td>
+           <td style='background:#D9D9D0' align="right"><xsl:value-of select="Kol-LTnocito"/></td>
+       </xsl:if>        
+       <xsl:if test='$FlagTypeLoc = 1'>
+          <td align="right"><xsl:value-of select="Kol-INnocito"/>
+              <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-IN-MTnocito"/> / <xsl:value-of select="Kol-IN-LTnocito"/>)</xsl:if>          
+          </td>
+          <td align="right"><xsl:value-of select="Kol-OUTnocito"/>
+              <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-OUT-MTnocito"/> / <xsl:value-of select="Kol-OUT-LTnocito"/>)</xsl:if>
+          </td>
+          <td align="right"><xsl:value-of select="Kol-OTHERnocito"/>
+              <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-OTHER-MTnocito"/> / <xsl:value-of select="Kol-OTHER-LTnocito"/>)</xsl:if>
+          </td>
+      </xsl:if>
+      <xsl:for-each select="OColnocito">	
+            <td align="right"><xsl:value-of select="Kolnocito"/>
+              <xsl:if test='Kolcito > 0'>
+                <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MTnocito"/> / <xsl:value-of select="Kol-LTnocito"/>)</xsl:if>  
+              </xsl:if>
+            </td>
+      </xsl:for-each>  
+      <xsl:if test='$FlagTimeTS = 1'> 
+              <td align="right"></td>
+              <td align="right"><b><xsl:value-of select="TimeExecnocito"/></b></td>
+      </xsl:if>                
+    </tr>
+
+
+    <!-- Строка по CITO  -->
+    <tr style='background:#D9D9D0'>
+      <td><b><xsl:value-of select="Codecito"/></b></td>
+      <td align="right"><b><xsl:value-of select="Kolcito"/></b></td>
+      <xsl:if test='$FlagSystem = 1'>
+           <td style='background:#D9D9D0' align="right"><xsl:value-of select="Kol-MTcito"/></td>
+           <td style='background:#D9D9D0' align="right"><xsl:value-of select="Kol-LTcito"/></td>
+       </xsl:if>        
+       <xsl:if test='$FlagTypeLoc = 1'>
+          <td align="right"><xsl:value-of select="Kol-INcito"/>
+              <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-IN-MTcito"/> / <xsl:value-of select="Kol-IN-LTcito"/>)</xsl:if>          
+          </td>
+          <td align="right"><xsl:value-of select="Kol-OUTcito"/>
+              <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-OUT-MTcito"/> / <xsl:value-of select="Kol-OUT-LTcito"/>)</xsl:if>
+          </td>
+          <td align="right"><xsl:value-of select="Kol-OTHERcito"/>
+              <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-OTHER-MTcito"/> / <xsl:value-of select="Kol-OTHER-LTcito"/>)</xsl:if>
+          </td>
+      </xsl:if>
+      <xsl:for-each select="OColcito">	
+            <td align="right"><xsl:value-of select="Kolcito"/>
+              <xsl:if test='Kolcito > 0'>
+                <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MTcito"/> / <xsl:value-of select="Kol-LTcito"/>)</xsl:if>  
+              </xsl:if>
+            </td>
+      </xsl:for-each>  
+      <xsl:if test='$FlagTimeTS = 1'> 
+              <td align="right"></td>
+              <td align="right"><b><xsl:value-of select="TimeExeccito"/></b></td>
+      </xsl:if>                
+    </tr>
+
    <!--  цикл по наборам тестов   -->         
     <xsl:for-each select="OTS">	
        <tr class="Cur10">
@@ -396,6 +598,40 @@
          </td>
      </xsl:for-each>               
    </tr>
+
+<!--  2 строка: общие итоги "ВСЕГО" обыч. -->
+ <xsl:if test='$FlagNOCITO = 1'>
+   <tr style='background:#D9D9D9'>
+     <td><b>В т.ч. обыч.</b></td>
+     <td align="right"><b><xsl:value-of select="ItogoTSnocito"/></b></td>
+     <xsl:if test='$FlagSystem = 1'>
+           <td align="right"><b><xsl:value-of select="ItogoTS-MTnocito"/></b></td>
+           <td align="right"><b><xsl:value-of select="ItogoTS-LTnocito"/></b></td>
+     </xsl:if> 
+     <xsl:for-each select="OItogoColnocito">	
+        <td align="right"><b><xsl:value-of select="Kolnocito"/></b>
+            <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MTnocito"/> / <xsl:value-of select="Kol-LTnocito"/>)</xsl:if>   
+         </td>
+     </xsl:for-each>               
+   </tr>
+ </xsl:if>
+
+   <!--  3 строка: общие итоги "ВСЕГО" CITO -->
+ <xsl:if test='$FlagCITO = 1'>
+   <tr style='background:#D9D9D9'>
+     <td><b>В т.ч. CITO</b></td>
+     <td align="right"><b><xsl:value-of select="ItogoTScito"/></b></td>
+     <xsl:if test='$FlagSystem = 1'>
+           <td align="right"><b><xsl:value-of select="ItogoTS-MTcito"/></b></td>
+           <td align="right"><b><xsl:value-of select="ItogoTS-LTcito"/></b></td>
+     </xsl:if> 
+     <xsl:for-each select="OItogoColcito">	
+        <td align="right"><b><xsl:value-of select="Kolcito"/></b>
+            <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MTcito"/> / <xsl:value-of select="Kol-LTcito"/>)</xsl:if>   
+         </td>
+     </xsl:for-each>               
+   </tr>
+ </xsl:if>
    <!--  2 строка: пустая -->
    <tr>
      <td><b>Из них:</b></td>
@@ -414,6 +650,36 @@
          <xsl:for-each select="OCol">	
             <td align="right"><b><xsl:value-of select="Kol"/></b>
                <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MT"/> / <xsl:value-of select="Kol-LT"/>)</xsl:if>   
+            </td>
+         </xsl:for-each>              
+       </tr>
+
+       <!-- строка по обыч -->
+       <tr style='background:#D9D9D0'>
+         <td align="left"><b><xsl:value-of select="Codenocito"/></b></td>
+         <td align="right"><b><xsl:value-of select="Kolnocito"/></b></td>
+         <xsl:if test='$FlagSystem = 1'>
+            <td align="right"><xsl:value-of select="Kol-MTnocito"/></td>
+            <td align="right"><xsl:value-of select="Kol-LTnocito"/></td>
+         </xsl:if>   
+         <xsl:for-each select="OColnocito">	
+            <td align="right"><b><xsl:value-of select="Kolnocito"/></b>
+               <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MTnocito"/> / <xsl:value-of select="Kol-LTnocito"/>)</xsl:if>   
+            </td>
+         </xsl:for-each>              
+       </tr>
+
+       <!-- строка по CITO -->
+       <tr style='background:#D9D9D0'>
+         <td align="left"><b><xsl:value-of select="Codecito"/></b></td>
+         <td align="right"><b><xsl:value-of select="Kolcito"/></b></td>
+         <xsl:if test='$FlagSystem = 1'>
+            <td align="right"><xsl:value-of select="Kol-MTcito"/></td>
+            <td align="right"><xsl:value-of select="Kol-LTcito"/></td>
+         </xsl:if>   
+         <xsl:for-each select="OColcito">	
+            <td align="right"><b><xsl:value-of select="Kolcito"/></b>
+               <xsl:if test='$FlagSystem = 1'> (<xsl:value-of select="Kol-MTcito"/> / <xsl:value-of select="Kol-LTcito"/>)</xsl:if>   
             </td>
          </xsl:for-each>              
        </tr>

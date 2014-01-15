@@ -44,7 +44,7 @@
 </x:PageSetup>
 </x:WorksheetOptions>
 <Table x:FullColumns="1" x:FullRows="1">
-  <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="30"/>
+  <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="50"/>
   <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="200"/>
 <xsl:if test='$FlagActive = 0' >
   <Column ss:StyleID="Default" ss:AutoFitWidth="0" ss:Width="18"/>
