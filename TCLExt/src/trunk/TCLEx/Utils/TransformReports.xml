@@ -34,7 +34,7 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
          
         // Первый проход (Создаем table("column",nppCol)=currData)
         set startTable=0
-	    set currElement="",currData="",currPar="",footer=""
+	    set currElement="",currData="",currPar="",footer="",cond=""
 	    kill table // массив для table
 	    set row=0,numtable=0,widthColumn=""
  	    While 'streamIn.AtEnd {
@@ -53,18 +53,24 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 				 set row=row+1   
 				 set currElement="tr" 
 				 set currData=""
+				 set cond=""
 				 continue
 			 }
 			 if pp4="</tr" {
 				 set currElement="" 
 				 set currData=""
+				 set cond=""
 			     continue
 			 }
 			 if currElement="tr" {
+				 if pp7="<xsl:if" {
+					 set cond=linetr //w !,line b  
+					 continue
+				 }
 				 if pp3="<td" {
 					 set currElement="td"
 					 set widthColumn=$tr($piece($piece(linetr,"width=",2)," ",1)," """," ")
-					 set widthColumn=widthColumn*5
+					 set widthColumn=widthColumn*8
 					 continue
 				 }
 			 }
@@ -74,10 +80,12 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 						 set nppCol=$order(table("column",numtable,""),-1)+1
 						 set table("column",numtable,nppCol)=$select(+widthColumn'=0:widthColumn,1:300)
 						 //set table("column",numtable,nppCol)=$piece($piece(currData,"<b >",2),"</b >",1)_$c(0)_widthColumn
+						 if cond'="" set table("colCondition",numtable,nppCol)=cond
 			         }
 			         set currElement="tr"
 			         set currData=""
 			         set widthColumn=""
+			         set cond=""
 			         continue
 			     }
 			     set pplast=$extract(currData,$l(currData))
@@ -91,6 +99,7 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 			     set widthColumn=""
 			     set row=0
 			     set startTable=0
+			     set cond=""
 			 } 
 			 continue
 		   }
@@ -145,6 +154,7 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 		   set pp6=$zcvt($extract(linetr,1,6),"l")
 		   set pp8=$zcvt($extract(linetr,1,8),"l")
 		   set pp7=$zcvt($extract(linetr,1,7),"l")
+		   set pp10=$zcvt($extract(linetr,1,10),"l")
 		   set pp11=$zcvt($extract(linetr,1,11),"l")
 		   set pp14=$zcvt($extract(linetr,1,14),"l")
 		   set pp15=$zcvt($extract(linetr,1,15),"l")
@@ -183,6 +193,8 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 		   if pp6="</meta" continue
 		   if pp4="<div" continue
 		   if pp5="</div" continue
+		   if pp6="<thead" continue
+		   if pp7="</thead" continue
 		   if pp28="<xsl:value-of select=""$pass""" continue
 		   
 		   if pp27="<xsl:variable name=""pass"" >" set startPass=1 continue
@@ -198,9 +210,11 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 		   }
 		   
      	   if pp5="<body" {
-			   set lineNew="<Worksheet ss:Name="""_$select(titleWorkSheet'="":titleWorkSheet,1:"NameWorkSheet")_""" >"
+	     	   set titleWorkSheet=..TransTitleWorksheet(titleWorkSheet)
+			   set lineNew="<Worksheet ss:Name="""_$select(titleWorkSheet'="":titleWorkSheet,1:"Данные 1")_""" >"
 			   //do streamOut.WriteLine(lineNew)
 			   set ^||output($i(^||output))=lineNew
+			   do ..WritePageSetup()
 			   if '$data(table) b 
 			   set numtable=numtable+1 
 			   do ..WriteStartTable(.streamOut,.table,.columnsCount,numtable)
@@ -219,12 +233,14 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 		   if linetr["NextWorkSheet" {
 			   if ($data(table("column",numtable+1))) {
 				   if linetr["title" {
-					   set titleWorkSheet=$piece($piece(linetr,"starttitle",2),"endtitle",1)   
+					   set titleWorkSheet=$extract($piece($piece(linetr,"starttitle",2),"endtitle",1),1,30)   
 				   }
-				   if titleWorkSheet="" set titleWorkSheet="Таблица "_(numtable+1)
+				   if titleWorkSheet="" set titleWorkSheet="Данные "_(numtable+1)
+				   set titleWorkSheet=..TransTitleWorksheet(titleWorkSheet)
 				   if $get(footer)'="" {
-					   	set ^||output($i(^||output))="  <Row ss:StyleID=""DefaultTitle"" >"
-			            set ^||output($i(^||output))="    <Cell ss:MergeAcross="""_columnsCount_""" >"
+					    set ^||output($i(^||output))="  <Row><Cell><Data ss:Type=""String"" ></Data></Cell></Row>"  //пустая чтрока
+					   	set ^||output($i(^||output))="  <Row ss:StyleID=""Default"" >"
+			            set ^||output($i(^||output))="    <Cell ss:MergeAcross="""_(columnsCount-1)_""" >"
 			            set ^||output($i(^||output))="      <Data ss:Type=""String"" >"
 			            set ^||output($i(^||output))="         "_footer
                         set ^||output($i(^||output))="      </Data>"
@@ -235,16 +251,9 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 				   set ^||output($i(^||output))="</Worksheet>"
 				   set ^||output($i(^||output))=line
 				   set lineNew="<Worksheet ss:Name="""_$select(titleWorkSheet'="":titleWorkSheet,1:"NameWorkSheet")_""" >"
-				   set ^||output($i(^||output))=lineNew
+				   set ^||output($i(^||output))=lineNew   
+				   do ..WritePageSetup()
 				   do ..WriteStartTable(.streamOut,.table,.columnsCount,numtable+1)
-				   /*
-				   do streamOut.WriteLine(line)
-			   	   do streamOut.WriteLine("</Table>")
-	               do streamOut.WriteLine("</Worksheet>")
-			       set lineNew="<Worksheet ss:Name="""_$select(titleWorkSheet'="":titleWorkSheet,1:"NameWorkSheet")_""" >"
-			       do streamOut.WriteLine(lineNew)
-		           do ..WriteStartTable(.streamOut,.table,.columnsCount,numtable+1)
-		           */
 		           continue
 	           }
 		   }
@@ -256,36 +265,23 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 			   continue
 		   }
 		   if pp7="</table" {
-			   /*
-	           do streamOut.WriteLine("</Table>")
-	           if $data(table("column",numtable+1)) {
-		           do streamOut.WriteLine("</Worksheet>")
-			       set lineNew="<Worksheet ss:Name="""_$select(titleWorkSheet'="":titleWorkSheet,1:"NameWorkSheet")_""" >"
-			       do streamOut.WriteLine(lineNew)
-		           do ..WriteStartTable(.streamOut,.table,.columnsCount,numtable+1)
-	           }*/
 	           continue
            }
 
      	   if pp2="<p" {
 			   set currElement="p"
-			   //do streamOut.WriteLine("  <Row ss:StyleID=""DefaultTitle"" ss:MergeAcross="""_columnsCount_""">")
+			   set currPar=""
 			   set ^||output($i(^||output))="  <Row ss:StyleID=""DefaultTitle"" >"
-			   set ^||output($i(^||output))="    <Cell ss:MergeAcross="""_columnsCount_""" >"
+			   set ^||output($i(^||output))="    <Cell ss:MergeAcross="""_(columnsCount-1)_""" >"
 			   set ^||output($i(^||output))="      <Data ss:Type=""String"" >"
 			   continue
 		   }
 		   
-		   if pp3="</p" {
-			   set ^||output($i(^||output))="      </Data>"
-			   set ^||output($i(^||output))="    </Cell>"
-			   set ^||output($i(^||output))="  </Row>"
-			   set currElement=""
- 			   continue
-		   }
-
            if pp3="<tr" {
 	           set row=row+1
+	           if row=1 {   // перед шапкой таблицы пустая строка
+		          set ^||output($i(^||output))="  <Row>"_"<Cell ss:MergeAcross="""_(columnsCount-1)_""" >"_"<Data ss:Type=""String"" ></Data></Cell></Row>" 
+	           }
 	           set align=$piece($piece(linetr,"align",2)," ",1)
 	           set align=$tr(align," =""","")
 	           if align'="" set align=$zcvt($e(align,1),"U")_$zcvt($e(align,2,$length(align)),"L")
@@ -295,26 +291,49 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 	               if style="Default" set style="DefaultLeft"
 	           }
 	           if row=1 set style="DefaultHeaderTable"
-	           if linetr["background" set style=$select(row=1:"DefaultTableLineBackgroundCenterBold",1:"DefaultTableLineBackground")
-	           set str="  <Row "
-	           if style'="" set str=str_"ss:StyleID="""_style_""" "
+	           if linetr["background" {
+		           set style=$select(row=1:"DefaultTableLineBackgroundCenterBold",1:"DefaultTableLineBackground")
+	           }
+	           if row=1 {
+		          set ^||output($i(^||output))="  <Row><Cell><Data ss:Type=""String"" ></Data></Cell></Row>"  //пустая чтрока   
+	           }
+	           set str="  <Row"
+	           if style'="" set str=str_" ss:StyleID="""_style_""""
 	           set colspan=$tr($piece($piece(linetr,"colspan",2)," ",1)," =""","")
 	           set rowspan=$tr($piece($piece(linetr,"rowspan",2)," ",1)," =""","")
-	           set str=str_$select(colspan'="":"ss:MergeAcross="""_(colspan-1)_""" ",1:"")
-	           set str=str_$select(rowspan'="":"ss:MergeDown="""_(rowspan-1)_""" ",1:"")
-	           set str=str_" >"
+	           set str=str_$select(colspan'="":" ss:MergeAcross="""_(colspan-1)_"""",1:"")
+	           set str=str_$select(rowspan'="":" ss:MergeDown="""_(rowspan-1)_"""",1:"")
+	           set str=str_$select($zstrip(str,"<>W")="<Row":"",1:" ")_">"
 			   set ^||output($i(^||output))=str
-			   set currElement="tr"   
+			   set currElement="tr",currData=""   
 			   continue
 		   }
 		   
-		   if pp4="</tr" {
+		   	if pp4="</tr" {
 			   set ^||output($i(^||output))="  </Row>"
 			   set currElement=""
  			   continue
 		   }
-
-           if pp3="<td" {
+		   
+		   if pp3="<td" {
+			   set npppr="",find="",stylerow="",npprow=""
+			   for ii=1:1:1000 {
+				   set npppr=$order(^||output(npppr),-1) if npppr="" quit
+				   set reci=^||output(npppr)
+			       set rec=$zstrip(reci,"<>W")
+		           if ($extract(rec,1,4)="<Row") {
+			           set find="row",npprow=npppr
+			           set stylerow=$tr($piece($piece(rec,"ss:StyleID=",2)," ",1),"""","")   
+			           quit
+		           }
+		           if ($extract(rec,1,5)="<Cell") {
+			           set find="col"
+			           set stylerow=$tr($piece($piece(rec,"ss:StyleID=",2)," ",1),"""","")   
+			           quit
+		           }
+			   }
+			   //if (stylerow="")||(stylerow="Default") set stylerow="DefaultLeft"
+			   
 			   set align=$piece($piece(linetr,"align",2)," ",1)
 	           set align=$tr(align," =""","")
 	           if align'="" set align=$zcvt($e(align,1),"U")_$zcvt($e(align,2,$length(align)),"L")
@@ -323,41 +342,52 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 		           set style="Default"_$select(align'="":align,1:"")_$select(startBold=1:"Bold",1:"")
 	               if style="Default" set style="DefaultLeft"
 	           }
-	           if row=1 set style=""
+	           if (row=1)&&(stylerow'="") set style=stylerow
+	           
+	           if (stylerow'="")&&(stylerow'="DefaultTitle") {
+		           if (stylerow["Left")&&(align'="")&&(align'="Left")&&(stylerow'="DefaultTableLineBackground") set stylerow=$piece(stylerow,"Left",1)_align_$piece(stylerow,"Left",2)
+		           if (stylerow["Right")&&(align'="")&&(align'="Right") set stylerow=$piece(stylerow,"Right",1)_align_$piece(stylerow,"Right",2)
+		           if (stylerow["Center")&&(align'="")&&(align'="Center") set stylerow=$piece(stylerow,"Center",1)_align_$piece(stylerow,"Center",2)
+		           if (stylerow="DefaultTableLineBackground")&&(align'="")&&(align'="Left") set stylerow=stylerow_align
+		           if (stylerow="DefaultTableLineBackgroundBold")&&(align'="")&&(align'="Left") set stylerow=$piece(stylerow,"Bold",1)_align_"Bold"
+		           if (style["Bold")&&(stylerow'["Bold") set stylerow=stylerow_"Bold"
+		           set style=stylerow
+		           if find="row" {  // надо удалить style in Row
+			           set rec=^||output(npprow),recnew=""
+		               for i=1:1:$length(rec," ") {
+			              set pp=$piece(rec," ",i)
+			              if $extract(pp,1,11)="ss:StyleID=" continue
+			              set recnew=recnew_$select(recnew'="":" ",1:"")_$select(pp="":" ",1:pp)
+		               }
+		               set ^||output(npprow)=recnew   
+		           }
+	           }
 	           set colspan=$tr($piece($piece(linetr,"colspan",2)," ",1)," =""","")
 	           set rowspan=$tr($piece($piece(linetr,"rowspan",2)," ",1)," =""","")
-	           set str="  <Cell "_$select(style'="":"ss:StyleID="""_style_""" ",1:"")
-	           set str=str_$select(colspan'="":"ss:MergeAcross="""_(colspan-1)_""" ",1:"")
-	           set str=str_$select(rowspan'="":"ss:MergeDown="""_(rowspan-1)_""" ",1:"")
-	           set str=str_" >"
+	           set str="  <Cell"_$select(style'="":" ss:StyleID="""_style_"""",1:"")
+	           set str=str_$select(colspan'="":" ss:MergeAcross="""_(colspan-1)_"""",1:"")
+	           set str=str_$select(rowspan'="":" ss:MergeDown="""_(rowspan-1)_"""",1:"")
+	           set str=str_$select($zstrip(str,"<>W")="<Cell":"",1:" ")_">"
                set ^||output($i(^||output))=str
                set ^||output($i(^||output))="      <Data ss:Type=""String"" >"	
 			   set currElement="td"
 			   continue
 		   }
-		   
-		   if pp4="</td" {
-			   //do streamOut.WriteLine("      </Data>")	
-		       //do streamOut.WriteLine("    </Cell>")
-		       set ^||output($i(^||output))="      </Data>"
-		       set ^||output($i(^||output))="    </Cell>"
-			   set currElement=""
- 			   continue
-		   }
-           
+
            if pp2="<b" {
 	           set startBold=1
 	           set npppr=$order(^||output(""),-1)
 	           if npppr'="" {
-		           set rec=$zstrip(^||output(npppr),"<>W")
+		           set reci=^||output(npppr)
+		           set rec=$zstrip(reci,"<>W")
 		           if ($extract(rec,1,4)="<Row") {
 			          set style=$tr($piece($piece(rec,"ss:StyleID=",2)," ",1),"""","") 
 			          if (style'="")&&(style'["Bold")&&(style'="DefaultHeaderTable")&&(style'="DefaultTitle") {
 				          set stylenew=style_"Bold"  
 				          if rec["ss:StyleID=" {
-					          set ^||output(npppr)=$piece(rec,style,1)_stylenew_$piece(rec,style,2)
+					          set ^||output(npppr)=$piece(reci,style,1)_stylenew_$piece(reci,style,2)
 				          } else {
-					          set ^||output(npppr)=$extract(rec,1,$length(rec)-1)_" ss:StyleID="""_stylenew_""" >" 
+					          set ^||output(npppr)=$extract(reci,1,$length(reci)-1)_" ss:StyleID="""_stylenew_""" >" 
 				          }
 			          } 
 		           }
@@ -365,7 +395,8 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 			           set style="",firstcell=0,firstrow=0,nppcell=""
 			           for ii=1:1:500 {
 				           set npppr=$order(^||output(npppr),-1) if npppr="" quit
-			               set rec=$zstrip(^||output(npppr),"<>W")
+				           set reci=^||output(npppr)
+			               set rec=$zstrip(reci,"<>W")
 		                   if ($extract(rec,1,5)="<Cell")&&(firstcell=0) { 
 		                      set firstcell=1,nppcell=npppr
 			                  set style=$tr($piece($piece(rec,"ss:StyleID=",2)," ",1),"""","")    
@@ -378,12 +409,13 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 			           }
 			           if (nppcell'="")&&(style'="")&&(style'["Bold")&&(style'="DefaultHeaderTable")&&(style'="DefaultTitle") {
 				               set stylenew=style_"Bold"    
-				               set rec=^||output(nppcell) 
+				               set reci=^||output(nppcell)
+				               set rec=$zstrip(reci,"<>W") 
 				               if rec["ss:StyleID=" {
 					               set style=$tr($piece($piece(rec,"ss:StyleID=",2)," ",1),"""","")
-					               set ^||output(nppcell)=$piece(rec,style,1)_stylenew_$piece(rec,style,2)
+					               set ^||output(nppcell)=$piece(reci,style,1)_stylenew_$piece(reci,style,2)
 				               } else {
-					               set ^||output(nppcell)=$extract(rec,1,$length(rec)-1)_" ss:StyleID="""_stylenew_""" >"
+					               set ^||output(nppcell)=$extract(reci,1,$length(reci)-1)_" ss:StyleID="""_stylenew_""" >"
 				               }
 			           } 
 		           }
@@ -394,6 +426,98 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 	           set startBold=0
 	           continue
            }
+		   
+           if (currElement="td") {
+			   if pp4="</td" {
+				   set flagConcat1=0,flagConcat2=0
+				   set npppr=$order(^||output(""),-1)
+	               if (npppr'="") {
+		               set reci=^||output(npppr)
+		               set rec=$zstrip(reci,"<>W")
+		               if $extract(currData,1)'="<" {   // Пытаемся записать содержимое ячейки на одной строке с <Data , иначе много пробелов подразумевается
+		                  if $extract(rec,1,5)="<Data" {
+			                 set ^||output(npppr)=reci_currData
+			                 set flagConcat1=1
+		                  }			               
+		               }
+		               if $extract(currData,$length(currData))'=">" {   // Пытаемся записать </Data> на одной строке с содержимым ячейки , иначе много пробелов подразумевается
+		                  set ^||output(npppr)=^||output(npppr)_"</Data>"
+		                  set flagConcat2=1
+		               }
+	               }
+				   if flagConcat1=0 {
+			           set ^||output($i(^||output))="       "_currData
+		           }
+		           if flagConcat2=0 {
+			           set ^||output($i(^||output))="      </Data>"
+		           }
+		           set ^||output($i(^||output))="    </Cell>"
+			       set currElement=""
+			       set currData="" 
+			   } else {
+				   set pplast=$extract(currData,$l(currData))
+			 	   if (linetr'="<b >")&&(linetr'="</b >") {
+				 	   //set currData=currData_$select((pplast'=">")&&(pplast'=" ")&&($extract(linetr,1)'="<"):" ",1:"")_linetr
+				 	   set currData=currData_" "_linetr
+			 	   }
+			   }
+			   continue
+		   }
+           
+           if pp4="</td" {
+	           b  // Не должно сюда приходить
+		       set ^||output($i(^||output))="      </Data>"
+		       set ^||output($i(^||output))="    </Cell>"
+			   set currElement=""
+			   set currData=""
+ 			   continue
+		   }
+
+           if (currElement="p") {
+			   if pp3="</p" {
+				   set flagConcat1=0,flagConcat2=0
+				   set npppr=$order(^||output(""),-1)
+	               if (npppr'="") {
+		               set reci=^||output(npppr)
+		               set rec=$zstrip(reci,"<>W")
+		               if $extract(currData,1)'="<" {   // Пытаемся записать содержимое ячейки на одной строке с <Data , иначе много пробелов подразумевается
+		                  if $extract(rec,1,5)="<Data" {
+			                 set ^||output(npppr)=reci_currPar
+			                 set flagConcat1=1
+		                  }			               
+		               }
+		               if $extract(currPar,$length(currPar))'=">" {   // Пытаемся записать </Data> на одной строке с содержимым ячейки , иначе много пробелов подразумевается
+		                  set ^||output(npppr)=^||output(npppr)_"</Data>"
+		                  set flagConcat2=1
+		               }
+	               }
+				   if flagConcat1=0 {
+			           set ^||output($i(^||output))="       "_currPar
+		           }
+		           if flagConcat2=0 {
+			           set ^||output($i(^||output))="      </Data>"
+		           }
+		           set ^||output($i(^||output))="    </Cell>"
+		           set ^||output($i(^||output))="  </Row>"
+			       set currElement=""
+			       set currPar=""   
+			   } else {
+				   set pplast=$extract(currPar,$l(currPar))
+			 	   if (linetr'="<b >")&&(linetr'="</b >") {
+				 	   //set currPar=currPar_$select((pplast'=">")&&(pplast'=" ")&&($extract(linetr,1)'="<"):" ",1:"")_linetr
+				 	   set currPar=currPar_" "_linetr 
+			 	   }
+			   }
+			   continue
+		   } 
+            
+   		   if pp3="</p" {
+	   		   b  // Не должно сюда приходить
+			   set currElement=""
+			   set currPar=""
+ 			   continue
+		   }
+ 
 		   // write in new file
 		   //do streamOut.WriteLine(line)
 		   set ^||output($i(^||output))=line
@@ -656,6 +780,7 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 		   }
 		   
      	   if pp5="<body" {
+	     	   set titleWorkSheet=..TransTitleWorksheet(titleWorkSheet)
 			   set lineNew="<Worksheet ss:Name="""_$select(titleWorkSheet'="":titleWorkSheet,1:"NameWorkSheet")_""" >"
 			   do streamOut.WriteLine(lineNew)
 			   continue
@@ -1090,25 +1215,51 @@ xml for excel - открывается OpenOffice (OpenOffice html открыв�
 <Implementation><![CDATA[
 	set ok=$$$OK,pColumnsCount=0
 	try {
-		/*
-		if (pNumTable>1) {
-			do streamOut.WriteLine("</Worksheet>")
-			set lineNew="<Worksheet ss:Name="""_$select(titleWorkSheet'="":titleWorkSheet,1:"NameWorkSheet")_""" >"
-			do streamOut.WriteLine(lineNew)
-		}*/
-		//do pStreamFileOut.WriteLine("<Table x:FullColumns=""1"" x:FullRows=""1"">")
 		set ^||output($i(^||output))="<Table x:FullColumns=""1"" x:FullRows=""1"">"
 		set column=""
 		for {
 			set column=$order(pColums("column",pNumTable,column),1,rec) if column="" quit
-			set str="<Column ss:StyleID=""Default"" ss:AutoFitWidth=""0"" ss:Width="""_$select(+rec'=0:rec,1:300)_"""/>"
-			//do pStreamFileOut.WriteLine(str)
+			if $data(pColums("colCondition",pNumTable,column)) {
+				set ^||output($i(^||output))=pColums("colCondition",pNumTable,column)
+			}
+			set str="  <Column ss:StyleID=""Default"" ss:AutoFitWidth=""0"" ss:Width="""_$select(+rec'=0:rec,1:300)_"""/>"
 			set ^||output($i(^||output))=str
+			if $data(pColums("colCondition",pNumTable,column)) {
+				set ^||output($i(^||output))="</xsl:if>"
+			}
 			set pColumnsCount=pColumnsCount+1
 		}
 		
 	} catch(e) { set ok=e.AsStatus() }
 	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="WritePageSetup">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK,pColumnsCount=0
+	try {
+		set ^||output($i(^||output))="<x:WorksheetOptions>"
+        set ^||output($i(^||output))="<x:PageSetup>"
+        set ^||output($i(^||output))="<x:Layout x:Orientation=""Portrait""/>"
+        set ^||output($i(^||output))="<x:Header x:Margin=""0.3""/>"
+        set ^||output($i(^||output))="<x:Footer x:Margin=""0.3""/>"
+        set ^||output($i(^||output))="<x:PageMargins x:Bottom=""0.75"" x:Left=""0.25"" x:Right=""0.25"" x:Top=""0.75""/>"
+        set ^||output($i(^||output))="</x:PageSetup>"
+        set ^||output($i(^||output))="</x:WorksheetOptions>"
+		
+	} catch(e) { set ok=e.AsStatus() }
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="TransTitleWorksheet">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTitle:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[	quit $zstrip($tr($extract($get(pTitle),1,30),"/\;'""",""),"<>W")
 ]]></Implementation>
 </Method>
 </Class>
