@@ -14,7 +14,7 @@ MIFadvia1800(mi) ; own protocol  -  Advia 1800 (Bi-Directional) (Russion GKB12))
  set $ztrap="err^MIF000"
  if $$select^LVBMIMP(mi) quit
  for j=1:1:PLIST set @("par"_j)=PLIST(j)
- set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21),dc1=$char(11)
+ set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21),dc1=$char(11),etb=$c(23)
  set lf=$char(10),cr=$char(13)
  if $$start^MIF000() quit
  do trace^MIF000(mi,"Started job="_$job,"DEBUG")
@@ -57,66 +57,96 @@ receiveENQ
  set (sample,epis,surname,result,date,time,QC)="" 
  do trace^MIF000(mi,"ENQ","H<--M")
  do ACK
- set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=20,ok=1
+ set (sample,epis,surname,result,date,time,QC)=""
+ set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=60,okk=1
+ set buffer=""
  for {
-	 read *R:10 
-	 if $char(R)=eot quit
-	 if $char(R)=enq do trace^MIF000(mi,"ENQ is recieved at the wrong time","H-->M") do EOT set ok=0 quit
+	 read *R:10
+	 if $char(R)=eot quit 
+	 if $char(R)=enq do trace^MIF000(mi,"ENQ is recieved at the wrong time","H-->M") do EOT set okk=0 quit
 	 set timeSilence=$piece($horolog,",",2)-timeSilenceStart
-	 if timeSilence>timeSilenceLimit do trace^MIF000(mi,"timeSilence>timeSilenceLimit ("_timeSilence_">"_timeSilenceLimit_")","H-->M") do EOT set ok=0 quit
+	 if timeSilence>timeSilenceLimit do trace^MIF000(mi,"timeSilence>timeSilenceLimit ("_timeSilence_">"_timeSilenceLimit_")","H-->M") do EOT set okk=0 quit
      if $char(R)'=stx continue
      set timeSilenceStart=$piece($horolog,",",2)
      set record=$$read^MIF000("",lf) if '$length(record)  continue
-     set record=$extract(record,1,$length(record)-1)
      do trace^MIF000(mi,record,"H<--M")
+     set record=$extract(record,1,$length(record)-1)
+     ;do trace^MIF000(mi,$tr(record,$c(13,3)," "),"H<--M")
      ; check record validity
-     set chsum=$piece(record,etx,2),chrecord=$piece(record,etx,1)_etx
+     set endtext=$select('$find(record,etx):etb,1:etx)
+     set chsum=$piece(record,endtext,2),chrecord=$piece(record,endtext,1)_endtext
      if $$CHSUM(chrecord)'=chsum do NAK continue
      do ACK
-     set record=$piece(record,$char(13),1) // так как при чтении последнего поля по разделителю "|", туда попадает $c(13)_$c(3)_chksum
-     set typerecord=$extract(record,2)
+     set record=$piece(record,endtext,1)_$char(13)
+     set record=$extract(record,2,$length(record)) ;на 1-ом месте стоит номер записи - на записях-продолжениях он мешает
+     if endtext=etb {
+	     set buffer=buffer_record
+	     continue
+     }
+     set buffer=buffer_record
+     if buffer="" continue
+     do trace^MIF000(mi,"buffer="_buffer,"H<--M")
+     for pp=1:1:$length(buffer,$char(13)) {
+	     set record=$piece(buffer,$char(13),pp)
+	     set timeSilenceStart=$piece($horolog,",",2)
+	     if record="" continue 
+	     set typerecord=$extract(record,1)
+	     if typerecord="" continue
+	     set typerecord=$select($length(typerecord)=1:typerecord,1:$extract(typerecord,2))
+	     do trace^MIF000(mi,typerecord_" "_record,"H<--M")
 
-     ; query record
-     if typerecord="Q" {
-	     set epis=$tr($extract(record,11,23)," ","")
-	     if $length(epis) set ^TMP($zname,$job,"ENQ",epis)="" 
-         continue
-     }    
-     ; result record
-     if typerecord="R" {
-	     set blockNumber=+$tr($extract(record,6,7)," ","")
-	     set countTests=$tr($extract(record,8,10)," ","") //Number of tests in a block
-	     set datetr=$extract(record,11,18) if $length(datetr)=8 set date=$zdh(datetr,5)
-	     set cur=19
-	     // for new format
-	     //set timetr=$extract(record,19,24) if $length(timetr)=6 set time=$zth($e(timetr,1,2)_":"_$e(timetr,3,4)_":"_$e(timetr,5,6),1)
-	     //set cur=25
-	     set width=1 set typeSample=$extract(record,cur+1,cur+width) if typeSample="C" set QC="Y"
-	     set cur=cur+width
-	     set cur=cur+1  // пропускаем ID specification
-	     set width=13 set epis=$tr($extract(record,cur+1,cur+width)," ","")
-	     set cur=cur+width
-	     if blockNumber=1 set cur=cur+7+16+16+1+3+8+4+1+1  // first block
-	     else  set cur=cur+7                               // second block and more
-         for ii=1:1:countTests {
+         ; query record
+         if typerecord="Q" {
+	       set symst=10
+	       for {
+	         set epis=$tr($extract(record,symst,symst+12)," ","")
+	         if epis="" quit
+	         set symst=symst+13
+	         set ^TMP($zname,$job,"ENQ",epis)=""
+	       } 
+           continue
+         }    
+         ; result record
+         if typerecord="R" {
+	        set record="1"_record 
+	        set blockNumber=+$tr($extract(record,6,7)," ","")
+	        set countTests=$tr($extract(record,8,10)," ","") //Number of tests in a block
+	        set datetr=$extract(record,11,18) if $length(datetr)=8 set date=$zdh(datetr,5)
+	        set cur=19
+	        // for new format
+	        set timetr=$extract(record,19,24) if $length(timetr)=6 set time=$zth($e(timetr,1,2)_":"_$e(timetr,3,4)_":"_$e(timetr,5,6),1)
+	        set cur=24
+	        set width=1 set typeSample=$extract(record,cur+1,cur+width) if typeSample="C" set QC="Y"
+	        set cur=cur+width
+	        set cur=cur+1  // пропускаем ID specification
+	        set width=13 set epis=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width
+	        set cur=cur+7  // пропускаем Position number
+	        if blockNumber=1 {
+		     set cur=cur+16
+		     set width=16 set comment2=$tr($extract(record,cur+1,cur+width)," ","")
+		     set cur=cur+16+1+3+8+4+1+1  // first block
+	        }
+            for ii=1:1:countTests {
 	         set width=3 set test=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width
 	         if test="" quit
 	         set cur=cur+1 // пропускаем Analysis condition 1 byte “M” or “D” or “U” Normally set to “M”
 	         set width=8 set res=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width
-	         set flag=3 set test=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width 
+	         set width=3 set flag=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width 
 	         // for new format
-	         //set cur=cur+1+3
+	         set cur=cur+1+3
              if $length(res),$isvalidnum(res) set res=+res // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
              if $length(test),$length(res) set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
+            }
+            do Last
+            continue
          }
-         do Last
-         continue
      }
+     set buffer=""
      set timeSilenceStart=$piece($horolog,",",2)
  }
- if ok=1 {
-	 do trace^MIF000(mi,$select($char(R)=eot:"EOT",$char(R)=enq:"ENQ",1:R),"H<--M")
-	 do ORDER
+ if okk=1 {
+    do trace^MIF000(mi,$select($char(R)=eot:"EOT",$char(R)=enq:"ENQ",1:R),"H<--M")
+    do ORDER
  }
  quit
 Last ; file result if exists
@@ -135,7 +165,7 @@ ORDER
 	 set epis=$order(^TMP($zname,$job,"ENQ",epis)) quit:epis="" 
      do scanone^MIF000(mi,epis)
      if $$select^LVBEPVIS(epis,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
-     set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
+     set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"M")
      set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
      // приоритет по эпизоду
      set priority=0 //Routine 
@@ -152,7 +182,7 @@ ORDER
          set codeTypeSpecimen=$piece(rec,"\",46)
          if codeTypeSpecimen="" set codeTypeSpecimen=##class(TCLEx.Function.TestSet).DefaultSpecimen(testset)
          if codeTypeSpecimen="" set codeTypeSpecimen=0
-         set specimenAnalisator=$select(codeTypeSpecimen="SE":1,codeTypeSpecimen="U":2,1:1)  ;$$getSpecimenAnalisator(codeTypeSpecimen)
+         set specimenAnalisator=$select(codeTypeSpecimen="SE":1,(codeTypeSpecimen="U")||(codeTypeSpecimen="U24"):2,1:1)  ;$$getSpecimenAnalisator(codeTypeSpecimen)
          if specimenAnalisator="" set specimenAnalisator="1"
          
          // приоритет по набору тестов
@@ -163,11 +193,12 @@ ORDER
          set vsp(priority,specimenAnalisator,tc)=""
      }
      set episformat=$extract(epis_$j("",13),1,13) 
-     set reco="O"_" "_"01"_"01"_"000"_"N"_"0"_episformat
+     set reco="O"_" "_"01"_"01"_"000"_"N"_"1"_episformat
      //Sample classification 1 “N” (4EH) General sample, “I” (49H) Interruption sample (похоже, это cito)
-     set width=7+16+16+1+3+8+4
+     set width=7+16+16
      set reco=reco_$j("",width)
-       
+     set reco=reco_sex_"   "_$j("",8)_" 1.0"
+         
      set priority="",okOrder=0,ordernum=0
      for {
 	     set priority=$order(vsp(priority),-1) if priority="" quit
@@ -176,7 +207,7 @@ ORDER
 		     set specimen=$order(vsp(priority,specimen)) if specimen="" quit
 		     set frame=0
 		     set rec=reco_specimen_"1"
-		     set countTest=0 // можно 105 тестов при 512bute строке - поэтому не проверяем
+		     set countTest=0 // можно 105 тестов при 512 bite строке - поэтому не проверяем
 		     set tc=""  
 		     for {
 			     set tc=$order(vsp(priority,specimen,tc)) if tc="" quit
@@ -184,9 +215,10 @@ ORDER
 			     set countTest=countTest+1
 		     }
 		     set rec=rec_$j("",1)
-		     if countTest=0 
-		     else  set $extract(rec,7,9)=$tr($j(countTest,3)," ","0")
-		     set blockNumber=blockNumber+1
+		     //if countTest=0 
+		     set $extract(rec,7,9)=$tr($j(countTest,3)," ","0")
+		     //set blockNumber=blockNumber+1
+		     set blockNumber=1
 		     set $extract(rec,5,6)=$tr($j(blockNumber,2)," ","0")
 		     set npp=$order(^TMIF(mi,10,""),-1)+1
 		     set ^TMIF(mi,10,npp)=rec
@@ -203,12 +235,14 @@ ORDER
      kill ^TMP($zname,$job,"ENQ",epis)
  }
  // прописываем во всех строках общее ко-во блоков
+ /*
  set i=""
  for {
 	 set i=$order(^TMIF(mi,10,i),1,rec) if i="" quit
 	 set $extract(rec,3,4)=$tr($j(blockNumber,2)," ","0")
  }
- set ok=$$Send()
+ */
+ if $data(^TMIF(mi,10)) set ok=$$Send()
  
  quit
 
@@ -243,7 +277,7 @@ Send() ; send list of orders if exists
  quit ok
  
 SEND(str) ; send string to instrument
- set str=str_cr_etx,chsum=$$CHSUM(str)
+ set str=str_etx,chsum=$$CHSUM(str)
  write stx,str,chsum,cr,lf,*-3 
  do trace^MIF000(mi,str_chsum,"H-->M")
  for j=1:1:2 {
