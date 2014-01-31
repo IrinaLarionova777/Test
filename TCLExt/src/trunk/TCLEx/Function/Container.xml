@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Function.Container">
+<Super>%RegisteredObject</Super>
+<TimeCreated>63169,47530.43935</TimeCreated>
+
+<Method name="SaveNumberContainer">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,&pPLISTold:%String,&pPLISTnew:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK kill pPLISTnew
+  merge pPLISTnew=pPLISTold
+  try {
+	  set key=pEpisode
+	  s ^test("c",key,"par")=$g(pEpisode)
+	  kill plistold
+	  kill vsp,vsp1
+	  set npp=""
+	  for {
+		  set npp=$order(pPLISTold(npp),1,rec) if npp="" quit
+		  set rowid=$piece($p(rec,$c(28),1),$c(1),1)
+		  //set info=$piece(rec,$c(1),2)
+		  set specimen=$piece(rowid,"||",2)
+		  //set plistold(rowid)=info
+		  //set container=$piece(info,$c(28),3)
+		  if specimen'="" set vsp(specimen,npp)=""
+		  set containernum=$piece(rec,$c(28),4)
+		  if containernum'="" set vsp1(containernum)=npp
+	  }
+	  kill vsp
+	  set testset=""
+	  for {
+		  set testset=$order(^TEPI(pEpisode,1,testset),1,reco) if testset="" quit
+		  set tscnt=""
+		  for {
+			  set tscnt=$order(^TEPI(pEpisode,1,testset,tscnt),1,rec) if tscnt="" quit 
+			  set specimen=$piece(rec,"\",46)
+	          if $get(specimen)="" {
+		          set specimen=##class(TCLEx.Function.TestSet).DefaultSpecimen(testset) 
+	          }
+	          if specimen="" {
+		          set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Нет кода материала для набора тестов "_testset)) 
+		          continue  // ??? Что делать с наборами тестов, которые не прикреплены к типу материала?
+	          }
+	          // if alredy exist specimen
+	          if '$data(vsp(specimen)) {
+		          set npp=$order(pPLISTnew(""),-1)+1
+		          set $piece(pPLISTnew(npp),$c(28),1)=pEpisode_"||"_specimen_"||"_"1"
+		          set vsp(specimen,npp)=""
+	          }
+	          // Suppose every specimen has only one container
+	          // Suppose that all testsets with egual specimen (not manually write container number) have equal container number
+	          set npp="",containerNumberForSpecimen="",containerCodeForSpecimen=""
+              for {
+	              set npp=$order(vsp(specimen,npp)) if npp="" quit
+	              set info=$get(pPLISTnew(npp))
+		          set containercode=$piece(info,$c(28),3)
+		          if containercode'="" set containerCodeForSpecimen=containercode
+		          set containernumber=$piece(info,$c(28),4)
+		          if containernumber'="" set containerNumberForSpecimen=containernumber
+		          if (containerNumberForSpecimen'="")&&(containerCodeForSpecimen'="") quit
+              }
+              // if container code is empty fill it
+		       if containerCodeForSpecimen="" {
+			          set ok1=..GetContainerForSpecimen(testset,specimen,.container)
+                      if 'ok1 {
+		                 set ok=$system.Status.AppendStatus(ok,ok1) 
+		                 continue  // ??? 
+	                  }
+	                  if container="" {
+	                      set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Нет кода контейнера для образца "_specimen))
+	                      continue
+	                  }
+	                  //set $piece(pPLISTnew(npp),$c(28),3)=container
+	                  set containerCodeForSpecimen=container
+		      }
+		      // if container num is emmpty fill it
+		      if containerNumberForSpecimen="" {
+			          set containerNumberForSpecimen=$order(vsp1(""),-1)+1 
+			          if +containerNumberForSpecimen=1 set containerNumberForSpecimen=pEpisode_$tr($j(containerNumberForSpecimen,2)," ","0")
+			          //set $piece(pPLISTnew(npp),$c(28),4)=containernum
+			          set vsp1(containerNumberForSpecimen)=""
+		      }
+              set npp=""
+              for {
+	              set npp=$order(vsp(specimen,npp)) if npp="" quit
+	              set info=$get(pPLISTnew(npp))
+		          set containercode=$piece(info,$c(28),3)
+		          set containernumber=$piece(info,$c(28),4)
+		          if containercode="" set $piece(pPLISTnew(npp),$c(28),3)=containerCodeForSpecimen
+		          if containernumber="" set $piece(pPLISTnew(npp),$c(28),4)=containerNumberForSpecimen
+		          
+              }
+	          /*
+	          set dopnum=$piece($get(^TTAB("CON",container)),"\",4)
+	          if dopnum="" set dopnum="?"
+	          set usersite=$piece(reco,"\",36)
+	          set dopnum=$piece($get(^TTAB("CON",container)),"\",4)
+	          set vsp(dopnum,specimen_$c(1)_container)=usersite
+	          */
+          }
+	  }
+	  /*
+	  set dopnum="" kill vsp1,vsp2
+	  for {
+		  set dopnum=$order(vsp(dopnum)) if dopnum="" quit
+		  if dopnum="?" continue 
+	      set key=""
+	      for {
+		      set key=$order(vsp(dopnum,key),1,usersite) if key="" quit
+		      set specimen=$piece(key,$c(1),1)
+		      set container=$piece(key,$c(1),2)
+	      
+	          set num=$i(vsp2(specimen))
+	          set rowid=pEpisode_"||"_specimen_"||"_num
+	          set numcontainer=pEpisode_dopnum
+	          if $data(vsp1(dopnum)) { //???
+		          continue
+	          }
+	          set vsp1(dopnum)=""
+	          //set vsp2(specimen,num)=""
+	          set info=$c(28)_"1"_$c(28)_container_$c(28)_numcontainer_$c(28)_"0"_$c(28)_"0"_$c(28)_usersite_$c(28)_"N"_$c(28,28,28,28)
+	          set pPLISTnew($i(pPLISTnew))=rowid_$c(1)_info
+	          kill vsp(dopnum,key)
+	      }
+	  }
+	  set dopnum="" 
+	  for {
+		  set dopnum=$order(vsp(dopnum)) if dopnum="" quit
+		  set key=""
+	      for {
+		      set key=$order(vsp(dopnum,key),1,usersite) if key="" quit
+		      set specimen=$piece(key,$c(1),1)
+		      set container=$piece(key,$c(1),2)
+		      set dopnumnew=$tr($j($order(vsp1(""),-1)+1,2)," ","0")
+	      
+	          set num=$i(vsp2(specimen))
+	          set rowid=pEpisode_"||"_specimen_"||"_num
+	          set numcontainer=pEpisode_dopnumnew
+	          set vsp1(dopnumnew)=""
+	          set info=$c(28)_"1"_$c(28)_container_$c(28)_numcontainer_$c(28)_"0"_$c(28)_"0"_$c(28)_usersite_$c(28)_"N"_$c(28,28,28,28)
+	          set pPLISTnew($i(pPLISTnew))=rowid_$c(1)_info
+	          kill vsp(dopnum,key)
+	      }
+	  }
+	  */
+  } catch(e) {
+	  set ok=e.AsStatus()
+  }
+  if 'ok do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$zn)
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="SaveNumberContainer1">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pTestSet:%String,pTestSetCounter:%String,pSpecimen:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {
+	  set key=pEpisode_"|"_pTestSet_"|"_pTestSetCounter_"|"_pSpecimen
+	  s ^test("c",key,"par")=$g(pEpisode)_"*"_$g(pTestSet)_"*"_$g(pTestSetCounter)_"*"_$g(pSpecimen)_"*"_$g(pUserSite)
+	  if $get(pSpecimen)="" {
+		 set pSpecimen=##class(TCLEx.Function.TestSet).DefaultSpecimen(pTestSet) 
+	  }
+	  if pSpecimen="" {
+		 set ok=$$$ERROR($$$GeneralError,"Нет кода материала для набра тестов "_pTestSet) 
+		 quit
+	  }
+	  // если по какой-то причине не создалась запись по типу материала, то создаем 
+	  if $data(^TEPI(pEpisode,pTestSet,pTestSetCounter,4,pSpecimen))<10 {
+		  kill PLIST 
+		  set PLIST(0)=pEpisode
+		  set PLIST(2)=pSpecimen
+		  set PLIST(3)=""
+          &sql(INSERT INTO SQLUser.EP_VisitSpecimen VALUES :PLIST())
+		  kill PLIST 
+          set PLIST(0)=pEpisode_"||"_pSpecimen
+          set PLIST(2)=1  //$order(^TEPI(pEpisode,4,pSpecimen,""),-1)+1
+          // код контейрера
+          set ok=..GetContainerForSpecimen(pTestSet,pSpecimen,.container)
+          if 'ok quit
+          if container="" {
+	         set ok=$$$ERROR($$$GeneralError,"Нет кода контейнерадля образца "_pSpecimen)
+	         quit  
+          }
+          set usersite=$piece($get(^TEPI(pEpisode)),"\",36)
+          set PLIST(3)=container
+          set PLIST(4)=1
+          set PLIST(5)=2
+          set PLIST(6)=3
+          set PLIST(7)=usersite
+          set PLIST(8)="N" // 6 	VISSC_NotCollected (propertyname=VISSCNotCollected, sqlfieldnumber=8) 
+          f ii=9:1:13 set PLIST(ii)=""
+          set PLIST=$o(PLIST(""),-1)
+          b  
+          &sql(INSERT INTO SQLUser.EP_VisitSpecimenContainer VALUES :PLIST())
+	  } 
+	  set rec=$get(^TEPI(pEpisode,4,pSpecimen,1))
+	  set container=$piece(rec,"\",1)
+	  if container="" {
+	         set ok=$$$ERROR($$$GeneralError,"Нет кода контейнера для образца "_pSpecimen)
+	         quit  
+      }
+	  set dopnum=$piece($get(^TTAB("CON",container)),"\",4)
+	  if dopnum="" {
+		  
+	  }
+	  set containernumber=pEpisode_dopnum
+	  set rowid=pEpisode_"||"_pSpecimen_"||"_"1"
+	  /*
+	  set sqlcode=$$select^LVBVISSC(rowid) // создается PLIST
+	  if sqlcode'=0 {
+		  set ok=$$$ERROR($$$GeneralError,sqlcode) 
+		  quit
+	  }*/
+	  set usersite=$piece($get(^TEPI(pEpisode)),"\",36)
+	  set PLIST(0)=pEpisode_"||"_pSpecimen
+      set PLIST(2)=1  
+      set PLIST(3)=container
+      set PLIST(5)=2
+      set PLIST(6)=3
+      set PLIST(7)=usersite
+      set PLIST(8)="N" // 6 	VISSC_NotCollected (propertyname=VISSCNotCollected, sqlfieldnumber=8) 
+      set PLIST=$o(PLIST(""),-1)
+	  set PLIST(4)=containernumber
+	  f ii=9:1:13 set PLIST(ii)=""
+	  m ^test("c",key,"plist")=PLIST
+	  set sqlcode=$$update^LVBVISSC(rowid)
+	  s ^test("c",key,"ans")=sqlcode
+	  if sqlcode'=0 {
+		  set ok=$$$ERROR($$$GeneralError,sqlcode) 
+		  quit
+	  }
+  } catch(e) {
+	  set ok=e.AsStatus()
+  }
+  if 'ok do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$zn)
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetContainerForSpecimen">
+<Description>
+Получить код контейнера по коду образца
+можно бы было по индексу ^TTAB("TS",testset,1,specimencode,containercode) но ошибка при вызове LVBCTTSY </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTestSet:%String,pSpecimen:%String,&pContainer:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+   set ok=$$$OK,pContainer=""
+   try {
+	   set container=""
+	   for {
+		   set container=$order(^TTAB("TS",pTestSet,"SC",container)) if container="" quit
+		   set specimen=""
+		   for {
+			   set specimen=$order(^TTAB("TS",pTestSet,"SC",container,specimen)) if specimen="" quit
+			   if specimen=pSpecimen {
+				   set pContainer=container
+				   quit
+			   }
+		   }
+		   if pContainer'="" quit
+	   }
+   } catch(e) {
+	  set ok=e.AsStatus()
+	  do ##class(TCLEx.Function.General).WriteError($ze,$zn)
+   }
+   quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetDopNumber">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSet:%String,pTestSetCounter,&pDopNumber:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		kill vr
+		set specimen=""
+		for {
+		   set specimen=$order(^TEPI(pEpisode,4,specimen)) if specimen="" quit
+		   set order=""
+		   for {
+			   set order=$order(^TEPI(pEpisode,4,specimen,order),1,rec) if order="" quit
+			   set containerNumber=$piece(rec,"\",2),len=$length(containerNumber)
+			   set dopnum=$extract(containerNumber,len-2,len)
+			   if dopnum'="" set vr(+dopnum)=""
+		   }
+		}
+		 
+    } catch(e) {
+	  set ok=e.AsStatus()
+	  do ##class(TCLEx.Function.General).WriteError($ze,$zn)
+    }
+    quit ok
+]]></Implementation>
+</Method>
+</Class>
+</Export>
