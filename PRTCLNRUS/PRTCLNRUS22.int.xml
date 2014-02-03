@@ -38,10 +38,13 @@ FORM(USER) new (USER) s USER=$G(USER)
  s @Par@("PAR9a")="Label   : 500 : 3200 : 5000 : 600 : Дополнительно вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов:"
  ;
  s @Par@("PAR10")="CheckBox: 100 : 3700 : 200  : 300 : : : 0 "
- s @Par@("PAR10a")="Label   : 500 : 3700 : 5000 : 600 : Референсные границы:"
+ s @Par@("PAR10a")="Label   : 500 : 3700 : 5000 : 300 : Референсные границы:"
  ;
- s @Par@("PAR11")="CheckBox: 100 : 4300 : 200  : 300 : : : 0 "
- s @Par@("PAR11a")="Label   : 500 : 4300 : 5000 : 600 : Нац. номер:"
+ s @Par@("PAR11")="CheckBox: 100 : 4200 : 200  : 300 : : : 0 "
+ s @Par@("PAR11a")="Label   : 500 : 4200 : 5000 : 300 : Нац. номер:"
+ ;
+ s @Par@("PAR12")="CheckBox: 100 : 4700 : 200  : 300 : : : 0 "
+ s @Par@("PAR12a")="Label   : 500 : 4700 : 5000 : 300 : Стандартные комментарии:"
  ;
  ; настройка формы
  s @Par@("form")="Список тестов:500:300:Формиров.:Выход"
@@ -88,6 +91,7 @@ INIT ; инициализация входных параметров
  s FlagDifDep=+$G(PAR9)	
  set FlagRanges=$get(PAR10) ;выводить референсные границы
  set FlagNationNum=$get(PAR11) ;выводить нац. номер
+ set FlagStComm=$get(PAR12) ; выводить стандартные комментарии
  ; log
  ;s ^zz("INIT")="PAR1="_PAR1_"  PAR2="_PAR2_"  PAR3="_PAR3_"  PAR4="_PAR4_"; PAR5="_PAR5_"; PAR6="_PAR6   ;@@@
  quit
@@ -97,9 +101,8 @@ XML    ; обработка данных и формирование XML ...
   S MasXML="^TEMP($zn,$J,""XML"")" 
   set dateCur=+$h+0.5
   set FlagRanges=+$G(FlagRanges)
-  set FlagFR=$select(FlagRanges=1:1,1:+$G(FlagFR))   ; Флаг "Формат результата + Длина + Десятич.число"
-  set FlagTS=$select(FlagRanges=1:1,1:+$G(FlagTS))   ; Флаг "Наборы тестов"
-
+  set FlagFR=$select((FlagRanges=1)||(FlagStComm=1):1,1:+$G(FlagFR))   ; Флаг "Формат результата + Длина + Десятич.число"
+  set FlagTS=$select((FlagRanges=1)||(FlagStComm):1,1:+$G(FlagTS))   ; Флаг "Наборы тестов"
   ; 
   d Format	; формируем массив для вывода формата результата (MasFormat)
   ;
@@ -220,6 +223,28 @@ XML    ; обработка данных и формирование XML ...
   .. ; нац. номер
   .. if $get(FlagNationNum)=1 do  ;
   ... s @MasXML@("User",1,"Next",NN1,"NationNum")=$p(str,"\",16)
+  .. ; стандартные комментарии
+  .. if $get(FlagStComm)=1 do  ;
+  ... kill stcomments set npp2=0
+  ... set codecomm="" for  set codecomm=$order(^TTAB("TC",tc,2,codecomm),1,reccomm) quit:codecomm=""  do  ;
+  .... set shortname=$piece(reccomm,"\",6)
+  .... set desc=$get(^TTAB("TC",tc,2,codecomm,"T",1))
+  .... if shortname="",desc="" quit
+  .... set npp2=npp2+1
+  .... set stcomments(npp2,"Code")=codecomm
+  .... if shortname'="" set stcomments(npp2,"ShortName")=shortname
+  .... if desc'="" set stcomments(npp2,"Desc")=desc
+  .... ; Normal,Abnormal,Border (N,A,B)
+  .... set norma=$piece(reccomm,"\",1)
+  .... set norma=$select(norma="N":"Норма",norma="A":"Откл. от нормы",norma="B":"Контроль врача",1:"")
+  .... if norma'="" set stcomments(npp2,"Norma")=norma
+  .... ; Print in Cum reports : No,Once only,Yes (N,O,Y)
+  .... set flagPrint=$piece(reccomm,"\",5)
+  .... set flagPrint=$select(flagPrint="N":"Нет",flagPrint="O":"Только один раз",flagPrint="Y":"Да",1:"")
+  .... if flagPrint'="" set stcomments(npp2,"FlagPrint")=flagPrint 
+  ... if $data(stcomments) do  ;
+  .... merge @MasXML@("User",1,"Next",NN1,"StComm")=stcomments
+  .... set @MasXML@("User",1,"Next",NN1,"StCommExist")=1
   ;
   ; входные параметры
   // так как не могу задать в переменной colspan для строки, содержащей таблицу с референсными значениями, то жетско задаю столбы в этом случае
@@ -232,15 +257,17 @@ XML    ; обработка данных и формирование XML ...
   S @MasXML@("User",1,"FlagCAL")=+$G(FlagCAL) ; Флаг "Формулы вычисления"
   S @MasXML@("User",1,"FlagRanges")=+$G(FlagRanges) ; Флаг "Референсные границы"
   S @MasXML@("User",1,"FlagNationNum")=+$G(FlagNationNum) ; Флаг "Нац. номер"
+  S @MasXML@("User",1,"FlagStComments")=+$G(FlagStComm) ; Флаг "Стандартные комментарии"
   ; флаг "Вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов"
   i '$D(@MasXML@("User",1,"DifDep")) s FlagDifDep=0
   S @MasXML@("User",1,"FlagDifDep")=+$G(FlagDifDep)
+  s @MasXML@("User",1,"FlagstcommORranges")=$select((+$G(FlagRanges)=1)||(+$G(FlagStComm)=1):1,1:0)  // тогда выделение строки с тестом серым цветом
   ;
   s @MasXML@("User",1,"NameLaboratoty")=$P($G(^CF("SM",1)),"^",5)  ; название организации (Идентификационная строка 1)
   S @MasXML@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
   ;
   ;log
-  ;k ^zz M ^zz("XML")=@MasXML     ;@@@
+  k ^zz M ^zz("XML")=@MasXML     ;@@@
   ;
   S MSGERROR=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasXML),"CLNRUS22.xsl",USER,$get(PAR))
   //i $E(%Ret)="*" s MSGERROR="100^Ошибка:"_$E(%Ret,2,$L(%Ret)) quit
