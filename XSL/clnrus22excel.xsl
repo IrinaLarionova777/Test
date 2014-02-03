@@ -46,6 +46,13 @@
   <xsl:variable name="FlagNationNum" >
       <xsl:value-of select="FlagNationNum" />
   </xsl:variable >
+ <!-- Флаг "Станд. комментарии"-->
+ <xsl:variable name="FlagStandComment">
+    <xsl:value-of select="FlagStComments"/></xsl:variable>
+ <!-- Флаг "Станд. комментарии" или "Референсные границы" взведен -->
+ <xsl:variable name="FlagstcommORranges">
+     <xsl:value-of select="FlagstcommORranges"/></xsl:variable>
+
 <!-- Заголовок подтаблицы для референсных границ-->
 <Worksheet ss:Name="Список тестов" >
 <x:WorksheetOptions>
@@ -171,7 +178,7 @@
          </xsl:if >
   </Row>
 <xsl:for-each select="ONext" >
-       <xsl:if test='$FlagRanges=0' >
+ <xsl:if test='$FlagstcommORranges=0' >
   <Row>
   <Cell ss:StyleID="DefaultCenter" >
       <Data ss:Type="String" > <xsl:value-of select="Code" />
@@ -241,7 +248,7 @@
            </xsl:if >
   </Row>
 </xsl:if >
-<xsl:if test='$FlagRanges=1' >
+<xsl:if test='$FlagstcommORranges=1' >
     <Row >
   <Cell ss:StyleID="DefaultTableLineBackgroundCenter" >
       <Data ss:Type="String" > <xsl:value-of select="Code" />
@@ -311,6 +318,8 @@
            </xsl:if >
   </Row>
       </xsl:if >
+
+<!-- Таблица с референсными границами -->   
 <xsl:if test='NormsExist = 1' >
  <Row >
   <Cell ss:StyleID="DefaultHeaderTable" >
@@ -424,7 +433,55 @@
   </Row>
  </xsl:for-each >
 </xsl:if> 
-      </xsl:for-each >
+
+<!-- Таблица со стандартными комментариями-->
+<xsl:if test='StCommExist = 1' >
+ <Row >
+  <Cell ss:StyleID="DefaultHeaderTable" >
+      <Data ss:Type="String" >Код</Data>
+    </Cell>
+  <Cell ss:StyleID="DefaultHeaderTable" >
+      <Data ss:Type="String" >Описание</Data>
+    </Cell>
+  <Cell ss:MergeAcross="3" ss:StyleID="DefaultHeaderTable" >
+      <Data ss:Type="String" >Краткое наименование</Data>
+    </Cell>
+  <Cell ss:MergeAcross="2" ss:StyleID="DefaultHeaderTable" >
+      <Data ss:Type="String" >Норма</Data>
+    </Cell>
+  <Cell ss:MergeAcross="5" ss:StyleID="DefaultHeaderTable" >
+      <Data ss:Type="String" >Печать станд. комм. в накопл. отчете</Data>
+    </Cell>
+ </Row>
+ <xsl:for-each select="OStComm" >
+  <Row>
+  <Cell ss:StyleID="DefaultCenter" >
+      <Data ss:Type="String" > <xsl:value-of select="Code" />
+      </Data>
+    </Cell>
+  <Cell ss:StyleID="DefaultLeft" >
+      <Data ss:Type="String" > <xsl:value-of select="Desc" />
+      </Data>
+    </Cell>
+  <Cell ss:MergeAcross="3" ss:StyleID="DefaultLeft" >
+      <Data ss:Type="String" > <xsl:value-of select="ShortName" />
+      </Data>
+    </Cell>
+  <Cell ss:MergeAcross="2" ss:StyleID="DefaultCenter" >
+      <Data ss:Type="String" > <xsl:value-of select="Norma" />
+      </Data>
+    </Cell>
+  <Cell ss:MergeAcross="5" ss:StyleID="DefaultCenter" >
+      <Data ss:Type="String" > <xsl:value-of select="FlagPrint" />
+      </Data>
+    </Cell>
+  </Row>
+ </xsl:for-each >
+</xsl:if> 
+
+
+</xsl:for-each >
+
  <!-- флаг 1/0  "Вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов"  -->
  <xsl:if test='$FlagDifDep = 1' >
   <Row ss:StyleID="DefaultTitle" >

@@ -35,10 +35,14 @@
  <xsl:variable name="FlagDifDep"><xsl:value-of select="FlagDifDep"/></xsl:variable>
  <!-- флаг 1/0  "Вывести формулы вычисления для теста"  -->
  <xsl:variable name="FlagCAL"><xsl:value-of select="FlagCAL"/></xsl:variable>
-<!-- Флаг "Референсные границы"-->
+ <!-- Флаг "Референсные границы"-->
  <xsl:variable name="FlagRanges"><xsl:value-of select="FlagRanges"/></xsl:variable>
  <!-- флаг 1/0  "Вывести нац. номер"  -->
  <xsl:variable name="FlagNationNum"><xsl:value-of select="FlagNationNum"/></xsl:variable>
+ <!-- Флаг "Станд. комментарии"-->
+ <xsl:variable name="FlagStandComment"><xsl:value-of select="FlagStComments"/></xsl:variable>
+ <!-- Флаг "Станд. комментарии" или "Референсные границы" взведен -->
+ <xsl:variable name="FlagstcommORranges"><xsl:value-of select="FlagstcommORranges"/></xsl:variable>
 <!-- Заголовок подтаблицы для референсных границ-->
 <xsl:variable name="header">
   <thead> 
@@ -58,6 +62,19 @@
             <td width="4%" align="center"><b>ВГ трев.</b></td>
             <td width="4%" align="center"><b>НГ трев.<br/>берем.</b></td>
             <td width="4%" align="center"><b>ВГ трев.<br/>берем.</b></td>
+         </tr>
+      </thead>  
+</xsl:variable>
+
+<!-- Заголовок для таблицы со стандартными комментариями -->
+<xsl:variable name="headerStComm">
+  <thead> 
+         <tr>
+            <td width="8%" align="center"><b>Код</b></td>
+            <td width="30%" align="center"><b>Описание</b></td>
+            <td width="20%" align="center"><b>Краткое наименование</b></td>
+            <td width="12%" align="center"><b>Норма</b></td>
+            <td width="12%" align="center"><b>Печать станд. комм. в накопл. отчете</b></td>
          </tr>
       </thead>  
 </xsl:variable>
@@ -107,7 +124,7 @@
       </tr>
       </thead>      
       <xsl:for-each select="ONext">
-       <xsl:if test='$FlagRanges=0'>
+       <xsl:if test='$FlagstcommORranges=0'>
          <tr>
           <td align="center"><xsl:value-of select="Code"/></td>
           <td align="left"><xsl:value-of select="Desc"/></td>
@@ -133,7 +150,7 @@
 
          </tr>
       </xsl:if>
-      <xsl:if test='$FlagRanges=1'>
+      <xsl:if test='$FlagstcommORranges=1'>
          <tr style='background:#D9D9D9'>
           <td align="center"><xsl:value-of select="Code"/></td>
           <td align="left"><xsl:value-of select="Desc"/></td>
@@ -159,7 +176,7 @@
          </tr>
       </xsl:if>
  
-       
+<!-- Таблица с референсными границами -->       
 <xsl:if test='NormsExist = 1'>
  <tr style="padding:0cm 0 0cm 0">
  <td colspan="9">
@@ -219,6 +236,39 @@
 </td>
 </tr>
 </xsl:if> 
+
+<!-- Таблица со стандартными комментариями-->
+<xsl:if test='StCommExist = 1'>
+ <tr style="padding:0cm 0 0cm 0">
+ <td colspan="9">
+    <table class="Cur10" border="1" sellspacing="0" width="100%" bordercolor="#000000" 
+           style="border-collapse: collapse; padding-left: 0px; padding-right: 0px; border-bottom:none windowtext 1.0pt;border-top:none windowtext 1.0pt; padding:0cm 5.4pt 0cm 5.4pt">  
+       <xsl:copy-of select="$headerStComm" /> 
+         <xsl:for-each select="OStComm">
+           <tr class="Cur10">
+            <td align="center">
+               <xsl:value-of select="Code" /> 
+             </td>
+            <td align="left">
+               <xsl:value-of select="Desc" /> 
+             </td>
+            <td align="left">
+               <xsl:value-of select="ShortName" /> 
+            </td> 
+           <td align="center">
+               <xsl:value-of select="Norma" /> 
+            </td> 
+           <td align="center">
+               <xsl:value-of select="FlagPrint" /> 
+            </td> 
+          </tr>
+         </xsl:for-each>
+     </table>
+</td>
+</tr>
+</xsl:if> 
+
+
       </xsl:for-each>
    </table> 
  <!-- флаг 1/0  "Вывести отдельный список тестов, ктр. включены в шаблоны наборов тестов из разных отделов"  -->
