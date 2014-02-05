@@ -5,6 +5,8 @@
 <TimeCreated>63169,47530.43935</TimeCreated>
 
 <Method name="SaveNumberContainer">
+<Description>
+Call from LVBVISSC.mac</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec><![CDATA[pEpisode:%String,&pPLISTold:%String,&pPLISTnew:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
@@ -28,7 +30,7 @@
 		  set containernum=$piece(rec,$c(28),4)
 		  if containernum'="" set vsp1(containernum)=npp
 	  }
-	  kill vsp
+	  set usersite=$piece($get(^TEPI(pEpisode)),"\",36)
 	  set testset=""
 	  for {
 		  set testset=$order(^TEPI(pEpisode,1,testset),1,reco) if testset="" quit
@@ -47,6 +49,8 @@
 	          if '$data(vsp(specimen)) {
 		          set npp=$order(pPLISTnew(""),-1)+1
 		          set $piece(pPLISTnew(npp),$c(28),1)=pEpisode_"||"_specimen_"||"_"1"
+		          set $piece(pPLISTnew(npp),$c(28),7)=usersite //piece=5 	VISSC_UserSite_DR (propertyname=VISSCUserSiteDR, sqlfieldnumber=7) 
+		          set $piece(pPLISTnew(npp),$c(28),8)="N"  //piece=6 	VISSC_NotCollected (propertyname=VISSCNotCollected, sqlfieldnumber=8) 
 		          set vsp(specimen,npp)=""
 	          }
 	          // Suppose every specimen has only one container
@@ -78,7 +82,7 @@
 		      // if container num is emmpty fill it
 		      if containerNumberForSpecimen="" {
 			          set containerNumberForSpecimen=$order(vsp1(""),-1)+1 
-			          if +containerNumberForSpecimen=1 set containerNumberForSpecimen=pEpisode_$tr($j(containerNumberForSpecimen,2)," ","0")
+			          if +containerNumberForSpecimen=1 set containerNumberForSpecimen=pEpisode_$tr($j(containerNumberForSpecimen,3)," ","0")
 			          //set $piece(pPLISTnew(npp),$c(28),4)=containernum
 			          set vsp1(containerNumberForSpecimen)=""
 		      }
@@ -100,7 +104,7 @@
 	          set vsp(dopnum,specimen_$c(1)_container)=usersite
 	          */
           }
-	  }
+	  } 
 	  /*
 	  set dopnum="" kill vsp1,vsp2
 	  for {
@@ -169,53 +173,57 @@
 		 set ok=$$$ERROR($$$GeneralError,"Нет кода материала для набра тестов "_pTestSet) 
 		 quit
 	  }
-	  // если по какой-то причине не создалась запись по типу материала, то создаем 
-	  if $data(^TEPI(pEpisode,pTestSet,pTestSetCounter,4,pSpecimen))<10 {
+	  // код контейрера
+      set ok=..GetContainerForSpecimen(pTestSet,pSpecimen,.container)
+      if 'ok quit
+      if container="" {
+	       set ok=$$$ERROR($$$GeneralError,"Нет кода контейнерадля образца "_pSpecimen)
+	       quit  
+      }
+	  // если по какой-то причине не создалась запись по типу материала, то создаем
+	  if $data(^TEPI(pEpisode,4,pSpecimen)) <10 {
+		  // new number of container
+		  set spec="" kill vsp
+		  for {
+			  set spec=$order(^TEPI(pEpisode,4,spec)) if spec="" quit
+			  set npp=""
+			  for {
+				  set npp=$order(^TEPI(pEpisode,4,spec,npp),1,rec) if npp="" quit
+				  set containernumber=$piece(rec,"\",2)
+				  if containernumber'="" set vsp(containernumber)=""
+			  }
+		  }
+		  set containernumbernew=$order(vsp(""),-1)+1
+		  if containernumbernew=1 set containernumbernew=pEpisode_$tr($j(containernumbernew,3)," ","0")
+		  // insert new record in SQLUser.EP_VisitSpecimen,SQLUser.EP_VisitSpecimenContainer
 		  kill PLIST 
 		  set PLIST(0)=pEpisode
 		  set PLIST(2)=pSpecimen
 		  set PLIST(3)=""
           &sql(INSERT INTO SQLUser.EP_VisitSpecimen VALUES :PLIST())
-		  kill PLIST 
+	  	  kill PLIST 
           set PLIST(0)=pEpisode_"||"_pSpecimen
           set PLIST(2)=1  //$order(^TEPI(pEpisode,4,pSpecimen,""),-1)+1
-          // код контейрера
-          set ok=..GetContainerForSpecimen(pTestSet,pSpecimen,.container)
-          if 'ok quit
-          if container="" {
-	         set ok=$$$ERROR($$$GeneralError,"Нет кода контейнерадля образца "_pSpecimen)
-	         quit  
-          }
           set usersite=$piece($get(^TEPI(pEpisode)),"\",36)
           set PLIST(3)=container
-          set PLIST(4)=1
-          set PLIST(5)=2
-          set PLIST(6)=3
+          set PLIST(4)=containernumbernew
+          set PLIST(5)=""
+          set PLIST(6)=""
           set PLIST(7)=usersite
           set PLIST(8)="N" // 6 	VISSC_NotCollected (propertyname=VISSCNotCollected, sqlfieldnumber=8) 
           f ii=9:1:13 set PLIST(ii)=""
           set PLIST=$o(PLIST(""),-1)
-          b  
           &sql(INSERT INTO SQLUser.EP_VisitSpecimenContainer VALUES :PLIST())
 	  } 
-	  set rec=$get(^TEPI(pEpisode,4,pSpecimen,1))
-	  set container=$piece(rec,"\",1)
-	  if container="" {
-	         set ok=$$$ERROR($$$GeneralError,"Нет кода контейнера для образца "_pSpecimen)
-	         quit  
-      }
-	  set dopnum=$piece($get(^TTAB("CON",container)),"\",4)
-	  if dopnum="" {
-		  
-	  }
-	  set containernumber=pEpisode_dopnum
-	  set rowid=pEpisode_"||"_pSpecimen_"||"_"1"
+	  
+	  //set rowid=pEpisode_"||"_pSpecimen_"||"_"1"
 	  /*
 	  set sqlcode=$$select^LVBVISSC(rowid) // создается PLIST
 	  if sqlcode'=0 {
 		  set ok=$$$ERROR($$$GeneralError,sqlcode) 
 		  quit
 	  }*/
+	  /*
 	  set usersite=$piece($get(^TEPI(pEpisode)),"\",36)
 	  set PLIST(0)=pEpisode_"||"_pSpecimen
       set PLIST(2)=1  
@@ -234,6 +242,7 @@
 		  set ok=$$$ERROR($$$GeneralError,sqlcode) 
 		  quit
 	  }
+	  */
   } catch(e) {
 	  set ok=e.AsStatus()
   }
