@@ -24,34 +24,42 @@
     <xsl:variable name="TimeStop" >
         <xsl:value-of select="TimeStop" />
     </xsl:variable >
-<Worksheet ss:Name="     Отчет по мониторингу лицензий (по пользователям)" >
+<Worksheet ss:Name="     Отчет по пользователям" >
+<x:WorksheetOptions>
+<x:PageSetup>
+<x:Layout x:Orientation="Landscape"/>
+<x:Header x:Margin="0.3"/>
+<x:Footer x:Margin="0.3"/>
+<x:PageMargins x:Bottom="0.75" x:Left="0.25" x:Right="0.25" x:Top="0.75"/>
+</x:PageSetup>
+</x:WorksheetOptions>
 <Table x:FullColumns="1" x:FullRows="1">
-<Column ss:StyleID="DefaultLeft" ss:AutoFitWidth="0" ss:Width="300"/>
-<Column ss:StyleID="DefaultLeft" ss:AutoFitWidth="0" ss:Width="300"/>
-<Column ss:StyleID="DefaultLeft" ss:AutoFitWidth="0" ss:Width="300"/>
-<Column ss:StyleID="DefaultLeft" ss:AutoFitWidth="0" ss:Width="300"/>
-<Column ss:StyleID="DefaultLeft" ss:AutoFitWidth="0" ss:Width="300"/>
-<Column ss:StyleID="DefaultLeft" ss:AutoFitWidth="0" ss:Width="300"/>
+<Column ss:AutoFitWidth="0" ss:Width="60"/>
+<Column ss:AutoFitWidth="0" ss:Width="60"/>
+<Column ss:AutoFitWidth="0" ss:Width="100"/>
+<Column ss:AutoFitWidth="0" ss:Width="200"/>
+<Column ss:AutoFitWidth="0" ss:Width="100"/>
+<Column ss:AutoFitWidth="0" ss:Width="100"/>
   <Row ss:StyleID="DefaultTitle">
-    <Cell ss:MergeAcross="10"><Data ss:Type="String">Отчет по мониторингу лицензий (по пользователям) за период с <xsl:value-of select="$DateStart" />,<xsl:value-of select="$TimeStart" /> по <xsl:value-of select="$DateStop" />,<xsl:value-of select="$TimeStop" /></Data></Cell>
+    <Cell ss:MergeAcross="5"><Data ss:Type="String">Отчет по мониторингу лицензий (по пользователям) за период с <xsl:value-of select="$DateStart" />,<xsl:value-of select="$TimeStart" /> по <xsl:value-of select="$DateStop" />,<xsl:value-of select="$TimeStop" /></Data></Cell>
   </Row>
-  <Row ss:StyleID="DefaultHeaderTable">
-    <Cell>
+  <Row>
+    <Cell ss:StyleID="DefaultHeaderTable">
       <Data ss:Type="String"><b >Дата</b ></Data>
     </Cell>
-    <Cell>
+    <Cell ss:StyleID="DefaultHeaderTable">
       <Data ss:Type="String"><b >Время</b ></Data>
     </Cell>
-    <Cell>
+    <Cell ss:StyleID="DefaultHeaderTable">
       <Data ss:Type="String"><b >Пользователь</b ></Data>
     </Cell>
-    <Cell>
+    <Cell ss:StyleID="DefaultHeaderTable">
       <Data ss:Type="String"><b >ФИО пользователя</b ></Data>
     </Cell>
-    <Cell>
+    <Cell ss:StyleID="DefaultHeaderTable">
       <Data ss:Type="String"><b >Компьютер</b ></Data>
     </Cell>
-    <Cell>
+    <Cell ss:StyleID="DefaultHeaderTable">
       <Data ss:Type="String"><b >Дата и время входа</b ></Data>
     </Cell>
   </Row>
@@ -61,23 +69,23 @@
 	</xsl:variable>
 
 <xsl:if test='$Odd = "1"'>
-  <Row ss:StyleID="DefaultTableLineBackground" >
-    <Cell ss:StyleID="DefaultLeft">
+  <Row>
+    <Cell  ss:StyleID="DefaultTableLineBackground" >
       <Data ss:Type="String"><xsl:value-of select="Date" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultLeft">
+    <Cell  ss:StyleID="DefaultTableLineBackground" >
       <Data ss:Type="String"><xsl:value-of select="Time" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultLeft">
+    <Cell  ss:StyleID="DefaultTableLineBackground" >
       <Data ss:Type="String"><xsl:value-of select="User" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultLeft">
+    <Cell  ss:StyleID="DefaultTableLineBackground" >
       <Data ss:Type="String"><xsl:value-of select="UserName" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultLeft">
+    <Cell  ss:StyleID="DefaultTableLineBackground" >
       <Data ss:Type="String"><xsl:value-of select="Comp" /></Data>
     </Cell>
-    <Cell ss:StyleID="DefaultLeft">
+    <Cell  ss:StyleID="DefaultTableLineBackground" >
       <Data ss:Type="String"><xsl:value-of select="DateTimeEnter" /></Data>
     </Cell>
   </Row>
