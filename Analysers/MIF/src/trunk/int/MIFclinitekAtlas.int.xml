@@ -18,7 +18,7 @@ MIFclinitekAtlas(mi) ; ASTM protocol  -  MIFclinitekAtlas (Bi-Directional) (Russ
  quit
 Main 
  read *R:10
- ;i $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ //i $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
  i $c(R)'=enq q
  set nameMachine="",nameLIS=""
  do receiveENQ
@@ -67,7 +67,12 @@ receiveENQ
          ; query record
          if typerecord="Q" {
 	        set epis=$p($p(record,"|",3),"^",2)
-	        if $l(epis) set ^TMP($zn,$j,"ENQ",epis)="" continue
+	        if $l(epis)=0 continue
+	        set episparent=epis 
+	        if '$data(^TEPI(epis)) {  // в этом случае epis-номер контейнера, episnew-номер эпизода
+		         set episparent=$$transEpisodeNumber^MIF000dop(epis)
+	        }
+	        set ^TMP($zname,$job,"ENQ",epis)=episparent continue
             ;if $l(epis),$d(^TEPI(epis,1)) set ^TMP($zn,$j,"ENQ",epis)="" continue
             ;set suffix=$e(epis,$l(epis)),epis=$e(epis,1,$l(epis)-1)
             ;if $l(epis),$d(^TEPI(epis,1)) set ^TMP($zn,$j,"ENQ",epis)=suffix continue
@@ -82,7 +87,9 @@ receiveENQ
          }
          ; order record
          if typerecord="O" {
-	        set epis=$tr($p($p(record,"|",3),"^",1)," "),QC=$tr($p(record,"|",12)," ") //s:'$l(epis) epis=$tr($p($p(record,"|",4),"^",1)," ")
+	        set epis=$tr($p($p(record,"|",3),"^",1)," ")
+	        if (epis'="")&&('$data(^TEPI(epis))) set epis=$$transEpisodeNumber^MIF000dop(epis)
+	        set QC=$tr($p(record,"|",12)," ") //s:'$l(epis) epis=$tr($p($p(record,"|",4),"^",1)," ")
             if QC="Q" s QC="Y"
             ; date and time
             set datetime=$p(record,"|",23)
@@ -117,7 +124,7 @@ receiveENQ
  
 Last ; file result if exists
  do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"H<--H")
- if $length(epis),$l(result) {
+ if epis?1.99AN,$l(result) {
  	 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
  }
  set (sample,epis,surname,result,date,time,QC)=""
@@ -125,9 +132,16 @@ Last ; file result if exists
 ORDER ; create list of orders if exists
  s epis="" 
  for {
-	 set epis=$o(^TMP($zn,$j,"ENQ",epis)) quit:epis="" 
-     do scanone^MIF000(mi,epis)
-     if $$select^LVBEPVIS(epis,"Y") k ^TMP($zn,$j,"ENQ",epis) continue
+	 set epis=$order(^TMP($zname,$job,"ENQ",epis),1,episparent) quit:epis="" 
+	 if episparent="" set episparent=epis
+	 if episparent=epis {
+		 do scanone^MIF000(mi,epis) 
+	 }
+     else  {
+	     set scodeTypeSpecimen=##class(TCLEx.Function.Container).GetSpecimenForContainerNumber(episparent,epis)
+	     do scanone^MIF000dop(mi,episparent,,,,,codeTypeSpecimen)
+     }
+     if $$select^LVBEPVIS(episparent,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
      set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
      ;s sex=$s($g(PLIST(5))="М":"M",$g(PLIST(5))="Ж":"F",1:"U")
      set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
@@ -136,7 +150,7 @@ ORDER ; create list of orders if exists
      ;s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1|"_epis_"|||||||||||"
      set tc="" 
      for N=1:1 {
-	     set tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) 
+	     set tc=$o(^TMP("MIF-SINGLE",$j,mi,episparent,tc)) 
 	     if tc="" quit
 	     do SET(epis,tc)
      }

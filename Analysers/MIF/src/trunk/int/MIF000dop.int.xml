@@ -82,6 +82,68 @@ transEpisodeNumber(pEpisode)
 	}
 	quit pEpisode
  
+ 
+  ; copy from MIF000 and change a little
+scanone(mi,epis,tg,test,suffix,all,specimen) 
+ n (mi,epis,tg,test,suffix,all,specimen) 
+ k ^||TMP($zn,$j),^TMP("MIF-SINGLE",$j,mi),xxVTS
+ s mi=$g(mi),epis=$g(epis),tg=$g(tg),test=$g(test),suffix=$g(suffix),all=$g(all),specimen=$get(specimen)
+ s site=$$seldata^LVBMIMP(mi,21)
+ 
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . ; check if TestSet exist in TestGroup
+ .i $l(test),ts'=test q
+ . ; not for this instrument
+ .i '$d(^TMIF(mi,0,ts)) q
+ .i $l(tg),$$select^LVBMITGS(mi_"||"_tg_"||"_ts,"Y") q
+ .s tscnt="" f  s tscnt=$o(^TEPI(epis,1,ts,tscnt)) q:tscnt=""  d
+ ..s vtsRID=epis_"||"_ts_"||"_tscnt
+ .. ; test is on hold
+ ..s hold=$$seldata^LVBVISTS(vtsRID,45)
+ .. ; different user site
+ ..i $l(site),site'=$$site^LVBVISTS(vtsRID) q
+ .. ; send only if test set has not been authorised yet
+ ..i $$status^LVBVIS1(vtsRID)="A" quit
+ .. ; проверка соответсвия материала образца
+ ..set ok=1 if (specimen'="") do  if ok=0 quit
+ ...set spec=$$seldata^LVBVISTS(vtsRID,47) if spec="" set spec=##class(TCLEx.Function.TestSet).DefaultSpecimen(ts)
+ ...if spec="" quit  // Если у набора тестов нельзя определить код материала образца, то лучше этот набор тестов оставить в списке 
+ ...if specimen'=spec set ok=0 quit
+ ..;
+ ..s ^||TMP($zn,$j,1,epis,ts,$p(vtsRID,"||",3))=$s(hold="Y":"Y",1:"")
+ 
+ i '$d(^TMIF(mi,20,epis)),$d(^TMPmif(mi,20,epis)) m ^TMIF(mi,20,epis)=^TMPmif(mi,20,epis) k ^TMPmif(mi,20,epis)
+ k test,list s (test(epis),list)=""
+ s sfx="" f  s sfx=$o(^TMIF(mi,20,epis,"SFX",sfx)) q:sfx=""  s test(epis_sfx)=""
+ s ts="" f  s ts=$o(^||TMP($zn,$j,1,epis,ts)) q:ts=""  d
+ .i '$$getall1^LVBCTTC(ts,,,,,,"Y") k FORMAT m FORMAT=PLIST d
+ .. ; check hold
+ ..s tscnt="" f  s tscnt=$o(^||TMP($zn,$j,1,epis,ts,tscnt)) q:tscnt=""  s hold=^(tscnt) i hold="Y" d
+ ...s ok=1,z="" f  s z=$o(FORMAT(z)) q:z=""  s tc=$p(FORMAT(z),$c(2),1) i $l(tc) d
+ ....i $p($g(^TEPI(epis,1,ts,tscnt,"DATA",tc)),"\",10)="Y" s ok=0 q
+ ...i ok k ^||TMP($zn,$j,1,epis,ts,tscnt)
+ ..s z="" f  s z=$o(FORMAT(z)) q:z=""  s tc=$p(FORMAT(z),$c(2),1) i $l(tc) d
+ ... ; check if result already has been entered
+ ...s ok=1,tscnt="" f  s tscnt=$o(^||TMP($zn,$j,1,epis,ts,tscnt)) q:tscnt=""  d
+ ....i '$d(^TEPI(epis,1,ts,tscnt,"DATA",tc)) s ok=0 q
+ ....i $p($g(^TEPI(epis,1,ts,tscnt,"DATA",tc)),"\",10)="Y" s ok=0 q
+ ...i 'ok s xx=$g(^TMIF(mi,2,tc)),ch=$p(xx,"\",1),direction=$p(xx,"\",3),sfx=$p(xx,"\",4) i $l(ch)," Y LI "[(" "_direction_" ") d
+ ....i $l(suffix),suffix'=sfx q
+ ....i $l(tg) s ok=0 d  q:'ok
+ .....i '$$select^LVBMITGI(mi_"||"_tg_"||"_tc,"Y"),PLIST(3)="Y" s ok=1
+ ....i all="Y",$d(^TMIF(mi,20,epis,"TI",tc)) q
+ ....i $l(sfx) s ^TMIF(mi,20,epis,"SFX",sfx)=""
+ ....s (test(epis_sfx,ch),test(epis_sfx))="",xxVTS(epis_sfx,ch,epis_"||"_ts_"||"_tscnt)=""
+ ....i '$d(list(tc)) s syn=$p($g(^TTAB("TC",tc)),"\",12),list=list_$s($l(list):",",1:"")_$s($l(syn):syn,1:tc),list(tc)=""
+ 
+ k ^||TMP($zn,$j) m ^TMP("MIF-SINGLE",$j,mi)=test
+ i $d(^TMP("MIF-SINGLE",$j,mi)) d
+ .s $p(^TMIF(mi,20,epis),"\",2)=$$zts^MIF000()
+ .set erriii=##class(TCLEx.MIF.Functions).writeInfoOrder(mi,epis,$get(sfx)) if +erriii=0 do trace^MIF000(mi,$System.Status.GetErrorText(erriii),"H-->H")
+ .i all'="Y",$l(list) d events^LVBCOM01(epis,"IL","Sample loaded on instrument <"_mi_"> for tests : "_list)
+ .i all="Y",$l(list) d events^LVBCOM01(epis,"IL","Request sent to the instrument <"_mi_"> for tests : "_list)
+ q
+ 
  /*
   // Пробежать по всем отправленным тестам и записать данные о заказе в класс TCLEx.Data.MIFInfoEpisode, TCLEx.Data.MIFInfoEpisodeTests
 writeInfoOrder(mi,epis,suffix) public {

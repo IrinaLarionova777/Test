@@ -102,7 +102,11 @@ receiveENQ
 	         set epis=$tr($extract(record,symst,symst+12)," ","")
 	         if epis="" quit
 	         set symst=symst+13
-	         set ^TMP($zname,$job,"ENQ",epis)=""
+	         set episparent=epis 
+	         if '$data(^TEPI(epis)) {  // в этом случае epis-номер контейнера, episnew-номер эпизода
+		         set episparent=$$transEpisodeNumber^MIF000dop(epis)
+	         }
+	         set ^TMP($zname,$job,"ENQ",epis)=episparent
 	       } 
            continue
          }    
@@ -120,6 +124,7 @@ receiveENQ
 	        set cur=cur+width
 	        set cur=cur+1  // пропускаем ID specification
 	        set width=13 set epis=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width
+	        if (epis'="")&&('$data(^TEPI(epis))) set epis=$$transEpisodeNumber^MIF000dop(epis) 
 	        set cur=cur+7  // пропускаем Position number
 	        if blockNumber=1 {
 		     set cur=cur+16
@@ -162,9 +167,17 @@ ORDER
  set blockNumber=0
  set epis="",okSend=0
  for {
-	 set epis=$order(^TMP($zname,$job,"ENQ",epis)) quit:epis="" 
-     do scanone^MIF000(mi,epis)
-     if $$select^LVBEPVIS(epis,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
+	 set epis=$order(^TMP($zname,$job,"ENQ",epis),1,episparent) quit:epis="" 
+	 if episparent="" set episparent=epis
+	 set codeTypeSpecimen=""
+	 if episparent=epis {
+		 do scanone^MIF000(mi,epis) 
+	 }
+     else  {
+	     set codeTypeSpecimen=##class(TCLEx.Function.Container).GetSpecimenForContainerNumber(episparent,epis)
+	     do scanone^MIF000dop(mi,episparent,,,,,codeTypeSpecimen)
+     }
+     if $$select^LVBEPVIS(episparent,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
      set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"M")
      set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
      // приоритет по эпизоду
@@ -173,14 +186,16 @@ ORDER
      kill vsp
      set tc="" 
      for {
-	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,epis,tc)) if tc="" quit
-	     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,epis,tc)
-	     if refEpisode="" continue
-	     set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
-	     set rec=$get(^TEPI(epis,1,testset,tscnt))
-	     // код типа образца материала
-         set codeTypeSpecimen=$piece(rec,"\",46)
-         if codeTypeSpecimen="" set codeTypeSpecimen=##class(TCLEx.Function.TestSet).DefaultSpecimen(testset)
+	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,episparent,tc)) if tc="" quit
+	     if codeTypeSpecimen="" {
+		     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,episparent,tc)
+	         if refEpisode="" continue
+	         set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
+	         set rec=$get(^TEPI(episparent,1,testset,tscnt))
+	         // код типа образца материала
+             set codeTypeSpecimen=$piece(rec,"\",46)
+             if codeTypeSpecimen="" set codeTypeSpecimen=##class(TCLEx.Function.TestSet).DefaultSpecimen(testset)
+	     }
          if codeTypeSpecimen="" set codeTypeSpecimen=0
          set specimenAnalisator=$select(codeTypeSpecimen="SE":1,(codeTypeSpecimen="U")||(codeTypeSpecimen="U24"):2,1:1)  ;$$getSpecimenAnalisator(codeTypeSpecimen)
          if specimenAnalisator="" set specimenAnalisator="1"

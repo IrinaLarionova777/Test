@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFmek6318" type="INT" languagemode="0"><![CDATA[
+MIFmek6318(mi) ; free protocol  -  test (uni-Directional) (Russion ГКБ-12))
+    // com port => host-client 
+    set mi=$get(mi) if '$length(mi) quit
+    kill ^TMIF(mi,10) 
+    set $ztrap="err^MIF000"
+    if $$select^LVBMIMP(mi) quit
+    for j=1:1:PLIST set @("par"_j)=PLIST(j)
+    set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21)
+    set lf=$char(10),cr=$char(13)
+    set strResults="WBC/LY%/MO%/GR%/LY/MO/GR/RBC/HGB/HCT/MCV/MCH/MCHC/RDW/PLT/PCT/MPV/PDW"
+    set (sample,epis,surname,result,date,time,QC)=""
+    if $$start^MIF000() quit
+    do trace^MIF000(mi,"Started job="_$Job,"DEBUG")
+    For  {
+		Do Main
+		If $$stop^MIF000() Quit
+ 	}	
+	Close par4
+	Do trace^MIF000(mi,"Stopped job="_$Job,"DEBUG")
+	Quit
+ 
+ // for host-client 
+Main 
+    read *R:10
+    ;if $c(R)'=enq d trace^MIF000(mi,"Waiting <STX> but received <"_R_">","DEBUG") q
+    if $char(R)'=stx quit
+    do receiveSTX
+    quit
+ 
+ ;обработка полученного от прибора ENQ
+receiveSTX
+     set (sample,epis,surname,result,date,time,QC)="" 
+     do trace^MIF000(mi,"STX","H<--M")
+     set record=$$read^MIF000("",etx) 
+     if '$length(record) quit
+     do trace^MIF000(mi,record,"H<--M")
+     
+     // это по документации
+     set date=$$DateTrasform($piece(record,cr,1))
+     set epis=$zstrip($e($piece(record,cr,2),1,7),"<>W")
+     if epis="" quit
+     if '$data(^TEPI(epis)) set epis=$$transEpisodeNumber^MIF000dop(epis) 
+          
+     ; results
+     for k=1:1:$length(strResults,"/") {
+	     set test=$piece(strResults,"/",k)
+	     set rec=$piece(record,cr,k+2)
+         set res=$zstrip($extract(rec,1,4),"<>W")
+         // the measured value is above the measurable range
+         if $zcvt(res,"U")="OVER" {
+	         continue
+         }
+         set flag=$zstrip($extract(rec,5,6),"<>W")
+         
+         if res'="" set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
+     }
+     
+     /*
+     // Это из жизни
+     //set record=" MEK-6400  "_$c(13)_"18   "_$c(13)_"01024"_$c(13)_"MANUAL      "_$c(13)_"CBC         "_$c(13)_"01"_$c(13)_"BLOOD           "_$c(13)_"MMM "_$c(13)_"0121421   "_$c(13)_"                                          "_$c(13)_"2013"_$c(13)_"09"_$c(13)_"16"_$c(13)_"     "_$c(13)_"14"_$c(13)_"30"_$c(13)_"21"_$c(13)_"         3390  "_$c(13)_"12.8H "_$c(13)_"      "_$c(13)_"      "_$c(13)_"      "_$c(13)_"             "_$c(13)_"      "_$c(13)_"      "_$c(13)_"      "_$c(13)_"             "_$c(13)_"4.64  "_$c(13)_"13.5  "_$c(13)_"39.7  "_$c(13)_"85.6  "_$c(13)_"29.1  "_$c(13)_"34.0  "_$c(13)_"10.8  "_$c(13)_" 259  "_$c(13)_"0.10  "_$c(13)_" 3.9L "_$c(13)_"18.1H "_$c(13)_" 3.9L "_$c(13)_" 1.9  "_$c(13)_"94.2H "_$c(13)_" 0.5  "_$c(13)_" 0.2  "_$c(13)_"12.1H "_$c(13)_"      "_$c(13)_"                                                                                                                                                                "_$c(13)_"                                                                                       "_$c(13)_"                                                                                                                                                                                                                                                                                                                                                                                                               "_$c(13)
+     set epis=$zstrip($piece(record,cr,18),"<>W")
+     set date=$zstrip($piece(record,cr,11)_$piece(record,cr,12)_$piece(record,cr,13),"<>W")
+     if date'="" set date=$zdh(date,5)
+     set time=$zstrip($piece(record,cr,15)_":"_$piece(record,cr,16)_":"_$piece(record,cr,17),"<>W")
+     if time'="" set time=$zth(time,1)
+      ; results
+     for k=1:1:$length(strResults,"/") {
+	     set test=$piece(strResults,"/",k)
+	     set rec=$piece(record,cr,27+k)
+         set res=$zstrip($extract(rec,1,4),"<>W")
+         // the measured value is above the measurable range
+         if $zcvt(res,"U")="OVER" {
+	         continue
+         }
+         set flag=$zstrip($extract(rec,5,6),"<>W")
+         
+         if res'="" set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
+     }
+     */
+     
+     // save results
+     If epis'="",result'="" {
+	     do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_$get(date),"DEBUG")
+		 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+	 }
+
+     quit
+     
+DateTrasform(pDate)
+   set returnValue=""
+   try {
+	   set pDate=$tr(pDate,"-","/")
+	   set day=$piece(pDate,"/",1)
+       set month=$piece(pDate,"/",2)
+       set year=$piece(pDate,"/",3)
+       set returnValue=$zdh(day_" "_$zcvt($extract(month,1),"U")_$zcvt($extract(month,2,3),"L")_" "_year,2)
+   } catch(e) {
+	   set returnValue=""
+   }
+   quit returnValue
+      
+	
+      
+
+]]></Routine>
+</Export>

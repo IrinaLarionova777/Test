@@ -23,7 +23,7 @@ MIFdimensionEXL200(mi) ; ASTM protocol  -  Dimension EXL 200 (Bi-Directional) (R
  quit
 Main 
  read *R:10
- //if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ //if ($c(R)'=stx)&&(R'=-1) d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
  if $c(R)'=stx q
  do receiveSTX
  quit
@@ -60,7 +60,11 @@ receiveSTX
  if typerecord="I" {
 	set epis=$p(record,fs,2)
     if $length(epis) {
-	    set sc=$$SendOrder(epis) 
+	    set episparent=epis 
+	    if '$data(^TEPI(epis)) {  // в этом случае epis-номер контейнера, episnew-номер эпизода
+		      set episparent=$$transEpisodeNumber^MIF000dop(epis)
+	    }
+	    set sc=$$SendOrder(epis,episparent) 
 	    if sc=2 set sc=$$SendNoRequests(0)
     }
  }    
@@ -69,6 +73,7 @@ receiveSTX
 	 set (sample,epis,surname,result,date,time,QC)=""
 	 set surname=$piece(record,fs,3)
 	 set epis=$piece(record,fs,4)
+	 if (epis'="")&&('$data(^TEPI(epis))) set epis=$$transEpisodeNumber^MIF000dop(epis)
 	 set QC="" if $l(surname) {
 		 set QC=$$findQC^MIF000(mi,surname) ; check if received id is QC
 		 if QC'="" set surname=""
@@ -119,7 +124,8 @@ PrepareAllOrders(pInstrument) public
 }	
 
  //посылаем за раз только один эпизод и в нем данные только по одному типу материала 
-SendOrders() 
+ /*
+SendOrders
  s epis="",isdata=0 
  for {
 	 set epis=$o(^TMIF(mi,10,epis)) quit:epis=""||(isdata=1)   // посылаем по одному 
@@ -148,12 +154,22 @@ SendOrders()
  }
 
  quit
-
+*/
 
  // Send orders to Instrument
-SendOrder(epis,specimen) ; create list of orders if exists
-     do scanone^MIF000(mi,epis)
-     if $$select^LVBEPVIS(epis,"Y") quit 2 // No Request Message
+ // epis - номер контейнера
+ // episparent - номер эпизода
+SendOrder(epis,episparent) ; create list of orders if exists
+     if $get(episparent)="" set episparent=epis
+	 set codeTypeSpecimen=""
+	 if episparent=epis {
+		 do scanone^MIF000(mi,epis) 
+	 }
+     else  {
+	     set codeTypeSpecimen=##class(TCLEx.Function.Container).GetSpecimenForContainerNumber(episparent,epis)
+	     do scanone^MIF000dop(mi,episparent,,,,,codeTypeSpecimen)
+     }
+     if $$select^LVBEPVIS(episparent,"Y") quit 2 // No Request Message
      // set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
      set surname=$get(PLIST(3)) //,name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8)
      // приоритет по эпизоду
@@ -166,18 +182,20 @@ SendOrder(epis,specimen) ; create list of orders if exists
      kill specimens
      set tc="" 
      for {
-	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,epis,tc)) if tc="" quit
-	     set codeTypeSpecimen=0 
-	     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,epis,tc)
-	     if refEpisode="" continue
-	     set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
-	     set rec=$get(^TEPI(epis,1,testset,tscnt))
-         set codeTypeSpecimen=$piece(rec,"\",46)
-         if codeTypeSpecimen="" set codeTypeSpecimen=$$TestSpecimenType^KSReportSQL(testset)
+	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,episparent,tc)) if tc="" quit
+	     if codeTypeSpecimen="" {
+		     set codeTypeSpecimen=0 
+	         set refEpisode=$$getRowIdTestSet^MIF000dop(mi,episparent,tc)
+	         if refEpisode="" continue
+	         set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
+	         set rec=$get(^TEPI(epis,1,testset,tscnt))
+             set codeTypeSpecimen=$piece(rec,"\",46)
+             if codeTypeSpecimen="" set codeTypeSpecimen=$$TestSpecimenType^KSReportSQL(testset)
+	     }
          if codeTypeSpecimen="" set codeTypeSpecimen=0
          set priorityCodeTest=$piece(rec,"\",10)
          set specimens(codeTypeSpecimen,tc)=priorityCodeTest
-         set $piece(^TMP("MIF-SINGLE",$j,mi,epis,tc),$char(0),2)=codeTypeSpecimen 
+         set $piece(^TMP("MIF-SINGLE",$j,mi,episparent,tc),$char(0),2)=codeTypeSpecimen 
      }
      set specimen=$order(specimens(""))
      if specimen="" set message="" quit 2 
@@ -219,7 +237,7 @@ getSpecimenAnalisator(specimen)
  if specimen="BL" quit "W"
  if specimen="SE" quit "1"
  if specimen="PL" quit "2"
- if specimen="U" quit "3" 
+ if (specimen="U")||(specimen="U24") quit "3" 
  if specimen="CSF" quit "4" 
  quit "1"
 

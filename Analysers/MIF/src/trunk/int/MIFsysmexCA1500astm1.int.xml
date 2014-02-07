@@ -1,0 +1,297 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="MIFsysmexCA1500astm1" type="INT" languagemode="0"><![CDATA[
+MIFsysmexCA1500astm(mi) ; ASTM protocol  -  Sysmex CA 1500 (Bi-Directional) (Russion GKB12))
+ set mi=$get(mi) if '$length(mi) quit
+ kill ^TMIF(mi,10) 
+ //set $ztrap="err^MIF000dop"
+ set $ztrap="err^MIF000"
+ if $$select^LVBMIMP(mi) quit
+ for j=1:1:PLIST set @("par"_j)=PLIST(j)
+ set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21)
+ set lf=$char(10),cr=$char(13)
+ if $$start^MIF000() quit
+ do trace^MIF000(mi,"Started job="_$job,"DEBUG")
+ //set compiled=$listget(^rINDEX($zname,"OBJ"),1)
+ set tcpadr=$get(^TMIF(mi,"TCP")) // если указан ip-адрес, то host - client, иначе host - server
+ for {
+	 if tcpadr'="" {
+		 do Main
+	 } else {
+		 do MainWithCatchError
+	 }
+	 if $$stop^MIF000() quit
+	 //if $listget(^rINDEX($zname,"OBJ"))'=compiled ztrap "EDIT"  // эмуляция ошибки EDIT, если программа-драйвер изменилась
+ }
+ close par4
+ quit
+ 
+ // for lis-client 
+Main 
+ read *R:10
+ ;if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ if $char(R)'=enq quit
+ set nameMachine="",nameLIS=""
+ do receiveENQ
+ quit
+
+ // for lis-server
+MainWithCatchError 
+ try {
+   read *R:10
+   //if $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+   if $char(R)'=enq quit
+   set nameMachine="",nameLIS=""
+   do receiveENQ
+ } catch {
+	 do err^MIF000
+ }   
+ quit
+ 
+ ;обработка полученного от прибора ENQ
+receiveENQ
+ set (sample,epis,surname,result,date,time,QC)="" 
+ do trace^MIF000(mi,"ENQ","H<--M")
+ do ACK
+ set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=60,ok=1
+ for {
+	 read *R:10 
+	 if $char(R)=eot quit
+	 if $char(R)=enq do trace^MIF000(mi,"ENQ is recieved at the wrong time","H-->M") do EOT set ok=0 quit
+	 set timeSilence=$piece($horolog,",",2)-timeSilenceStart
+	 if timeSilence>timeSilenceLimit do trace^MIF000(mi,"timeSilence>timeSilenceLimit ("_timeSilence_">"_timeSilenceLimit_")","H-->M") do EOT set ok=0 quit
+     if $char(R)'=stx continue
+     set timeSilenceStart=$piece($horolog,",",2)
+     set record=$$read^MIF000("",lf) if '$length(record) continue
+     set record=$extract(record,1,$length(record)-1)
+     do trace^MIF000(mi,record,"H<--M")
+     ; check record validity
+     set chsum=$piece(record,etx,2),chrecord=$piece(record,etx,1)_etx
+     if $$CHSUM(chrecord)'=chsum do NAK continue
+     do ACK
+     set record=$piece(record,$char(13),1) // так как при чтении последнего поля по разделителю "|", туда попадает $c(13)_$c(3)_chksum
+     set typerecord=$extract(record,2)
+     ; head record
+     if typerecord="H" {
+        set nameMachine=$piece(record,"|",5),nameLIS=$piece(record,"|",10)  
+        continue
+     }
+     ; query record
+     if typerecord="Q" {
+	     set epis=$tr($piece($piece(record,"|",3),"^",3)," ","")
+	     if $length(epis) {
+		     set episparent=epis 
+	         if '$data(^TEPI(epis)) {  // в этом случае epis-номер контейнера, episnew-номер эпизода
+		         set episparent=$$transEpisodeNumber^MIF000dop(epis)
+	         }
+	         set ^TMP($zname,$job,"ENQ",epis)=$piece(record,"|",3)_$c(0)_$c(0)_episparent
+	     } else {
+		     set ^TMP($zname,$job,"ENQ",0)=$piece(record,"|",3)_$c(0)_"EmptyEpisode"_$c(0)_"0" 
+	     }
+         continue
+     }    
+     ; patient record
+     if typerecord="P" {
+        do Last set (sample,epis,surname,result,date,time,QC)=""
+        set surname=$translate($translate($piece(record,"|",6),""),"^"," ") 
+        continue
+     }
+     ; order record
+     if typerecord="O" {
+	     set epis=$translate($piece($piece(record,"|",4),"^",3)," ")
+	     if (epis'="")&&('$data(^TEPI(epis))) set epis=$$transEpisodeNumber^MIF000dop(epis)
+	     s QC="" i $l(epis) s QC=$$findQC^MIF000(mi,epis)
+	     //set QC=$translate($piece(record,"|",12)," ") if QC="Q" set QC="Y"
+         continue
+     }
+     ; result record
+     if typerecord="R" {
+         ; strip trailing spaces
+         set test=$piece($piece(record,"|",3),"^",4) set test=$$DeleteLeftAndRightSpaces^KSUTIL1(test)
+         set res=$translate($piece(record,"|",4),", ","."),flag=$translate($piece(record,"|",7)," ")
+         if flag="N" set flag="" ; normal flag
+         if $length(res),$isvalidnum(res) set res=+res // так как перед в обработке результата перед округлением до нужного кол-во десятичных знаков проверка :i $l(tires),tires=(+tires),$l(dec) s tires=$j(tires,0,dec)  
+         if $length(test),$length(res) set result=result_test_$char(par10)_res_$char(par10)_flag_$char(par11)
+         ; date and time
+         if $length($translate($piece(record,"|",13)," ")) {
+	         set datetime=$piece(record,"|",13)
+	         set date=$$intdate^SSUTIL4($extract(datetime,5,6)_"/"_$extract(datetime,7,8)_"/"_$extract(datetime,1,4))
+             set time=($extract(datetime,9,10)*3600)+($extract(datetime,11,12)*60)
+         }
+         continue
+     }
+     ; last record
+     if typerecord="L" {
+	     do Last 
+	     continue
+     }
+     set timeSilenceStart=$piece($horolog,",",2)
+ }
+ if ok=1 {
+	 do trace^MIF000(mi,$select($char(R)=eot:"EOT",$char(R)=enq:"ENQ",1:R),"H<--M")
+	 if $data(^TMP($zname,$job,"ENQ")) do ORDER
+ }
+ quit
+Last ; file result if exists
+ do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_date_" time="_time,"H<--H")
+ if $length(epis),$length(result) {
+ 	 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+ }
+ set (sample,epis,surname,result,date,time,QC)=""
+ quit
+ 
+ // с обработкой приоритета и типа материала образца (все заказанные эпизоды в одном блоке Header...Last)
+ORDER 
+ if '$data(^TMP($zname,$job,"ENQ")) quit
+ set delimComponents="^"
+
+ // header record
+ set line=$order(^TMIF(mi,10,""),-1)+1
+ set ^TMIF(mi,10,line)="H|\"_delimComponents_"&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"DxH")_"||||" 
+
+ set epis="",okSend=0
+ for {
+	 set epis=$order(^TMP($zname,$job,"ENQ",epis),1,recQuery) quit:epis=""
+	 if $p(recQuery,$c(0),2)="EmptyEpisode" {
+         set line=$order(^TMIF(mi,10,""),-1)+1
+         set ^TMIF(mi,10,line)="P|1|"
+         set tcstr=delimComponents_delimComponents_delimComponents_"000"
+	     do SET(epis,tcstr,0,"",1,$piece(recQuery,$c(0),1))
+	     kill ^TMP($zname,$job,"ENQ",epis)
+	     continue
+     }
+     set episparent=$piece(recQuery,$c(0),3)
+     if episparent="" set episparent=epis
+	 set recQuery=$piece(recQuery,$c(0),1)
+	 set codeTypeSpecimen=""
+	 if episparent=epis {
+		 do scanone^MIF000(mi,epis) 
+	 }
+     else  {
+	     set codeTypeSpecimen=##class(TCLEx.Function.Container).GetSpecimenForContainerNumber(episparent,epis)
+	     do scanone^MIF000dop(mi,episparent,,,,,codeTypeSpecimen)
+     }
+     if $$select^LVBEPVIS(episparent,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
+	 set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
+     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
+     // приоритет по эпизоду
+     set priority=0 //Routine 
+     if $$seldata^LVBCTPR(PLIST(17),4)="Y" set priority=1 // STAT
+     // patient record
+     set line=$order(^TMIF(mi,10,""),-1)+1
+     set ^TMIF(mi,10,line)="P|1|||"_epis_"|"_$$Translit^KSUTIL1(delimComponents_$e(surname,1,20)_delimComponents_$e(name,1,20))_"||"_"|"_sex_"|||||" //_"W"_"||||" ;_$g(PLIST(15))
+     // order records
+     
+     kill vsp
+     set tc="" 
+     for {
+	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,episparent,tc)) if tc="" quit
+	     /*
+	     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,episparent,tc)
+	     if refEpisode="" continue
+	     set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
+	     set rec=$get(^TEPI(episparent,1,testset,tscnt))
+	     // код типа образца материала
+         set codeTypeSpecimen=$piece(rec,"\",46)
+         if codeTypeSpecimen="" set codeTypeSpecimen=$$TestSpecimenType^KSReportSQL(testset)
+         if codeTypeSpecimen="" set codeTypeSpecimen=0
+         set specimenAnalisator="" ;$$getSpecimenAnalisator(codeTypeSpecimen)
+         if specimenAnalisator="" set specimenAnalisator="0"
+                  
+         // приоритет по набору тестов
+         set priorityCodeTest=$piece(rec,"\",10)
+         if (priority=0)&&(priorityCodeTest'="") if $$seldata^LVBCTPR(priorityCodeTest,4)="Y" set priority=1 // STAT
+         */
+         set specimenAnalisator=0 // не делим по образцам
+         set priority=0 // прибор не обрабатывает поле Приоритет
+         set vsp(priority,specimenAnalisator,tc)=""
+     }
+     
+     set priority="",okOrder=0,ordernum=0
+     for {
+	     set priority=$order(vsp(priority),-1) if priority="" quit
+	     set specimen=""
+	     for {
+		     set specimen=$order(vsp(priority,specimen)) if specimen="" quit
+		     set tc=""  set tcstr=""
+		     for {
+			     set tc=$order(vsp(priority,specimen,tc)) if tc="" quit
+			     set tcstr=tcstr_$select(tcstr'="":"\",1:"")_delimComponents_delimComponents_delimComponents_$extract(tc,1,2)_"0"
+		     }
+             set ordernum=ordernum+1
+	         do SET(epis,tcstr,priority,specimen,ordernum,recQuery)
+	         set okOrder=1,okSend=1   
+	         kill vsp(priority,specimen)
+	     }
+	     if ordernum=0 {
+		     set ordernum=ordernum+1
+		     set tcstr=delimComponents_delimComponents_delimComponents_"000"
+	         do SET(epis,tcstr,0,"",ordernum,recQuery)
+	     }
+     }   
+	            
+     kill ^TMP($zname,$job,"ENQ",epis)
+ }
+ // terminate record
+ set line=$order(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|N"
+  
+ set ok=$$Send() 
+ kill ^TMIF(mi,10)  // в любом случае удаляем
+ quit
+
+SET(epis,tcx,priority,specimen,ordernum,strquery) ; set record to be sent to instrument
+ set priority=$select(+priority=1:"S",1:"R")
+ set specimen=""
+ if $get(ordernum)="" set ordernum=1
+ set line=$order(^TMIF(mi,10,""),-1)+1
+ set ^TMIF(mi,10,line)="O|"_ordernum_"|"_strquery_"||"_tcx_"|||||||N" // N: Normal sample
+ quit
+
+Send() ; send list of orders if exists
+ // m ^test(333,$i(^test(333)))=^TMIF(mi,10)
+ do ENQ 
+ for j=1:1:10 {
+	 read *R:1 
+	 if ($char(R)=ack)||($char(R)=enq)||($char(R)=eot)||($char(R)=nak) quit
+	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (10) but received <"_R_">","H<--M")
+ }
+ set ch=$char(R)
+ do trace^MIF000(mi,$select(ch=enq:"ENQ",ch=eot:"EOT",ch=ack:"ACK",ch=nak:"NAK",1:ch),"H<--M")
+ if $char(R)=enq do EOT quit 0
+ if $char(R)'=ack do EOT quit 0
+ set x="" for FRAME=1:1 set x=$Order(^TMIF(mi,10,x)) quit:x=""  quit:$$SEND(FRAME#8_^TMIF(mi,10,x))
+ if x="" kill ^TMIF(mi,10)
+ do EOT
+ quit 1 
+ 
+SEND(str) ; send string to instrument
+ set str=str_cr_etx,chsum=$$CHSUM(str)
+ hang 1
+ write stx,str,chsum,cr,lf,*-3 
+ do trace^MIF000(mi,str_chsum,"H-->M")
+ for j=1:1:6 {
+	 read *R:1 
+	 quit:($char(R)=ack)!($char(R)=eot)!($char(R)=enq)
+	 //d trace^MIF000(mi,"Waiting <ACK> or <EOT> (6) but received <"_R_">","H<--M")
+ }
+ if $char(R)=ack do trace^MIF000(mi,"ACK","H<--M") quit 0
+ if $char(R)=eot do trace^MIF000(mi,"EOT","H<--M") quit 1
+ if $char(R)=enq do trace^MIF000(mi,"ENQ","H<--M") quit 1
+ do trace^MIF000(mi,R,"H<--M")
+ quit 2
+ 
+CHSUM(x) ; calculate check sum
+ new (x) 
+ set z=0 for y=1:1:$length(x) set z=z+$ascii(x,y)
+ quit $translate($justify($zhex(z#256),2)," ","0")
+ 
+ACK h 1 write ack,*-3 do trace^MIF000(mi,"ACK","H-->M") quit
+NAK h 1 write nak,*-3 do trace^MIF000(mi,"NAK","H-->M") quit
+EOT h 1 write eot,*-3 do trace^MIF000(mi,"EOT","H-->M") quit
+ENQ h 1 write enq,*-3 do trace^MIF000(mi,"ENQ","H-->M") quit
+
+
+
+
+]]></Routine>
+</Export>
