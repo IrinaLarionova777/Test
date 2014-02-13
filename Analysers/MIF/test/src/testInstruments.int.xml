@@ -476,5 +476,65 @@ EmulateDeviceServer2(mi,port)
   use 0
   close dev
   quit 
+  
+EmulateDeviceClient2(mi,port,glob,routine)
+  set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21),lf=$char(10),cr=$char(13)
+  set dev="TCP"_port
+  open dev::20 else  quit
+  use dev:"PST"
+  
+  for {
+	  do send(glob)
+	  d waitAnswer 
+	  if $$stopEmulateDeviceClient() quit
+ }
+ close dev
+ use 0
+ quit
+ 
+waitAnswer
+ read *R:10
+ //if ($c(R)'=stx)&&(R'=-1) d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
+ if $c(R)'=enq q
+ do receiveENQ
+ quit
+ ;обработка полученного от прибора ENQ
+receiveENQ
+ ;do trace^MIF000(mi,"ENQ","H<--M")
+ ;do ACK
+ set record=$$read^MIF000("",etx) 
+ if '$l(record) quit
+ do traceTest(mi,record,"H<--M")
+ ; check record validity
+ set len=$length(record)
+ set chsum=$extract(record,len-1,len),chrecord=$extract(record,1,len-2)
+ set exec="set chsumRas=$$CHSUM^"_routine_"(chrecord)" x exec
+ if chsumRas'=chsum do NAK
+ else   do ACK
+ quit
+ 
+send(glob)
+  set npp=""
+  for {
+	  set npp=$order(@glob@(npp),1,rec) if npp="" quit
+	  if $extract(rec,1,5)'="H<--M" continue
+	  write stx_rec_$c(13)_$c(10),*-3
+	  read *ans:1
+	  if ans'=ack do traceTest(mi,"На строку "_stx_rec_$c(13)_$c(10)_" нет подтверждения","M<--M")
+  }
+  quit   
+  
+traceTest(mi,record,direction)
+	set ^testInstr(mi,99,$i(^testInstr(mi,99)))=direction_" : "_$h_" : "_record 
+	quit
+	
+stopEmulateDeviceClient()
+	quit +$get(^stopEmulateDeviceClient)=1  	
+	
+ACK write ack,*-3 do traceTest(mi,"ACK","H<--M") quit
+NAK write nak,*-3 do traceTest(mi,"NAK","H<--M") quit
+EOT write eot,*-3 do traceTest(mi,"EOT","H<--M") quit
+ENQ write enq,*-3 do traceTest(mi,"ENQ","H<--M") quit	
+   
 ]]></Routine>
 </Export>
