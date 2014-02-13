@@ -18,7 +18,7 @@ pUser - пользователь запустивший отчет</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pReportType:%String,pCourier:%String,pUser:%String</FormalSpec>
 <Implementation><![CDATA[
-	//s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
+	;s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
 	If (pReportType'="C")&&(pReportType'="DR") Quit		// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
 	//If (pReportType'="C") Quit								// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
 	Set pUser=$Get(pUser)
@@ -341,7 +341,8 @@ pLISGlb - буфер отчета в формате ЛИС</Description>
 	 set pPDF=1  // признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
 	 set pPDFDir=##class(%File).GetDirectory(pdfFileName) //каталог, куда выгружать файл
 	 set pOverWritePDF=1 //если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
-	 set ExtraParamsZen="" //дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+	 // ExtraParamsZen=$list(IsLogoNeeded(1/0),IsSignatureNeeded,IsStampNeeded)
+	 set ExtraParamsZen="" //дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport ExtraParamsZen=$list(IsLogoNeeded(1/0),IsSignatureNeeded,IsStampNeeded)
 	 set FlagPreview="" //флаг = "V" - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
 	 set extraParams=$listbuild(pPDF,pPDFDir,pOverWritePDF,ExtraParamsZen,0,0,FlagPreview)
 	 
@@ -382,6 +383,23 @@ pLISGlb - буфер отчета в формате ЛИС</Description>
 	if files'="" {
 		set ok=..SaveLISReportDop(idReport,pCourier,pUser,pQCopies,countEpisodes,files,pdfFileName)
 		if 'ok quit
+		// Fill field VISTSPrinted in EPVisitTestSet
+		Set epis=""
+	    For  {
+		    Set epis=$Order(@pEpisodesGlb@(epis)) If epis="" Quit
+		    Set testsetid=""
+		    For  {
+			     Set testsetid=$Order(@pEpisodesGlb@(epis,testsetid)) If testsetid="" Quit
+			     Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
+			     If $IsObject(testsetobj)&&(testsetobj.VISTSPrinted'="Y") {
+				    Set testsetobj.VISTSPrinted="Y"
+				    Set horolog=$Horolog
+				    Set testsetobj.VISTSDateOfLastChange=$Piece(horolog,",",1)
+				    Set testsetobj.VISTSTimeOfLastChange=$Piece(horolog,",",2)
+				    Do testsetobj.%Save()
+			     }	
+		    }	
+	    }
 	}	
   } catch(e) {
 	set ok=e.AsStatus()
