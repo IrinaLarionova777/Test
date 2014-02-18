@@ -52,13 +52,19 @@ ExtraParams="" - аналогично 1 </Description>
 
 <Property name="IsSignatureNeeded">
 <Description>
-Нужна ли подпись врача</Description>
+Нужна ли подпись врача
+0 - не печатать подпись врача
+1 - печатать подпись врача
+2 - формирование файла для печати на принтер (своя логика пока, иначе не разобраться)</Description>
 <Type>%Boolean</Type>
 </Property>
 
 <Property name="IsStampNeeded">
 <Description>
-Нужна ли печать</Description>
+Нужна ли печать
+0 - не печатать 
+1 - печатать 
+2 - формирование файла для печати на принтер (своя логика пока, иначе не разобраться)</Description>
 <Type>%Boolean</Type>
 </Property>
 
@@ -728,15 +734,29 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 	Do stream.WriteLine("</fo:table>")
 
 	Do stream.WriteLine("</fo:block-container>")
-	Set needstamp=..NeedStamp(..Episode)
-	//!!!
-	If ..IsStampNeeded'="" {
-		Set needstamp=..IsStampNeeded
-	}	
-	
-	Set stampfilename=""
+
 	Set doctor=$Get(@pRepParamGlb@("TS_AuthorisedDoctorId"))
 	Set userobj=##class(User.SSUser).%OpenId(doctor)
+	set hospitalID=$get(@pRepParamGlb@("НospitalCode"))
+
+	if (..IsSignatureNeeded=2)&&(..IsStampNeeded=2) {
+		if (doctor'="")&&($data(^BionImg("DoctorSignatures",doctor))) {
+			set ..IsSignatureNeeded=1
+		}
+	    If (hospitalID'="")&&($Data(^BionImg("HospitalWithStamp",hospitalID)))&&(doctor'="")&&($data(^BionImg("DoctorSignaturesStamp",doctor))) {
+		    set ..IsStampNeeded=1
+	    }
+	    if ..IsSignatureNeeded=2 set ..IsSignatureNeeded=0
+	    if ..IsStampNeeded=2 set ..IsStampNeeded=0
+	}
+	
+	Set needstamp=..NeedStamp(..Episode)
+	
+	If ..IsStampNeeded'="" {   // ??? 
+		Set needstamp=..IsStampNeeded
+	}	
+	Set stampfilename=""
+	//s ^test("par")=..IsStampNeeded_"*"_..IsSignatureNeeded_"*"_needstamp_"*"_doctor_"*"_userobj.SSUSREMailName
 	If $IsObject(userobj) {
 		If needstamp {
 			If ..IsSignatureNeeded'=0 {
@@ -748,7 +768,7 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 			If ..IsSignatureNeeded'=0 {
 				Set stampfilename=..ImagePath()_"\sign_"_userobj.SSUSREMailName_".png"
 			}
-		}		
+		}
 		If '##class(%File).Exists(stampfilename) {
 			Set stampfilename=""
 		}		
@@ -757,7 +777,7 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 	
 	If (stampfilename="")&&(needstamp) {
 		Set stampfilename=..ImagePath()_"\stamp.png"
-	}		
+	}
 	If stampfilename'="" {
 		Do stream.WriteLine("<fo:block-container z-index='1' position='absolute' left='75mm' top='218mm' width='55mm' height='35mm' overflow='hidden'>")
 		Do stream.WriteLine("<fo:block>")
@@ -784,7 +804,6 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 <FormalSpec>mode</FormalSpec>
 <ReturnType>%GlobalCharacterStream</ReturnType>
 <Implementation><![CDATA[
-	s ^test(1,"..ExtraParams")=..ExtraParams
 	If (..ExtraParams'="") {
 		Set ..IsLogoNeeded=$ListGet(..ExtraParams,1)
 		If ..IsLogoNeeded=0 Quit ""
@@ -793,9 +812,7 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 	}
 	
 	Set stream=##class(%GlobalCharacterStream).%New()
-	s ^test(1,"IsLogoNeeded")=..IsLogoNeeded
 	Set logofilename=..LogoFileName(..Episode,..IsLogoNeeded)
-	s ^test(1,"logofilename")=logofilename
 	//Do ..IsCustomLogo(..Episode,.logofilename)
 	if logofilename'="" {
 	    Do stream.WriteLine("<fo:block>")
