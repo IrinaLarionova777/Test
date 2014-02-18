@@ -25,6 +25,7 @@ pUser - пользователь запустивший отчет</Description>
 	// Составляем буфер с эпизодами и наборами тестов для печати
 	Kill ^||ResultForm.Episodes
 	Do ..MakePrintingEpisodesBuf(pReportType,pCourier,pUser,$Name(^||ResultForm.Episodes))
+	m ^test(1,"gl")=^||ResultForm.Episodes
 	If '$Data(^||ResultForm.Episodes) Quit
 	//
 	set countEpisode=0 // считаем кол-во эпизодов, пападающий в один файл - 10 максимум
@@ -50,7 +51,7 @@ pUser - пользователь запустивший отчет</Description>
 				 set countEpisode=countEpisode+1
 				 if countEpisode>limitEpis {
 				     if $data(^||ResultForm.EpisodesOneReport) {
-					     set ok=..SaveLISReportAll(pCourier, user, qcopies, $name(^||ResultForm.EpisodesOneReport))  
+					     set ok=..SaveLISReportAll(pCourier, user, qcopies, reporttype, $name(^||ResultForm.EpisodesOneReport))  
 			             if 'ok do ##class(TCLEx.Report.Function).ErrorWrite(ok)
 			             if ok Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.EpisodesOneReport))
 			             set countEpisode=1
@@ -60,7 +61,7 @@ pUser - пользователь запустивший отчет</Description>
 				 merge ^||ResultForm.EpisodesOneReport(epis)=^||ResultForm.Episodes(reporttype,user,qcopies,epis)	 
 			 }
 			 if $data(^||ResultForm.EpisodesOneReport) {
-					     set ok=..SaveLISReportAll(pCourier, user, qcopies, $name(^||ResultForm.EpisodesOneReport))  
+					     set ok=..SaveLISReportAll(pCourier, user, qcopies, reporttype, $name(^||ResultForm.EpisodesOneReport))  
 			             if 'ok do ##class(TCLEx.Report.Function).ErrorWrite(ok)
 			             if ok Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.EpisodesOneReport))
 			 }
@@ -81,6 +82,18 @@ pBuf - формируемый буфер</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pReportType:%String,pCourier:%String,pUser:%String,pBuf:%String</FormalSpec>
 <Implementation><![CDATA[
+	// Если существует клиентский класс Custom.clientext.Report.ResultFormNew и в нем существует метод MakePrintingEpisodesBuf, то вызывается клиентский метод 
+	set clientext=$Piece($Get(^CF("SM",1)),"^",28)
+	if (clientext'="") {
+		//set classmethod=$CLASSNAME()
+		//if $piece(classmethod,".",1)="TCLEx" set classmethod=$piece(classmethod,2,$length(classmethod,"."))
+		set classmethod="Custom."_clientext_"."_$CLASSNAME()_"||MakePrintingEpisodesBuf"
+	    if ##class(%Dictionary.CompiledMethod).%ExistsId(classmethod) {
+		    do $ClassMethod($piece(classmethod,"||",1),$piece(classmethod,"||",2), $get(pReportType), $get(pCourier), $get(pUser), $get(pBuf) )
+		    quit
+	    }
+	}
+	
 	// получаем кол-во копий по курьеру (в привязке к DRP)
 	set printerinfo=##class(TCLEx.Function.Printer).getPrinterByCourierDRP(pCourier)
 	set qCopies=$piece(printerinfo,$char(0),2)
@@ -324,14 +337,28 @@ pCourier - код курьера
 pUser - пользователь запустивший отчет
 pEpisCount - число эпизодов в отчете
 pQCopies - число копий 
+pParams - параметры (в Бионе 
 pLISGlb - буфер отчета в формате ЛИС</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisodesGlb:%String</FormalSpec>
+<FormalSpec>pCourier:%String,pUser:%String,pQCopies:%Integer,pParams:%String="",pEpisodesGlb:%String</FormalSpec>
 <PublicList>PLIST</PublicList>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
  set ok=$$$OK
  try {
+	// Если существует клиентский класс Custom.clientext.Report.ResultFormNew и в нем существует метод SaveLISReportAll, то вызывается клиентский метод 
+	set clientext=$Piece($Get(^CF("SM",1)),"^",28)
+	if (clientext'="") {
+		//set classmethod=$CLASSNAME()
+		//if $piece(classmethod,".",1)="TCLEx" set classmethod=$piece(classmethod,2,$length(classmethod,"."))
+		set classmethod="Custom."_clientext_"."_$CLASSNAME()_"||SaveLISReportAll"
+	    if ##class(%Dictionary.CompiledMethod).%ExistsId(classmethod) {
+		    set ok=$ClassMethod($piece(classmethod,"||",1),$piece(classmethod,"||",2), $get(pCourier), $get(pUser), $get(pQCopies), $get(pParams), $get(pEpisodesGlb) )
+		    s ^test(1,"ok")=ok
+		    quit
+	    }
+	}
+	 
 	 // формирование задания в диспетчере печати (чтобы был номер для имени файла
 	 set ok=..CreateEmptyLISReport(pCourier,pUser,pQCopies,1,.idReport)
 	 if 'ok quit
@@ -381,29 +408,13 @@ pLISGlb - буфер отчета в формате ЛИС</Description>
 		}
 	}
 	if files'="" {
-		set ok=..SaveLISReportDop(idReport,pCourier,pUser,pQCopies,countEpisodes,files,pdfFileName)
+		set ok=..SaveLISReportDop(idReport,pCourier,pUser,pQCopies,countEpisodes,files,pdfFileName,pParams)
 		if 'ok quit
-		// Fill field VISTSPrinted in EPVisitTestSet
-		Set epis=""
-	    For  {
-		    Set epis=$Order(@pEpisodesGlb@(epis)) If epis="" Quit
-		    Set testsetid=""
-		    For  {
-			     Set testsetid=$Order(@pEpisodesGlb@(epis,testsetid)) If testsetid="" Quit
-			     Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
-			     If $IsObject(testsetobj)&&(testsetobj.VISTSPrinted'="Y") {
-				    Set testsetobj.VISTSPrinted="Y"
-				    Set horolog=$Horolog
-				    Set testsetobj.VISTSDateOfLastChange=$Piece(horolog,",",1)
-				    Set testsetobj.VISTSTimeOfLastChange=$Piece(horolog,",",2)
-				    Do testsetobj.%Save()
-			     }	
-		    }	
-	    }
 	}	
   } catch(e) {
 	set ok=e.AsStatus()
  }
+ s ^test(1,"ok0")=ok
  quit ok
 ]]></Implementation>
 </Method>
@@ -465,7 +476,7 @@ pEpisCount - число эпизодов в отчете
 pQCopies - число копий 
 pFiles - список сформированных файлов для объединения в один файл</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pIdReport:%String,pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisCount:%Integer,pFiles:%String,pPDFFileName</FormalSpec>
+<FormalSpec>pIdReport:%String,pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisCount:%Integer,pFiles:%String,pPDFFileName:%String,pParams:%String=""</FormalSpec>
 <PublicList>PLIST</PublicList>
 <Implementation><![CDATA[
   set ok=$$$OK
@@ -474,6 +485,7 @@ pFiles - список сформированных файлов для объе�
     if pFiles'="" {
 		    if $length(pFiles,$c(0))>1 {
 		       set ok=##class(TCLEx.Report.FunctionsJava).startConcatPDF(pFiles,pPDFFileName,0,1)
+		       if 'ok do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$CLASSNAME())
 	        } 
 	        else 
 	        {
@@ -499,7 +511,7 @@ pFiles - список сформированных файлов для объе�
 	set userCall=$tr($piece(pUser,$char(1),1)," ","") // пользователь, запусающий на печать (он указан при одиночной печати, при групповой, не указан)
 	set userAuth=$piece(pUser,$char(1),2) // пользователь, авторизовавший набор тестов
 	set user=$select(userCall="":userAuth,1:userCall)
-	Set PLIST(3)=..getPrinter(pCourier,user) 
+	Set PLIST(3)=..getPrinter(pCourier,user,pParams) 
 	Set PLIST(4)=pQCopies 
 	Set PLIST(5)="R" 
 	set hor=$h
@@ -972,10 +984,21 @@ pUser - ID пользователя
 Возвращаемое значение:
 Id принтера</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pCourier,pUser</FormalSpec>
+<FormalSpec>pCourier,pUser,pParams=""</FormalSpec>
 <ProcedureBlock>0</ProcedureBlock>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
+	// Если существует клиентский класс Custom.clientext.Report.ResultFormNew и в нем существует метод MakePrintingEpisodesBuf, то вызывается клиентский метод 
+	set clientext=$Piece($Get(^CF("SM",1)),"^",28)
+	if (clientext'="") {
+		//set classmethod=$CLASSNAME()
+		//if $piece(classmethod,".",1)="TCLEx" set classmethod=$piece(classmethod,2,$length(classmethod,"."))
+		set classmethod="Custom."_clientext_"."_$CLASSNAME()_"||getPrinter"
+	    if ##class(%Dictionary.CompiledMethod).%ExistsId(classmethod) {
+		    quit $ClassMethod($piece(classmethod,"||",1),$piece(classmethod,"||",2), $get(pCourier), $get(pUser), $get(pParams) )
+	    }
+	}
+	
 	Set reportclassname=##class(TCLEx.Report.Settings).GetDRPResultClassName()
 	quit $ClassMethod(reportclassname,"getPrinter",pCourier, pUser)
 ]]></Implementation>
