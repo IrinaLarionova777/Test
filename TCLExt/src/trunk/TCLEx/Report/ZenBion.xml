@@ -2,7 +2,7 @@
 <Export generator="Cache" version="24">
 <Class name="TCLEx.Report.ZenBion">
 <Super>%ZEN.Report.reportPage</Super>
-<TimeCreated>62991,57818.544644</TimeCreated>
+<TimeCreated>62355,51855.555434</TimeCreated>
 
 <Property name="OrderNumber">
 <Type>%ZEN.Datatype.string</Type>
@@ -36,14 +36,17 @@
 </UDLText>
 
 <Property name="ExtraParams">
-<Description>
-Дополнительные параметры</Description>
 <Type>%String</Type>
 </Property>
 
 <Property name="IsLogoNeeded">
 <Description>
-Нужен ли логотип</Description>
+Нужен ли логотип
+0 - не печатать лого (без пустого места сверху)
+1 - печать лого ЛПУ, если есть файл с лого, иначе печатать лого Биона
+2 - печать лого ЛПУ, если есть файл с лого, иначе оставлять пустое место сверху
+3 - оставлять пустое место сверху
+ExtraParams="" - аналогично 1 </Description>
 <Type>%Boolean</Type>
 </Property>
 
@@ -56,6 +59,12 @@
 <Property name="IsStampNeeded">
 <Description>
 Нужна ли печать</Description>
+<Type>%Boolean</Type>
+</Property>
+
+<Property name="IsPreviewResults">
+<Description>
+Флаг о том, что это файл для предпросмотра результатов и нужен watersign</Description>
 <Type>%Boolean</Type>
 </Property>
 
@@ -92,10 +101,16 @@ XSlT stylesheets for both HTML and XSL-FO</Description>
 <Data><![CDATA[
 <report xmlns="http://www.intersystems.com/zen/report/display" 
 name='ResultReport' title='Результат исследования' style='standard'>
-<document width="210mm" height="297mm" marginLeft="10mm" marginRight="10mm" marginTop="5mm" marginBottom="10mm" headerHeight="30mm" referenceOrientation="0">
+
+<document method="Document" >
 <xslinclude href='#(##CLASS(TCLEx.Report.Function).GetPathToXSL())#' />
 </document>
 
+<!--
+<document width="210mm" height="297mm" marginLeft="10mm" marginRight="10mm" marginTop="5mm" marginBottom="10mm" headerHeight="30mm" referenceOrientation="0">
+<xslinclude href='#(##CLASS(TCLEx.Report.Function).GetPathToXSL())#' />
+</document>
+-->
 
 <pageheader>
 <focall method="PageHeader"/>
@@ -107,6 +122,41 @@ name='ResultReport' title='Результат исследования' style='s
 </report>
 ]]></Data>
 </XData>
+
+<Method name="Document">
+<FormalSpec>mode</FormalSpec>
+<ReturnType>%GlobalCharacterStream</ReturnType>
+<Implementation><![CDATA[
+	Set stream=##class(%GlobalCharacterStream).%New()
+	
+	
+	Do stream.WriteLine("<fo:simple-page-master master-name=""main"" margin-right=""10mm"" margin-left=""10mm"" margin-top=""5mm"" margin-bottom=""10mm"" reference-orientation=""0"" page-width=""210mm"" page-height=""297mm"">")
+    Do stream.WriteLine("   <fo:region-body margin-bottom=""0"" margin-top=""30mm"" margin-left=""0"" margin-right=""0"">")
+    
+    set pathImage=##class(TCLEx.Report.Function).ImagePath()
+    
+    // Если формируется файл для предварительного просмотра по F1, то background-image
+    if ..IsPreviewResults {
+	    set watersignfile=pathImage_"\watersign.png" 
+        If '##class(%File).Exists(watersignfile) {
+			Set watersignfile=""
+		}		
+        If watersignfile'="" {
+            Do stream.WriteLine("     <xsl:attribute name=""background-image"">")
+            Do stream.WriteLine("        <xsl:text>'"_watersignfile_"'</xsl:text>") 
+            Do stream.WriteLine("     </xsl:attribute>")
+        }
+    }
+    Do stream.WriteLine("   </fo:region-body>")
+    Do stream.WriteLine("   <fo:region-before extent=""0.0pt"" reference-orientation=""0"" display-align=""inherit"" />")
+    Do stream.WriteLine("   <fo:region-after extent=""0.0pt"" reference-orientation=""0"" display-align=""after"" />") 
+    Do stream.WriteLine("   <fo:region-start extent=""0.0pt"" reference-orientation=""0"" display-align=""inherit"" />") 
+    Do stream.WriteLine("   <fo:region-end extent=""0.0pt"" reference-orientation=""0"" display-align=""after"" />") 
+    Do stream.WriteLine("</fo:simple-page-master>")
+
+    quit stream
+]]></Implementation>
+</Method>
 
 <Method name="EpisodeResultFileName">
 <Description>
@@ -684,20 +734,19 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 		Set needstamp=..IsStampNeeded
 	}	
 	
-	set pathImage=##class(TCLEx.Report.Function).ImagePath()
 	Set stampfilename=""
 	Set doctor=$Get(@pRepParamGlb@("TS_AuthorisedDoctorId"))
 	Set userobj=##class(User.SSUser).%OpenId(doctor)
 	If $IsObject(userobj) {
 		If needstamp {
 			If ..IsSignatureNeeded'=0 {
-				Set stampfilename=pathImage_"\stamp_"_userobj.SSUSREMailName_".png"		// нужна и подпись и печать
+				Set stampfilename=..ImagePath()_"\stamp_"_userobj.SSUSREMailName_".png"		// нужна и подпись и печать
 			} Else {
-				Set stampfilename=pathImage_"\stamp.png"								// нужна только печать
+				Set stampfilename=..ImagePath()_"\stamp.png"								// нужна только печать
 			}	
 		} Else {
 			If ..IsSignatureNeeded'=0 {
-				Set stampfilename=pathImage_"\sign_"_userobj.SSUSREMailName_".png"
+				Set stampfilename=..ImagePath()_"\sign_"_userobj.SSUSREMailName_".png"
 			}
 		}		
 		If '##class(%File).Exists(stampfilename) {
@@ -707,29 +756,13 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 	//!!!
 	
 	If (stampfilename="")&&(needstamp) {
-		Set stampfilename=pathImage_"\stamp.png"
+		Set stampfilename=..ImagePath()_"\stamp.png"
 	}		
 	If stampfilename'="" {
 		Do stream.WriteLine("<fo:block-container z-index='1' position='absolute' left='75mm' top='218mm' width='55mm' height='35mm' overflow='hidden'>")
 		Do stream.WriteLine("<fo:block>")
 		Do stream.WriteLine("	<fo:external-graphic  content-width='55mm' content-height='35mm'   >")
 		Do stream.WriteLine("		<xsl:attribute name='src'>"_$ZConvert(stampfilename,"o","XML")_"</xsl:attribute>")
-		Do stream.WriteLine("	</fo:external-graphic>")
-		Do stream.WriteLine("</fo:block>")
-		Do stream.WriteLine("</fo:block-container>")
-	}
-  
-    // Печать водяного знака
-    set watersignfile=pathImage_"\watersign.png" 
-    If '##class(%File).Exists(watersignfile) {
-			Set watersignfile=""
-		}		
-    
-    If watersignfile'="" {
-		Do stream.WriteLine("<fo:block-container z-index='1' position='absolute' left='20mm' top='110mm' width='150mm' height='80mm' overflow='hidden'>")
-		Do stream.WriteLine("<fo:block>")
-		Do stream.WriteLine("	<fo:external-graphic  content-width='150mm' content-height='80mm'   >")
-		Do stream.WriteLine("		<xsl:attribute name='src'>"_$ZConvert(watersignfile,"o","XML")_"</xsl:attribute>")
 		Do stream.WriteLine("	</fo:external-graphic>")
 		Do stream.WriteLine("</fo:block>")
 		Do stream.WriteLine("</fo:block-container>")
@@ -751,20 +784,27 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 <FormalSpec>mode</FormalSpec>
 <ReturnType>%GlobalCharacterStream</ReturnType>
 <Implementation><![CDATA[
-	Set ..IsLogoNeeded=1
+	s ^test(1,"..ExtraParams")=..ExtraParams
 	If (..ExtraParams'="") {
 		Set ..IsLogoNeeded=$ListGet(..ExtraParams,1)
 		If ..IsLogoNeeded=0 Quit ""
+	} else {
+		Set ..IsLogoNeeded=1
 	}
-	Set stream=##class(%GlobalCharacterStream).%New()
-	Do stream.WriteLine("<fo:block>")
-	Do stream.WriteLine("	<fo:external-graphic  content-height='30mm'  content-width='190mm' >")
-	Set logofilename=..LogoFileName(..Episode)
-	//Do ..IsCustomLogo(..Episode,.logofilename)
-	Do stream.WriteLine("		<xsl:attribute name='src'>"_$ZConvert(logofilename,"o","XML")_"</xsl:attribute>")
-	Do stream.WriteLine("	</fo:external-graphic>")
-	Do stream.WriteLine("</fo:block>")
 	
+	Set stream=##class(%GlobalCharacterStream).%New()
+	s ^test(1,"IsLogoNeeded")=..IsLogoNeeded
+	Set logofilename=..LogoFileName(..Episode,..IsLogoNeeded)
+	s ^test(1,"logofilename")=logofilename
+	//Do ..IsCustomLogo(..Episode,.logofilename)
+	if logofilename'="" {
+	    Do stream.WriteLine("<fo:block>")
+	    Do stream.WriteLine("	<fo:external-graphic  content-height='30mm'  content-width='190mm' >")
+	
+		Do stream.WriteLine("		<xsl:attribute name='src'>"_$ZConvert(logofilename,"o","XML")_"</xsl:attribute>")
+	    Do stream.WriteLine("	</fo:external-graphic>")
+	    Do stream.WriteLine("</fo:block>")
+	}
 	Quit stream
 ]]></Implementation>
 </Method>
@@ -781,24 +821,51 @@ pEpis - ID эпизода
 Пользовательский логотип (имя файла logo4stamp_NNNN.png, где NNNN - код ЛПУ эпизода) При этом печатается печать в Footer-е
 logo_bion.png - логотип Биона. При этом печатается печать в Footer-е</Description>
 <ClassMethod>1</ClassMethod>
+<FormalSpec>pEpis:%String,pIsLogoNeeded:%String=1</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if pIsLogoNeeded=3 {
+		set result=..ImagePath()_"\logo_empty.png"
+	} else {
+		Set result=..LogoFileNameLPU(pEpis)
+	    If result="" {
+		   if pIsLogoNeeded=2 {
+			  set result=..ImagePath()_"\logo_empty.png"
+		   } else {
+			   Set result=..ImagePath()_"\logo_bion.png"
+		   }
+	    }
+	}
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="LogoFileNameLPU">
+<Description>
+Имя файла для логотипа отчета
+Параметры:
+pEpis - ID эпизода
+Взвращаемое значение:
+Путь к логотипу компании в заголовке отчета
+Возможные врианты
+Пользовательский логотип (имя файла logo_NNNN.png, где NNNN - код ЛПУ эпизода) При этом не печатается печать в Footer-е
+Пользовательский логотип (имя файла logo4stamp_NNNN.png, где NNNN - код ЛПУ эпизода) При этом печатается печать в Footer-е
+logo_bion.png - логотип Биона. При этом печатается печать в Footer-е</Description>
+<ClassMethod>1</ClassMethod>
 <FormalSpec>pEpis:%String</FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
 	Set result=""
 	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
-	set pathImage=##class(TCLEx.Report.Function).ImagePath()
 	If ($IsObject(episobj))&&($IsObject(episobj.EPVISHospitalCodeDR)) {
 		Set hospid=episobj.EPVISHospitalCodeDR.%Id()
-		Set result=pathImage_"\logo_"_hospid_".png"
+		Set result=..ImagePath()_"\logo_"_hospid_".png"
 		If '##class(%File).Exists(result) {
-			Set result=pathImage_"\logo4stamp_"_hospid_".png"
+			Set result=..ImagePath()_"\logo4stamp_"_hospid_".png"
 			If '##class(%File).Exists(result) {
 				Set result=""
 			}	
 		} 	
-	}
-	If result="" {
-		Set result=pathImage_"\logo_bion.png"
 	}
 	Quit result
 ]]></Implementation>
@@ -814,7 +881,7 @@ logo_bion.png - логотип Биона. При этом печатается 
 	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
 	If ($IsObject(episobj))&&($IsObject(episobj.EPVISHospitalCodeDR)) {
 		Set hospid=episobj.EPVISHospitalCodeDR.%Id()
-		Set result=##class(TCLEx.Report.Function).ImagePath()_"\logo_"_hospid_".png" 
+		Set result=..ImagePath()_"\logo_"_hospid_".png" 
 		If ##class(%File).Exists(result) {
 			Quit 0
 		} 	
@@ -838,9 +905,8 @@ pLogoFileName - возвращаеый по ссылке путь к логот�
 <Implementation><![CDATA[
 	Set result=0,pLogoFileName=""
 	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
-	set pathImage=##class(TCLEx.Report.Function).ImagePath()
 	If ($IsObject(episobj))&&($IsObject(episobj.EPVISHospitalCodeDR)) {
-		Set pLogoFileName=pathImage_"\logo_"_episobj.EPVISHospitalCodeDR.%Id()_".png"
+		Set pLogoFileName=..ImagePath()_"\logo_"_episobj.EPVISHospitalCodeDR.%Id()_".png"
 		If '##class(%File).Exists(pLogoFileName) {
 			Set pLogoFileName=""
 		} Else {
@@ -848,7 +914,7 @@ pLogoFileName - возвращаеый по ссылке путь к логот�
 		}	
 	}
 	If pLogoFileName="" {
-		Set pLogoFileName=pathImage_"\logo_bion.png"
+		Set pLogoFileName=..ImagePath()_"\logo_bion.png"
 	}
 	Quit result
 ]]></Implementation>
@@ -913,5 +979,94 @@ pLogoFileName - возвращаеый по ссылке путь к логот�
 	Quit stream
 ]]></Implementation>
 </Method>
+
+<Method name="ImagePath">
+<Description>
+Путь к каталогу с графическими файлами</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	quit ##class(TCLEx.Report.Function).ImagePath()
+	//Quit "C:\InterSystems\Ensemble\CSP\bion\Report"
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+/// This method outputs the contents of the PDF report
+/// RenderServer is set to the port of the hot JVM server
+/// There is also a queuing hot JVM server which queues files for PDF rendering later
+/// This is queuing mechanism is never called visually but only by AsynchGenerateReport which always generates PDFs  
+Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", async As %Boolean = 0, ByRef xmlfile As %String, ByRef xslfile As %String, ByRef pdffile As %String, ByRef lockfile As %String, fromGenerateReport As %Boolean, outputfilename As %String) As %Status [ Internal ]
+{
+	Set tSC=$$$OK
+	Do {
+		#; Generate data file and XSLT stylesheet which transforms data to HTML
+		Set tSC = ..%MakeXMLDataFile(.xmlfile,0) Quit:$$$ISERR(tSC)
+		//Set ..xmlfile = xmlfile
+		Set tSC = ..%MakeToXSLFOFile(.xslfile,xmlfile) Quit:$$$ISERR(tSC)
+
+		#; Generate filenames for log/pdf
+		Set tmpdir=..GetRootDir()
+		Set tRootName=..GetSafeRootName()
+		if tRootName="" Set logfile = tmpdir_##class(%FileBinaryStream).NewFileName("txt",..%GetTempDir())		
+		if tRootName'="" Set logfile = ..MakeFileName(..GetRootDir(),tRootName,".txt")
+		; delete logfile so user does not see "ghost" of old logfile when using $REPORTNAME
+		i $g(logfile)'="" Do ##class(%File).Delete(logfile)
+		if (fromGenerateReport=0 || (DisplayLog=1)) {
+			if tRootName="" Set pdffile = tmpdir_##class(%FileBinaryStream).NewFileName("pdf",..%GetTempDir())
+			if tRootName'="" Set pdffile = ..MakeFileName(..GetRootDir(),tRootName,".pdf")
+		} else {
+			Set pdffile = outputfilename
+		}
+		if (async'=0) {
+			if tRootName="" Set lockfile = tmpdir_##class(%FileBinaryStream).NewFileName("lck",..%GetTempDir())
+			if tRootName'="" Set lockfile = ..MakeFileName(..GetRootDir(),tRootName,".lck")
+		}
+
+
+		#; Command line callout to FOP or XEP
+		s ^test("pdf")=xmlfile_"||"_xslfile_"||"_pdffile_"||"_logfile
+		Set tSC = ..%PerformTransform(xmlfile, xslfile, pdffile, logfile, 1, RenderServer, async, $g(lockfile), DisplayLog)
+
+#if 0 ; 11-04-11
+		If $$$ISOK(tSC),'async {
+			If DisplayLog {
+				Set oid = ##class(%CSP.StreamServer).GetOidForFile(logfile)
+			}
+			Else {
+				Set oid = ##class(%CSP.StreamServer).GetOidForFile(pdffile)
+			}
+			Set stream=##class(%Stream.Object).%Open(oid)
+			$$$SETIO("RAW")
+			Do stream.OutputToDevice()
+		}
+#else		
+		If $$$ISOK(tSC),'async,('fromGenerateReport||(DisplayLog=1)) {
+			Set stream=##class(%FileBinaryStream).%New()
+			If DisplayLog {
+				Set stream.Filename=logfile
+			}
+			Else {
+				Set stream.Filename=pdffile
+			}
+			$$$SETIO("RAW")
+			Do stream.OutputToDevice()
+		}
+#endif		
+		
+		; if in asynch mode generation of PDF is done by queuing hot JVM server which has responsibility for
+		; deleting xmlfile and xslfile.  The queing hot JVM server needs to be connected to a print management system
+		; that has the responsibilty for deleting the pdf file when renered.  No logfile is created when PDF rendering
+		; is done by hot JVM server.
+		//if ('async) do ..DeleteTempFiles(.xmlfile,.xslfile,.pdffile,.logfile,.xmlfiles,.pdfiles,0,fromGenerateReport)
+	} While (0)
+
+	Quit tSC
+}
+*/
+]]></Content>
+</UDLText>
 </Class>
 </Export>
