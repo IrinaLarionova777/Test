@@ -313,5 +313,117 @@ Id принтера</Description>
     else  quit "C:\Program Files (x86)\SumatraPDF"
 ]]></Implementation>
 </Method>
+
+<Method name="getDestinationPrinter">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pReportType:%String="",pUser:%String="",pReportParameters:%String="",pUserLocation:%String="",&pPrinterCode:%String]]></FormalSpec>
+<PublicList>PLIST</PublicList>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  	set ok=1,pPrinterCode=""
+  	try {
+	  	if pReportType="" {
+		  	set ok=$$$ERROR($$$GeneralError,"Не указан тип отчета при поиске принтера.")
+		  	quit
+	  	}
+	  	set reportGrp=""
+		If '$$select^LVBCTCLR(pReportType,"Y") Set reportGrp=$P($get(PLIST(11)),$C(1))
+		
+		; find destination against user/report_group
+        if $length(pUser),$length(reportGrp)  {  //D  I OK G DESTend
+            If $$open^MVBSURP(pUser)
+            for {
+	            if $$fetch^MVBSURP(pUser) quit
+	            kill plist merge plist=PLIST 
+	            for j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+                If reportGrp=$P(plist(3),$C(1)),$L(plist(4)) {
+	                set pPrinterCode=plist(4)
+	                quit
+                }
+            }
+            If $$close^MVBSURP()
+            if pPrinterCode'="" quit
+        }
+        ; find destination against user
+        If ($L(pUser))&&('$$selrow^MVBSSUSR(pUser,"Y")) {
+             k plist m plist=PLIST f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+             set pPrinterCode=plist(13)
+             quit
+        } 
+        ; find destinations against report parameters (exact)
+        If $L(pReportType) {
+           If $$open^LVBCTCLD(pReportType,"Y")
+           For {
+	           if $$fetch^LVBCTCLD(pReportType,"Y") quit
+	           k plist m plist=PLIST 
+	           f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+	           s ok=0 
+	           if '$l(plist(3))!(plist(3)="*") {}
+               else  { i plist(3)=pReportParameters s ok=1 }
+               if ok {
+	               set pPrinterCode=plist(4)
+	               quit
+               }
+           }
+           If $$close^LVBCTCLD()
+           if pPrinterCode'="" quit
+        }  
+           ; find destinations against report parameters
+           If $L(pReportType) {
+	           If $$open^LVBCTCLD(pReportType,"Y")
+               For {
+	               if $$fetch^LVBCTCLD(pReportType,"Y") quit
+	               kill plist m plist=PLIST 
+	               f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+                   s ok=0 
+                   if '$l(plist(3))!(plist(3)="*") {}
+                   else  { 
+                       if $e(plist(3),$l(plist(3)))="*" s:$e(plist(3),1,$l(plist(3))-1)=$e(pReportParameters,1,$l(plist(3))-1) ok=1
+                   }
+                   if ok {
+	                   set pPrinterCode=plist(4)
+	                   quit
+                   }
+               }
+               If $$close^LVBCTCLD()
+               if pPrinterCode'="" quit
+           }
+           ; find destinations against report parameters (defaults)
+           If $L(pReportType) {
+	           If $$open^LVBCTCLD(pReportType,"Y")
+               For {
+	               if $$fetch^LVBCTCLD(pReportType,"Y") quit
+	               k plist m plist=PLIST 
+	               f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+	               s ok=0 
+	               if '$l(plist(3))!(plist(3)="*")  { s ok=1 }
+	               if ok {
+		               set pPrinterCode=plist(4)
+		               quit
+	               }
+               }
+               If $$close^LVBCTCLD()
+               if pPrinterCode'="" quit
+           }
+           ; find destination against site
+           If $L(pUserLocation) {
+	           if '$$select^LVBCTUSL(pUserLocation,"Y") {
+		           k plist m plist=PLIST 
+		           f j=1:1:plist i $d(plist(j)) s plist(j)=$p(plist(j),$c(1))
+		           set pPrinterCode=plist(4)
+		           quit
+	           }
+           }
+           
+           ; find default configuration
+           set pPrinterCode=..DefaultPrinter()
+ 	} catch(e) { 
+	     set ok=e.AsStatus() 
+	     do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$CLASSNAME())
+	     set pPrinterCode=""
+	}
+	quit ok
+]]></Implementation>
+</Method>
 </Class>
 </Export>
