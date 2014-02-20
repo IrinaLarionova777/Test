@@ -28,9 +28,11 @@ pPDFFileName - по ссылке возвращается или передае�
 <FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pLanguage:%String,pExtraParams:%String,&pPDFFileName:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-	//s ^test("par")=$g(pEpis)_"*"_$g(pTestSets)_"*"_$g(pLanguage)_"*"_$g(pExtraParams)_"*"_$g(pPDFFileName)
-  try {	
-	set FlagPreview=$lg(pExtraParams,7) //флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+  //s ^test("par")=$g(pEpis)_"*"_$g(pTestSets)_"*"_$g(pLanguage)_"*"_$g(pExtraParams)_"*"_$g(pPDFFileName)
+  //m ^test("par",1)=pTestSets
+  //s ^test("par","pExtraParams")=pExtraParams
+  try {
+	set FlagPreview=$lg(pExtraParams,7)  //флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
 	
 	// Пока будем формировать один файл по всем наборам тестов ( и вордовским и невордовским) только при FlagPreview="V" (предпросмотр)
 		if $get(pPDFFileName)="" set ok=$$$ERROR($$$GeneralError,"Не указано имя файла предпросмотра.") quit
@@ -40,20 +42,24 @@ pPDFFileName - по ссылке возвращается или передае�
 		Do ##class(TCLEx.Function.Episode).MakeTestSetsBuf(pEpis,$Name(^||EMC.TestSets))
 		
 	    // если pTestSets не задана, то просто берем все наборы тестов из эпизода  (потом сделаются все проверки ниже)
-	    if '$data(pTestSets) {
+	    if $data(pTestSets)<10 {
 		    merge pTestSets=^||EMC.TestSets kill ^||EMC.TestSets
 	    } else {
 		    set tsid=""
 	         for {
-		           set tsid=$order(^||EMC.TestSets(tsid)) if tsid="" quit
-		           if '$data(pTestSets(tsid)) {
+		           set tsid=$order(^||EMC.TestSets(tsid),1,rec) if tsid="" quit
+		           set ts=$lg(rec,2),superset=$lg(rec,3)
+		           if ('$data(pTestSets(ts)))&&(superset'="")&&('$data(pTestSets(superset))) {
 			           kill ^||EMC.TestSets(tsid)
 		           }
 	         }
 	         kill pTestSets 
 	         merge pTestSets=^||EMC.TestSets 
 	         kill ^||EMC.TestSets
-		    
+	    }
+	    if '$data(pTestSets) {
+		    set ok=$$$ERROR($$$GeneralError,"Файл не сформирован. Не найдены наборы тестов.")
+		    quit
 	    }
 
 		// делим наборы тестов эпизода на word-testset and no-word-testset
@@ -61,7 +67,9 @@ pPDFFileName - по ссылке возвращается или передае�
 	    set tsid=""
 	    for {
 		   set tsid=$order(pTestSets(tsid),1,vals) if tsid="" quit
-		   If (FlagPreview'="V")&&('##class(TCLEx.Function.TestSet).IsPrintableLB(vals)) continue
+		   Set testsetid=$listGet(vals,1)
+		   Set testsetobj=##class(User.EPVisitTestSet).%OpenId(testsetid)
+		   If (FlagPreview'="V")&&('##class(TCLEx.Function.TestSet).IsPrintable(testsetobj)) continue
 		   if ##class(TCLEx.Function.TestSet).IsTestSetWordToPDF($piece(tsid,"||",2)) 
 		   {
 			   set testSetsWord(tsid)=""
@@ -82,7 +90,7 @@ pPDFFileName - по ссылке возвращается или передае�
 		    if ok1 {
 			   set files=files_$select(files'="":$char(0),1:"")_filenamevsp
 		    } else {
-			    do ##class(TCLEx.Function.General).WriteError($System.Status.GetErrorText(ok1),$zn)
+			    do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok1),"TCLEx.Report.DRP.CreateEpisodePDFReportGeneral")
 		    }
 	    }
 	    set tsid=""
@@ -95,8 +103,6 @@ pPDFFileName - по ссылке возвращается или передае�
    			       set ok1=##class(TCLEx.Report.WordEMC).CreateReportWordToPDF(pEpis, tsid, params, pLanguage, filenamevsp, 0)
 				   if ok1 {
 			          set files=files_$select(files'="":$char(0),1:"")_filenamevsp
-		           } else {
-			            do ##class(TCLEx.Function.General).WriteError($System.Status.GetErrorText(ok1),$zn)
 		           }
                 }
 			} 
@@ -111,7 +117,7 @@ pPDFFileName - по ссылке возвращается или передае�
 		      set ok=##class(%File).Rename(files,pPDFFileName)
 	        }
 	    } else  {
-		    set ok=$$$ERROR($$$GeneralError,"Не удалось сформировать файл "_$get(pPDFFileName)_".")   
+		    set ok= $$$ERROR($$$GeneralError,"Не удалось сформировать файл "_$get(pPDFFileName)_".")   
 	    }
   } catch(exception) {
 	 set ok=exception.AsStatus() 
@@ -165,7 +171,7 @@ pPDFFileName - по ссылке возвращается или передае�
 		set flagLogFileTest=0 
 	}
 	
-	Set reportclassname=##class(TCLEx.Report.Settings).GetZenResultClassName()
+	Set reportclassname=##class(TCLEx.Report.Settings).GetZenResultClassName()  
 	Kill ^||ResultForm.EpisodePCL
 	Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL),FlagPreview)
 	If '$Data(^||ResultForm.EpisodePCL) {
@@ -241,7 +247,8 @@ pPDFFileName - по ссылке возвращается или передае�
 	
 	If 'ok {
 		Set pPDFFileName=""
-	}	
+		do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$zn)
+	}
 	Quit ok
 ]]></Implementation>
 </Method>
@@ -252,6 +259,7 @@ pPDFFileName - по ссылке возвращается или передае�
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	// Запоминаем значения %request, если переменная уже заполнена
+	Set ^XXX($I(^XXX))="NOW"
 	kill oldrequest
 	If $Data(%request) {
 		Set oldrequest("URL")=%request.URL
@@ -265,7 +273,7 @@ pPDFFileName - по ссылке возвращается или передае�
 	Set %request.URL="/csp/healthshare/"_$ZUtil(5)_"/"_..%ClassName(1)_".xml"
 	Set %request.CgiEnvs("SERVER_NAME")="127.0.0.1"
 	Set %request.Data("$CSPTOFILE",1)=1
-	  
+	
 	Set repobj=$ClassMethod(pReportClassName,"%New")
 	Set repobj.OrderNumber=$lg(pParams,1)
 	Set repobj.Episode=$lg(pParams,2)
@@ -275,7 +283,7 @@ pPDFFileName - по ссылке возвращается или передае�
 	Set repobj.ExtraParams=$lg(pParams,6)
 	Set repobj.TotalPages=$lg(pParams,7)
 	set repobj.IsPreviewResults=$select($lg(pParams,8)="V":1,1:0) 
-	Set ok=repobj.GenerateReport(pPDFFileName,2) b  
+	Set ok=repobj.GenerateReport(pPDFFileName,2) 
 	
 	// Восстанавливаем %request
 	If $Data(oldrequest) {
@@ -315,12 +323,13 @@ pPDFFileName - по ссылке возвращается или передае�
   set ok=$$$OK
   try
   {	
+     //s ^test("printPDF",1)=$g(pFileReport)_"*"_$g(pPrinterCode)
      set printerName=##class(TCLEx.Function.Printer).getPrinterNameForJava(pPrinterCode)
-     //s ^test("pdfbox")=pFileReport_"*"_printerName_"*"_pPrinterCode
      if ##class(%File).Exists($get(pFileReport))&&(printerName'="") {
 	     for i=1:1:pQCopies {
 		     //set ok1=..printPDFpdfbox(pFileReport,printerName)
 	         set ok1=..printPDFsumatra(pFileReport,printerName)
+	         //s ^test(11,$i(^test(11)))=pFileReport_"*"_printerName_"*"_ok1
 	         if 'ok1 {
 		         set ok=ok1
 		         quit
@@ -377,10 +386,8 @@ pPDFFileName - по ссылке возвращается или передае�
 	     } 
 	     //set command=""""_##class(TCLEx.Function.Printer).getPathToSumatraPDF()_"\SumatraPDF.exe"_""" -print-to """_pPrinterName_""" """_pFileReport_""""
 	     set command=##class(%File).NormalizeFilenameWithSpaces(sumatraPDF)_" -print-to """_pPrinterName_""" "_##class(%File).NormalizeFilenameWithSpaces(pFileReport)
-	     set time1=$piece($h,",",2)
+	     //s ^test("command",$i(^test("command")))=command
 	     set ok1=$zf(-1,command)
-	     set ras=$piece($h,",",2)-time1
-	     if ras>15 set ^test("longPrint",$i(^test("longPrint")))=$g(pFileReport)_"*"_$g(pPrinterName)_"*"_$h_"*"_$g(ras)_"*"_$g(ok1)
 	     if ok1=0 {
 		     set ok=1
 	     } else {
