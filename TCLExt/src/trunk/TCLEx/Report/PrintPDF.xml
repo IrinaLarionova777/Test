@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Report.PrintPDF">
+<Super>%RegisteredObject</Super>
+<TimeCreated>63242,36900.428007</TimeCreated>
+
+<Parameter name="TIMEOUTPROCESSPRINT">
+<Description>
+timeout, по истечении которого процесс печати считается зависшим и убивается</Description>
+<Default>60</Default>
+</Parameter>
+
+<Method name="PrintPDFsumatra">
+<Description>
+Печать указанного файла pdf на указанный принтер (через SumatraPDF.exe)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFileReport:%String,pPrinterName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try
+  {	
+     if ##class(%File).Exists($get(pFileReport))&&(pPrinterName'="") {
+	     set sumatraPDF=##class(TCLEx.Function.Printer).getPathToSumatraPDF()
+	     if sumatraPDF'="" set sumatraPDF=sumatraPDF_"\SumatraPDF.exe"
+	     if (sumatraPDF="")&&('##class(%File).Exists(sumatraPDF)) {
+		     set ok=$$$ERROR($$$GeneralError,"Путь к SumatraPDF не найден.")
+		     quit
+	     } 
+	     //set command=""""_##class(TCLEx.Function.Printer).getPathToSumatraPDF()_"\SumatraPDF.exe"_""" -print-to """_pPrinterName_""" """_pFileReport_""""
+	     set command=##class(%File).NormalizeFilenameWithSpaces(sumatraPDF)_" -print-to """_pPrinterName_""" "_##class(%File).NormalizeFilenameWithSpaces(pFileReport)
+	     //s ^test("command")=command
+	     // запуск команды ос
+	     //set time1=$piece($h,",",2)
+	     set npp=$order(^TCLEx.Process($j,""),-1)+1
+	     job ..StartJobPrinting($j,npp,command)
+	     // проверяем, если в течении 60 секунд команда не выполнилась, то убивам процесс и возвращаем не ок
+	     set okk=0,ok1=0
+	     for ii=1:1:..#TIMEOUTPROCESSPRINT {
+		     hang 1
+		     set ok1=$piece($get(^TCLEx.Process($j,npp)),$char(0),2)
+		     if (ok1'="")&&(ok1'="start") { // дочерний процесс выполнилося и закрылся самостоятельно
+			     set okk=1
+			     quit
+		     }
+	     }
+	     if okk=0 {  // считаем, что дочерний процесс завис, убиваем дочерний процесс
+		    set ok1=0 
+		    set childprocess=+$piece($get(^TCLEx.Process($j,npp)),$char(0),1)
+		    if childprocess {
+			    s Process=##CLASS(%SYS.ProcessQuery).%OpenId(childprocess)
+                if ($IsObject(Process))&&($extract(Process.Routine,1,21)="TCLEx.Report.PrintPDF") {
+	                kill Process
+                    //do $zu(4,childprocess) // с помощью этой команды не убиваются дочерние процессы соответствующего процесса в ОС и, следовательно, не убивается сам процесс
+                    //do $zf(-2,"taskkill /pid "_childprocess_" /t /f") // если использовать /f (forced), то процесс ОС убивается, а процесс каше остается, потом убивается демоном кашевым (тут фифти-фифти, что лучше использовать)
+                    do $zf(-2,"taskkill /pid "_childprocess_" /t")
+                    do ##class(TCLEx.Function.General).WriteError("kill print process /t "_childprocess,$CLASSNAME())
+                    
+                    // здесь можно еще проверить: если процесс остался и это тот же самый процесс, то убить его с ключом /f
+                    hang 1
+                    s Process=##CLASS(%SYS.ProcessQuery).%OpenId(childprocess)
+                    if ($IsObject(Process))&&($extract(Process.Routine,1,21)="TCLEx.Report.PrintPDF") {
+	                   kill Process
+	                   // проверяем, нет ли такого же номера процесса из других заданий печати
+	                   set proc="",isanothetprocess=0 
+	                   for { 
+	                      set proc=$order(^TCLEx.Process(proc)) if proc="" quit
+	                      if proc=$j continue
+	                      set np=""
+	                      for {
+		                    set np=$order(^TCLEx.Process(proc,np),1,rec) if np="" quit
+		                    if $piece(rec,$char(0),1)=childprocess  {
+			                    set isanothetprocess=1
+			                    quit
+		                    }
+	                      }
+	                   }
+	                   if isanothetprocess=0 {
+		                  do $zf(-2,"taskkill /pid "_childprocess_" /t /f") 
+		                  do ##class(TCLEx.Function.General).WriteError("kill print process /t /f"_childprocess,$CLASSNAME())
+	                   }
+                    }
+                } 
+		    }
+	     }
+	     
+	     kill ^TCLEx.Process($j,npp)
+	     
+	     //set ras=$piece($h,",",2)-time1
+	     //if ras>15 set ^test("longPrint",$i(^test("longPrint")))=$g(pFileReport)_"*"_$g(pPrinterName)_"*"_$h_"*"_$g(ras)_"*"_$g(ok1)
+	     if ok1=1 {
+		     set ok=1
+	     } else {
+		      set ok=$$$ERROR($$$GeneralError,"Не удалось напечатать файл "_pFileReport)
+	     }
+     }
+   } catch(exception)
+  {
+	  set ok=exception.AsStatus()
+  }	
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="StartJobPrinting">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pJobParent:%Integer,pNpp:%Integer,pCommand:%String=""</FormalSpec>
+<Implementation><![CDATA[
+	try {
+	    set ^TCLEx.Process(pJobParent,pNpp)=$j_$char(0)_"start"
+	    if pCommand'="" {
+		    set ok=$zf(-1,pCommand)
+		    //s ^test("taskkill",$i(^test("taskkill")))=$g(pJobParent)_"*"_$g(pNpp)
+		    // если глобали уже нет, значит процесс убит насильственно
+		    if $data(^TCLEx.Process(pJobParent,pNpp)) {
+			    set $piece(^TCLEx.Process(pJobParent,pNpp),$char(0),2)=$select(ok=0:1,1:0)  // ok=0 - все хорошо, иначе - все плохо 
+		    }
+	    } else {
+		    set $piece(^TCLEx.Process(pJobParent,pNpp),$char(0),2)="0" 
+	    }
+	    
+	} catch(e) {
+		if ($get(pJobParent)'="")&&($get(pNpp)'="")&&($data(^TCLEx.Process(pJobParent,pNpp))) {
+			set $piece(^TCLEx.Process(pJobParent,pNpp),$char(0),2)="0"
+		}
+	    do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME())	
+	}
+	quit
+]]></Implementation>
+</Method>
+</Class>
+</Export>
