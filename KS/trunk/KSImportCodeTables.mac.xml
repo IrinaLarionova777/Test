@@ -1,0 +1,530 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="KSImportCodeTables" type="MAC" languagemode="0"><![CDATA[
+KSImportCodeTables
+	// Работа со справочниками
+	// Процедуры:
+	//
+	// TruncateCodeTables - Удаление данных всех справочников
+	// Для каждого справочника есть своя процедура удаления данных:
+	// Do TruncateTestCode()
+	// Do TruncateTestCodeContainers()
+	// Do TruncateTestCodeStandardComm()
+	// Do TruncateTestCodeRanges()
+	// Do TruncateTestCodeContainers()
+	// Do TruncateTestSet()
+	// Do TruncateTestSetFields()
+	//
+	// Import - импорт данных в справочники, либо из файла XLS, либо из ^||CodeTables (обработка XLS достаточно долго идет, для отладки полезно раз загрузить данные в глобал, потом уже из глобала загружать в справочники)
+	//
+	// LoadDataFromExcel - загрузка из XLS файла в указанный глобал
+	//
+
+	// Import - импорт данных в справочники, либо из файла XLS, либо из ^||CodeTables 
+	// Если будут ошибки, то они логгируются в глобале ^Err
+	// Параметры:
+	// pLoadFromExcel - признак загрузки данных из XLS файла  
+	// = 1 (грузить из файла pFileName)
+	// = 0 (грузить из ^||CodeTables, обработка XLS достаточно долго идет, для отладки полезно раз загрузить данные в глобал, потом уже из глобала загружать в справочники)
+	// pFileName - имя XLS файла
+Import(pLoadFromExcel,pFileName) public {
+	If $Get(pLoadFromExcel)="" Set pLoadFromExcel=1
+	If $Get(pFileName)="" Set pFileName="C:\doc\KSImportCodeTables_NEW\Файл для загрузки v06 (КДЛ+БХ).xls"
+	Set glb=$Name(^||CodeTables)
+	b  If pLoadFromExcel {
+		Do LoadDataFromExcel(pFileName,glb)
+	}	
+	//
+	Set errglb=$Name(^Err)
+	Kill @errglb	
+	//
+	b  Do ProcessTestCodes(glb,errglb)
+	Do ProcessTestSets(glb,errglb)
+}
+	// Загрузка данных из Excel
+	// Параметры:
+	// pFileName - имя XLS файла
+	// pGlb - глобал, в который грузим данные
+LoadDataFromExcel(pFileName,pGlb) public {
+	Write !,"Loading data from XLS",!
+	Kill @pGlb
+	//
+	Write !,"Loading User.CTTestCode",!
+	Do XLSToGlobal^KSXLSNEW($Name(@pGlb@("XLSTestCode")),pFileName,2,2,59,4)
+	//
+	Write !,"Loading User.CTTestCodeContainers",!
+	Do XLSToGlobal^KSXLSNEW($Name(@pGlb@("XLSContainers")),pFileName,3,1,7,4)
+	//
+	Write !,"Loading User.CTTestCodeStandardComm",!
+	Do XLSToGlobal^KSXLSNEW($Name(@pGlb@("XLSStandardComm")),pFileName,4,1,11,4)
+	//
+	Write !,"Loading User.CTTestCodeRanges",!
+	Do XLSToGlobal^KSXLSNEW($Name(@pGlb@("XLSRanges")),pFileName,5,1,32,4)
+	//
+	Write !,"Loading from User.CTTestSet",!
+	Do XLSToGlobal^KSXLSNEW($Name(@pGlb@("XLSTestSet")),pFileName,1,2,75,4)
+	//
+	Write !,"Loading User.CTTestSetFields",!
+	Do XLSToGlobal^KSXLSNEW($Name(@pGlb@("XLSTestSetFields")),pFileName,6,1,19,4)
+	//
+	Do TransformTestCodeTables(pGlb)
+	//
+	Write !,"Done",!
+}	
+	// Разбивка данных связанных справочников по тестам
+	// Параметры:
+	// pGlb - глобал с данными
+TransformTestCodeTables(pGlb) public {
+	// Проход по данным CT_TestCode
+	Set i=""
+	For  {
+		Set i=$Order(@pGlb@("XLSTestCode",i),1,vals)
+		If i="" Quit
+		Set testcode=$ListGet(vals,1)
+		If testcode="" Continue
+		Set @pGlb@("TestCode",testcode)=vals
+	}	
+
+	// Проход по данным CT_TestCodeContainers
+	Set i=""
+	For  {
+		Set i=$Order(@pGlb@("XLSContainers",i),1,vals)
+		If i="" Quit
+		Set testcode=$ListGet(vals,1)
+		If testcode="" Continue
+		Set @pGlb@("TestCodeContainers",testcode,i)=vals
+	}	
+	// Проход по данным CT_TestCodeStandardComm
+	Set i=""
+	For  {
+		Set i=$Order(@pGlb@("XLSStandardComm",i),1,vals)
+		If i="" Quit
+		Set testcode=$ListGet(vals,1)
+		If testcode="" Continue
+		Set @pGlb@("TestCodeStandardComm",testcode,i)=vals
+	}	
+	// Проход по данным CT_TestCodeStandardComm
+	Set i=""
+	For  {
+		Set i=$Order(@pGlb@("XLSRanges",i),1,vals)
+		If i="" Quit
+		Set testcode=$ListGet(vals,1)
+		If testcode="" Continue
+		Set @pGlb@("TestCodeRanges",testcode,i)=vals
+	}
+	// Проход по данным CT_TestSet
+	Set i=""
+	For  {
+		Set i=$Order(@pGlb@("XLSTestSet",i),1,vals)
+		If i="" Quit
+		Set testset=$ListGet(vals,1)
+		If testset="" Continue
+		Set @pGlb@("TestSet",testset)=vals
+	}	
+
+	// Проход по данным CT_TestSetFields
+	Set i=""
+	For  {
+		Set i=$Order(@pGlb@("XLSTestSetFields",i),1,vals)
+		If i="" Quit
+		Set testset=$ListGet(vals,1)
+		Set n=$ListGet(vals,3)
+		If (testset="")||(n="") Continue
+		Set @pGlb@("TestSetFields",testset,n)=vals
+	}	
+}
+	// Удаление данных справочников
+TruncateCodeTables() public {
+	//
+	Do TruncateTestCode()
+	Do TruncateTestCodeContainers()
+	Do TruncateTestCodeStandardComm()
+	Do TruncateTestCodeRanges()
+	Do TruncateTestCodeContainers()
+	//
+	Do TruncateTestSet()
+	Do TruncateTestSetFields()
+
+}
+	// Удаление данных справочника CT_TestCode
+TruncateTestCode() [SQLCODE] public {
+	Write !,"Deleting existing data from CT_TestCode"
+	&sql(TRUNCATE TABLE CT_TestCode)
+ 	If (SQLCODE=0)||(SQLCODE=100) {
+		Write !,"Done"
+	} Else {
+		Write !,"SQL ERROR CODE=",SQLCODE
+	}	
+}	
+	// Удаление данных справочника CT_TestCodeContainers
+TruncateTestCodeContainers() [SQLCODE] public {
+	Write !,"Deleting existing data from CT_TestCodeContainers"
+	&sql(TRUNCATE TABLE CT_TestCodeContainers)
+ 	If (SQLCODE=0)||(SQLCODE=100) {
+		Write !,"Done"
+	} Else {
+		Write !,"SQL ERROR CODE=",SQLCODE
+	}	
+}	
+	// Удаление данных справочника CT_TestCodeStandardComm
+TruncateTestCodeStandardComm() [SQLCODE] public {
+	Write !,"Deleting existing data from CT_TestCodeStandardComm"
+	&sql(TRUNCATE TABLE CT_TestCodeStandardComm)
+ 	If (SQLCODE=0)||(SQLCODE=100) {
+		Write !,"Done"
+	} Else {
+		Write !,"SQL ERROR CODE=",SQLCODE
+	}	
+}	
+	// Удаление данных справочника CT_TestCodeRanges
+TruncateTestCodeRanges() [SQLCODE] public {
+	Write !,"Deleting existing data from CT_TestCodeRanges"
+	&sql(TRUNCATE TABLE CT_TestCodeRanges)
+ 	If (SQLCODE=0)||(SQLCODE=100) {
+		Write !,"Done"
+	} Else {
+		Write !,"SQL ERROR CODE=",SQLCODE
+	}	
+}	
+	// Удаление данных справочника CT_TestSet
+TruncateTestSet() [SQLCODE] public {
+	Write !,"Deleting existing data from CT_TestSet"
+	&sql(TRUNCATE TABLE CT_TestSet)
+ 	If (SQLCODE=0)||(SQLCODE=100) {
+		Write !,"Done"
+	} Else {
+		Write !,"SQL ERROR CODE=",SQLCODE
+	}	
+}	
+	// Удаление данных справочника CT_TestSetFields
+TruncateTestSetFields() [SQLCODE] public {
+	Write !,"Deleting existing data from CT_TestSetFields"
+	&sql(TRUNCATE TABLE CT_TestSetFields)
+ 	If (SQLCODE=0)||(SQLCODE=100) {
+		Write !,"Done"
+	} Else {
+		Write !,"SQL ERROR CODE=",SQLCODE
+	}	
+}	
+	// Проверка есть ли данные по данному TestCode в самой CT_TestCode и связанных справочниках
+	// Параметры:
+	// pTestCodeId - ID теста
+	// Возвращаемое значение:
+	// 1 - такой тест есть в оодном из справочников, связанных с тестами (CT_TestCode,CT_TestCodeContainers,CT_TestCodeStandardComm,CT_TestCodeRanges)
+	// 0 - нет такого теста
+ExistTestCode(pTestCodeId) [SQLCODE,pTestCodeId,count] public {
+	 &Sql(
+	 	 Select Count(*) 
+	 	 Into :count 
+	 	 From CT_TestCode
+	 	 Where CTTC_Code=:pTestCodeId
+ 	 )
+	If (SQLCODE=0)&&(count>0) Quit 1
+	// 2 - Ищем в CTTC_Code
+	&Sql(
+	 	Select Count(*) 
+	 	Into :count 
+	 	From CT_TestCodeContainers
+	 	Where CTTCB_ParRef=:pTestCodeId
+ 	)
+	If (SQLCODE=0)&&(count>0) Quit 1
+	// 3 - Ищем в CT_TestCodeStandardComm
+	&Sql(
+	 	Select Count(*) 
+	 	Into :count 
+	 	From CT_TestCodeStandardComm
+	 	Where CTTCT_ParRef=:pTestCodeId
+ 	)
+	If (SQLCODE=0)&&(count>0) Quit 1
+	// 4 - Ищем в CT_TestCodeRanges
+	&Sql(
+	 	Select Count(*) 
+	 	Into :count 
+	 	From CT_TestCodeRanges
+	 	Where CTTCR_ParRef=:pTestCodeId
+ 	)
+	If (SQLCODE=0)&&(count>0) Quit 1
+	Quit 0
+}	 
+	// Обработка справочников, связанных с тестами
+	// Параметры:
+	// pGlb - глобал с данными для загрузки в справочники
+	// pErrGlb - глобал с ошибками во время загрузки
+ProcessTestCodes(pGlb,pErrGlb) public {
+	Write !,"Processing User.CTTestCode",!
+	Set testcode="",(skipcnt,insertcnt,errcnt,n)=0
+	For  {
+		Set testcode=$Order(@pGlb@("TestCode",testcode),1,vals)
+		If testcode="" Quit
+		If $$ExistTestCode(testcode) {
+			Write !,"Skip test code = ",testcode
+			Set skipcnt=skipcnt+1
+			Continue
+		}
+		Set n=n+1
+		Set ok=$$InsertTestCode(vals,pErrGlb)
+		If ok { 
+			Set insertcnt=insertcnt+1
+			//
+			Set i=""
+			For  {
+				Set i=$Order(@pGlb@("TestCodeContainers",testcode,i),1,vals)
+				If i="" Quit
+				Set ok=$$InsertTestCodeContainer(vals,pErrGlb)
+				If 'ok {
+					Set errcnt=errcnt+1
+				}
+			}	
+			//
+			Set i=""
+			For  {
+				Set i=$Order(@pGlb@("TestCodeStandardComm",testcode,i),1,vals)
+				If i="" Quit
+				Set ok=$$InsertTestCodeStandardComm(vals,pErrGlb)
+				If 'ok {
+					Set errcnt=errcnt+1
+				}
+			}	
+			//	TestCodeRanges
+			Set i=""
+			For  {
+				Set i=$Order(@pGlb@("TestCodeRanges",testcode,i),1,vals)
+				If i="" Quit
+				Set ok=$$InsertTestCodeRange(vals,pErrGlb)
+				If 'ok {
+					Set errcnt=errcnt+1
+				}
+			}	
+		} Else {
+			Set errcnt=errcnt+1
+		}	
+		//If '(n#100) 
+		Write $Char(13),"Done "_n_" records     "	
+	}
+	Write !!,"Inserted ",insertcnt," records"	
+	Write !,"Skiped ",skipcnt," records"
+	If errcnt>0 {
+		Write !,"Was ",errcnt," errors! See details in global ^Err ! ",!
+	}		
+}
+	// Добавить запись в CT_TestCode 
+	// Параметры:
+	// pValues - значения полей в формате $ListBuild
+	// pErrGlb - глобал с ошибками во время загрузки
+	// Возвращаемое значение:
+	// 1 - успешное добавление
+	// 0 - была ошибка (запись о ней добавлена в pErrGlb)
+InsertTestCode(pValues,pErrGlb) [PLIST,SQLCODE]  public {
+	Kill PLIST
+	Set len=$LL(pValues)
+	For j=1:1:len {
+		Set PLIST(j+1)=$ListGet(pValues,j)
+	}
+	Set PLIST(1)=PLIST(2)
+	If PLIST(4)["^" Set PLIST(4)=$Translate(PLIST(4),"^",$Char(16)) 
+	Set sqlcode=$$insert^LVBCTTC()
+	If sqlcode'=0 {
+		Set @pErrGlb@($I(@pErrGlb))=PLIST(2)_":"_sqlcode
+	}
+	Quit (sqlcode=0)	
+}	 
+	// Добавить запись в CT_TestCodeContainer
+	// Параметры:
+	// pValues - значения полей в формате $ListBuild
+	// pErrGlb - глобал с ошибками во время загрузки
+	// Возвращаемое значение:
+	// 1 - успешное добавление
+	// 0 - была ошибка (запись о ней добавлена в pErrGlb)
+InsertTestCodeContainer(pValues,pErrGlb) [PLIST,SQLCODE]  public {
+	Kill PLIST
+	Set len=$LL(pValues)
+	For j=1:1:len {
+		Set PLIST(j-1)=$ListGet(pValues,j)
+	}
+	If PLIST(0)="" {
+		Set @pErrGlb@($I(@pErrGlb))="Empty test code. All values:"_$ListToString(pValues,";")
+		Quit 0
+	}	
+
+	Set sqlcode=$$insert^LVBCTTCB(PLIST(0))
+	If sqlcode'=0 {
+		Set @pErrGlb@($I(@pErrGlb))=$Get(PLIST(0))_"-"_$Get(PLIST(2))_"-"_$Get(PLIST(3))_":"_sqlcode
+	}
+	Quit (sqlcode=0)	
+}	 
+	// Добавить запись в CT_TestCodeStandardComm
+	// Параметры:
+	// pValues - значения полей в формате $ListBuild
+	// pErrGlb - глобал с ошибками во время загрузки
+	// Возвращаемое значение:
+	// 1 - успешное добавление
+	// 0 - была ошибка (запись о ней добавлена в pErrGlb)
+InsertTestCodeStandardComm(pValues,pErrGlb) [PLIST,SQLCODE]  public {
+	Kill PLIST
+	Set len=$LL(pValues)
+	For j=1:1:len {
+		Set PLIST(j-1)=$ListGet(pValues,j)
+	}
+	If (PLIST(0)="")||(PLIST(2)="") {
+		Set @pErrGlb@($I(@pErrGlb))="Empty test code or comment code. All values:"_$ListToString(pValues,";")
+		Quit 0
+	}	
+
+	Set sqlcode=$$insert^LVBCTTCT(PLIST(0))
+	If sqlcode'=0 {
+		Set @pErrGlb@($I(@pErrGlb))=$Get(PLIST(0))_"-"_$Get(PLIST(2))_":"_sqlcode
+	}
+	Quit (sqlcode=0)	
+}	 
+	// Добавить запись в CT_TestCodeRanges
+	// Параметры:
+	// pValues - значения полей в формате $ListBuild
+	// pErrGlb - глобал с ошибками во время загрузки
+	// Возвращаемое значение:
+	// 1 - успешное добавление
+	// 0 - была ошибка (запись о ней добавлена в pErrGlb)
+InsertTestCodeRange(pValues,pErrGlb) [PLIST,SQLCODE]  public {
+	Kill PLIST
+	Set len=$LL(pValues)
+	For j=1:1:len {
+		Set PLIST(j-1)=$ListGet(pValues,j)
+	}
+	If (PLIST(0)="")||(PLIST(2)="") {
+		Set @pErrGlb@($I(@pErrGlb))="Empty test code or date. All values:"_$ListToString(pValues,";")
+		Quit 0
+	}	
+	Set PLIST(25)=0
+
+	Set date=PLIST(2)
+	Try {
+		Set hdate=$ZDH($TR(date,".","/"),4)
+	} Catch {
+		Set hdate=""
+	}
+	If hdate="" {
+		Set @pErrGlb@($I(@pErrGlb))="Invalid date: "_hdate_". All values:"_$ListToString(pValues,";")
+		Quit 0
+	}			
+	Set PLIST(2)=hdate
+	For j=5,6,7,8,9,10,13,14,15,16,21,22 Set PLIST(j)=$Number(PLIST(j),5)
+	Set sqlcode=$$insert^LVBCTTCR(PLIST(0))
+	If sqlcode'=0 {
+		Set @pErrGlb@($I(@pErrGlb))=$Get(PLIST(0))_"-"_$Get(date)_"-"_$Get(PLIST(3))_"-"_$Get(PLIST(4))_":"_sqlcode
+	}
+	Quit (sqlcode=0)	
+}	 
+
+	// Проверка есть ли данные по данному набору тестов в самом CT_TestSet и связанном справочнике CT_TestSetFields
+	// Параметры:
+	// pTestSetId - ID набора тестов
+	// Возвращаемое значение:
+	// 1 - такой набор тестов есть в CT_TestSet или CT_TestSetFields
+	// 0 - нет такого набора тестов
+ExistTestSet(pTestSetId) [SQLCODE,pTestSetId,count] public {
+	 &Sql(
+	 	 Select Count(*) 
+	 	 Into :count 
+	 	 From CT_TestSet
+	 	 Where CTTS_Code=:pTestSetId
+ 	 )
+	
+	If (SQLCODE=0)&&(count>0) Quit 1
+	// 2 - Ищем в CTTC_Code
+	&Sql(
+	 	Select Count(*) 
+	 	Into :count 
+	 	From CT_TestSetFields
+	 	Where CTTSF_ParRef=:pTestSetId
+ 	)
+ 	If (SQLCODE=0)&&(count>0) Quit 1
+	Quit 0
+}	 
+	// Обработка справочников, связанных с наборами тестов
+	// Параметры:
+	// pGlb - глобал с данными для загрузки в справочники
+	// pErrGlb - глобал с ошибками во время загрузки
+ProcessTestSets(pGlb,pErrGlb) public {
+	Write !,"Processing CT_TestSet",!
+	Set testset="",(skipcnt,insertcnt,errcnt,n)=0
+	For  {
+		Set testset=$Order(@pGlb@("TestSet",testset),1,vals)
+		If testset="" Quit
+		If $$ExistTestSet(testset) {
+			Write !,"Skip test set = ",testset
+			Set skipcnt=skipcnt+1
+			Continue
+		}
+		Set n=n+1
+		Set ok=$$InsertTestSet(vals,pErrGlb)
+		If ok { 
+			Set insertcnt=insertcnt+1
+			//
+			Set i=""
+			For  {
+				Set i=$Order(@pGlb@("TestSetFields",testset,i),1,vals)
+				If i="" Quit
+				Set ok=$$InsertTestSetField(vals,pErrGlb)
+				If 'ok {
+					Set errcnt=errcnt+1
+				}
+			}	
+		} Else {
+			Set errcnt=errcnt+1
+		}	
+		Write $Char(13),"Done "_n_" records     "	
+	}
+	Write !!,"Inserted ",insertcnt," records"	
+	Write !,"Skiped ",skipcnt," records"
+	If errcnt>0 {
+		Write !,"Was ",errcnt," errors! See details in global ^Err ! ",!
+	}		
+}
+
+	// Добавить запись в CT_TestSet 
+	// Параметры:
+	// pValues - значения полей в формате $ListBuild
+	// pErrGlb - глобал с ошибками во время загрузки
+	// Возвращаемое значение:
+	// 1 - успешное добавление
+	// 0 - была ошибка (запись о ней добавлена в pErrGlb)
+InsertTestSet(pValues,pErrGlb) [PLIST,SQLCODE]  public {
+	Kill PLIST
+	Set len=$LL(pValues)
+	For j=1:1:len {
+		Set PLIST(j+1)=$ListGet(pValues,j)
+	}
+	Set PLIST(1)=PLIST(2)
+	If PLIST(4)["^" Set PLIST(4)=$Translate(PLIST(4),"^",$Char(16)) 
+	Set sqlcode=$$insert^LVBCTTS()
+	If sqlcode'=0 {
+		Set @pErrGlb@($I(@pErrGlb))=PLIST(2)_":"_sqlcode
+	}
+	Quit (sqlcode=0)	
+}	 
+
+	// Добавить запись в CT_TestSetFields 
+	// Параметры:
+	// pValues - значения полей в формате $ListBuild
+	// pErrGlb - глобал с ошибками во время загрузки
+	// Возвращаемое значение:
+	// 1 - успешное добавление
+	// 0 - была ошибка (запись о ней добавлена в pErrGlb)
+InsertTestSetField(pValues,pErrGlb) [PLIST,SQLCODE]  public {
+	Kill PLIST
+	Set len=$LL(pValues)
+	For j=1:1:len {
+		Set PLIST(j-1)=$ListGet(pValues,j)
+	}
+	If (PLIST(0)=""){
+		Set @pErrGlb@($I(@pErrGlb))="Empty test set. All values:"_$ListToString(pValues,";")
+		Quit 0
+	}	
+	Set sqlcode=$$insert^LVBCTTSF(PLIST(0))
+	If sqlcode'=0 {
+		Set @pErrGlb@($I(@pErrGlb))=$Get(PLIST(0))_"-"_$Get(PLIST(2))_":"_sqlcode
+	}
+	Quit (sqlcode=0)	
+}	 
+	
+]]></Routine>
+</Export>
