@@ -27,16 +27,56 @@ pPDFFileName - по ссылке возвращается или передае�
 <FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pExtraParams:%String,pExtraParamsZen:%String,&pPDFFileName:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-  //s ^test("par")=$g(pEpis)_"*"_$g(pTestSets)_"*"_$g(pExtraParams)_"*"_$g(pPDFFileName)
+  //s ^test("par")=$g(pEpis)_"*"_$g(pExtraParams)_"*"_$g(pExtraParamsZen)_"*"_$g(pPDFFileName)
   //m ^test("par",1)=pTestSets
   //s ^test("par","pExtraParams")=pExtraParams
+  set ok=1
   try {
-	set FlagPreview=$lg(pExtraParams,7)  //флаг = 1 - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
-	set pLanguage=$lg(pExtraParams,4) //язык результата
+	    if $get(pExtraParams)="" {
+		  set lang=##class(TCLEx.Function.Episode).GetDefaultLanguage()
+		  set pExtraParams=$lb(1,"",1,lang,0,0,"")
+	    }
 	
-	// Пока будем формировать один файл по всем наборам тестов ( и вордовским и невордовским) только при FlagPreview="V" (предпросмотр)
-		if $get(pPDFFileName)="" set ok=$$$ERROR($$$GeneralError,"Не указано имя файла предпросмотра.") quit
-		
+	    // параметры    
+    set pPDF=$lg(pExtraParams,1)  // признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+	if pPDF="" set pPDF=1
+	
+	set pPDFDir=$lg(pExtraParams,2) //каталог, куда выгружать файл
+	
+	set pOverWritePDF=$lg(pExtraParams,3) //если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+	if pOverWritePDF="" set pOverWritePDF=1
+	
+	set pLanguage=$lg(pExtraParams,4) //дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+	if pLanguage="" set pLanguage=##class(TCLEx.Function.Episode).GetDefaultLanguage()
+	
+	set FlagPreview=$lg(pExtraParams,7) //флаг = "V" - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
+	
+	// флаг создавать ли lock файл во время создания pdf файла
+	set flagLogFileCreate=$lg(pExtraParams,5) 
+	if (flagLogFileCreate'=1)&&(flagLogFileCreate'=0) {
+		set flagLogFileCreate=0 
+	}
+	// флаг проверять ли внешний lock файл работы с pdf файлом
+	set flagLogFileTest=$lg(pExtraParams,6) 
+	if (flagLogFileTest'=1)&&(flagLogFileTest'=0) {
+		set flagLogFileTest=0 
+	}
+    
+    Set reportclassname=##class(TCLEx.Report.Settings).GetZenResultClassName()  
+	
+	    // test path
+	    If '$$TestDirectory^KSUTIL1(pPDFDir) {
+		    set ok=$$$ERROR($$$GeneralError,"Не удалось создать каталог  "_pPDFDir_" !")
+		    quit
+	    }	
+	    // test filename
+	    if $get(pPDFFileName)="" {
+		   Set filename=##class(TCLEx.Report.ResultForm).CallEpisodeResultFileName(reportclassname,pEpis,.pTestSets,pLanguage,"pdf")
+	       Set pPDFFileName=pPDFDir_"\"_filename
+	    }
+		if $get(pPDFFileName)="" set ok=$$$ERROR($$$GeneralError,"Не указано имя файла.") quit
+
+        // test testsets 
 		// все наборы тестов в эпизоде с частью информации
 		Kill ^||EMC.TestSets
 		Do ##class(TCLEx.Function.Episode).MakeTestSetsBuf(pEpis,$Name(^||EMC.TestSets))
@@ -51,9 +91,10 @@ pPDFFileName - по ссылке возвращается или передае�
 	         for {
 		           set tsid=$order(^||EMC.TestSets(tsid),1,rec) if tsid="" quit
 		           set ts=$lg(rec,2),superset=$lg(rec,3)
-		           if ('$data(vspTestSets(ts)))&&(superset'="")&&('$data(vspTestSets(superset))) {
-			           kill ^||EMC.TestSets(tsid)
+		           if ($data(vspTestSets(tsid)))||((superset'="")&&($data(vspTestSets(superset)))) {
+			           continue
 		           }
+		           kill ^||EMC.TestSets(tsid)
 	         }
 	         kill vspTestSets 
 	         merge vspTestSets=^||EMC.TestSets 
@@ -64,6 +105,44 @@ pPDFFileName - по ссылке возвращается или передае�
 		    quit
 	    }
 
+    //Проверка существования lock файла
+	if flagLogFileTest=1 {
+		set fileLockNameEMC=##class(TCLEx.Report.ResultForm).GetNameLockFileEMC(pPDFFileName)
+	    if ##class(%File).Exists(fileLockNameEMC) {
+		    set ok=$$$ERROR($$$GeneralError,"Не удалось сформировать файл "_pPDFFileName_", так как существует lock файл "_fileLockNameEMC_" !")
+		    quit 
+	    }
+	}
+	If ##class(%File).Exists(pPDFFileName) {
+		If pOverWritePDF {
+			Set ok=##class(%File).Delete(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) {
+				set ok=$$$ERROR($$$GeneralError,"Не удалось удалить существующий файл "_pPDFFileName_" !")
+				quit
+			}
+
+		} Else {	
+			Set pPDFFileName=$$ArchiveFileName^KSUTIL1(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) {
+				set ok=$$$ERROR($$$GeneralError,"Не удалось сформировать очередное имя файла для  "_pPDFFileName_" !")
+				quit 
+			}
+		}
+	}
+	
+		  // create lock file
+	  if flagLogFileCreate=1 {
+		set fileLockName=##class(TCLEx.Report.ResultForm).GetNameLockFile(pPDFFileName)
+	    set ok=##class(TCLEx.Report.ResultForm).CreateEmptyFile(fileLockName)
+	    If 'ok {
+		   Set pPDFFileName=""
+		   set ok=$System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось создать lck файл "_fileLockName_"."),ok)
+		   //set iii=$i(^log("CreateFile",pEpis))
+		   //s ^log("CreateFile",pEpis,iii)="Не удалось создать lck файл "_$g(fileLockName)_"."
+		   Quit  
+	    }
+	  }
+	    
 		// делим наборы тестов эпизода на word-testset and no-word-testset
 	    kill testSets,testSetsWord
 	    set tsid=""
@@ -81,6 +160,9 @@ pPDFFileName - по ссылке возвращается или передае�
 			   set testSets(tsid)=""
 		   }
 	    }
+	    
+	    // Все файлы, котрые реально будут формироваться через zenreport будут иметь имя и путь без русских букв (потом они объединяться в единый файл, если нужно, или ппросто переименуется один файл
+	    // RenderServer не работает с русскими буквами (в 2013.1.2)
 	    set ok=1
 	    set nmfile=##class(%File).GetFilename(pPDFFileName)
 	    set dirfile=##class(%File).GetDirectory(pPDFFileName)
@@ -121,15 +203,32 @@ pPDFFileName - по ссылке возвращается или передае�
 	        else 
 	        {
 		      set ok=##class(%File).Rename(files,pPDFFileName)
+		      if ok=0 set ok=$$$ERROR($$$GeneralError,"Не удалось переместить файл "_files_" --> "_$get(pPDFFileName)_".")
 	        }
 	    } else  {
 		    set ok=$$$ERROR($$$GeneralError,"Не удалось сформировать файл "_$get(pPDFFileName)_".")   
 	    }
+	    
+	    // delete lock file
+	    if flagLogFileCreate=1 {
+		   set ok2=##class(%File).Delete(fileLockName)
+	       if 'ok2 set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_"."))
+	       // !!! временно
+	       //set iii=$i(^log("CreateFile",pEpis))
+	       //if ok2 s ^log("CreateFile",pEpis,iii)=$zts_" Успешно удален lock файл "_$g(fileLockName)
+	       //else  s ^log("CreateFile",pEpis,iii)=$zts_" Не удалось удалить lock файл "_$g(fileLockName)
+    	}
+
+	    
   } catch(exception) {
 	 set ok=exception.AsStatus() 
   }	
 	If 'ok {
 		Set pPDFFileName=""
+		if ($get(flagLogFileCreate)=1)&&(##class(%File).Exists($get(fileLockName))) {
+		    set ok2=##class(%File).Delete($get(fileLockName))
+		    if 'ok2 set ok=$System.Status.AppendStatus(ok,ok2) 
+		}
 		do ##class(TCLEx.Function.General).WriteError($System.Status.GetErrorText(ok),$zn)
 	}	
 	Quit ok
@@ -159,74 +258,40 @@ pPDFFileName - по ссылке возвращается или передае�
 <FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pExtraParams:%String,pExtraParamsZen:%String,&pPDFFileName:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-	set pPDF=$lg(pExtraParams,1)  // признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+  set ok=1
+  try {
+	if $get(pExtraParams)="" {
+		  set lang=##class(TCLEx.Function.Episode).GetDefaultLanguage()
+		  set pExtraParams=$lb(1,"",1,lang,0,0,"")
+	}
+		
+	// параметры    
+    set pPDF=$lg(pExtraParams,1)  // признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
+	if pPDF="" set pPDF=1
+	
 	set pPDFDir=$lg(pExtraParams,2) //каталог, куда выгружать файл
+	
 	set pOverWritePDF=$lg(pExtraParams,3) //если =1 - перезаписывать файл, иначе ошибка(файл уже существует)
+	if pOverWritePDF="" set pOverWritePDF=1
+	
 	set pLanguage=$lg(pExtraParams,4) //дополнительные параметры формироваия отчета в формате $ListBuild  for ZenReport
+	if pLanguage="" set pLanguage=##class(TCLEx.Function.Episode).GetDefaultLanguage()
+	
 	set FlagPreview=$lg(pExtraParams,7) //флаг = "V" - значит это файл для предпросмотра результатов (тогда показываются не только авторизованные результаты)
 	
-	// флаг создавать ли lock файл во время создания pdf файла
-	set flagLogFileCreate=$lg(pExtraParams,5) 
-	if (flagLogFileCreate'=1)&&(flagLogFileCreate'=0) {
-		set flagLogFileCreate=0 
-	}
-	// флаг проверять ли внешний lock файл работы с pdf файлом
-	set flagLogFileTest=$lg(pExtraParams,6) 
-	if (flagLogFileTest'=1)&&(flagLogFileTest'=0) {
-		set flagLogFileTest=0 
-	}
-	
-	Set reportclassname=##class(TCLEx.Report.Settings).GetZenResultClassName()  
+	Set reportclassname=##class(TCLEx.Report.Settings).GetZenResultClassName() 
+	 
 	Kill ^||ResultForm.EpisodePCL
 	Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL),FlagPreview)
 	If '$Data(^||ResultForm.EpisodePCL) {
-		Quit $$$ERROR($$$GeneralError,"Нет данных для эпизода "_pEpis_" !")
+		set ok=$$$ERROR($$$GeneralError,"Нет данных для эпизода "_pEpis_" !")
+		quit
 	}	
-	//
-	If '$$TestDirectory^KSUTIL1(pPDFDir) {
-		Quit $$$ERROR($$$GeneralError,"Не удалось создать каталог  "_pPDFDir_" !")
-	}	
-	//
-	if $get(pPDFFileName)="" {
-		Set filename=##class(TCLEx.Report.ResultForm).CallEpisodeResultFileName(reportclassname,pEpis,.pTestSets,pLanguage,"pdf")
-	    Set pPDFFileName=pPDFDir_"\"_filename
-	}
-	
-	//Проверка существования lock файла
-	if flagLogFileTest=1 {
-		set fileLockNameEMC=##class(TCLEx.Report.ResultForm).GetNameLockFileEMC(pPDFFileName)
-	    if ##class(%File).Exists(fileLockNameEMC) {
-		    Quit $$$ERROR($$$GeneralError,"Не удалось сформировать файл "_pPDFFileName_", так как существует lock файл "_fileLockNameEMC_" !")
-	    }
-	}
-	If ##class(%File).Exists(pPDFFileName) {
-		If pOverWritePDF {
-			Set ok=##class(%File).Delete(pPDFFileName)
-			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$GeneralError,"Не удалось удалить существующий файл "_pPDFFileName_" !")
-
-		} Else {	
-			Set pPDFFileName=$$ArchiveFileName^KSUTIL1(pPDFFileName)
-			If ##class(%File).Exists(pPDFFileName) Quit $$$ERROR($$$GeneralError,"Не удалось сформировать очередное имя файла для  "_pPDFFileName_" !")
-		}
-	}
 	
 	Kill ^||ResultForm.EpisodeTable
 	Do ##class(TCLEx.Report.ResultForm).PCLGlb2TableGlb($Name(^||ResultForm.EpisodePCL),$Name(^||ResultForm.EpisodeTable))
 	set totalpages=##class(TCLEx.Report.ResultForm).PCLEpisodeTotalPages($Name(^||ResultForm.EpisodePCL))
 	set params=$lb("",pEpis,pPDF,pLanguage,$Name(^||ResultForm.EpisodeTable),pExtraParamsZen,totalpages,FlagPreview)
-	
-	// create lock file
-	if flagLogFileCreate=1 {
-		set fileLockName=##class(TCLEx.Report.ResultForm).GetNameLockFile(pPDFFileName)
-	    set ok=##class(TCLEx.Report.ResultForm).CreateEmptyFile(fileLockName)
-	    If 'ok {
-		   Set pPDFFileName=""
-		   set ok=$System.Status.AppendStatus($$$ERROR($$$GeneralError,"Не удалось создать lck файл "_fileLockName_"."),ok)
-		   set iii=$i(^log("CreateFile",pEpis))
-		   s ^log("CreateFile",pEpis,iii)="Не удалось создать lck файл "_$g(fileLockName)_"."
-		   Quit ok 
-	    }
-	}
 	
 	// create file
 	set ok=..CreateEpisodePDFReport0(reportclassname,params,pPDFFileName)
@@ -236,25 +301,17 @@ pPDFFileName - по ссылке возвращается или передае�
 		    set ok2=##class(%File).Delete($get(fileLockName))
 		    if 'ok2 set ok=$System.Status.AppendStatus(ok,ok2) 
 		}
-		Quit ok 
+		Quit  
 	}
 	
-	// delete lock file
-	if flagLogFileCreate=1 {
-		set ok2=##class(%File).Delete(fileLockName)
-	    if 'ok2 set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не удалось удалить lck файл "_fileLockName_"."))
-	    // !!! временно
-	    set iii=$i(^log("CreateFile",pEpis))
-	    if ok2 s ^log("CreateFile",pEpis,iii)=$zts_" Успешно удален lock файл "_$g(fileLockName)
-	    else  s ^log("CreateFile",pEpis,iii)=$zts_" Не удалось удалить lock файл "_$g(fileLockName)
-	
-	}
-	
-	If 'ok {
+  } catch(exception) {
+	    set ok=exception.AsStatus() 
+  }	
+  if 'ok {
 		Set pPDFFileName=""
 		do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$zn)
-	}
-	Quit ok
+  }
+  Quit ok
 ]]></Implementation>
 </Method>
 
@@ -263,6 +320,8 @@ pPDFFileName - по ссылке возвращается или передае�
 <FormalSpec>pReportClassName:%String,pParams:%String,pPDFFileName:%String</FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
+  set ok=1
+  try {
 	// Если имя файла, ко торый надо сформировать, не из временной директории, то подмениваем имя файла
 	set flagRenameFile=0
 	set PDFFileName=pPDFFileName
@@ -298,11 +357,9 @@ pPDFFileName - по ссылке возвращается или передае�
 	Set repobj.ExtraParams=$lg(pParams,6)
 	Set repobj.TotalPages=$lg(pParams,7)
 	set repobj.IsPreviewResults=$select($lg(pParams,8)="V":1,1:0) 
-	//set repobj.PS="HP4250PCL6"
 	set portRenderServer=##class(TCLEx.Report.Function).GetPortRenderServer()
 	set ok=repobj.GenerateReport(PDFFileName,2,0,portRenderServer) // througth RenderServer
 	//Set ok=repobj.GenerateReport(PDFFileName,2)
-	if 'ok  { do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$CLASSNAME()) }
 	// Восстанавливаем %request
 	If $Data(oldrequest) {
 		Set %request.URL=$Get(oldrequest("URL"))
@@ -314,8 +371,11 @@ pPDFFileName - по ссылке возвращается или передае�
 	    set ok1=##class(%File).Rename(PDFFileName,pPDFFileName)
 	    if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
     }
-	
-	quit ok
+ } catch(exception) {
+	    set ok=exception.AsStatus() 
+ }	
+ if 'ok do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$zn)
+ Quit ok
 ]]></Implementation>
 </Method>
 
