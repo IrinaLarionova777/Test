@@ -535,7 +535,7 @@ pRepParamGlb - глобал с данными</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String,pDepCode:%String,pLanguage:%String,pRepParamGlb:%String]]></FormalSpec>
 <Implementation><![CDATA[
-	//s ^test("par22")=pEpis_"*"_pTestSets_"*"_pDepCode_"*"_pLanguage
+	//s ^test("par22")=pEpis_"*"_"*"_pDepCode_"*"_pLanguage
 
 	Kill @pRepParamGlb
 	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
@@ -603,7 +603,17 @@ pRepParamGlb - глобал с данными</Description>
 		If key="" Quit
 		If '$IsObject(testobj) Continue
 		Set testsetid=testobj.%Id()
-		If ..IsTestSet4Department(testsetid,.pTestSets,pDepCode,summarytestset) Continue
+		If '..IsTestSet4Department(testsetid,.pTestSets,pDepCode,summarytestset) Continue
+		If '##class(User.CTSuperSet).%ExistsId(pDepCode) {
+			Set sectionstr=..TestSetSection(testsetid)
+			Set sectioncode=$Piece(sectionstr,$Char(1),1)
+			Set sectionname=$Piece(sectionstr,$Char(1),2)
+			If (sectioncode'="")&&('$Data(@pRepParamGlb@("Sections",pDepCode,sectioncode))) {
+				Set @pRepParamGlb@("Sections",pDepCode)=$Get(@pRepParamGlb@("Sections",pDepCode))+1
+				Set @pRepParamGlb@("Sections",pDepCode,sectioncode)=sectionname
+				Set @pRepParamGlb@("Sections",pDepCode,sectioncode,testsetid)=""
+			}	
+		}	
 		If ##class(TCLEx.Function.TestSet).IsAuthorised(testobj) {
 			Set authtestset=testsetid
 			Set authdoctor=testobj.VISTSUserAuthorisedDRGetObjectId()														// Врач, который авторизовал набор тестов
@@ -630,6 +640,29 @@ pRepParamGlb - глобал с данными</Description>
 	If testsetid="" Quit
 	Do ..SetTestSetVals(testsetid,pLanguage,pRepParamGlb)
 	//m ^test(1111)=@pRepParamGlb
+]]></Implementation>
+</Method>
+
+<Method name="TestSetSection">
+<Description>
+Код и название секции для набора тестов</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If ('$IsObject(testsetobj))||('$IsObject(testsetobj.VISTSTestSetDR)) Quit ""
+	Set sectionobj=testsetobj.VISTSTestSetDR.CTTSSectionDR
+	If '$IsObject(sectionobj) Quit ""
+	Set code=sectionobj.CTDSCode
+	If code="" Quit ""	
+	s name="",key=""
+	for { 
+	   set str=sectionobj.CTDSPrintHeader.GetNext(.key) if key="" quit
+		if str'="" set name=name_" "_str
+	}
+	if name="" Set name=sectionobj.CTDSDescription
+	Quit code_$Char(1)_name
 ]]></Implementation>
 </Method>
 
@@ -709,7 +742,7 @@ pRepParamGlb - глобал с данными</Description>
 			If testsetobj.VISTSTestSetDR.%Id()=pSummaryTestSetId Quit 1
 		}	
 	} Else {
-		If ('$Data(pTestSets)||($Data(pTestSets(pTestSetId))))&&($Extract(pTestSetId,1,1)=pDepCode) {
+		If ('$Data(pTestSets)||($Data(pTestSets(pTestSetId))))&&($Extract($piece(pTestSetId,"||",2),1,1)=pDepCode) {
 			Quit 1
 		}	
 	}
