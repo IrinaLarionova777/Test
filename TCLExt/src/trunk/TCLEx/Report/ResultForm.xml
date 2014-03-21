@@ -18,7 +18,7 @@ pUser - пользователь запустивший отчет</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pReportType:%String,pCourier:%String,pUser:%String</FormalSpec>
 <Implementation><![CDATA[
-	s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
+	//s ^test(0)=$g(pReportType)_"*"_$g(pCourier)_"*"_$g(pUser)
 	If (pReportType'="C")&&(pReportType'="DR") Quit		// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
 	//If (pReportType'="C") Quit								// Из общей очереди выбираем только тип отчета "C" (результат по эпизоду)
 	Set pUser=$Get(pUser)
@@ -1300,6 +1300,181 @@ Create empty file</Description>
 <Implementation><![CDATA[
 	if $get(pFile)="" quit ""
     quit $piece(pFile,".",1,$length(pFile,".")-1)_".lcke"
+]]></Implementation>
+</Method>
+
+<Method name="PCLEpisodeResultWithSection">
+<Description>
+Формирование буфера pEpisPCLGlb с PCL-командами для печати наборов тестов pTestSets эпизода pEpis 
+С учетом секций (их заголовков и подвалов)
+Параметры:
+pReportClassName - класс, формирующий содержание отчета
+pEpis - ID эпизода
+pTestSets - буфер печатаемых наборов тестов
+pLanguage - язык отчета
+pEpisPCLGlb - глобал с полученными результатами в виде PCL команд</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pReportClassName:%String,pEpis:%String,&pTestSets:%String,pLanguage:%String,pEpisPCLGlb:%String,pFlagPreview:%String=""]]></FormalSpec>
+<Implementation><![CDATA[
+  set ok=1
+  //set ^test("par")=$g(pReportClassName)_"*"_$g(pEpis)_"*"_$g(pLanguage)_"*"_$g(pEpisPCLGlb)_"*"_$g(pFlagPreview)
+  //kill ^test("par","pTestSets") m ^test("par","pTestSets")=pTestSets
+  try {
+	Set pLanguage=$Get(pLanguage)
+	Kill ^||ResultForm.Departments
+	Do ##class(TCLEx.Function.TestSet).Departments(pEpis,.pTestSets,$Name(^||ResultForm.Departments),pFlagPreview)
+	// Преобразуем буфер ^||ResultForm.Departments(depcode, testsetid) --> ^||ResultForm.Departments2(depcode,sectioncode,testsetid)
+	kill ^||ResultForm.Departments2
+	set depcode=""
+	for {
+		set depcode=$order(^||ResultForm.Departments(depcode)) if depcode="" quit
+		set testsetid=""
+		for {
+			set testsetid=$order(^||ResultForm.Departments(depcode,testsetid)) if testsetid="" quit
+			set section=##class(TCLEx.Function.TestSet).GetSectionByTestSet($piece(testsetid,"||",2))
+			if section="" set section=0 
+			set ^||ResultForm.Departments2(depcode,section,testsetid)=""
+		}
+	} 
+	// Составляем буфер результатов по отделам эпизода с разбивкой по страницам
+	Kill @pEpisPCLGlb
+	Set depcode=""
+	For  {
+		Set depcode=$Order(^||ResultForm.Departments2(depcode))
+		If depcode="" Quit
+		Set rowscnt=..CallRowCount(pReportClassName,depcode) 							// Строк на страницу
+		set row=1,page=1,firstonpage=1,npp=0
+		kill ^||sectiontestset
+		set section=""
+		for {
+			Set section=$Order(^||ResultForm.Departments2(depcode,section)) if section="" quit
+			set footersection="",nppHeader=0,nppFooter=0
+			kill ^||sectionheader
+			kill ^||sectionfooter
+			if section'=0 {
+				set sectionobj=##class(User.CTSections).%OpenId(section)
+			    if $IsObject(sectionobj) {
+				   set infosection=##class(TCLEx.Report.DRP).SectionInfo(sectionobj)
+				   set headersection=$listget(infosection,3)
+				   set footersection=$listget(infosection,4)
+				   if headersection'="" {
+					  do ..AddStringSection(headersection,"header",$name(^||sectionheader))
+				   }
+				   if footersection'="" {
+					  do ..AddStringSection(footersection,"footer",$name(^||sectionfooter))
+				   }
+				}
+			}
+			// Если есть заголовок секции, то первый надо надо проверить, если заголовок секции и результаты по первому набору тестов не помещаются 
+			// на текущей странице, то надо перейти на следующую страниуц
+			kill ^||testsetunion
+		    Set testsetid=""
+		    For  {
+			    Set testsetid=$Order(^||ResultForm.Departments2(depcode,section,testsetid))
+			    If testsetid="" Quit
+			    //
+			    //Do ##class(TCLEx.Function.TestSet).PCLResult(testsetid,rowscnt,firstonpage,pLanguage)
+			    Do ##class(TCLEx.Function.TestSet).PCLResult(testsetid,rowscnt,1,pLanguage)
+			    If '$Data(^||testset) Continue
+			    merge ^||testsetunion(testsetid)=^||testset
+		    }
+		    
+		    set firsttestsetid=$order(^||testsetunion(""))
+		    set lasttestsetid=$order(^||testsetunion(""),-1)
+		    Set testsetid=""
+		    For  {
+			    Set testsetid=$Order(^||testsetunion(testsetid))
+			    If testsetid="" Quit
+			    // Если есть заголовок секции
+			    if (testsetid=firsttestsetid)&&(testsetid'=lasttestsetid)&&($data(^||sectionheader)) {
+				    kill ^||testset
+				    do ..UnionStrings($name(^||sectionheader),$name(^||testsetunion(testsetid)),$name(^||testset))
+			    } elseif (testsetid=firsttestsetid)&&(testsetid=lasttestsetid)&&($data(^||sectionheader))&&($data(^||sectionfooter)) {
+				    kill ^||testsetvsp
+				    do ..UnionStrings($name(^||sectionheader),$name(^||testsetunion(testsetid)),$name(^||testsetvsp))
+				    kill ^||testset
+				    do ..UnionStrings($name(^||testsetvsp),$name(^||sectionfooter),$name(^||testset))
+				    kill ^||testsetvsp
+			    } elseif (testsetid'=firsttestsetid)&&(testsetid=lasttestsetid)&&($data(^||sectionfooter)) {
+				    kill ^||testset
+				    do ..UnionStrings($name(^||testsetunion(testsetid)),$name(^||sectionfooter),$name(^||testset))
+			    } else {
+				    kill ^||testset
+				    merge ^||testset=^||testsetunion(testsetid)
+			    }
+
+			    Do ..PCLAddTestSetResult(depcode,rowscnt,.page,.row,.firstonpage,pEpisPCLGlb)
+			    
+			    // Если есть следующий набор тестов в текщей секции или есть следующая секция, то вставляем пустую строку внизу
+			    If (row<rowscnt)&&(row>1)&&(($Order(^||testsetunion(testsetid))'="")||($order(^||ResultForm.Departments2(depcode,section))'="")) {	; Дополнительный отступ между TestSet-ами на странице
+				    Set @pEpisPCLGlb@(depcode,page,row,1)="!"
+				    Set row=row+1
+			    }
+			    b  
+		   }	
+		}
+	}
+  } catch(e) {
+	   do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME())  
+  }
+]]></Implementation>
+</Method>
+
+<Method name="AddStringSection">
+<Description>
+Добавить стоки заголовка или подвала секции
+для метода PCLEpisodeResultWithSection</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pString:%String,&pTypeString:%String,pGlb:%String]]></FormalSpec>
+<Implementation><![CDATA[
+	kill @pGlb
+	if pString'="" {
+		// пустая строка перед подвалом секции 
+		if ($tr(pString,"|","")'="")&&(pTypeString="footer") {
+		   set npp=$order(@pGlb@(""),-1)+1
+		   set @pGlb@(npp,1)="!"
+    	}
+	
+		set isfirststring=1
+		for iii=1:1:$length(pString,"|") {
+			set value=$p(pString,"|",iii) if value="" continue
+			set npp=$order(@pGlb@(""),-1)+1
+			set nn=0
+			if (isfirststring'=1)||(pTypeString="footer") {
+				set nn=nn+1 set @pGlb@(npp,nn)="!"
+			}
+			if isfirststring=1 set isfirststring=0
+			set nn=nn+1 set @pGlb@(npp,nn)="~BOLD"
+			set nn=nn+1 set @pGlb@(npp,nn)="?2"
+			set nn=nn+1 set @pGlb@(npp,nn)=value
+			set nn=nn+1 set @pGlb@(npp,nn)=$char(13)
+		}
+		// пустая строка после заголовка секции -
+		if ($data(@pGlb))&&(pTypeString="header") {
+		   set npp=$order(@pGlb@(""),-1)+1
+		   set @pGlb@(npp,1)="!"
+        }
+	}
+]]></Implementation>
+</Method>
+
+<Method name="UnionStrings">
+<Description>
+Добавить строки с результатами по набору тестов (pGlbTestSet) к общей глобали со строками по секции (pGlbSection)
+для метода PCLEpisodeResult2</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pGlbTop:%String,pGlbBottom:%String,pGlbUnion:%String</FormalSpec>
+<Implementation><![CDATA[
+	kill @pGlbUnion
+	merge @pGlbUnion=@pGlbTop
+	set nppunion=$order(@pGlbUnion@(""),-1)
+	set npp=""
+	for {
+		set npp=$order(@pGlbBottom@(npp)) if npp="" quit
+		set nppunion=nppunion+1
+		merge @pGlbUnion@(nppunion)=@pGlbBottom@(npp)
+	}
+	quit
 ]]></Implementation>
 </Method>
 </Class>
