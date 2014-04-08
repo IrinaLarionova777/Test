@@ -32,7 +32,7 @@
 		//set ^test("Lic",testnpp)="$j="_$j_", $system.License.CSPUsers()="_$system.License.CSPUsers()_", $system.License.LUConsumed()="_$system.License.LUConsumed()_", $system.License.CSPGrace()="_$system.License.CSPGrace()_", $system.License.LUAvailable()="_$system.License.LUAvailable()_", $system.License.GetUserId()="_$system.License.GetUserId()
 		//set ^test("SendOrder",$i(^test("SendOrder")))=$get(pPatientId)_"*"_$get(pPatientInfo)_"*"_$get(pOrderId)_"*"_$get(pOrderInfo)_"*"_$get(pPatientLocation)_"*"_$get(pDoctor)_"*"_$get(pStringTests)
 		set titleEvent="SendOrder"
-		set descParameters="(pPatientId="_$get(pPatientId)_", pPatientInfo="_$get(pPatientInfo)_", pOrderId="_$get(pOrderId)_", pOrderInfo="_$get(pOrderInfo)_", pStringTests="_$get(pStringTests)_")"
+		set descParameters="(pPatientId="_$get(pPatientId)_", pPatientInfo="_$get(pPatientInfo)_", pOrderId="_$get(pOrderId)_", pOrderInfo="_$get(pOrderInfo)_", pStringTests="_$get(pStringTests)_", pPatientLocation="_$get(pPatientLocation)_")"
 		
 		//в одном направлении может быть несколько ордеров для одного вида материала, но в одном направлении только один вид материала (одна пробирка)
 		// делаем эпизод по направлению
@@ -73,7 +73,7 @@
 			         set ok="0^"_$system.Status.GetErrorText(ok1)
 		         }
 		         Set eventDescription="Заказ для patientId="_patientId_", visitId="_visitId_", orderId="_orderId_" не создан, так как нет заказанных исследований "_descParameters
-			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription,,,,pOrderId)
+			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error2",eventDescription,,,,pOrderId)
 		         quit
              }
 
@@ -92,7 +92,7 @@
              // Если исследования были заказаны, но не найдено ни одного соответсвующего набора тестов в ЛИС
 	         if (flagCancel=1) {
 		         Set eventDescription="Не найдено ни одного набора тестов для заказа "_pOrderId
-			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription_" "_descParameters,,,,pOrderId)
+			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error2",eventDescription_" "_descParameters,,,,pOrderId)
 			     set ok="2^"_eventDescription
 			     quit
 	         }
@@ -144,7 +144,8 @@
 	         */
 	         
 		     // Данные из транзитного объекта в User.HOSHospitalPatients
-		     set ok=##class(TCLEx.Function.HospitalPatient).CreateUpdateHospitalPatient(orderobj)
+		     set comments=""
+		     set ok=##class(TCLEx.Function.HospitalPatient).CreateUpdateHospitalPatient(orderobj,.comments)
 		     If 'ok {
 			     Set eventDescription="Не удалось сохранить объект User.HOSHospitalPatients "_hosppatid_" "_descParameters
 			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription,ok,,,pOrderId)
@@ -152,6 +153,11 @@
 			     Quit
 		     } else {
 			     do ##class(Client12.MISExchange).LogEvent(titleEvent,"","Сохранен объект User.HOSHospitalPatients "_hosppatid_ "("_descParameters_")",,,,pOrderId)
+			     if comments'="" {
+				     set ok="2^"_comments
+		             do ##class(Client12.MISExchange).LogEvent(titleEvent,"error",eventDescription,,ok,,pOrderId)
+		             quit
+			     }
 		     }			
 	    } Else {																
 		    set eventDescription="Для ордера "_orderId_" уже существует эпизод "_epis_" "_descParameters
@@ -242,7 +248,7 @@
 		} 
 		Set pObjectPatientLocation.NoOfCopies=1
 		Set pObjectPatientLocation.CourierId="KDL"
-		Set pObjectPatientLocation.PrintFormatDR="I"
+		Set pObjectPatientLocation.PrintFormatDR="DFF" //^TTAB("PF","DFF")="Department Full Final\DF\\\\\"
 		
 
 	} catch(e) {
@@ -292,8 +298,33 @@
 	
 	set visitId=..Translate(pSuperOrderId)
 	set patientId=..GetPatientId(pPatientInfo)
-
-	if specimenId="" {
+	set patientLocation=$piece(pPatientLocation,r,1)
+    set patientLocationName=$piece(pPatientLocation,r,2)
+	set category=..Translate($piece(pPatientInfo,r,9)) // Категория пациента
+	set typeCategory=..Translate($piece(pPatientInfo,r,10)) // Признак в справочнике категорий пациента - (1-платный, иначе - бесплатный)
+    
+    	// Если пациент платный (признак приходит из ECUBE) и отделение 90 (Приемное отделение), то меняем на отделение с кодом 901
+	if (patientLocation=90)&&(typeCategory=1)&&($data(^TTAB("RH",901))) {
+		Set patientLocation=901
+		Set patientLocationName=$piece($get(^TTAB("RH",901)),"\",1)
+		do ##class(Client12.MISExchange).LogEvent("ReplacePatLocation","","Заменен код отделения 90 на 901",,1,,pSuperOrderId)
+	}
+    
+    // hospatid
+    // Надо ли объединять пробирки с разным материалом в одну HospitalPatient
+    set flagUnionSpecimens=0
+    if (specimenId="") {
+	   set flagUnionSpecimens=1 
+    }
+    // для местоположений пациента, перечисленных через зяпятую в ^Settings("GKB12","PatientLocationUnionSpecimens") 
+    // различные типы биоматериала из одного направления будут попадать в один эпизод (в одну строку HospitalPatient) 
+    if $get(^Settings("GKB12","PatientLocationUnionSpecimens"))'="" {
+	    if (","_^Settings("GKB12","PatientLocationUnionSpecimens")_",")[(","_patientLocation_",") {
+		     set flagUnionSpecimens=1
+	    }
+    }
+    
+	if flagUnionSpecimens=1 {
 	    set hospatid="L||"_patientId_"||"_visitId	
 	} else {
 		set hospatid=""
@@ -302,6 +333,7 @@
 		    quit
 	    }
 	}
+	//set ^test("vr",hospatid)=flagUnionSpecimens
 	
 	Set pObj=##class(TCLEx.Object.LabOrder).%New()
 	
@@ -326,6 +358,8 @@
 		set codecito="C"
 		if ##class(User.CTPriority).%ExistsId(codecito) {
 		    set pObj.PriorityTestSet=codecito
+		    set pObj.Priority=codecito
+		    set pObj.PatientAddress1=$piece($get(^TTAB("PC",codecito)),"\",1) //s ^test("cito")=$g(pPatientInfo)_"*"_$g(hospatid)_"*"_$piece($get(^TTAB("PC",codecito)),"\",1)
 	    }
 	}
 	// Дата и время ордера
@@ -337,10 +371,13 @@
 	// Врач, назначивший анализы
 	Set pObj.Doctor=$piece(pDoctor,r,1)
 	set pObj.DoctorName=$piece(pDoctor,r,2)
+	// Категория пациента 
+	set pObj.Category=$select(category'="":category,1:"")
+	
 	// Местоположение пациента
-	Set pObj.PatientLocation=$piece(pPatientLocation,r,1)
-	Set pObj.PatientLocationName=$piece(pPatientLocation,r,2)
-		
+	Set pObj.PatientLocation=patientLocation
+	Set pObj.PatientLocationName=patientLocationName
+	
 	//Филиал
 	set usersiteid="KDL"
 	if ##class(User.CTUserLocation).%ExistsId(usersiteid) {
@@ -385,7 +422,13 @@
 	//quit $select(pp=2:"A005",1:"A111")
 	set lll=$length(pTest)
 	if $extract(pTest,lll,lll)="." set pTest=$extract(pTest,1,lll-1)
-	quit $select($get(pTest)'="":$order(^TTABii("TS","NationalNumber",pTest,"")),1:"")
+	set testset=$select($get(pTest)'="":$order(^TTABii("TS","NationalNumber",pTest,"")),1:"")
+	if (testset'="") {
+		if $piece($get(^TTAB("TS",testset)),"\",12)="N" {
+			set testset=""
+		}
+	}
+	quit testset
 ]]></Implementation>
 </Method>
 
@@ -446,7 +489,7 @@
 	
 	if pHosPatId="" {
 		if $data(vr) {
-			set visitidnew=$order(vr(""),-1)+0.1
+			set visitidnew=$order(vr(""),-1)+0.1  //  важно имеено так - так как при отправке результатов посылаем номер направления - округдяем до целого
 		} else {
 			set visitidnew=pSuperOrderId
 		}
@@ -477,6 +520,8 @@
 		   set testset=..GetTestSetByEcubeTestId(testsetMIS)
 		   if testset="" {
 			  do ##class(Client12.MISExchange).LogEvent("SendOrder","error2","Не найден набор тестов для теста МИС "_testsetMIS,,,,"")
+		   } else {
+			  do ##class(Client12.MISExchange).LogEvent("SendOrder","","Найден набор тестов для теста МИС "_testsetMIS_" : "_testset,,,,"") 
 		   }
 		   if testset'="" {
 			 if $data(vr(testset)) continue
