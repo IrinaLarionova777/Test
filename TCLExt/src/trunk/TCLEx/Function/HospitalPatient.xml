@@ -6,13 +6,14 @@
 
 <Method name="CreateUpdateHospitalPatient">
 <Description>
-Создание или корректировка HOSHospitalPatient, добавление наборов тестов в HOSHospitalPatientTestSet </Description>
+Создание или корректировка HOSHospitalPatient, добавление наборов тестов в HOSHospitalPatientTestSet 
+pComments - комметарий (заполняется, когда какой-нибудь набор тестов не записывается в базу по причине, что он уже существует и нельзя этот набор тестов записыватьнемколько раз)</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pObjectTransport:TCLEx.Object.LabOrder</FormalSpec>
+<FormalSpec><![CDATA[pObjectTransport:TCLEx.Object.LabOrder,&pComments:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	#dim hosppatobj As User.HOSHospitalPatients
-	set ok=$$$OK
+	set ok=$$$OK set pComments=""
 	try {
 		     // id
 		     set ok=..GetHospitalPatientId(pObjectTransport,.hospitalPatientId)
@@ -52,10 +53,15 @@
 			        if errstr'="" set ok=$System.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,errstr))
 				    continue
 			    }
-			    //If $Data(^||HosPat.TestSets(requestid_$Char(1)_testset)) {							// Исследование уже есть в HOSHospitalPatientsTSet 
-			    If $Data(^||HosPat.TestSets(testset)) {							// Исследование уже есть в HOSHospitalPatientsTSet 
-				    Set ok=1																	// Начальное значение статуса
-				    //If $Data(^||HosPat.TestSets(requestid_$Char(1)_testset))<10 {					// Если не супер-набор, то 1 значение набора тестов
+			    set flagMultipleAllowed=$piece($get(^TTAB("TS",testset)),"\",11) // флаг, может ли быть несколько одинаковых наборов тестов в одном эпизоде
+			    
+			    If ($Data(^||HosPat.TestSets(testset)))&&(flagMultipleAllowed'="Y") {	// Исследование уже есть в HOSHospitalPatientsTSet и не может быть несколько одинаковых наборов тестов в одном эпизоде
+			        set testsetMIS =$piece($get(^TTAB("TS",testset)),"\",31)
+					set pComments=pComments_$select(pComments'="":", ",1:"")_$select(testsetMIS'="":testsetMIS,1:testset)
+					//Set eventDescription="Набор тестов "_testset_" уже есть в "_hosppatobj.%Id()
+			        //do ##class(Client12.MISExchange).LogEvent(titleEvent,"",eventDescription,2,,,$get(ExtraExternalID))
+					  /*
+					  // это не надо делать, та как в Э-кубе приоритет записвается на уровне направления и не может быть двух разных ордеров в рамках одного направления с разным приоритетом
 				    If $Data(^||HosPat.TestSets(testset))<10 {					// Если не супер-набор, то 1 значение набора тестов
 					     Set vals=$Get(^||HosPat.TestSets(testset))				// берем ID записи
 					     Set testsetid=$ListGet(vals,1)
@@ -76,8 +82,9 @@
 							     set ok=$System.Status.AppendStatus(ok,ok1)
 						      }
 					     } 
-					}	
-				} else {   // 	Исследования нет в HOSHospitalPatientsTSet 
+					}	*/
+				  
+				} else {   // 	Исследования нет в HOSHospitalPatientsTSet или может быть несколько одинаковых наборов тестов в одном эпизоде
 					If ##class(User.CTSuperSet).%ExistsId(testset) {				// Если это супер-набор
 				      Set superset=testset
 				      Kill ^||HosPat.SuperSet
@@ -120,6 +127,7 @@
 	} catch(e) {
 		  set ok=e.AsStatus()
 	}
+	if pComments'="" set pComments="Наборы тестов "_pComments_" уже существуют в "_$get(hospitalPatientId)
 	quit ok
 ]]></Implementation>
 </Method>
@@ -169,7 +177,7 @@
 	Set pHospitalPatientObject.HOSPGivenName=pOrderObj.Name
 	Set pHospitalPatientObject.HOSPExtraName1=pOrderObj.FatherName
 	set pHospitalPatientObject.HOSPDOB=pOrderObj.DOB
-	
+	set pHospitalPatientObject.HOSPAddress1=pOrderObj.PatientAddress1
 	
 	// Если 
 	if '$find(","_pHospitalPatientObject.HOSPPhoneWork_",",pOrderObj.PhoneWork) {
@@ -177,7 +185,6 @@
 	}
 	
 	set pHospitalPatientObject.HOSPPhoneHome=pOrderObj.PhoneHome
-	s ^test(1,"specimenId4")=pOrderObj.PhoneHome
 	//Филиал
 	set usersiteid=pOrderObj.PatientSiteDR
 	if ##class(User.CTUserLocation).%ExistsId(usersiteid) {
@@ -205,9 +212,14 @@
 			set pHospitalPatientObject.HOSPExtraName2=pOrderObj.Priority
 	}
 	
-	// вид обслуживания - записываем в тип пациента
+	// вид обслуживания - записываем в pHospitalPatientObject.HOSPExtraName3 - потом в тип пациента (EPVisitNumber)
 	if (pOrderObj.PatientType'="")&&(##class(User.CTPatientType).%ExistsId(pOrderObj.PatientType)) {
 		set pHospitalPatientObject.HOSPExtraName3=pOrderObj.PatientType
+	}
+
+	// категория пациента - записываем в pHospitalPatientObject.HOPPClass - потом в тип пациента (EPVisitNumber.EPVIS_Category_DR)
+	if (pOrderObj.Category'="")&&(##class(User.CTPatientCategory).%ExistsId(pOrderObj.Category)) {
+		set pHospitalPatientObject.HOSPClass=pOrderObj.Category
 	}
 	
 	set ok=pHospitalPatientObject.%Save()
@@ -497,7 +509,7 @@ pFlagUpdate - 1 - update or insert</Description>
 		  set ok=$$$ERROR($$$GeneralError,"Не указан объект с описанием данных о докторе")
 		  quit
 	  }
-	  set doctorCode=pDoctorObject.DoctorId
+	  set doctorCode=$zcvt(pDoctorObject.DoctorId,"U")
 	  If doctorCode="" {
 		  set ok=$$$ERROR($$$GeneralError,"Не указан код доктора")
 		  Quit
@@ -512,12 +524,46 @@ pFlagUpdate - 1 - update or insert</Description>
 	If 'exists {
 		Set obj=##class(User.CTDoctor).%New()
 		set obj.CTDRCode=doctorCode
+		// Address
+		if (pDoctorObject.Address'="") {
+		   Set obj.CTDRAddress1=pDoctorObject.Address
+	    }
+	    // Кол-во копий
+	    if (pDoctorObject.NoOfCopies'="")  {
+		   Set obj.CTDRNoOfCopies=pDoctorObject.NoOfCopies
+	    }
+	    // Курьер
+	    set courier=pDoctorObject.CourierId
+	    if (courier'="")&&(##class(User.CTCourier).%ExistsId(courier)) {
+		   set ok=obj.CTDRCourierRunDRSetObjectId(courier) 
+		   set obj.CTDRPrintEnabled="Y"
+	    }
+	    // Interim or Full Final or ...
+	    set printFormat=pDoctorObject.PrintFormatDR
+	    if printFormat="" set printFormat="IF"
+	    if (printFormat'="")&&(##class(User.CTPrintFormat).%ExistsId(printFormat)) {
+			set ok=obj.CTDRPrintFormatDRSetObjectId(printFormat) 
+		}
+		set companyId=pDoctorObject.CompanyId
+	    if (companyId'="")&&(##class(User.CTCompany).%ExistsId(companyId)) {
+			set ok=obj.CTDRCompanyDRSetObjectId(companyId) 
+		}
+		set specialtyId=pDoctorObject.SpecialtyId d
+	    if specialtyId="" set specialtyId="GP"
+	    if (specialtyId'="")&&(##class(User.CTSpecialty).%ExistsId(specialtyId)) {
+			set ok=obj.CTDRSpecialtyDRSetObjectId(specialtyId) 
+		}
+		set startdate=pDoctorObject.StartDate
+	    if (startdate'="") {
+		    set obj.CTDRStartDate=pDoctorObject.StartDate
+    	}
 		Set needupdate=1 
 	}
 	if (pDoctorObject.Surname'="")&&(obj.CTDRSurname'=pDoctorObject.Surname) {
 		Set obj.CTDRSurname=pDoctorObject.Surname
 		Set needupdate=1 
 	}
+	/*
 	if (pDoctorObject.Address'="")&&(obj.CTDRAddress1'=pDoctorObject.Address) {
 		Set obj.CTDRAddress1=pDoctorObject.Address
 		Set needupdate=1 
@@ -561,8 +607,12 @@ pFlagUpdate - 1 - update or insert</Description>
 		set obj.CTDRStartDate=pDoctorObject.StartDate
 		Set needupdate=1 
 	}
-		
-	Set obj.CTDRActiveFlag="Y"
+	*/	
+	
+	If obj.CTDRActiveFlag'="Y" {
+	 	Set obj.CTDRActiveFlag="Y"
+		Set needupdate=1
+    }
 		 
 	If needupdate {
 		set ok=obj.%Save()
@@ -590,7 +640,7 @@ pFlagUpdate - 1 - update or insert</Description>
 		  set ok=$$$ERROR($$$GeneralError,"Не указан объект с описанием местоположения пациента")
 		  quit
 	  }
-	  set hospitalCode=pObjHospital.HospitalId
+	  set hospitalCode=$zcvt(pObjHospital.HospitalId,"U")
 	  If hospitalCode="" {
 		  set ok=$$$ERROR($$$GeneralError,"Не указан код местоположения пациента")
 		  Quit
@@ -611,12 +661,31 @@ pFlagUpdate - 1 - update or insert</Description>
 		set obj.CTHOSFaxEnabled="N"  // new
 		//Set obj.CTHOSFaxAlways="N" // Нет такого поля
 		Set obj.CTHOSUserBasedPrinting="N"
-		Set needupdate=1
+		// кол-во копий
+		if (pObjHospital.NoOfCopies'="") {
+		     Set obj.CTHOSNoOfCopies=pObjHospital.NoOfCopies
+		}
+		// Interim or Full Final or ...
+		set printFormat=pObjHospital.PrintFormatDR
+	    if printFormat="" set printFormat="I"
+	    if (printFormat'="")&&(##class(User.CTPrintFormat).%ExistsId(printFormat)) {
+			set ok=obj.CTHOSPrintFormatDRSetObjectId(printFormat) 
+		}
+		// Курьер
+		set courier=pObjHospital.CourierId
+	    if (courier'="")&&(##class(User.CTCourier).%ExistsId(courier)) {
+		    set ok=obj.CTHOSCourierRunDRSetObjectId(courier)
+			set obj.CTHOSPrintEnabled="Y" 
+			
+	    }
+		Set needupdate=1  
 	  }
+	  /*
 	  if (pObjHospital.NoOfCopies'="")&&(obj.CTHOSNoOfCopies'=pObjHospital.NoOfCopies) {
 		Set obj.CTHOSNoOfCopies=pObjHospital.NoOfCopies
 		Set needupdate=1
 	  }
+	  
 	  set printFormat=pObjHospital.PrintFormatDR
 	  if printFormat="" set printFormat="I"
 	  if (printFormat'="")&&(##class(User.CTPrintFormat).%ExistsId(printFormat)) {
@@ -625,7 +694,7 @@ pFlagUpdate - 1 - update or insert</Description>
 			Set needupdate=1
 		}
 	  }
-
+      
 	  set courier=pObjHospital.CourierId
 	  if (courier'="")&&(##class(User.CTCourier).%ExistsId(courier)) {
 		if (obj.CTHOSCourierRunDR="")||((obj.CTHOSCourierRunDR'="")&&(obj.CTHOSCourierRunDR.%Id()'=courier)) {
@@ -634,7 +703,7 @@ pFlagUpdate - 1 - update or insert</Description>
 			Set needupdate=1
 	    }
 	  }
-		
+	  */	
 	  If (pObjHospital.HospitalName'="")&&(obj.CTHOSName'=pObjHospital.HospitalName) {
 		Set obj.CTHOSName=pObjHospital.HospitalName
 		Set needupdate=1
