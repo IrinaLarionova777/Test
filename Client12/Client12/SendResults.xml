@@ -7,7 +7,7 @@
 <Parameter name="TIMEOUTGENERAL">
 <Description>
 Timeout для обычных наборов тестов в секундах</Description>
-<Default>1800</Default>
+<Default>30</Default>
 </Parameter>
 
 <Parameter name="TIMEOUTCITO">
@@ -55,7 +55,7 @@ Timeout для обычных наборов тестов в секундах</D
 				     set ok=..GetTestSetECUBE(ts, .testsetECUBE)
 				     if ('ok)||(testsetECUBE="") {
 				       set eventDesc="Не найдено соответствующего TestId для testset="_ts
-				       do ##class(Client12.MISExchange).LogEvent("SendResult","error",eventDesc,ok,"",epis,epis_"||"_ts) 
+				       do ##class(Client12.MISExchange).LogEvent("SendResult","error3",eventDesc,ok,"",epis,epis_"||"_ts) 
 				       //continue попробуем взять в справочнике тестов
 				     }
 				     set tscnt=""
@@ -63,20 +63,23 @@ Timeout для обычных наборов тестов в секундах</D
 					   set tscnt=$order(^ECUBE("Status",status,priority,date,epis,order,ts,tscnt)) if tscnt="" quit
 					   set testsetid=epis_"||"_ts_"||"_tscnt
 		               set doctorId=##class(TCLEx.Function.TestSet).GetDoctorAuthorisation(testsetid)
+		               set doctorId=##class(TCLEx.Function.TestSet).GetDoctorAuthorisationDefault(testsetid,doctorId)
 		               set doctorId=$piece($get(^SSU("SSUSR",1,doctorId)),"^",15)
 			           // Отправка результатов по всем тестам набра тестов ts
 			           // Если orderId=0, значит этот набор тестов введен руками - в этом случае посылаем 0_"^"_ Ноиер направления
-			           set orderId=order_$select(order=0:"^"_superOrderId,1:"")
-					   set ok=..SendTestSetData(.pObjClient,epis, ts, testsetid, orderId, testsetECUBE, dateOfAuthorization, doctorId)
+			           set ordersend=order_$select(order=0:"^"_(superOrderId\1),1:"")
+					   set ok=..SendTestSetData(.pObjClient,epis, ts, testsetid, ordersend, testsetECUBE, dateOfAuthorization, doctorId)
 					   set eventDesc="Отправка результатов по всем тестам: эпизод "_epis_" testsetid="_testsetid
 				       do ##class(Client12.MISExchange).LogEvent("SendResult",$select('ok:"error",1:""),eventDesc,ok,"",epis,testsetid) 
-				       set ok2=..SaveVisitEvent(epis,$select('ok:"Не удалось отправить в МИС результаты по тестам: эпизод="_epis_" набор тестов="_ts_"("_tscnt_")",1:"Отправлены в МИС результаты по тестам: эпизод="_epis_" набор тестов="_ts_"("_tscnt_")"))
+				       if ok {
+					       set ok2=..SaveVisitEvent(epis,$select('ok:"Не удалось отправить в МИС результаты по тестам: эпизод="_epis_" набор тестов="_ts_"("_tscnt_")",1:"Отправлены в МИС результаты по тестам: эпизод="_epis_" набор тестов="_ts_"("_tscnt_")"))
+				       }
 				       if 'ok {
 					      continue
 				       }  
 				       // Устанавливаем статус 2 (отправлены результаты по тестам) по набору тестов testsetid     
-					   set ok=##class(Client12.Data.EpisodeTestSet).SaveStatus(epis,orderId,ts,tscnt,2)
-					   set testsetorderid=epis_"||"_orderId_"||"_ts_"||"_tscnt
+					   set ok=##class(Client12.Data.EpisodeTestSet).SaveStatus(epis,order,ts,tscnt,2)
+					   set testsetorderid=epis_"||"_order_"||"_ts_"||"_tscnt
 					   set eventDesc="Установлен статус 2 в Client12.Data_EpisodeTestSet: testsetid="_testsetorderid
 				       do ##class(Client12.MISExchange).LogEvent("SendResult",$select('ok:"error",1:""),eventDesc,ok,"",epis,testsetorderid)
 				       if 'ok {
@@ -85,8 +88,8 @@ Timeout для обычных наборов тестов в секундах</D
 				      
 					   // Если это последний набор тестов (по все остальным наборам тестов результаты уже отправлены),
 					   // то посылаем флаг закрытия ордера по результатам
-					   if ..IsLastTestSet(epis,orderId) {
-						  do ..SetQueueEventsSendStatus(orderId,20,epis)
+					   if ..IsLastTestSet(epis,order) {
+						       do ..SetQueueEventsSendStatus(order,20,epis)
 					   }
 				     }
 			        }
@@ -146,6 +149,12 @@ Timeout для обычных наборов тестов в секундах</D
 
 			Set minrange=$Get(^||EMED.TestSetData(testdataid,"MinRange"))			
 			Set maxrange=$Get(^||EMED.TestSetData(testdataid,"MaxRange"))
+			
+			// В случае, если у теста нет результата, но есть комментарий, передавать комментарий в поле результат (value), а поле Comment оставлять пустым. 
+			if (result="")&&(comment'="") {
+				set result=comment
+				set comment=""
+			}
 			/*
 			Set range=""
 			If (minrange'="")&&(maxrange'="") {
@@ -241,7 +250,7 @@ Timeout для обычных наборов тестов в секундах</D
 		set tscnt=""
 		for {
 			set tscnt=$order(^TEPI(pEpisode,1,ts,tscnt),1,vals) if tscnt="" quit
-            if $piece(vals,"\",47)'=pOrderId { // надо проверять только строки, относящиеся к указанному ордеру
+            if +$piece(vals,"\",47)'=pOrderId { // надо проверять только строки, относящиеся к указанному ордеру
 	            continue
             }
 			if ('##class(TCLEx.Function.TestSet).IsAuthorised2(pEpisode,ts,tscnt))&&('##class(TCLEx.Function.TestSet).IsCanceled3(pEpisode,ts,tscnt)) {
@@ -604,18 +613,25 @@ Status:
 			    quit
 		    }
 	}
+	
+	set ok1=##class(Client12.SendResults).GetOrderIdByEpisode(pEpisode,.superOrderId)
+	if 'ok1 {
+		set eventDesc="Ошибка при определении номера направления по номеру эпизода "_$get(pEpisode)
+	    do ##class(Client12.MISExchange).LogEvent("SetQueueEventsSendStatus","error",eventDesc,ok1,"",$get(pEpisode),$get(pOrderId))   
+	}
+	
 	// ставим отправку статуса в очередь
-	do ..SetEventSendStatus(pOrderId,pStatus,pEpisode) 
+	set ordersend=$select(pOrderId=0:pOrderId_"^"_(superOrderId\1),1:pOrderId)
+	do ..SetEventSendStatus(ordersend,pStatus,pEpisode) 
 	
 	// записываем новый статус в Client12.Data.Episode
 	if '##class(Client12.Data.Episode).%ExistsId(pEpisode) {
-		set superOrderId=$piece($get(^TEPI(pEpisode)),"\",38)
 		set ok=##class(Client12.Data.Episode).SaveData(pEpisode,superOrderId,10)
 	}
 	set ok1=##class(Client12.Data.EpisodeOrder).SaveData(pEpisode,pOrderId,pStatus)
 	if 'ok1 do $system.Status.AppendStatus(ok,ok1)
 	set eventDesc="Установлен статус "_$get(pStatus)_" для эпизода "_$get(pEpisode)_" orderId="_pOrderId
-	do ##class(Client12.MISExchange).LogEvent("SetQueueEventsSendStatus",$select('ok:"error",1:""),eventDesc,ok,"",$get(pEpisode),$get(pOrderId))
+	do ##class(Client12.MISExchange).LogEvent("SetQueueEventsSendStatus",$select('ok:"error",1:""),eventDesc,ok,"",$get(pEpisode),$get(pOrderId)_"^"_$get(superOrderId))
 	
 	quit
 ]]></Implementation>
@@ -626,8 +642,10 @@ Status:
 <FormalSpec>pOrderId:%String,pStatus:%String,pEpisode:%String=""</FormalSpec>
 <Implementation><![CDATA[
 	set horolog=$h_"."_$piece($zts,".",2)
+	lock +^ECUBE("SendStatus",horolog)
 	set npp=$order(^ECUBE("SendStatus",horolog,""),-1)+1
 	set ^ECUBE("SendStatus",horolog,npp)=$listbuild(pOrderId,pStatus,pEpisode)
+	lock -^ECUBE("SendStatus",horolog)
 	quit
 ]]></Implementation>
 </Method>
