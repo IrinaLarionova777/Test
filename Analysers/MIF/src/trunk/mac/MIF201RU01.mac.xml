@@ -3,7 +3,6 @@
 <Routine name="MIF201RU01" type="MAC" languagemode="0"><![CDATA[
 MIF201RU01(mi)	; Test1 BCL
 	; 18JAN2011 by Mc_Fly - InterSystems BCN
- 
 	s $zt="err"
 	s mi=$g(mi) i '$l(mi) q
 	s stx=$c(2),etx=$c(3),eot=$c(4),ack=$c(6),nak=$c(21)
@@ -13,13 +12,11 @@ MIF201RU01(mi)	; Test1 BCL
 	f j=1:1:PLIST s @("par"_j)=PLIST(j)
 	i $$start^MIF000() d trace("Cannot open device "_par4,"DEBUG") q
 	d trace("Started $j="_$j,"DEBUG")
- 
 	s compiled=$lg(^rINDEX($zn,"OBJ"),1)
 	; Neutral State
 	f  d  i $$stop^MIF000() q
 	. d receive
 	. i $lg(^rINDEX($zn,"OBJ"))'=compiled ztrap "EDIT"
- 
 	c par4
 	d trace("Finished","DEBUG")
 	k ^TMP(mi,$j)
@@ -30,37 +27,41 @@ receive	; Ready to receive
 receiving
 	s record=$e(record,2,$l(record)-1) ; remove <STX>....<ETX>
 	d trace("record="_record,"DEBUG")
- 
 	i $e(record)="R" d result q
 	i $e(record)="Q" d query q
 	d trace("Unknow message","DEBUG")
 	q
 result
 	;s label=$tr($e(record,4,18)," ")
-	s rack=+$e(record,19,20)
-	s pos=+$e(record,21,22)
-	s unk=$e(record,23,24)
-	s res=$e(record,25,28)
-	i $e(res)="-" s res=""
-	i $l(res) s res=+res
-	
-	d trace("rack="_rack_" pos="_pos_" unk="_unk_" res="_res,"DEBUG")
- 
-	i '$l(rack) d trace("rack empty","DEBUG") q
-	i '$l(pos) d trace("position empty","DEBUG") q
-	i '$l(res) q
-	
-	s label=$p($g(^TMIF(mi,"LL",rack,"PAT",pos)),"\",1)
-	s epis=$e(label,1,9)
-	i '$l(epis) q
-	
-	s (sample,surname,date,time,QC)=""
-	s result="VSG"_$c(par10)_res_$c(par10)_$c(par10)_$c(par10)_$c(par11)
-	d trace("File epis="_epis_" sample="_sample_" result="_result_" QC="_QC,"DEBUG")
-	d file^MIF000(mi,sample,epis,surname,result,date,time,QC)
-	q
+	Set containernumber=+$Extract(record,4,18)
+	Set epis=$$Episode4Container^KSMIF000(containernumber)
+	If 'epis Quit
+	//Set epis=+$Extract(record,4,18)
+	Set res=+$Extract(record,25,28)
+	;s rack=+$e(record,19,20)
+	;s pos=+$e(record,21,22)
+	;s unk=$e(record,23,24)
+	If $Extract(res)="-" Set res=""
+	If $Length(res) Set res=+res
+	Set (sample,surname,date,time,QC)=""
+	Set result="VSG"_$c(par10)_res_$c(par10)_$c(par10)_$c(par10)_$c(par11)
+	Do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
+	Quit
 query
-	d trace("Query "_record,"DEBUG")
+	q
+	Set containernumber=+$Extract(record,4,18)
+	Set epis=$$Episode4Container^KSMIF000(containernumber)
+	If 'epis Quit
+	Do scanone^MIF000(mi,epis,"")
+	Set needtest=($Data(^TMP("MIF-SINGLE",$Job,mi,epis))=11)
+	Set resultstr="T"_$Extract(record,2,20)
+	If needtest {
+		Set resultstr=resultstr_"0001"
+	} Else {
+		Set resultstr=resultstr_"0000"
+	}		
+	Set resultstr=resultstr_$$CheckSum(resultstr)
+	Do Send^KSMIF000(stx_resultstr_etx)
 	q
 read(start,stop,term,timeout)	n (mi,record,start,stop,term,timeout)
 	; start: string of start characters i.e. stx
@@ -91,7 +92,6 @@ err
 	d trace($ze,"ERROR")
 	d trace("Finished","DEBUG")
 	k ^TMP(mi,$j)
- 
 	i $f($ze,"<ZEDIT>") d trace("Autostarting...","DEBUG") x "j ^"_$zn_"(mi)"
 	i $f($ze,"<READ>") d trace("Autostarting...","DEBUG") x "j ^"_$zn_"(mi)"
 	q
@@ -112,7 +112,6 @@ trace(mes,dir,join) n dt,date,last,r,times,n,max,z
 	. s mes=mes_" x"_(times+1) k ^TMPmif(mi,99,last)
 	s n=$o(^TMPmif(mi,99,""),-1)+1
 	s ^TMPmif(mi,99,n)=dir_" : "_date_" : "_$$trans(mes)
- 
 	s max=+$p($g(^TMIF(mi)),"\",20) i 'max s max=200
 	f z=n-max:-1 q:'$d(^TMPmif(mi,99,z))  k ^TMPmif(mi,99,z)
 	q
@@ -132,5 +131,11 @@ SAVE(mi) ; Create loadlist record
 	q
 NEXTTRAY(tray)
 	q tray+2
+
+CheckSum(pValue) public {
+	Set result=$ZCRC(pValue,1)
+	If (result=0)||(result=2)||(result=3) Set result=$ZHex("7Fh")
+	Quit $Char(result)	
+}		
 ]]></Routine>
 </Export>
