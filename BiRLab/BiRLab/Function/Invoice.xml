@@ -15,13 +15,14 @@ output:
   pCito - 
   pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String,pPayment:%String="",pTestsetNpp:%String="1"]]></FormalSpec>
+<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String,pPayment:%String="",pTestsetNpp:%String="1",pTestSet:%String=""]]></FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
 	set price="",pError="",pCito=""
 	try {
+		if pTestSet="" set pTestSet=pItem
 		// по данным из BiRLab_Data.InvoiceEpisodeItem
-        set price=..GetPriceEpisodeItem0(pEpisode, pItem, pDate, .pCito, .pError, pTestsetNpp) 
+        set price=..GetPriceEpisodeItem0(pEpisode, pItem, pDate, .pCito, .pError, pTestsetNpp, pTestSet) 
         if (pError="") quit
 	    
 	    set codePayer="",codeHospital="",citoEpis="",citoItem="",codePayerItem=""
@@ -30,7 +31,7 @@ output:
 		     VISTS_Priority_DR,VISTS_PaymentCode_DR 
              INTO :codePayer,:codeHospital, :citoEpis, :citoItem, :codePayerItem
              FROM SQLUser.EP_VisitTestSet
-             WHERE (VISTS_ParRef ->EPVIS_VisitNumber=:pEpisode) and (VISTS_TestSet_DR=:pItem)
+             WHERE (VISTS_ParRef ->EPVIS_VisitNumber=:pEpisode) and (VISTS_TestSet_DR=:pTestSet)
              )
         if pPayment'="" {
 	        set codePayer=pPayment 
@@ -65,20 +66,20 @@ output:
 ]]></Implementation>
 </Method>
 
-<Method name="GetPriceEpisodeItemOld">
-<Description><![CDATA[
-input:
-  pEpisode - номер эпизода from EP_VisitNumber->EPVIS_VisitNumber
-  pItem - EP_VisitTestSet - >VISTS_TestSet_DR
-  pDate - дата, на которую ищем цену
-output: 
-  price As %String (может быть "")
-  pCito - 
-  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
-<ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String]]></FormalSpec>
-<ReturnType>%String</ReturnType>
-<Implementation><![CDATA[
+<UDLText name="T">
+<Content><![CDATA[
+/*
+/// input:
+///   pEpisode - номер эпизода from EP_VisitNumber->EPVIS_VisitNumber
+///   pItem - EP_VisitTestSet - >VISTS_TestSet_DR (для обычных наборов тестов (не из супернабоа) или код супернабора
+///   pDate - дата, на которую ищем цену
+/// 
+/// output: 
+///   price As %String (может быть "")
+///   pCito - 
+///   pError - если все хорошо, то пусто, иначе - строка с описанием ошибки
+ClassMethod GetPriceEpisodeItemOld(pEpisode As %String, pItem As %String, pDate As %String, ByRef pCito As %String, ByRef pError As %String) As %String
+{
 	set price="",pError="",pCito=""
 	try {
 		// по данным из BirLab
@@ -118,21 +119,23 @@ output:
 		set pError=$System.Status.GetErrorText(exception.AsStatus())
 	}  
 	quit price
-]]></Implementation>
-</Method>
+}
+*/
+]]></Content>
+</UDLText>
 
 <Method name="GetPriceEpisodeItem0">
 <Description><![CDATA[
 input:
   pEpisode - номер эпизода from BiRLab_Data.Episode->Episode (EP_VisitNumber->EPVIS_VisitNumber)
-  pItem - BiRLab_Data.EpisodeItem->Item->Code (EP_VisitTestSet - >VISTS_TestSet_DR)
+   pItem - EP_VisitTestSet - >VISTS_TestSet_DR (для обычных наборов тестов (не из супернабоа) или код супернабора
   pDate - дата, на которую ищем цену
 output: 
   price As %String (может быть "")
   pCito - 
   pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String,pTestsetNpp:%String="1"]]></FormalSpec>
+<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String,pTestsetNpp:%String="1",pTestSet:%String=""]]></FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
 	set price="",cito="",pError="",pCito=""
@@ -151,12 +154,20 @@ output:
 		      quit 
 	       }
 	      */ 
-        set testsetid=pEpisode_"||"_pItem_"||"_pTestsetNpp
+	    if pTestSet="" set pTestSet=pItem
+        set testsetid=pEpisode_"||"_pTestSet_"||"_pTestsetNpp
+        /*
 	    &sql(select Amount,Cito into :price,:cito from BiRLab_Data.InvoiceEpisodeItem
            where EpisodeItem->Episode->Episode=:pEpisode 
            and EpisodeItem->IdEPVisitTestSet=:testsetid 
            and Status=1 and InvoiceEpisode->Invoice->Status<>6
-        )
+        )*/
+	    &sql(select Amount,Cito into :price,:cito from BiRLab_Data.InvoiceEpisodeItem
+           where EpisodeItem->Episode->Episode=:pEpisode 
+           and Item=:pItem 
+           and Status=1 and InvoiceEpisode->Invoice->Status<>6
+	    )
+	           
         if (SQLCODE=0) {
 		      set pCito=cito
 		      quit 
