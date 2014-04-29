@@ -35,7 +35,18 @@ pBuf - формируемый буфер</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pReportType:%String,pCourier:%String,pUser:%String,pBuf:%String,pQCopies:%String</FormalSpec>
 <Implementation><![CDATA[
-	set pQCopies=$get(pQCopies,1)
+	// Если это задание из модуля Групповая печать (попавшее на печать по расписанию или по time slot или руками из групповой печати) (если pUser="")
+	// и взведен флаг ^Settings("DRP","PDFGEN_ONLY") только генерации файлов 
+	// и указана директория для генерации PDF файлов и она существует,
+    // и указана директория для генерации временных файлов и она существует,
+	// то генерим файлы без создания задания в диспетчере печати.
+	set pathtemp=..GetPathTemp()
+	set pathmain=..GetPathMain()
+	if ($get(^Settings("DRP","PDFGEN_ONLY"))=1)&&(pathmain'="")&&(##class(%File).DirectoryExists(pathmain))&&(pathtemp'="")&&(##class(%File).DirectoryExists(pathtemp)) {
+		set ok=..MakeFilesForPrint($get(pReportType),$get(pCourier),$get(pUser),$get(pBuf),$get(pQCopies,1))
+	    quit
+	}
+
 	set printer1=##class(TCLEx.Function.Printer).DefaultPrinter()
 	set printer2=printer1_"LOT2"
 	Set glb=$Name(^TRPT)
@@ -77,6 +88,7 @@ pBuf - формируемый буфер</Description>
 						If user="" Set user=" "
 						set key="H"_$c(1)_$j(pCourier,10)_$c(1)_printer_$c(1)_flagPrintLogo
 						Set @pBuf@(key,user,pQCopies,epis,testsetid)=""
+						set ^||vspWorkWithError(pCourier,key,user,pQCopies)=$listbuild(pReportType,pCourier,"H",hosp)  // вспомогат. глобаль для восстановления ^TRPT в случае ошибки при формировании файла 
 						Kill @glb@(pReportType,pCourier,"H",hosp,epis,testset,testcnt)
 					}		
 				}	
@@ -107,7 +119,7 @@ pLISGlb - буфер отчета в формате ЛИС</Description>
 	 // формирование задания в диспетчере печати (чтобы был номер для имени файла
 	 set ok=##class(TCLEx.Report.ResultFormNew).CreateEmptyLISReport(pCourier,pUser,pQCopies,1,.idReport)
 	 if 'ok quit
-	 set pdfFileName=##class(TCLEx.Report.DRP).GetFileName(idReport)  //..GetFileReportName(idReport)
+	 set pdfFileName=..GetFileName(idReport,pCourier)  //..GetFileReportName(idReport)
 	 // формирование PDF Файла со всеми эпизодами
 	 Set reportclassnameDRP=##class(TCLEx.Report.Settings).GetDRPResultClassName()
 	 set pPDF=1  // признак того, что результат нужен только как PDF файл (распечатываемые на бумаге монут иметь другой вид, например не нужен логотип, т.к. он есть на бумажном бланке)
@@ -192,6 +204,216 @@ Id принтера</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pPrinter:%String</FormalSpec>
 <ReturnType>%String</ReturnType>
+</Method>
+
+<Method name="GetFileName">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportId:%String,pCourier:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+     set pdfFileName=$$seldata^MVBCFSM(1,45)
+	 if pdfFileName="" set pdfFileName=$$seldata^MVBCFSM(1,30) 
+	 set pdfFileName=$tr(pdfFileName,$c(17),"\")
+	 set x=$s(pdfFileName["\":"\",1:"/") 
+	 if $extract(pdfFileName,$l(pdfFileName))'=x s pdfFileName=pdfFileName_x
+	 
+	 set pdfFileName=pdfFileName_"pdf"_x_"xx"_pCourier_"_"_pReportId_".pdf"
+	 
+	 if ##class(%File).Exists(pdfFileName) {
+			set pdfFileName=$$ArchiveFileName^KSUTIL1(pdfFileName)
+	 }
+	 if ##class(%File).Exists(pdfFileName) {
+		 set pdfFileName=""
+	 }
+	 quit pdfFileName
+]]></Implementation>
+</Method>
+
+<Method name="MakeFilesForPrint">
+<Description>
+Создание файлов для печати сторонними силами (Макс Бион)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportType:%String,pCourier:%String,pUser:%String,pBuf:%String,pQCopies:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {	
+	set pQCopies=$get(pQCopies,1)
+	set printer1=##class(TCLEx.Function.Printer).DefaultPrinter()
+	set printer2=printer1_"LOT2"
+	set countEpisode=0 // считаем кол-во эпизодов, пападающий в один файл - 10 максимум
+	set limitEpis=$get(^Settings("DRP","limitEpisodesInReport"))  // макс число эпизодов в одном задании диспетчера печати
+	if +limitEpis=0 set limitEpis=8
+
+	set pathtemp=..GetPathTemp()
+	if pathtemp="" {
+		set ok=$$$ERROR($$$GeneralError,"Не указан путь к временным файлам")
+		quit
+	}
+    set pathmain=..GetPathMain()
+	if pathmain="" {
+		set ok=$$$ERROR($$$GeneralError,"Не указан путь к pdf файлам для генерации")
+		quit
+	}
+
+    Set reportclassnameDRP=##class(TCLEx.Report.Settings).GetDRPResultClassName()
+
+    set files=""
+    kill ^||ResultForm.EpisodesOneReport
+	Set glb=$Name(^TRPT)
+	Set hosp=""
+	For  {
+		Set hosp=$Order(@glb@(pReportType,pCourier,"H",hosp)) If hosp="" Quit
+		/// Печать в другой лоток без шапки (с пустым местом вместо шапки или нет???)
+		set printer=printer1
+		set flagNeedLogo=3
+		If (hosp'="")&&($Data(^BionImg("ResultReportHeaders",hosp)))&&($$select^LVBCTPD(printer2)=0) {
+			set printer=printer2
+			set flagNeedLogo=2
+		}
+	    set flagNeedSignature=2
+	    set flagNeedStamp=2
+	    set ExtraParamsZen=$listbuild(flagNeedLogo,flagNeedSignature,flagNeedStamp)
+
+		set filename=""	set ok=..GetFileName2(pCourier,printer,.filename)
+		if filename="" continue
+
+		Set epis=""
+		For  {
+			Set epis=$Order(@glb@(pReportType,pCourier,"H",hosp,epis)) If epis="" Quit
+			set filename=$piece(filename,".pdf",1)_"_"_epis_".pdf"
+			set countEpisode=countEpisode+1
+			if countEpisode>limitEpis {
+				 if $get(files)'="" {
+				     set filename="" set ok=..GetFileName2(pCourier,printer,.filename) 
+		             if filename="" quit
+				     set ok=..CreatePDFFile(files,pdffilename,pathtemp,pathmain)
+				     if ok Do ##class(TCLEx.Report.ResultFormNew).UpdateTestSetsPrintingInfo($Name(^||ResultForm.EpisodesOneReport))  
+				     set files=""
+				     kill ^||ResultForm.EpisodesOneReport 
+			         if 'ok quit
+				 }
+			}
+			// все языки, на которых надо сформировать файлы
+			Set languages=##class(TCLEx.Function.Episode).ResultLanguages(epis)
+			// Все наборы тестов ( с заменой на супернаборы )
+			kill testsets
+			Set testset=""
+			For  {
+				Set testset=$Order(@glb@(pReportType,pCourier,"H",hosp,epis,testset))
+				If testset="" Quit
+				Set testcnt=""
+				For  {
+					Set testcnt=$Order(@glb@(pReportType,pCourier,"H",hosp,epis,testset,testcnt)) If testcnt="" Quit
+					Set testsetid=epis_"||"_testset_"||"_testcnt
+					If '$IsObject(testsetobj) Continue
+					set take=0
+					If $$printable^LVBCTTS(testset,testsetid) {
+						set take=1
+						Set superset=""
+			            If $IsObject(testsetobj.VISTSSuperSetDR) Set superset=testsetobj.VISTSSuperSetDR.%Id()
+			            If superset'="" {
+ 				             Set testsets(superset)=""
+			            } Else {
+				             Set testsets(testsetid)=""
+			            }	
+					}
+					if take=1 set ^||ResultForm.EpisodesOneReport(epis,testsetid)=""		
+				}	
+			}
+			Set langcnt=$ListLength(languages)
+		    For i=1:1:langcnt {
+			    Set language=$ListGet(languages,i)
+			    If language="" Continue
+			    set nmfile=##class(%File).GetFilename(filename)
+			    set filenamevsp=##class(TCLEx.Report.ResultFormNew).NextAuxiliaryFile(nmfile,pathtemp) 
+			    set extraParams=$listbuild(1,pathtemp,1,language,0,0,"")
+			    set ok=$ClassMethod(reportclassnameDRP,"CreateEpisodePDFReport",epis,.testsets, extraParams, ExtraParamsZen, filenamevsp) 
+			    if 'ok quit
+			    set files=files_$select(files'="":$char(0),1:"")_filenamevsp
+		    }
+			if $get(files)'="" {
+				set pdffilename=""
+				set ok=..GetFileName2(pCourier,printer,.pdffilename)
+				if 'ok quit
+				set ok=..CreatePDFFile(files,pdffilename,pathtemp,pathmain)
+				if 'ok quit
+				Do ##class(TCLEx.Report.ResultFormNew).UpdateTestSetsPrintingInfo($Name(^||ResultForm.EpisodesOneReport))
+				kill ^||ResultForm.EpisodesOneReport
+			 }
+	
+			Kill @glb@(pReportType,pCourier,"H",hosp,epis)
+		}
+	}
+  } catch(e) { set ok=e.AsStatus() }
+  
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetFileName2">
+<Description>
+Получить имя файла для генерации (без печати через диспетчер печати) 
+LOGOFLAG - признак наличия в файле индивидуального логотипа для определения "лотка" (значения: std - без логотипа для печати на БИОН-овском бланке, csm - с логотипом для печати на обычном белом листе).			 </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pCourier:%String,pPrinter:%String,&pFileName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK,pFileName=""
+	try {
+		set pFileName="schp_"_pCourier_"_"_$select(pPrinter="MAINLOT2":"csm",1:"std")_"_"_$zd(+$h,8)_"-"_$tr($zt($p($h,",",2)),";","")_$p($zts,".",2)_".pdf"
+	} catch(e) {
+		set ok=e.AsStatus()
+		set pFileName=""
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Создаем один окончательный PDF файл (из разных файлов по разным эпизодам) (перенумерация страниц не требуется, так как в каждом эпизоде своя нумерация)
+
+]]></Content>
+</UDLText>
+
+<Method name="CreatePDFFile">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFiles:%String,pPDFFileName:%String,pPathTemp:%String,pPathMain:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {
+	  set filenametemp=##class(TCLEx.Report.ResultFormNew).NextAuxiliaryFile(pPDFFileName,pPathTemp) 
+	 // Создаем один окончательный PDF файл (из разных файлов по разным эпизодам) (перенумерация страниц не требуется, так как в каждом эпизоде своя нумерация)
+    if pFiles'="" {
+		if $length(pFiles,$c(0))>1 {
+		       set ok=##class(TCLEx.Report.FunctionsJava).startConcatPDF(pFiles,filenametemp,0,1)
+		       if 'ok quit
+		}
+	}
+	 
+	set ok=##class(%File).Rename(filenametemp,pPathMain_"/"_pPDFFileName)
+	
+  } catch(e) { set ok=e.AsStatus() }
+  
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetPathTemp">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	set path=$get(^Settings("DRP","PDFGEN_ONLY","pathtemp"))
+	if path="" set pathtemp=$get(Settings("server","pathTempFile"))
+	quit path
+]]></Implementation>
+</Method>
+
+<Method name="GetPathMain">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit $get(^Settings("DRP","PDFGEN_ONLY","path"))
+]]></Implementation>
 </Method>
 </Class>
 </Export>
