@@ -56,26 +56,9 @@ pUser - пользователь запустивший отчет</Description>
 				             set texterror=$system.Status.GetErrorText(ok)
 				             do ##class(TCLEx.Function.General).WriteError(texterror,"TCLEx.Report.ResultFormNew.SaveLISReportAll")  
 				             // если произошла ошибка (отличная от Нет данных), то надо оставить задание для следующей попытки Надо ли это делать???
-				             /*
 				             if $zcvt(texterror,"L")'["нет данных" {
-					             Set epis1=""
-					             For  {
-						             Set epis1=$Order(^||ResultForm.EpisodesOneReport(epis1)) If epis1="" Quit
-		                             set testset1=""
-		                             for  {
-			                             set testset1=$Order(^||ResultForm.EpisodesOneReport(epis1,testset1)) If testset1="" Quit
-			                             set tscnt1=""
-			                             for {
-				                             set tscnt1=$order(^||ResultForm.EpisodesOneReport(epis1,testset1,tscnt1)) if tscnt1="" quit
-				                             set strref=$get(^||vspWorkWithError(pCourier,reporttype,user,qcopies))
-				                             if strref="" continue
-				                             set ref1=$listget(strref,1),ref2=$listget(strref,2),ref3=$listget(strref,3),ref4=$listget(strref,4)
-				                             if (ref1'="")&&(ref2'="")&&(ref3'="")&&(ref4'="") set ^TRPT(ref1,ref2,ref3,ref4,epis1,testset1,tscnt1)=""
-			                             }
-		                             }
-					             }
+					             do ..RestoreTRPT(reporttype,user,qcopies)
 				             }
-				             */
 			             }
 			             if ok Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.EpisodesOneReport))
 			             set countEpisode=1
@@ -85,15 +68,23 @@ pUser - пользователь запустивший отчет</Description>
 				 merge ^||ResultForm.EpisodesOneReport(epis)=^||ResultForm.Episodes(reporttype,user,qcopies,epis)	 
 			 }
 			 if $data(^||ResultForm.EpisodesOneReport) {
-					     set ok=..SaveLISReportAll(pCourier, user, qcopies, reporttype, $name(^||ResultForm.EpisodesOneReport))  
-			             if 'ok do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),"TCLEx.Report.ResultFormNew.SaveLISReportAll")   
-			             if ok Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.EpisodesOneReport))
+				 set ok=..SaveLISReportAll(pCourier, user, qcopies, reporttype, $name(^||ResultForm.EpisodesOneReport))  
+			     if 'ok {
+		             set texterror=$system.Status.GetErrorText(ok)
+    	             do ##class(TCLEx.Function.General).WriteError(texterror,"TCLEx.Report.ResultFormNew.SaveLISReportAll")  
+		             // если произошла ошибка (отличная от Нет данных), то надо оставить задание для следующей попытки Надо ли это делать???
+		             if $zcvt(texterror,"L")'["нет данных" {
+			             do ..RestoreTRPT(reporttype,user,qcopies)
+		             }
+		         }
+	             if ok Do ..UpdateTestSetsPrintingInfo($Name(^||ResultForm.EpisodesOneReport))
+	             set countEpisode=1
+			     kill ^||ResultForm.EpisodesOneReport
 			 }
-			 
-			}
+			}		 
 		}
 	}
-	kill ^||vspWorkWithError
+    kill ^||vspWorkWithError
 ]]></Implementation>
 </Method>
 
@@ -180,9 +171,11 @@ pBuf - формируемый буфер</Description>
 						}
 						*/
 						Set @pBuf@(key,user,pQCopies,epis,testsetid)=""
-						set ^||vspWorkWithError(pCourier,key,user,pQCopies)=$listbuild(pReportType,pCourier,"H",hosp) // вспомогат. глобаль для восстановления ^TRPT в случае ошибки при формировании файла 
+						set ^||vspWorkWithError(key,user,pQCopies,epis,testsetid)=$listbuild(pReportType,pCourier,"H",hosp,vals)  // вспомогат. глобаль для восстановления ^TRPT в случае ошибки при формировании файла 
 						Kill @glb@(pReportType,pCourier,"H",hosp,epis,testset,testcnt)
-					}		
+					} else {
+						kill @glb@(pReportType,pCourier,"H",hosp,epis,testset,testcnt)
+					} 		
 				}	
 			}	
 			Kill @glb@(pReportType,pCourier,"H",hosp,epis)
@@ -242,8 +235,10 @@ pBuf - формируемый буфер</Description>
 						*/
 						If user="" Set user=" "
 						Set @pBuf@(key,user,pQCopies,epis,testsetid)=""
-						set ^||vspWorkWithError(pCourier,key,user,pQCopies)=$listbuild(pReportType,pCourier,"D",doctor) // вспомогат. глобаль для восстановления ^TRPT в случае ошибки при формировании файла 
+						set ^||vspWorkWithError(key,user,pQCopies,epis,testsetid)=$listbuild(pReportType,pCourier,"D",doctor,vals) // вспомогат. глобаль для восстановления ^TRPT в случае ошибки при формировании файла 
 						Kill @glb@(pReportType,pCourier,"D",doctor,epis,testset,testcnt)
+					} else {
+						kill @glb@(pReportType,pCourier,"D",doctor,epis,testset,testcnt)
 					}		
 				}	
 			}	
@@ -434,7 +429,7 @@ pLISGlb - буфер отчета в формате ЛИС</Description>
 		}
 	}
 	if files'="" {
-		set ok=..SaveLISReportDop(idReport,pCourier,pUser,pQCopies,countEpisodes,files,pdfFileName,pParams)
+		set ok=..SaveLISReportDop(idReport,pCourier,pUser,pQCopies,countEpisodes,files,pdfFileName,pParams,pEpisodesGlb)
 		if 'ok quit
 	}	
   } catch(e) {
@@ -502,7 +497,7 @@ pEpisCount - число эпизодов в отчете
 pQCopies - число копий 
 pFiles - список сформированных файлов для объединения в один файл</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pIdReport:%String,pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisCount:%Integer,pFiles:%String,pPDFFileName:%String,pParams:%String=""</FormalSpec>
+<FormalSpec>pIdReport:%String,pCourier:%String,pUser:%String,pQCopies:%Integer,pEpisCount:%Integer,pFiles:%String,pPDFFileName:%String,pParams:%String="",pEpisodesGlb:%String=""</FormalSpec>
 <PublicList>PLIST</PublicList>
 <Implementation><![CDATA[
   set ok=$$$OK
@@ -531,7 +526,8 @@ pFiles - список сформированных файлов для объе�
 	
 	// В "PRT" имя уже созданного файла
 	set ^PR(pIdReport,"PRT","FileName")=pPDFFileName
-	
+	if pEpisodesGlb'="" merge ^PR(pIdReport,"PRT","Episodes")=@pEpisodesGlb
+	  
 	// Также необходимо запись в PR_ReportDestination (почему-то только через SQL можно добавить запись...)
 	Kill PLIST
 	set userCall=$tr($piece(pUser,$char(1),1)," ","") // пользователь, запусающий на печать (он указан при одиночной печати, при групповой, не указан)
@@ -1513,6 +1509,30 @@ ClassMethod GetFileReportName(pIdReport As %String) As %String
    	    if '##class(%File).Exists(file) quit
    	}
     quit file
+]]></Implementation>
+</Method>
+
+<Method name="RestoreTRPT">
+<Description>
+Если не удалось создать задания в диспетчере печати (произошла ошибка какая-то) , то надо восстановит задания в ^TRPT("C",courier,...)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pReportType:%String,pUser:%String,pQCopies:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set epis1=""
+	For  {
+	     Set epis1=$Order(^||ResultForm.EpisodesOneReport(epis1)) If epis1="" Quit
+	     set testsetid1=""
+	     for  {
+	          set testsetid1=$Order(^||ResultForm.EpisodesOneReport(epis1,testsetid1)) If testsetid1="" Quit
+	          set strref=$get(^||vspWorkWithError(pReportType,pUser,pQCopies,epis1,testsetid1))
+	          if strref="" continue
+	          set ref1=$listget(strref,1),ref2=$listget(strref,2),ref3=$listget(strref,3),ref4=$listget(strref,4),vals=$listget(strref,5)
+	          set testset1=$piece(testsetid1,"||",2),tscnt1=$piece(testsetid1,"||",3)
+	          if (ref1'="")&&(ref2'="")&&(ref3'="")&&(ref4'="")&&(testset1'="")&&(tscnt1'="") {
+		          set ^TRPT(ref1,ref2,ref3,ref4,epis1,testset1,tscnt1)=vals
+	          }
+	     }
+	}
 ]]></Implementation>
 </Method>
 </Class>
