@@ -432,5 +432,90 @@
 	quit path
 ]]></Implementation>
 </Method>
+
+<Method name="Inds">
+<Description>
+список всех индексов
+do Inds^WebER()
+pGbl - глобал результатов
+pPkg - пакет классов
+pClear - чистить глобал результатов</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFile,pPkg</FormalSpec>
+<Implementation><![CDATA[
+	#dim filestream As %FileCharacterStream
+	
+	if $G(pFile)="" quit
+	if $G(pPkg)="" set pPkg = "WebER"
+	
+	if ##class(%File).Exists(pFile) {
+		do ##class(%File).Delete(pFile)
+	}
+	set:pPkg'["." pPkg = pPkg_"." 
+	Write !,"Сбор всех индексов в "_pPkg_"*"
+	&sql(DECLARE cInds CURSOR FOR
+		select ID, Name 
+			into :id, :classname
+		from %Dictionary.CompiledClass
+		where ID %STARTSWITH :pPkg and ClassType='persistent'	
+ 	)
+    
+    set filestream=##class(%FileCharacterStream).%New()
+    set filestream.Filename=pFile
+	&sql(OPEN cInds)
+	for {
+		&sql(FETCH cInds)
+		quit:SQLCODE
+		continue:$E(id,1,$L(pPkg))'=pPkg
+		do ..CurInd(filestream,id, classname)
+		
+	}
+    
+	&sql(CLOSE cInds)
+	do filestream.SaveStream()
+	do filestream.%Close()
+	Write !,"Все, см. "_pFile
+]]></Implementation>
+</Method>
+
+<Method name="CurInd">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFileStream:%FileCharacterStream,pId,pClassName</FormalSpec>
+<Implementation><![CDATA[
+	&sql(DECLARE cCurInd CURSOR FOR
+		select Name,IdKey,Properties,_Unique,Data
+			into :Name,:IdKey,:Properties,:Uniq,:Data
+		from %Dictionary.IndexDefinition
+		where parent = :pId
+ 	)
+
+	&sql(OPEN cCurInd)
+	&sql(FETCH cCurInd)
+	While (SQLCODE = 0) {
+		do pFileStream.WriteLine("ClassName="_pClassName_", IndexName="_Name_", IdKey="_IdKey_", Unique="_Uniq_", Data="_Data_", Properties="_Properties)
+		&sql(FETCH cCurInd)
+	}
+	    
+	&sql(CLOSE cCurInd)
+	
+	// индексы, которые описаны в map
+	set ref=$na(^||struct(pClassName))
+    do ..getInfoAboutClass(pClassName, ref ) 
+    set typemap="" 
+   for {
+	 set typemap=$order(@ref@("map",typemap)) if typemap="" quit
+	 if typemap'="index" continue
+     set map="" 
+     for {
+    	 set map=$order(@ref@("map",typemap,map)) if map="" quit
+    	 set globname=$li(@ref@("map",typemap,map),1)
+    	 set globNameWithKeys=..getNameGlob($na(@ref@("map",typemap,map)))
+    	 do pFileStream.WriteLine("ClassName="_pClassName_", IndexGlob="_globNameWithKeys)
+     }
+   }
+   
+ quit
+]]></Implementation>
+</Method>
 </Class>
 </Export>
