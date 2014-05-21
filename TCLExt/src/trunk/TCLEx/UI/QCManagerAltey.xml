@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.UI.QCManagerAltey">
+<Super>%RegisteredObject</Super>
+<TimeCreated>63326,65525.401595</TimeCreated>
+
+<Method name="GetQCResults69">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pDateFrom:%String="",pDateTo:%String="",pLotList:%String="",pTestList:%String="",&pErrors:%String]]></FormalSpec>
+<ReturnType>%GlobalCharacterStream</ReturnType>
+<Implementation><![CDATA[
+	set result=##class(%GlobalCharacterStream).%New()
+	//set resFile=##class(%FileCharacterStream).%New()
+	set pErrors=""
+	try {
+		if pDateFrom="" {
+			set pErrors=" Не указана дата начала для запроса"
+			quit
+		}
+		if pDateTo="" {
+			set pErrors=" Не указана дата окончания для запроса"
+			quit
+		}
+		set ok=..GetQCData69(pDateFrom,pDateTo,pLotList,pTestList)
+		if 'ok {
+			set pErrors=$system.Status.GetErrorText(ok)
+			quit
+		}
+		// создание XML
+		do result.WriteLine("<qc_results>")
+		set npp=""
+		for {
+			set npp=$order(^||data(npp),1,rec) if npp="" quit
+			set idQC=$listget(rec,8) if idQC="" continue
+			set res=$listget(rec,7) if res="" continue
+			set test=$listget(rec,4) if test="" continue
+			set date=$listget(rec,5) if date'="" set date=$tr($zd(date,4),"/",".")
+			set time=$listget(rec,6) if time'="" set time=$zt(time)
+			set str="<qc_result user_code=""trakcarelab"""
+			set str=str_" lot_code="""_idQC_""" method_code="""_test
+			set str=str_""" result_lis_id="""_test_""" result_date="""_date_""" result_time="""_time
+			set str=str_""" result_value="""_res_""" result_value2="""_""_""" result_note="""_""_""" />"
+			do result.WriteLine(str)
+		}
+		do result.WriteLine("</qc_results>")
+		
+		// выгружаем в файл (для отладки)
+		/*
+		set resFile=##class(%FileCharacterStream).%New()
+		set resFile.Filename="c:/temp/altey.xml"
+		set resFile.TranslateTable="CP1251"
+		set ok=resFile.CopyFromAndSave(result)
+		if 'ok set pErrors=pErrors_" "_$system.Status.GetErrorText(ok)
+		set resFile=""
+		*/
+										
+	} catch(e) {
+		set pErrors=$get(pErrors)_$select($get(pErrors)'="":" ;",1:"")_$ze
+	}
+	quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetQCData69">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateFrom:%String="",pDateTo:%String="",pLotList:%String="",pTestList:%String=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		kill ^||lots
+		for i=1:1:$length(pLotList,",") {
+			set lot=$piece(pLotList,",",i)
+			if lot'="" set ^||lots(lot)=""
+		}
+		kill ^||tests
+		for i=1:1:$length(pTestList,",") {
+			set test=$piece(pTestList,",",i)
+			if test'="" set ^||tests(test)=""
+		}
+        kill ^||data
+		set QCMaterial="" 
+		for {
+			set QCMaterial=$Order(^TTQC(QCMaterial)) if QCMaterial="" quit
+			set glLot=$na(^TTQC(QCMaterial,"LOT"))
+			if $data(^||lots) set glLot="^||lots"
+			set lot="" 
+			for {
+				set lot=$order(@glLot@(lot)) if lot="" quit
+				if '$data(^TTQC(QCMaterial,"LOT",lot)) continue
+				set type="M"
+				/*
+				set type="" 
+				for {
+					set type=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type)) if type="" quit
+					*/
+					set wm="" 
+					for {
+						set wm=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm)) if wm="" quit
+						set glTest=$na(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST"))
+						if $data(^||tests) set glTest="^||tests"
+						set ti="" 
+						for {
+							set ti=$o(@glTest@(ti)) if ti="" quit 
+							if '$data(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti)) continue
+							set level="" 
+							for {
+								set level=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level)) if level="" quit
+								set date=pDateFrom-1 
+								for {
+									set date=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level,date)) if (date="")||(date>pDateTo) quit
+									set run="" 
+									for {
+										set run=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level,date,run),1,rec) if run="" quit
+										set res=$piece(rec,"\",1),time=$piece(rec,"\",4)
+										set idQC=$piece($get(^TMIF(wm,"QC",QCMaterial,level)),"\",1) // Идентификатор КК, который приходит с прибора (MIQC_SampleID)
+										set ^||data($i(^||data))=$lb(QCMaterial,lot,level,ti,date,time,res,idQC)
+									}
+								}
+							}
+						}
+					}
+				//}
+			}
+		}
+	} catch(e) {
+		set ok=e.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetQCResults69analyzer">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pDateFrom:%String="",pDateTo:%String="",pAnalList:%String="",&pErrors:%String]]></FormalSpec>
+<ReturnType>%GlobalCharacterStream</ReturnType>
+<Implementation><![CDATA[
+	set result=##class(%GlobalCharacterStream).%New()
+	//set resFile=##class(%FileCharacterStream).%New()
+	set pErrors=""
+	try {
+		if pDateFrom="" {
+			set pErrors=" Не указана дата начала для запроса"
+			quit
+		}
+		if pDateTo="" {
+			set pErrors=" Не указана дата окончания для запроса"
+			quit
+		}
+		set ok=..GetQCData69analyzer(pDateFrom,pDateTo,pAnalList)
+		if 'ok {
+			set pErrors=$system.Status.GetErrorText(ok)
+			quit
+		}
+		if $data(^||data) {
+			// создание XML
+		    do result.WriteLine("<qc_results>")
+		    set npp=""
+		    for {
+			 set npp=$order(^||data(npp),1,rec) if npp="" quit
+			 set idQC=$listget(rec,8) if idQC="" continue
+			 set res=$listget(rec,7) if res="" continue
+			 set test=$listget(rec,4) if test="" continue
+			 set date=$listget(rec,5) if date'="" set date=$tr($zd(date,4),"/",".")
+			 set time=$listget(rec,6) if time'="" set time=$zt(time)
+			 set str="<qc_result user_code=""trakcarelab"""
+			 set str=str_" lot_code="""_idQC_""" method_code="""_test
+			 set str=str_""" result_lis_id="""_test_""" result_date="""_date_""" result_time="""_time
+			 set str=str_""" result_value="""_res_""" result_value2="""_""_""" result_note="""_""_""" />"
+			 do result.WriteLine(str)
+		    }
+		    do result.WriteLine("</qc_results>")
+		}
+		
+	} catch(e) {
+		set pErrors=$get(pErrors)_$select($get(pErrors)'="":" ;",1:"")_$ze
+	}
+	quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetQCData69analyzer">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateFrom:%String="",pDateTo:%String="",pAnalList:%String=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		kill ^||analyzers
+		for i=1:1:$length(pAnalList,",") {
+			set id=$piece(pAnalList,",",i)
+			if id'="" set ^||analyzers(id)=""
+		}
+        kill ^||data
+		set QCMaterial="" 
+		for {
+			set QCMaterial=$Order(^TTQC(QCMaterial)) if QCMaterial="" quit
+			set lot="" 
+			for {
+				set lot=$order(^TTQC(QCMaterial,"LOT",lot)) if lot="" quit
+				set type="M"
+				/*
+				set type="" 
+				for {
+					set type=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type)) if type="" quit
+					*/
+					set glAnal=$na(^TTQC(QCMaterial,"LOT",lot,"TYPE",type))
+			        if $data(^||analyzers) set glAnal="^||analyzers"
+					set wm="" 
+					for {
+						set wm=$o(@glAnal@(wm)) if wm="" quit
+  					    set ti="" 
+						for {
+							set ti=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti)) if ti="" quit 
+							set level="" 
+							for {
+								set level=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level)) if level="" quit
+								set date=pDateFrom-1 
+								for {
+									set date=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level,date)) if (date="")||(date>pDateTo) quit
+									set run="" 
+									for {
+										set run=$o(^TTQC(QCMaterial,"LOT",lot,"TYPE",type,wm,"TEST",ti,"DATA",level,date,run),1,rec) if run="" quit
+										set res=$piece(rec,"\",1),time=$piece(rec,"\",4)
+										set idQC=$piece($get(^TMIF(wm,"QC",QCMaterial,level)),"\",1) // Идентификатор КК, который приходит с прибора (MIQC_SampleID)
+										set ^||data($i(^||data))=$lb(QCMaterial,lot,level,ti,date,time,res,idQC)
+									}
+								}
+							}
+						}
+					}
+				//}
+			}
+		}
+	} catch(e) {
+		set ok=e.AsStatus()
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Query name="queryQC69">
+<Type>%Query</Type>
+<FormalSpec>pDateFrom:%String,pDateTo:%String,pLotList:%String,pTestList:%String</FormalSpec>
+<SqlProc>1</SqlProc>
+<Parameter name="ROWSPEC" value="str:%String"/>
+</Query>
+
+<Method name="queryQC69Execute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,pDateFrom:%String,pDateTo:%String,pLotList:%String,pTestList:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ set ok=$$$OK
+ kill ^||xml
+ try {
+  	set $li(qHandle,1)=""
+  	
+  	if ($get(pDateFrom)="")||($get(pDateTo)="")||($get(pLotList)="")||($get(pTestList)="") {
+	    set ^||xml($i(^||xml))="<qc_results>"
+	    set ^||xml($i(^||xml))="</qc_results>"
+	    quit 
+    } else {
+	    set ok=..GetQCData69(pDateFrom,pDateTo,pLotList,pTestList) 
+	   	set ^||xml($i(^||xml))="<qc_results>"
+		set npp=""
+		for {
+			set npp=$order(^||data(npp),1,rec) if npp="" quit
+			set idQC=$listget(rec,8) if idQC="" continue
+			set res=$listget(rec,7) if res="" continue
+			set test=$listget(rec,4) if test="" continue
+			set date=$listget(rec,5) if date'="" set date=$tr($zd(date,4),"/",".")
+			set time=$listget(rec,6) if time'="" set time=$zt(time)
+			set str="<qc_result user_code=""trakcarelab"""
+			set str=str_" lot_code="""_idQC_""" method_code="""_test
+			set str=str_""" result_lis_id="""_test_""" result_date="""_date_""" result_time="""_time
+			set str=str_""" result_value="""_res_""" result_value2="""_""_""" result_note="""_""_""" />"
+			set ^||xml($i(^||xml))=str
+		}
+		set ^||xml($i(^||xml))="</qc_results>"
+    } 	
+ } catch(exception)
+ {
+     set ok=exception.AsStatus()
+ }	
+ quit ok
+]]></Implementation>
+</Method>
+
+<Method name="queryQC69Close">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary]]></FormalSpec>
+<PlaceAfter>queryQC69Execute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="queryQC69Fetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>queryQC69Execute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {
+	set item=$listget(qHandle,1)
+	set item=$order(^||xml(item))
+	if item="" {
+		set Row="",AtEnd=1
+	} 
+	else {
+	  set $li(Row,1)=$get(^||xml(item))
+	  set $li(qHandle,1)=item
+	  set AtEnd=0
+	}
+ } catch(exception)
+  {
+     set ok=exception.AsStatus()
+  }	
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="TestqueryQC69">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+ Set result=##class(%ResultSet).%New("TCLEx.UI.QCManagerAltey:queryQC69")
+ Do result.Execute(+$h-500,$h,"","")
+ For  Quit:'result.Next()  Do
+ . Write result.Data("str"),!
+]]></Implementation>
+</Method>
+</Class>
+</Export>
