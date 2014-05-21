@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS60" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS60   ; Данные по контролю качества для Алтея - xml-файл определенного формата; liv
+ q
+ ;
+ ; Используется сервисная программа  ^REPORTSPB
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par             
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t-7 :True"
+ s @Par@("PAR2a")="Label   : 3000: 200 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 4100: 200 : 1100 : 300 : t:True"
+ ; ---
+ ; список приборов
+ s @Par@("PAR3a")="Label   : 100 : 1000 : 1000 : 300 : Анализатор:"
+ set default=""
+ s @Par@("PAR3")="ListBox :  100 : 1300 : 6000 : 5000 : :True: 0 : Checkbox  " 
+ set id=""
+ for {
+	 set id=$order(^TMIF(id),1,record) if id="" quit
+	 set name=$piece(record,"\",1)
+	 ;set @Par@("PAR3",name_$char(4)_id)=name
+	 set @Par@("PAR3",id)=name
+ }
+ if $data(@Par@("PAR3")) set @Par@("PAR3",0)="Все анализаторы"
+ //s @Par@("PAR4a")="Label   : 100 : 600 : 3000 : 300 : Путь к файлу:"
+ //s @Par@("PAR4")="Text: 1300: 600 : 4100 : 300 : c:\temp\altey.xml :True"
+ ; настройка формы
+ s @Par@("form")="Формирование файла для импорта в систему ""Алтей"" ("_USER_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz  ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR  ;@@@
+ ; сохраняем для обработки входных данных (списка наборов тестов)
+ k MasForm m MasForm=^TEMP($j) 
+ k ^TEMP($J)
+ s Mas="^TEMP($J,""START"")"
+ s MSGERROR=""            
+ d INIT i $g(MSGERROR)'="" quit MSGERROR
+ set sc=$$BODY() 
+ if 'sc {
+	 k ^TEMP($zn,$J),^TEMP($j)
+	 s MSGERROR="100^"_$System.Status.GetErrorText(sc) 
+	 quit MSGERROR
+ }
+ k ^TEMP($zn,$J),^TEMP($j)
+ q "100^Успешно сформирован файл "_$get(fileWork)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ ;------------------------------------------------
+INIT ; инициализация входных параметров
+ New mas,str,i,j
+ d PARAM^REPORTSPB(PAR,"mas")
+ s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+ ; период дат
+ i $G(PAR1)="" s MSGERROR="100^Не определено значение <Дата от>" q
+ i $G(PAR2)="" s MSGERROR="100^Не определено значение <Дата до>" q
+ i PAR1>PAR2 s MSGERROR="100^Значение <Дата от> больше значения <Дата до>" q
+ set dateFrom=PAR1,dateTo=PAR2
+  ; Анализаторы
+ i $G(PAR3)="" s MSGERROR="100^Не определено значение <Анализатор>" q
+ ; ---
+ set all=0
+ for i=1:1:$length(PAR3,$char(1)) {
+	 set analyzer=$piece(PAR3,$char(1),i)
+	 if analyzer=0 set all=1 quit
+ }
+ set devices=""
+ if all=0 set devices=$tr(PAR3,$char(1),",")
+ //if $get(PAR3)="" s MSGERROR="100^Не указан путь к файлу" q
+ set dir=$$GetDirQC()
+ quit
+BODY()
+ set ok=1
+ try {
+	 // директория
+	 set dirArchive=dir_"Archive"
+	 if '##class(%File).DirectoryExists(dirArchive) {
+		 set ok=##class(%File).CreateDirectory(dirArchive)
+		 if 'ok {
+			 set ok=$$Error^%apiOBJ(5001,"Не удалось создать директорию "_dirArchive) 
+			 quit
+		 }
+	 }
+	 // файлы
+	 set filename="DemoIntegration",fileext="csv"
+	 set fileWork=dir_"/"_filename_"."_fileext
+	 set fileArchive=dirArchive_"/"_filename_+$h_"_"_$tr($p($h,",",2),":","")_"."_fileext
+	 
+	 // удаление предыдущего файла
+	 if ##class(%File).Exists(fileWork) {
+		 set ok=##class(%File).Delete(fileWork)
+		 if 'ok {
+			 set ok=$$Error^%apiOBJ(5001,"Не удалось удалить файл "_fileWork) 
+			 quit
+		 }
+	 }
+	 // данные
+	 set resultxml=##class(TCLEx.UI.QCManagerAltey).GetQCResults69analyzer(dateFrom,dateTo,devices,.err)
+	 if err'="" {
+		 set ok=$$Error^%apiOBJ(5001,err) 
+		 quit
+	 }
+	 
+	 if resultxml.Size=0 {
+		 set ok=$$Error^%apiOBJ(5001,"Нет данных. Файл "_fileWork_" удален.")
+		 quit
+	 }
+	 //создание файла архива
+     set resFile=##class(%FileCharacterStream).%New()
+	 set resFile.Filename=fileArchive
+	 set resFile.TranslateTable="CP1251"
+	 set ok=resFile.CopyFromAndSave(resultxml)
+	 if 'ok {
+		 quit
+	 }
+	 set ok=resFile.SaveStream()
+	 if 'ok {
+		 quit
+	 }
+	 // копирование в рабочую папку
+	 set ok=##class(%File).CopyFile(fileArchive,fileWork,1)
+     if 'ok {
+			 set ok=$$Error^%apiOBJ(5001,"Не удалось скопировать файл "_fileArchive_" в файл "_fileWork) 
+			 quit
+		 }
+  } catch(exception) {
+     set ok=exception.AsStatus()
+ }
+ //k ^test(1,"data") m ^test(1,"data")=@glb
+ quit ok
+ ;------------------------------------------------
+XML(DateFrom,DateTo,glb)  ; обработка данных...
+ ; Формирование XML...
+ set ok=1
+ try {
+	 
+     if '$D(@glb) {
+	     set ok=$$Error^%apiOBJ(5001,"Нет данных!") 
+	     quit
+     }
+     S MasO="^TEMP($J,""XML"")"
+     kill @MasO
+     set @MasO@("User",1,"DateFrom")=$TR($$extdate2^SSUTIL4(DateFrom),"/",".")
+     set @MasO@("User",1,"DateTo")=$TR($$extdate2^SSUTIL4(DateTo),"/",".")
+     set analyzer="",nnAn=0
+     for {
+	    set analyzer=$order(@glb@(analyzer),1,rec) if analyzer="" quit
+        set nnAn=nnAn+1
+        set ras=$lg(rec,3),rasHour=""
+        if +ras>0 set rasHour=(ras\60)_"."_$tr($j(ras#60,2)," ","0")
+        set @MasO@("User",1,"GrAnalyzer",nnAn,"Analyzer")=$piece($get(^TMIF(analyzer)),"\",1)
+        set @MasO@("User",1,"GrAnalyzer",nnAn,"Ras")=##class(TCLEx.Report.Function).TransValueForExcel(ras)
+        set @MasO@("User",1,"GrAnalyzer",nnAn,"RasHour")=##class(TCLEx.Report.Function).TransValueForExcel(rasHour)
+        set date=""
+        for {
+	     set date=$order(@glb@(analyzer,date)) if date="" quit
+	     set rec=^(date)
+	     set day=$zd(date,4)
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Date")=$tr(day,"/",".")
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Min")=$listget(rec,1)
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Max")=$listget(rec,2)
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Ras")=##class(TCLEx.Report.Function).TransValueForExcel($listget(rec,3))
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"RasHour")=##class(TCLEx.Report.Function).TransValueForExcel($listget(rec,4))
+        }
+     }
+     set rec=$get(@glb)
+     set ras=$lg(rec,3),rasHour=""
+     if +ras>0 set rasHour=(ras\60)_"."_$tr($j(ras#60,2)," ","0")
+     set @MasO@("User",1,"RasO")=ras
+     set @MasO@("User",1,"RasHourO")=$piece(rasHour,".",1)
+     set @MasO@("User",1,"RasMinutO")=$piece(rasHour,".",2)
+     ;
+     ; шапка
+     s @MasO@("User",1,"NameReport")="Журнал учета рабочего времени анализатора"
+     S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+     ;
+     ;kill ^zz M ^zz=@MasO     ;@@@
+     ;
+  } catch(e) {
+    set ok=e.AsStatus()
+ }
+ if ok {
+	 try {
+		 S MSGERROR=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"clnrus59.xsl",USER,$get(PAR))
+	 } catch(e) {
+	     s MSGERROR="100^Ошибка:"_$ze	 
+	 }
+
+ } else {
+	  s MSGERROR="100^Ошибка:"_$system.Status.GetErrorText(ok)
+ }
+ 
+ quit MSGERROR
+ 
+GetDirQC() 
+   set dir=$get(^Settings("Altey","dirQC")) 
+   if dir="" set dir="c:\temp\" 
+   set dir=$tr(dir,"\","/")
+   if $length(dir)'=0 if $extract(dir,$length(dir))'="/" set dir=dir_"/"
+   quit dir
+
+]]></Routine>
+</Export>
