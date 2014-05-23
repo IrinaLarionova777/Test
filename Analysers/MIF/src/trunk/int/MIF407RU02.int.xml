@@ -12,9 +12,9 @@ MIF407RU02(mi) ; ASTM protocol  -  Pentra XL 80 (Bi-Directional) (Russion BION))
  d trace^MIF000(mi,"Started job="_$j,"DEBUG")
  f  d Main i $$stop^MIF000() q
  c par4
- d trace^MIF000(mi,"Closed job="_$j,"DEBUG")
  q
 Main r *R:10
+ ;i $c(R)'=enq d trace^MIF000(mi,"Waiting <ENQ> but received <"_R_">","H<--M") q
  i $c(R)'=enq q
  d trace^MIF000(mi,"ENQ","H<--M")
  d ACK
@@ -29,22 +29,31 @@ Main r *R:10
  . d ACK
  . ; query record
  . i $e(record,2)="Q" d  q
- .. Set containernumber=$Piece($Piece(record,"|",3),"^",2)
- .. Set epis=$$Episode4Container^KSMIF000(containernumber)
- .. If epis="" Quit
- .. Set ^TMP($zn,$j,"ENQ",epis)=containernumber
+ .. set containernumber=$p($p(record,"|",3),"^",2)
+ .. set epis=containernumber 
+ .. if '$data(^TEPI(containernumber)) do  ;  
+ ... set errors="" set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+ ... if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
+ .. set ^TMP($zname,$job,"ENQ",containernumber)=epis 
+ .. ;i $l(epis),$d(^TEPI(epis,1)) s ^TMP($zn,$j,"ENQ",epis)="" q
+ .. ;s suffix=$e(epis,$l(epis)),epis=$e(epis,1,$l(epis)-1)
+ .. ;i $l(epis),$d(^TEPI(epis,1)) s ^TMP($zn,$j,"ENQ",epis)=suffix q
+ .. ;s epis=$p($p(record,"|",3),"^",2) i $l(epis) s ^TMP($zn,$j,"ENQ",epis)=""
  . ; patient record
  .i $e(record,2)="P" d  q
- .. d Last 
- .. Set (sample,epis,containernumber,surname,result,date,time,QC)=""
+ .. d Last s (sample,epis,containernumber,surname,result,date,time,QC)=""
  .. s surname=$tr($tr($p(record,"|",6),""),"^"," ") q
  . ; order record
  .i $e(record,2)="O" d  q
- .. Set containernumber=$Piece($Piece(record,"|",3),"^",1)
- .. If containernumber="" Set containernumber=$tr($p($p(record,"|",4),"^",1)," ")
- .. Set epis=$$Episode4Container^KSMIF000(containernumber)
- .. Set QC=$tr($p(record,"|",12)," ")
- .. i QC="Q" s QC="Y"
+ .. s containernumber=$tr($p($p(record,"|",3),"^",1)," ") s:'$l(containernumber) containernumber=$tr($p($p(record,"|",4),"^",1)," ")
+ .. set epis=containernumber
+ .. if '$data(^TEPI(containernumber)) do  ;
+ ... set errors="" set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+ ... if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
+ .. // если вместо номера образца пришел идентификатор КК, то пишем его в QC, переменная epis  остается
+ .. if $l(containernumber) s QC=$$findQC^MIF000(mi,containernumber)
+ .. // если по ASTM протоколу прописано, что это данные по КК
+ .. if QC="" set QC=$translate($piece(record,"|",12)," ") if QC="Q" set QC="Y"
  . ; result record
  . i $e(record,2)="R" d  q
  .. ; strip trailing spaces
@@ -66,22 +75,22 @@ Last ; file result if exists
  s (sample,epis,containernumber,surname,result,date,time,QC)=""
  q
 ORDER ; create list of orders if exists
- s epis="" 
- f  s epis=$o(^TMP($zn,$j,"ENQ",epis),1,containernumber) q:epis=""  d
- . d scanone^MIF000(mi,epis)
- . i $$select^LVBEPVIS(epis,"Y") k ^TMP($zn,$j,"ENQ",epis) q
+ s containernumber="" f  s containernumber=$o(^TMP($zn,$j,"ENQ",containernumber),1,episode) q:containernumber=""  d
+ . if episode="" set episode=containernumber
+ . d scanone^MIF000(mi,episode)
+ . i $$select^LVBEPVIS(episode,"Y") k ^TMP($zn,$j,"ENQ",containernumber) q
  . s sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+ . ;s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1|"_epis_"|||"_$g(PLIST(3))_"^"_$g(PLIST(4))_"|||"_sex_"|||||"_$g(PLIST(15))
  . s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="P|1|"_containernumber_"||||||"_sex_"|||||"_$g(PLIST(15))
- . s tc="" 
- . f N=1:1 s tc=$o(^TMP("MIF-SINGLE",$j,mi,epis,tc)) q:tc=""  d 
- .. If (epis'=containernumber)&&('$$IsTestCode4Container^KSMIF000(containernumber,mi,tc)) Quit
- .. Do SET(containernumber,tc)
+ . s tc="" f N=1:1 s tc=$o(^TMP("MIF-SINGLE",$j,mi,episode,tc)) q:tc=""  d  ;
+ .. if (episode'=containernumber)&&('$$IsTestCode4Container^MIF000dop(containernumber,episode,mi,tc,.err)) quit
+ .. d SET(containernumber,tc)
  . s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|"_$s(N>1:"F",1:"I")
- . k ^TMP($zn,$j,"ENQ",epis)
+ . k ^TMP($zn,$j,"ENQ",containernumber)
  . d Send
  q
-SET(containernumber,tcx) ; set record to be sent to instrument
- s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="O|"_N_"|"_containernumber_"||^^^"_tcx_"|||||||N||||||||||||||Q"
+SET(epis,tcx) ; set record to be sent to instrument
+ s line=$o(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="O|"_N_"|"_epis_"||^^^"_tcx_"|||||||N||||||||||||||Q"
  q
 Send ; send list of orders if exists
  d ENQ f j=1:1:10 r *R:1 i $c(R)=ack!($c(R)=enq) q
