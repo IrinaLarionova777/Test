@@ -90,7 +90,7 @@ BODY()
 	 // файлы
 	 set filename="DemoIntegration",fileext="csv"
 	 set fileWork=dir_"/"_filename_"."_fileext
-	 set fileArchive=dirArchive_"/"_filename_+$h_"_"_$tr($p($h,",",2),":","")_"."_fileext
+	 set fileArchive=dirArchive_"/"_filename_" "_$zdate(+$h,8)_"_"_$tr($ztime($p($h,",",2)),":","")_"."_fileext
 	 
 	 // удаление предыдущего файла
 	 if ##class(%File).Exists(fileWork) {
@@ -134,6 +134,69 @@ BODY()
  }
  //k ^test(1,"data") m ^test(1,"data")=@glb
  quit ok
+ ;------------------------------------------------
+XML(DateFrom,DateTo,glb)  ; обработка данных...
+ ; Формирование XML...
+ set ok=1
+ try {
+	 
+     if '$D(@glb) {
+	     set ok=$$Error^%apiOBJ(5001,"Нет данных!") 
+	     quit
+     }
+     S MasO="^TEMP($J,""XML"")"
+     kill @MasO
+     set @MasO@("User",1,"DateFrom")=$TR($$extdate2^SSUTIL4(DateFrom),"/",".")
+     set @MasO@("User",1,"DateTo")=$TR($$extdate2^SSUTIL4(DateTo),"/",".")
+     set analyzer="",nnAn=0
+     for {
+	    set analyzer=$order(@glb@(analyzer),1,rec) if analyzer="" quit
+        set nnAn=nnAn+1
+        set ras=$lg(rec,3),rasHour=""
+        if +ras>0 set rasHour=(ras\60)_"."_$tr($j(ras#60,2)," ","0")
+        set @MasO@("User",1,"GrAnalyzer",nnAn,"Analyzer")=$piece($get(^TMIF(analyzer)),"\",1)
+        set @MasO@("User",1,"GrAnalyzer",nnAn,"Ras")=##class(TCLEx.Report.Function).TransValueForExcel(ras)
+        set @MasO@("User",1,"GrAnalyzer",nnAn,"RasHour")=##class(TCLEx.Report.Function).TransValueForExcel(rasHour)
+        set date=""
+        for {
+	     set date=$order(@glb@(analyzer,date)) if date="" quit
+	     set rec=^(date)
+	     set day=$zd(date,4)
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Date")=$tr(day,"/",".")
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Min")=$listget(rec,1)
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Max")=$listget(rec,2)
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"Ras")=##class(TCLEx.Report.Function).TransValueForExcel($listget(rec,3))
+	     set @MasO@("User",1,"GrAnalyzer",nnAn,"GrDay",day,"RasHour")=##class(TCLEx.Report.Function).TransValueForExcel($listget(rec,4))
+        }
+     }
+     set rec=$get(@glb)
+     set ras=$lg(rec,3),rasHour=""
+     if +ras>0 set rasHour=(ras\60)_"."_$tr($j(ras#60,2)," ","0")
+     set @MasO@("User",1,"RasO")=ras
+     set @MasO@("User",1,"RasHourO")=$piece(rasHour,".",1)
+     set @MasO@("User",1,"RasMinutO")=$piece(rasHour,".",2)
+     ;
+     ; шапка
+     s @MasO@("User",1,"NameReport")="Журнал учета рабочего времени анализатора"
+     S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+     ;
+     ;kill ^zz M ^zz=@MasO     ;@@@
+     ;
+  } catch(e) {
+    set ok=e.AsStatus()
+ }
+ if ok {
+	 try {
+		 S MSGERROR=$$WriteFileLabTrakClient^REPORTSPB($NA(@MasO),"clnrus59.xsl",USER,$get(PAR))
+	 } catch(e) {
+	     s MSGERROR="100^Ошибка:"_$ze	 
+	 }
+
+ } else {
+	  s MSGERROR="100^Ошибка:"_$system.Status.GetErrorText(ok)
+ }
+ 
+ quit MSGERROR
  
 GetDirQC() 
    set dir=$get(^Settings("Altey","dirQC")) 
