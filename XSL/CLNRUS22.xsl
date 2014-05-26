@@ -91,9 +91,9 @@
      .Cur16 { font-size : 16pt; }
      p{margin:0;padding:0;}
      @page Section1{
-     mso-page-orientation:portrait;
-     size:210mm 297mm;
-     margin:10mm 10mm 10mm 10mm; }
+     mso-page-orientation:landscape;
+     size:297mm 210mm;
+     margin:10mm 5mm 10mm 5mm; }
      div.Section1{page:Section1;}
   </style> 
  </head>
@@ -116,7 +116,7 @@
             <td width="5%" align="center"><b>Длина</b></td>
             <td width="5%" align="center"><b>Дес.<br/>число</b></td>
         </xsl:if>
-        <xsl:if test='$FlagTS = 1'><td width="15%" align="center"><b>Наборы тестов</b></td></xsl:if>
+        <xsl:if test='$FlagTS = 1'><td width="50%" align="center"><b>Наборы тестов</b></td></xsl:if>
         <xsl:if test='$FlagWS = 1'><td width="10%" align="center"><b>Рабочий лист [код набора]</b></td></xsl:if>
         <xsl:if test='$FlagMIF = 1'><td width="10%" align="center"><b>Анализатор [ID]</b></td></xsl:if>
         <xsl:if test='$FlagCAL = 1'><td width="10%" align="center"><b>Набор тестов [Формула]</b></td></xsl:if>
