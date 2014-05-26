@@ -41,6 +41,8 @@ pComments - комметарий (заполняется, когда какой-
 		 
 		     set ExtraExternalID=pObjectTransport.ExtraExternalID
 		     set priority=pObjectTransport.PriorityTestSet
+		     set dateOfCollection=pObjectTransport.DateOfCollection
+		     set timeOfCollection=pObjectTransport.TimeOfCollection
 		     //set doctorId=pObjectTransport.Doctor
 		     //set patientLocation=pObjectTransport.PatientLocation
 		 
@@ -103,7 +105,7 @@ pComments - комметарий (заполняется, когда какой-
 			        } Else {														// Если обычный набор тестов (не супер-набор !!!)
 				         Set maxcount=maxcount+1
 				         set testsetid=hospitalPatientId_"||"_testset_"||"_maxcount
-					     set values=$listbuild(ExtraExternalID,priority,"")
+					     set values=$listbuild(ExtraExternalID,priority,"",dateOfCollection,timeOfCollection)
 					     Set ok1=..CreateUpdateHospPatTestSet(hosppatobj,testsetid,values)
 				         If 'ok1 {														
 					         set ok=$System.Status.AppendStatus(ok,ok1)
@@ -169,9 +171,18 @@ pComments - комметарий (заполняется, когда какой-
 		Set pHospitalPatientObject.HOSPVisit=$piece(pHospitalPatientId,"||",3)
 	}
 	Set pHospitalPatientObject.HOSPLabTrakMRN=pOrderObj.HospitalMRN
+	
 	Set pHospitalPatientObject.HOSPAdmissionDate=pOrderObj.DateOfRequest
 	set pHospitalPatientObject.HOSPAdmissionTime=pOrderObj.TimeOfRequest
 	//Set pHospitalPatientObject.HOSPTransDate=pOrderObj.TimeOfRequest
+	
+	set datetimeold=+pHospitalPatientObject.HOSPTransDate*100000+pHospitalPatientObject.HOSPTransTime
+	set datetimenew=pOrderObj.DateOfCollection*100000+pOrderObj.TimeOfCollection
+	
+	if (datetimeold=0)||(datetimeold>datetimenew) {
+		set pHospitalPatientObject.HOSPTransDate=pOrderObj.DateOfCollection
+		set pHospitalPatientObject.HOSPTransTime=pOrderObj.TimeOfCollection
+	}
 	
 	Set pHospitalPatientObject.HOSPSurname=pOrderObj.Surname
 	Set pHospitalPatientObject.HOSPGivenName=pOrderObj.Name
@@ -270,7 +281,9 @@ pValues - значения свойств в формате $LB
 	
 	Set orderId=$ListGet(pValues,1)								    // HOSPTExtraExternalID 
 	Set priority=$ListGet(pValues,2)						    	// Приоритет
-	Set superset=$ListGet(pValues,3)							// superset
+	Set superset=$ListGet(pValues,3)							   // superset
+	Set dateOfCollection=$ListGet(pValues,4)							// dateOfCollection
+	Set timeOfCollection=$ListGet(pValues,5)							// timeOfCollection
 	/*
 	Set doctorcode=$ListGet(pValues,4)								// Код врача
 	set language=$ListGet(pValues,5)								// Код языка
@@ -301,6 +314,10 @@ pValues - значения свойств в формате $LB
 	   Do hosptestsetobj.HOSPTExtraLanguageSetObjectId(language)
 	}
 	*/
+	
+	set hosptestsetobj.HOSPTDateOfCollection=dateOfCollection
+	set hosptestsetobj.HOSPTTimeOfCollection=timeOfCollection
+	
 	set ok=hosptestsetobj.%Save()
 	
   } catch(e) {
@@ -436,8 +453,8 @@ pValues - значения свойств в формате $LB
 	Kill @pGlb
 	&sql(
 		Declare HospTSCursor2 CURSOR FOR
-		Select HOSPT_ExtraExternal_ID,HOSPT_TestSet_DR,HOSPT_SuperSet_DR,HOSPT_ExtraPriority_DR
-		INTO :requestid,:testset,:superset,:cito
+		Select HOSPT_ExtraExternal_ID,HOSPT_TestSet_DR,HOSPT_SuperSet_DR,HOSPT_ExtraPriority_DR,HOSPT_DateOfCollection,HOSPT_TimeOfCollection
+		INTO :requestid,:testset,:superset,:cito,:dateOfCollection,:timeOfCollection
 		From SQLUser.HOS_HospitalPatientsTSet 
 		Where HOSPT_ParRef=:pHospPatId
 	)
@@ -448,9 +465,9 @@ pValues - значения свойств в формате $LB
 	While (SQLCODE = 0) {
 		If (requestid'="")&&(testset'="") {
 			If superset="" {
-				Set @pGlb@(testset,requestid)=$ListBuild(cito)
+				Set @pGlb@(testset,requestid)=$ListBuild(cito,dateOfCollection,timeOfCollection)
 			} Else {
-				Set @pGlb@(superset,requestid)=$ListBuild(cito)
+				Set @pGlb@(superset,requestid)=$ListBuild(cito,dateOfCollection,timeOfCollection)
 			}		
 		}
 		&sql(Fetch HospTSCursor2)
