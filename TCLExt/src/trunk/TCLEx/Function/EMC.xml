@@ -590,7 +590,7 @@ pValues - значения свойств в формате $LB
 		If (obj.HOSPLocationDR)="" {
 			Set obj.HOSPLocationDR=##class(User.CTHospital).%OpenId(pOrderObj.RequestDepartmentCode,0)
 		}
-	}	
+	} 	
 	If (pOrderObj.RequestCito=1) {
 		Set obj.EPVISPriorityCodeDR=##class(User.CTPriority).%OpenId("U",0)
 	}
@@ -606,6 +606,12 @@ pValues - значения свойств в формате $LB
 			Set obj.EPVISLanguageDR=##class(User.SSLanguage).%OpenId(langcode,0)
 		}
 	}	
+	
+	// UserSite
+	if pOrderObj.RequestTestCodes.Count()>0 {
+		Do obj.HOSPPatientSiteDRSetObjectId(..GetPatientSiteByTestCodes($ListGet(pOrderObj.RequestTestCodes.GetAt(1),2)))
+	}
+		
 	Quit obj
 ]]></Implementation>
 </Method>
@@ -1061,6 +1067,24 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 			Set testsetid=$ListGet(vals,3)
 			Set status=$ListGet(vals,4)
 			Set extravals=$ListGet(vals,5)
+			// Для того чтобы сохранялась историческая последовательность обработки статусов
+			if (epis'="")&&($data(^TCLEx("ResultFiles",epis))) {
+				set ii="",istestset=0
+				for {
+					set ii=$order(^TCLEx("ResultFiles",epis,ii),1,recii) if ii="" quit
+					if $ListGet(recii,3)=testsetid {
+						set istestset=1
+						//set iiiii=$i(^test("itest","find"))
+						//set ^test("itest","find",iiiii)=epis_"*"_testsetid_"*"_$h_"*"_$g(recii)
+						//m ^test("itest","find",iiiii,"rf")=^TCLEx("ResultFiles")
+						quit
+					}
+				}	
+				if istestset=1 {
+					continue
+				}
+			}
+			
 			Lock +^TCLEx("RequestStatus",requestid,horolog)
 			Set ok=0
 			If status=5 {								// Набор тестов создан в ЛИС
@@ -1118,7 +1142,6 @@ pDepartmentCode- код отделения, pDepartment - наименовани
 				Kill ^TCLEx("RequestStatus",requestid,horolog)
 			}
 			Lock -^TCLEx("RequestStatus",requestid,horolog)
-			if $data(^TCLEx("ResultFiles",epis,requestid)) Do ..GenerateResultFiles()
 		}
 	}
 	Do ..GenerateResultFiles()
@@ -1379,7 +1402,7 @@ pXMLFileName - по ссылке возвращается имя созданн�
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	Set pLanguage=$Get(pLanguage)
-	Set resobj=##class(TCLEx.XML.Episode).ResultObject(pEpis,.pTestSets,pLanguage)
+	Set resobj=##class(TCLEx.XML.Episode).ResultObject(pEpis,.pTestSets,pLanguage,0)
 	If '$IsObject(resobj) {
 		Quit $$$ERROR($$$GeneralError,"Нет данных по эпизоду "_pEpis_" !")
 	}	
@@ -1602,6 +1625,24 @@ pAuthDateTime - дата-времени авторизации набора (в 
 			Set result=0
 		}
 	}		  										
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetPatientSiteByTestCodes">
+<Description>
+Получение кода подразделения (значение справочника CT.UserLocation ) по коду исследования</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=""
+	Set department=$Extract(pTestSet,1)
+	If (department="H")||(department="I")||(department="Z") {
+		Set result="PATO"
+	} Else {
+		Set result="LEMC"
+	} 
 	Quit result
 ]]></Implementation>
 </Method>
