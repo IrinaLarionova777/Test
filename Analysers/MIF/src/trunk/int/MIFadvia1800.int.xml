@@ -57,7 +57,7 @@ receiveENQ
  set (sample,epis,surname,result,date,time,QC)="" 
  do trace^MIF000(mi,"ENQ","H<--M")
  do ACK
- set (sample,epis,surname,result,date,time,QC)=""
+ set (sample,epis,containernumber,surname,result,date,time,QC)=""
  set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=60,okk=1
  set buffer=""
  for {
@@ -99,14 +99,16 @@ receiveENQ
          if typerecord="Q" {
 	       set symst=10
 	       for {
-	         set epis=$tr($extract(record,symst,symst+12)," ","")
-	         if epis="" quit
+	         set containernumber=$tr($extract(record,symst,symst+12)," ","")
+	         if containernumber="" quit
 	         set symst=symst+13
-	         set episparent=epis 
-	         if '$data(^TEPI(epis)) {  // в этом случае epis-номер контейнера, episnew-номер эпизода
-		         set episparent=$$transEpisodeNumber^MIF000dop(epis)
+	         set epis=containernumber 
+	         if '$data(^TEPI(containernumber)) {  
+	             set errors=""
+		         set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+		         if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
 	         }
-	         set ^TMP($zname,$job,"ENQ",epis)=episparent
+	         set ^TMP($zname,$job,"ENQ",containernumber)=epis 
 	       } 
            continue
          }    
@@ -123,8 +125,17 @@ receiveENQ
 	        set width=1 set typeSample=$extract(record,cur+1,cur+width) if typeSample="C" set QC="Y"
 	        set cur=cur+width
 	        set cur=cur+1  // пропускаем ID specification
-	        set width=13 set epis=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width
-	        if (epis'="")&&('$data(^TEPI(epis))) set epis=$$transEpisodeNumber^MIF000dop(epis) 
+	        set width=13 
+	        set containernumber=$tr($extract(record,cur+1,cur+width)," ","") set cur=cur+width
+	        set epis=containernumber
+	        if (containernumber'="")&&('$data(^TEPI(containernumber))) {
+		        set errors="" set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+		        if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
+	        }
+	        
+            // если вместо номера образца пришел идентификатор КК, то пишем его в QC, переменная epis  остается
+	        if ($l(containernumber))&&(QC="") s QC=$$findQC^MIF000(mi,containernumber)
+	        
 	        set cur=cur+7  // пропускаем Position number
 	        if blockNumber=1 {
 		     set cur=cur+16
@@ -159,25 +170,20 @@ Last ; file result if exists
  if $length(epis),$length(result) {
  	 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
  }
- set (sample,epis,surname,result,date,time,QC)=""
+ set (sample,epis,containernumber,surname,result,date,time,QC)=""
  quit
  
  // с обработкой приоритета и типа материала образца 
 ORDER 
  set blockNumber=0
- set epis="",okSend=0
+ set okSend=0
+ set containernumber="" 
  for {
-	 set epis=$order(^TMP($zname,$job,"ENQ",epis),1,episparent) quit:epis="" 
-	 if episparent="" set episparent=epis
+	 set containernumber=$order(^TMP($zname,$job,"ENQ",containernumber),1,episode) quit:containernumber="" 
+	 if episode="" set episode=containernumber
 	 set codeTypeSpecimen=""
-	 if episparent=epis {
-		 do scanone^MIF000(mi,epis) 
-	 }
-     else  {
-	     set codeTypeSpecimen=##class(TCLEx.Function.Container).GetSpecimenForContainerNumber(episparent,epis)
-	     do scanone^MIF000dop(mi,episparent,,,,,codeTypeSpecimen)
-     }
-     if $$select^LVBEPVIS(episparent,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
+	 do scanone^MIF000(mi,episode)
+     if $$select^LVBEPVIS(episode,"Y") kill ^TMP($zname,$job,"ENQ",containernumber) continue
      set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"M")
      set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
      // приоритет по эпизоду
@@ -186,12 +192,17 @@ ORDER
      kill vsp
      set tc="" 
      for {
-	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,episparent,tc)) if tc="" quit
+	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,episode,tc)) if tc="" quit
+	     set err=""
+	     if (episode'=containernumber)&&('$$IsTestCode4Container^MIF000dop(containernumber,episode,mi,tc,.err)) {
+		     if $get(err)'="" do trace^MIF000(mi,"Error in function IsTestCode4Container^MIF000dop"_err,"DEBUG")
+		     continue
+	     }
 	     if codeTypeSpecimen="" {
-		     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,episparent,tc)
+		     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,episode,tc)
 	         if refEpisode="" continue
 	         set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
-	         set rec=$get(^TEPI(episparent,1,testset,tscnt))
+	         set rec=$get(^TEPI(episode,1,testset,tscnt))
 	         // код типа образца материала
              set codeTypeSpecimen=$piece(rec,"\",46)
              if codeTypeSpecimen="" set codeTypeSpecimen=##class(TCLEx.Function.TestSet).DefaultSpecimen(testset)
@@ -207,7 +218,7 @@ ORDER
          set priority="0" 
          set vsp(priority,specimenAnalisator,tc)=""
      }
-     set episformat=$extract(epis_$j("",13),1,13) 
+     set episformat=$extract(containernumber_$j("",13),1,13) 
      set reco="O"_" "_"01"_"01"_"000"_"N"_"1"_episformat
      //Sample classification 1 “N” (4EH) General sample, “I” (49H) Interruption sample (похоже, это cito)
      set width=7+16+16
@@ -247,7 +258,7 @@ ORDER
 	     }
      }   
 	            
-     kill ^TMP($zname,$job,"ENQ",epis)
+     kill ^TMP($zname,$job,"ENQ",containernumber)
  }
  // прописываем во всех строках общее ко-во блоков
  /*
