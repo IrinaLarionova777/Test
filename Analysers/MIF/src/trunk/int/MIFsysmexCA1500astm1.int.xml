@@ -50,7 +50,7 @@ MainWithCatchError
  
  ;обработка полученного от прибора ENQ
 receiveENQ
- set (sample,epis,surname,result,date,time,QC)="" 
+ set (sample,epis,containernumber,surname,result,date,time,QC)="" 
  do trace^MIF000(mi,"ENQ","H<--M")
  do ACK
  set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=60,ok=1
@@ -78,13 +78,15 @@ receiveENQ
      }
      ; query record
      if typerecord="Q" {
-	     set epis=$tr($piece($piece(record,"|",3),"^",3)," ","")
-	     if $length(epis) {
-		     set episparent=epis 
-	         if '$data(^TEPI(epis)) {  // в этом случае epis-номер контейнера, episnew-номер эпизода
-		         set episparent=$$transEpisodeNumber^MIF000dop(epis)
+	     set containernumber=$tr($piece($piece(record,"|",3),"^",3)," ","")
+	     if $length(containernumber) {
+	         set epis=containernumber 
+	         if '$data(^TEPI(containernumber)) {  
+	             set errors=""
+		         set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+		         if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
 	         }
-	         set ^TMP($zname,$job,"ENQ",epis)=$piece(record,"|",3)_$c(0)_$c(0)_episparent
+		     set ^TMP($zname,$job,"ENQ",containernumber)=$piece(record,"|",3)_$c(0)_$c(0)_epis
 	     } else {
 		     set ^TMP($zname,$job,"ENQ",0)=$piece(record,"|",3)_$c(0)_"EmptyEpisode"_$c(0)_"0" 
 	     }
@@ -98,10 +100,17 @@ receiveENQ
      }
      ; order record
      if typerecord="O" {
-	     set epis=$translate($piece($piece(record,"|",4),"^",3)," ")
-	     if (epis'="")&&('$data(^TEPI(epis))) set epis=$$transEpisodeNumber^MIF000dop(epis)
-	     s QC="" i $l(epis) s QC=$$findQC^MIF000(mi,epis)
-	     //set QC=$translate($piece(record,"|",12)," ") if QC="Q" set QC="Y"
+	     set containernumber=$translate($piece($piece(record,"|",4),"^",3)," ")
+         set epis=containernumber 
+	     if '$data(^TEPI(containernumber)) {  
+	             set errors=""
+		         set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+		         if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
+	     }            
+	     // если вместо номера образца пришел идентификатор КК, то пишем его в QC, переменная epis  остается
+	     if $l(containernumber) s QC=$$findQC^MIF000(mi,containernumber)
+	     // если по ASTM протоколу прописано, что это данные по КК
+	     if QC="" set qc=$translate($piece(record,"|",12)," ") if (qc="Q")||(qc="Y") set QC="Y"
          continue
      }
      ; result record
@@ -137,7 +146,7 @@ Last ; file result if exists
  if $length(epis),$length(result) {
  	 do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
  }
- set (sample,epis,surname,result,date,time,QC)=""
+ set (sample,epis,containernumber,surname,result,date,time,QC)=""
  quit
  
  // с обработкой приоритета и типа материала образца (все заказанные эпизоды в одном блоке Header...Last)
@@ -148,30 +157,24 @@ ORDER
  // header record
  set line=$order(^TMIF(mi,10,""),-1)+1
  set ^TMIF(mi,10,line)="H|\"_delimComponents_"&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"DxH")_"||||" 
-
- set epis="",okSend=0
+ set okSend=0
+ set containernumber="" 
  for {
-	 set epis=$order(^TMP($zname,$job,"ENQ",epis),1,recQuery) quit:epis=""
+	 set containernumber=$order(^TMP($zname,$job,"ENQ",containernumber),1,recQuery) quit:containernumber="" 
 	 if $p(recQuery,$c(0),2)="EmptyEpisode" {
          set line=$order(^TMIF(mi,10,""),-1)+1
          set ^TMIF(mi,10,line)="P|1|"
          set tcstr=delimComponents_delimComponents_delimComponents_"000"
-	     do SET(epis,tcstr,0,"",1,$piece(recQuery,$c(0),1))
-	     kill ^TMP($zname,$job,"ENQ",epis)
+	     do SET(containernumber,tcstr,0,"",1,$piece(recQuery,$c(0),1))
+	     kill ^TMP($zname,$job,"ENQ",containernumber)
 	     continue
      }
-     set episparent=$piece(recQuery,$c(0),3)
-     if episparent="" set episparent=epis
+     set episode=$piece(recQuery,$c(0),3)
+     if episode="" set episode=containernumber
 	 set recQuery=$piece(recQuery,$c(0),1)
 	 set codeTypeSpecimen=""
-	 if episparent=epis {
-		 do scanone^MIF000(mi,epis) 
-	 }
-     else  {
-	     set codeTypeSpecimen=##class(TCLEx.Function.Container).GetSpecimenForContainerNumber(episparent,epis)
-	     do scanone^MIF000dop(mi,episparent,,,,,codeTypeSpecimen)
-     }
-     if $$select^LVBEPVIS(episparent,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
+	 do scanone^MIF000(mi,episode) 
+     if $$select^LVBEPVIS(episode,"Y") kill ^TMP($zname,$job,"ENQ",containernumber) continue
 	 set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
      set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
      // приоритет по эпизоду
@@ -179,13 +182,18 @@ ORDER
      if $$seldata^LVBCTPR(PLIST(17),4)="Y" set priority=1 // STAT
      // patient record
      set line=$order(^TMIF(mi,10,""),-1)+1
-     set ^TMIF(mi,10,line)="P|1|||"_epis_"|"_$$Translit^KSUTIL1(delimComponents_$e(surname,1,20)_delimComponents_$e(name,1,20))_"||"_"|"_sex_"|||||" //_"W"_"||||" ;_$g(PLIST(15))
+     set ^TMIF(mi,10,line)="P|1|||"_containernumber_"|"_$$Translit^KSUTIL1(delimComponents_$e(surname,1,20)_delimComponents_$e(name,1,20))_"||"_"|"_sex_"|||||" //_"W"_"||||" ;_$g(PLIST(15))
      // order records
      
      kill vsp
      set tc="" 
      for {
-	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,episparent,tc)) if tc="" quit
+	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,episode,tc)) if tc="" quit
+         set err=""
+	     if (episode'=containernumber)&&('$$IsTestCode4Container^MIF000dop(containernumber,episode,mi,tc,.err)) {
+		     if $get(err)'="" do trace^MIF000(mi,"Error in function IsTestCode4Container^MIF000dop"_err,"DEBUG")
+		     continue
+	     }
 	     /*
 	     set refEpisode=$$getRowIdTestSet^MIF000dop(mi,episparent,tc)
 	     if refEpisode="" continue
@@ -219,7 +227,7 @@ ORDER
 			     set tcstr=tcstr_$select(tcstr'="":"\",1:"")_delimComponents_delimComponents_delimComponents_$extract(tc,1,2)_"0"
 		     }
              set ordernum=ordernum+1
-	         do SET(epis,tcstr,priority,specimen,ordernum,recQuery)
+	         do SET(containernumber,tcstr,priority,specimen,ordernum,recQuery)
 	         set okOrder=1,okSend=1   
 	         kill vsp(priority,specimen)
 	     }
@@ -230,7 +238,7 @@ ORDER
 	     }
      }   
 	            
-     kill ^TMP($zname,$job,"ENQ",epis)
+     kill ^TMP($zname,$job,"ENQ",containernumber)
  }
  // terminate record
  set line=$order(^TMIF(mi,10,""),-1)+1,^TMIF(mi,10,line)="L|1|N"
