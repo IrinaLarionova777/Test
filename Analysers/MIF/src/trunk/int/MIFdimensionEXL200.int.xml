@@ -58,22 +58,29 @@ receiveSTX
  }
  ; query record
  if typerecord="I" {
-	set epis=$p(record,fs,2)
-    if $length(epis) {
-	    set episparent=epis 
-	    if '$data(^TEPI(epis)) {  // в этом случае epis-номер контейнера, episnew-номер эпизода
-		      set episparent=$$transEpisodeNumber^MIF000dop(epis)
-	    }
-	    set sc=$$SendOrder(epis,episparent) 
+	set containernumber=$p(record,fs,2)
+    if $length(containernumber) {
+        set epis=containernumber 
+	    if '$data(^TEPI(containernumber)) {  
+	         set errors=""
+		     set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+		     if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
+	    }            
+	    set sc=$$SendOrder(containernumber,epis) 
 	    if sc=2 set sc=$$SendNoRequests(0)
     }
  }    
  ; result record
  if typerecord="R" {
-	 set (sample,epis,surname,result,date,time,QC)=""
+	 set (sample,epis,containernumber,surname,result,date,time,QC)=""
 	 set surname=$piece(record,fs,3)
-	 set epis=$piece(record,fs,4)
-	 if (epis'="")&&('$data(^TEPI(epis))) set epis=$$transEpisodeNumber^MIF000dop(epis)
+	 set containernumber=$piece(record,fs,4)
+     set epis=containernumber 
+	 if '$data(^TEPI(containernumber)) {  
+	     set errors=""
+	     set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+	     if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
+	 }            
 	 set QC="" if $l(surname) {
 		 set QC=$$findQC^MIF000(mi,surname) ; check if received id is QC
 		 if QC'="" set surname=""
@@ -157,19 +164,12 @@ SendOrders
 */
 
  // Send orders to Instrument
- // epis - номер контейнера
- // episparent - номер эпизода
-SendOrder(epis,episparent) ; create list of orders if exists
-     if $get(episparent)="" set episparent=epis
-	 set codeTypeSpecimen=""
-	 if episparent=epis {
-		 do scanone^MIF000(mi,epis) 
-	 }
-     else  {
-	     set codeTypeSpecimen=##class(TCLEx.Function.Container).GetSpecimenForContainerNumber(episparent,epis)
-	     do scanone^MIF000dop(mi,episparent,,,,,codeTypeSpecimen)
-     }
-     if $$select^LVBEPVIS(episparent,"Y") quit 2 // No Request Message
+ // containernumber - номер контейнера
+ // episode - номер эпизода
+SendOrder(containernumber,episode) ; create list of orders if exists
+     if $get(episode)="" set episode=containernumber
+	 do scanone^MIF000(mi,episode) 
+     if $$select^LVBEPVIS(episode,"Y") quit 2 // No Request Message
      // set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
      set surname=$get(PLIST(3)) //,name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8)
      // приоритет по эпизоду
@@ -177,15 +177,15 @@ SendOrder(epis,episparent) ; create list of orders if exists
      if $$seldata^LVBCTPR(PLIST(17),4)="Y" set priority="1" // STAT
      
      set specimen="" 
-     set message="D"_fs_"0"_fs_"0"_fs_"A"_fs_$$Translit^KSUTIL1(surname)_fs_epis_fs_specimen_fs_fs_priority_fs_"1"_fs_"**"_fs_"1"_fs
+     set message="D"_fs_"0"_fs_"0"_fs_"A"_fs_$$Translit^KSUTIL1(surname)_fs_containernumber_fs_specimen_fs_fs_priority_fs_"1"_fs_"**"_fs_"1"_fs
      
      kill specimens
      set tc="" 
      for {
-	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,episparent,tc)) if tc="" quit
+	     set tc=$order(^TMP("MIF-SINGLE",$j,mi,episode,tc)) if tc="" quit
 	     if codeTypeSpecimen="" {
 		     set codeTypeSpecimen=0 
-	         set refEpisode=$$getRowIdTestSet^MIF000dop(mi,episparent,tc)
+	         set refEpisode=$$getRowIdTestSet^MIF000dop(mi,episode,tc)
 	         if refEpisode="" continue
 	         set testset=$piece(refEpisode,"||",2),tscnt=$piece(refEpisode,"||",3)
 	         set rec=$get(^TEPI(epis,1,testset,tscnt))
@@ -195,7 +195,7 @@ SendOrder(epis,episparent) ; create list of orders if exists
          if codeTypeSpecimen="" set codeTypeSpecimen=0
          set priorityCodeTest=$piece(rec,"\",10)
          set specimens(codeTypeSpecimen,tc)=priorityCodeTest
-         set $piece(^TMP("MIF-SINGLE",$j,mi,episparent,tc),$char(0),2)=codeTypeSpecimen 
+         set $piece(^TMP("MIF-SINGLE",$j,mi,episode,tc),$char(0),2)=codeTypeSpecimen 
      }
      set specimen=$order(specimens(""))
      if specimen="" set message="" quit 2 
@@ -208,6 +208,11 @@ SendOrder(epis,episparent) ; create list of orders if exists
      set tc="" 
      for {
 	     set tc=$order(specimens(specimen,tc)) if tc="" quit
+	     set err=""
+	     if (episode'=containernumber)&&('$$IsTestCode4Container^MIF000dop(containernumber,episode,mi,tc,.err)) {
+		     if $get(err)'="" do trace^MIF000(mi,"Error in function IsTestCode4Container^MIF000dop"_err,"DEBUG")
+		     continue
+	     }
 	     set message=message_tc_fs 
 	     // если в каком-нибудь одном тесте стоит cito, то cito на весь эпизод ставим
 	     set priorityCodeTest=specimens(specimen,tc)
