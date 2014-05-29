@@ -10,7 +10,7 @@ MIFaution11(mi) ; ASTM protocol с обработкой ETB
  for j=1:1:PLIST set @("par"_j)=PLIST(j)
  set stx=$char(2),etx=$char(3),ack=$char(6),enq=$char(5),eot=$char(4),nak=$char(21),etb=$char(23)
  set lf=$char(10),cr=$char(13)
- set (sample,epis,surname,result,date,time,QC)=""
+ set (sample,epis,containernumber,surname,result,date,time,QC)=""
  if $$start^MIF000() quit
  do trace^MIF000(mi,"Started job="_$job,"DEBUG")
  //set compiled=$listget(^rINDEX($zname,"OBJ"),1)
@@ -53,7 +53,7 @@ MainWithCatchError
 receiveENQ 
  do trace^MIF000(mi,"ENQ","H<--M")
  do ACK
- set (sample,epis,surname,result,date,time,QC)=""
+ set (sample,epis,containernumber,surname,result,date,time,QC)=""
  set timeSilenceStart=$piece($horolog,",",2),timeSilenceLimit=60,ok=1
  set buffer=""
  for {
@@ -97,13 +97,15 @@ receiveENQ
          }
          ; query record
          if typerecord="Q" {
-	        set epis=$piece($piece(record,"|",3),"^",2)
-	        if $length(epis)=0 continue
-	        set episparent=epis 
-	        if '$data(^TEPI(epis)) {  // в этом случае epis-номер контейнера, episnew-номер эпизода
-		         set episparent=$$transEpisodeNumber^MIF000dop(epis)
+	        set containernumber=$piece($piece(record,"|",3),"^",2)
+ 	        if $l(containernumber)=0 continue
+	        set epis=containernumber 
+	        if '$data(^TEPI(containernumber)) {  
+	             set errors=""
+		         set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+		         if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
 	        }
-	        set ^TMP($zname,$job,"ENQ",epis)=episparent
+	        set ^TMP($zname,$job,"ENQ",containernumber)=epis
 	        continue
          }    
          ; patient record
@@ -114,11 +116,19 @@ receiveENQ
          }
          ; order record
          if typerecord="O" {
-	        set epis=$translate($piece($piece(record,"|",3),"^",1)," -")
-            if epis="" set epis=$translate($piece($piece(record,"|",4),"^",1)," ")
-            if (epis'="")&&('$data(^TEPI(epis))) set epis=$$transEpisodeNumber^MIF000dop(epis) 
-	        //s QC="" i $l(epis) s QC=$$findQC^MIF000(mi,epis)
-	        set QC=$translate($piece(record,"|",12)," ") if QC="Q" set QC="Y"
+	        set containernumber=$translate($piece($piece(record,"|",3),"^",1)," -")
+            if containernumber="" set containernumber=$translate($piece($piece(record,"|",4),"^",1)," ")
+            set epis=containernumber 
+	        if '$data(^TEPI(containernumber)) {  
+	             set errors=""
+		         set epis=$$GetEpisodeByNumberContainer^MIF000dop(containernumber,.errors)
+		         if errors'="" do trace^MIF000(mi,"Error in function GetEpisodeByNumberContainer^MIF000dop"_errors,"DEBUG")
+	        }            
+	        // если вместо номера образца пришел идентификатор КК, то пишем его в QC, переменная epis  остается
+	        if $l(containernumber) s QC=$$findQC^MIF000(mi,containernumber)
+	        // если по ASTM протоколу прописано, что это данные по КК
+	        if QC="" set QC=$translate($piece(record,"|",12)," ") if QC="Q" set QC="Y"
+	        
             continue
          }
          ; result record
@@ -174,7 +184,7 @@ receiveENQ
 Last ; file result if exists
  do trace^MIF000(mi,"Write results episode="_epis_": "_result_" date="_$get(date)_" time="_$get(time)_" QC="_$get(QC),"H<--H")
  if $length(epis),$length(result) do file^MIF000(mi,sample,epis,surname,result,date,time,QC)
- set (sample,epis,surname,result,date,time,QC)=""
+ set (sample,epis,containernumber,surname,result,date,time,QC)=""
  quit
 ORDER ; create list of orders if exists
   // посылка ранее не посланных заданий 
@@ -184,45 +194,42 @@ ORDER ; create list of orders if exists
 	 do Send(epis)
  }
   // создание и посылка новых заданий 
- set epis="" 
+ set containernumber="" 
  for {
-	 set epis=$order(^TMP($zname,$job,"ENQ",epis),1,episparent) quit:epis="" 
-	 if episparent="" set episparent=epis
-	 set codeTypeSpecimen=""
-	 if episparent=epis {
-		 do scanone^MIF000(mi,epis) 
-	 }
-     else  {
-	     set codeTypeSpecimen=##class(TCLEx.Function.Container).GetSpecimenForContainerNumber(episparent,epis)
-	     do scanone^MIF000dop(mi,episparent,,,,,codeTypeSpecimen)
-     }
-     if $$select^LVBEPVIS(episparent,"Y") kill ^TMP($zname,$job,"ENQ",epis) continue
-     set sex=$select($get(PLIST(5))="M":"M",$get(PLIST(5))="F":"F",1:"U")
-     ;s sex=$s($g(PLIST(5))="М":"M",$g(PLIST(5))="Ж":"F",1:"U")
-     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8) 
+	 set containernumber=$order(^TMP($zname,$job,"ENQ",containernumber),1,episode) quit:containernumber="" 
+	 if episode="" set episode=containernumber
+	 do scanone^MIF000(mi,episode) 
+     if $$select^LVBEPVIS(episode,"Y") kill ^TMP($zname,$job,"ENQ",containernumber) continue
+     set sex=$s($g(PLIST(5))="M":"M",$g(PLIST(5))="F":"F",1:"U")
+     set surname=$get(PLIST(3)),name=$get(PLIST(4)),birthday=$zdate($get(PLIST(6)),8)
      // header record
-     set line=$order(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="H|\^&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"Centaur")_"||P|1|" 
+     set line=$order(^TMIF(mi,10,containernumber,""),-1)+1
+     set ^TMIF(mi,10,containernumber,line)="H|\^&|||"_$select($get(nameLIS)'="":nameLIS,1:"LIS")_"|||||"_$select($get(nameMachine)'="":nameMachine,1:"Centaur")_"||P|1|" 
      // patient record
-     ;s line=$o(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="P|1|"_epis_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"||"_birthday_"|"_sex_"|||||" ;_$g(PLIST(15))
-     set line=$order(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="P|1|"_epis_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"||"_"|"_sex_"|||||" ;_$g(PLIST(15))
-     ;s line=$o(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="P|1|"_epis_"|||||||||||"
+     set line=$order(^TMIF(mi,10,containernumber,""),-1)+1
+     set ^TMIF(mi,10,containernumber,line)="P|1|"_containernumber_"|||"_$$Translit^KSUTIL1(surname_"^"_name)_"||"_"|"_sex_"|||||" ;_$g(PLIST(15))
      // order records
      set tc="" 
      for N=1:1 {
-	     set tc=$order(^TMP("MIF-SINGLE",$job,mi,episparent,tc)) 
-	     if tc="" quit
-	     do SET(epis,tc)
+	     set tc=$order(^TMP("MIF-SINGLE",$job,mi,episode,tc)) if tc="" quit
+         set err=""
+	     if (episode'=containernumber)&&('$$IsTestCode4Container^MIF000dop(containernumber,episode,mi,tc,.err)) {
+		     if $get(err)'="" do trace^MIF000(mi,"Error in function IsTestCode4Container^MIF000dop"_err,"DEBUG")
+		     continue
+	     }
+	     do SET(containernumber,tc)     
      }
-     // terminate record
-     set line=$order(^TMIF(mi,10,epis,""),-1)+1,^TMIF(mi,10,epis,line)="L|1|"_$select(N>1:"F",1:"I")
-     kill ^TMP($zname,$job,"ENQ",epis)
-     do Send(epis)
+     set line=$order(^TMIF(mi,10,containernumber,""),-1)+1,^TMIF(mi,10,containernumber,line)="L|1|"_$select(N>1:"F",1:"I")
+     kill ^TMP($zn,$j,"ENQ",containernumber)
+     d Send(containernumber)
  }
- quit
+ quit  
+
 SET(epis,tcx) ; set record to be sent to instrument
  set line=$order(^TMIF(mi,10,epis,""),-1)+1
  set ^TMIF(mi,10,epis,line)="O|"_N_"|"_epis_"||^^^"_tcx_"|||||||A||||||||||||||Q"
  quit
+ 
 Send(epis) ; send list of orders if exists
  do ENQ 
  for j=1:1:10 {
