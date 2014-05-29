@@ -7,7 +7,7 @@
 <Parameter name="TIMEOUTGENERAL">
 <Description>
 Timeout для обычных наборов тестов в секундах</Description>
-<Default>30</Default>
+<Default>300</Default>
 </Parameter>
 
 <Parameter name="TIMEOUTCITO">
@@ -119,8 +119,17 @@ Timeout для обычных наборов тестов в секундах</D
  try {
 	  
 	Kill ^||EMED.TestOrder,^||EMED.TestSetDataId
-	Do ##class(TCLEx.Function.TestSet).TemplateTestOrder2(pTestSet,$Name(^||EMED.TestOrder)) // ^||EMED.TestOrder(testcode)=nppInTestSet
+	Do ..TemplateTestOrder2(pTestSet,$Name(^||EMED.TestOrder)) // ^||EMED.TestOrder(testcode)=nppInTestSet
+	if '$data(^||EMED.TestOrder) {
+		set eventDesc="Для набора тестов "_$get(pTestSet)_" не найдено ни одного теста."
+		do ##class(Client12.MISExchange).LogEvent("SendResult","error",eventDesc,$$$ERROR($$$GeneralError,eventDesc),"",$get(pEpisode),$get(pTestSetId)) 
+	}
 	Do ##class(TCLEx.Function.TestSet).TestSetDataIdOrder(pTestSetId,$Name(^||EMED.TestOrder),$Name(^||EMED.TestSetDataId)) // ^||EMED.TestSetDataId(nppInTestSet,testdataid)=testcode
+	if '$data(^||EMED.TestSetDataId) {
+		set eventDesc="Для testsetid "_$get(pTestSetId)_" не найдено ни одного теста."
+		do ##class(Client12.MISExchange).LogEvent("SendResult","error",eventDesc,$$$ERROR($$$GeneralError,eventDesc),"",$get(pEpisode),$get(pTestSetId)) 
+	}
+
 	Kill ^||EMED.EMEDTest
 	
 	Set n="",testsetok=1
@@ -134,7 +143,7 @@ Timeout для обычных наборов тестов в секундах</D
 			set ok1=..GetTestCodeECUBE(testcode,.testcodeECUBE)
 			if ('ok1)||(testcodeECUBE="") {
 				set eventDesc="Не найдено соответствующего кода MIS для testcode="_testcode
-				do ##class(Client12.MISExchange).LogEvent("SendResult","error2",eventDesc,ok1,"",$get(epis),$get(pTestSetId)) 
+				do ##class(Client12.MISExchange).LogEvent("SendResult","error2",eventDesc,ok1,"",$get(pEpisode),$get(pTestSetId)) 
 				// Если тест не настроен для отправки в МИС, то и не надо значит его отправлять
 				//set ok=$system.Status.AppendStatus(ok,$select(ok1'=1:ok1,1:$$$ERROR($$$GeneralError,eventDesc)))
 				continue
@@ -210,6 +219,7 @@ Timeout для обычных наборов тестов в секундах</D
 			//}
 			set testcodeECUBE=$piece(testcodeECUBE,".",$length(testcodeECUBE,"."))
 			//set pDoctorAuthorisation="58" // временно
+			//if $g(pTestSet)="H001" s ^test("debug","H001",$i(^test("debug","H001")))=$g(pOrderId)_"*"_$tr($g(pTestSetIdECUBE),".","^")_"*"_$tr($g(testcodeECUBE),".","^")_"*"_$g(pDateOfAuthorisation)_"*"_$g(result)_"*"_$g(resultInfo)_"*"_$g(pDoctorAuthorisation)_"*"_$g(comment)
 			Set ok1=##class(Client12.LIS.Client).SendResult(.pObjClient,pOrderId,$tr(pTestSetIdECUBE,".","^"),$tr(testcodeECUBE,".","^"),pDateOfAuthorisation,result,resultInfo,pDoctorAuthorisation,comment)
 			
 			// ok1 = (0/1/2)^текст ошибки или сообщения (0-ошибка, 1 - все хорошо, 2 - результаты отвергаются, не надо переотправлять
@@ -691,6 +701,34 @@ Status:
 		set ok=e.AsStatus()
 	}
 	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="TemplateTestOrder2">
+<Description>
+Сформировать глобал pTestOrderGlb с порядком тестов в описании шаблона для набора тестов pTestSet
+брать только печатаемые (Reportable) тесты</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String,pTestOrderGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	Kill @pTestOrderGlb
+	&sql(
+		DECLARE TestOrderCursor2 CURSOR FOR
+	    Select CTTSF_Order_1,CTTSF_DataItem_DR 
+	    Into :order,:test
+	    From SQLUser.CT_TestSetFields 
+	    Where CTTSF_ParRef=:pTestSet
+	)
+	&sql(OPEN TestOrderCursor2)
+	&sql(FETCH TestOrderCursor2)
+
+	While (SQLCODE = 0) {
+	If (order'="")&&(test'="")&&(##class(User.CTTestCode).%ExistsId(test)) {
+		Set @pTestOrderGlb@(test)=order
+	} 	
+	&sql(FETCH TestOrderCursor2)
+	}
+	&sql(CLOSE TestOrderCursor2)
 ]]></Implementation>
 </Method>
 </Class>
