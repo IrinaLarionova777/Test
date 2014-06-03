@@ -77,6 +77,16 @@ Security Group</Description>
 		set flagUseDisplay=$select(flagUse=1:"*",flagUse=2:"**",1:"")
 		set ^||res1(reportgroup)=$LB(reportgroup,flagUseDisplay,reportDesc,flagUse)
 	}
+	
+	// Если есть DeepSee Reports, то добавляем группу Аналитические отчеты
+    if $data(^TTAB("CTAL")) {
+	    set reportgroup="__ANR"
+	    set reportDesc="Аналитические отчеты (Analityc Reports)"
+	    set flagUse=..GetFlagUseAnalyticalReportsGroupByUserGroup(pUserGroup1,.err)
+	    set flagUseDisplay=$select(flagUse=1:"*",flagUse=2:"**",1:"")
+	    set ^||res1(reportgroup)=$LB(reportgroup,flagUseDisplay,reportDesc,flagUse)
+    }
+	
 	//k ^test(1) m ^test(1)=^||res1
  } catch(exeption) {
 	 set ok=exeption.AsStatus()
@@ -133,7 +143,7 @@ Security Group</Description>
 
 <Query name="qReportsByUserGroupReportGroup">
 <Description>
-Запрос Отчетов по группе отчетов и по групе пользователей
+Запрос списка Отчетов по Группе отчетов и по Группе пользователей
 pUserGroup2 - код группы пользователей 
 pReportGroup - код группы отчетов
 pCountRows2 - кол-во записей для вывода (если данные кончились раньше, то дальше пустые строки)</Description>
@@ -148,7 +158,7 @@ pCountRows2 - кол-во записей для вывода (если данн�
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	Kill ^||res
-	s ^test("par2",$i(^test("par2")))=pUserGroup2_"*"_pReportGroup
+	//s ^test("par2",$i(^test("par2")))=pUserGroup2_"*"_pReportGroup
 	// select %ID,CTCLR_Description from CT_ClientsReports where CTCLR_ReportGroup_DR='ACC' and CTCLR_Display='Y'
 
 	//do ##class(BiRLab.UI.Invoice).Clear()
@@ -176,6 +186,7 @@ pCountRows2 - кол-во записей для вывода (если данн�
 		     set ^||res(id)=$LB(id,rs.%GetData(2),"")
 		}
 	}*/
+	// usual reports
 	set report=""
 	for {
 		set report=$order(^TTAB("REPORT-GENERIC",report),1,val) if report="" quit
@@ -191,6 +202,19 @@ pCountRows2 - кол-во записей для вывода (если данн�
 		set flagUse=..GetFlagUseReportByUserGroup(pUserGroup2, report)
 		set flagUseDisplay=$select(flagUse=1:"*",1:"")
 		set ^||res(report)=$LB(report,flagUseDisplay,reportDesc,flagUse)
+	}
+
+	// analytisc reports
+	if pReportGroup="__ANR" {
+		set report=""
+	    for {
+		    set report=$order(^TTAB("CTAL",report),1,val) if report="" quit
+		    set reportDesc=$piece(val,"\",1)
+		    set reportnew="__ANR"_report
+		    set flagUse=..GetFlagUseReportByUserGroup(pUserGroup2, reportnew)
+		    set flagUseDisplay=$select(flagUse=1:"*",1:"")
+		    set ^||res(reportnew)=$LB(reportnew,flagUseDisplay,reportDesc,flagUse)
+	    }
 	}
 
 	Quit $$$OK
@@ -286,7 +310,6 @@ pFlag = 1 - тогда проверка доступа на уровне - По�
 <ProcedureBlock>1</ProcedureBlock>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
-	s ^test(12)=$g(pUserGroup)_"*"_$g(pReportGroup)
 	set pError=$$$OK
 	if (pUserGroup="")||(pReportGroup="") quit 0
 	set FlagUse=2
@@ -393,6 +416,44 @@ pFlag = 1 - тогда проверки доступа на уровне - По�
 		set ok=exeption.AsStatus()
 	}
 	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetFlagUseAnalyticalReportsGroupByUserGroup">
+<Description>
+Флаг использования группы отчетов "Аналитические отчеты" указанной группой пользователей
+=2 - если все отчеты группы отчетов видны для данной группы пользователей
+=1 - если часть отчетов группы отчетов видны для данной группы пользователей
+=0 =если ни один отчет из группы отчетов не виден для данной группы пользователей</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pUserGroup:%String="",&pError:%Status]]></FormalSpec>
+<ProcedureBlock>1</ProcedureBlock>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set pError=$$$OK
+	if (pUserGroup="") quit 0
+	set FlagUse=2
+	try {
+		set report="",flagNoOne=1
+	    for {
+		   set report=$order(^TTAB("CTAL",report),1,val) if report="" quit
+		   //if $piece(val,"\",7)'="Y" continue Флага активный.не активный пока нет для Аналит. отчетов
+		   set reportDesc=$piece(val,"\",1)
+		   set flagUse=..GetFlagUseReportByUserGroup(pUserGroup, "__ANR"_report)
+		   if flagUse=0 {
+			   set FlagUse=1
+		   } else {
+			   set flagNoOne=0
+		   }	
+	    }
+	    if flagNoOne=1 {
+		    set FlagUse=0
+	    }
+	} catch(exeption) {
+		set pError=exeption.AsStatus()
+		set FlagUse=0
+	}
+	quit FlagUse
 ]]></Implementation>
 </Method>
 
