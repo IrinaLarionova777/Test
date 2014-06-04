@@ -53,10 +53,83 @@
 	        set ^||bufRecountEpis(epis)=""
         }
         
+        set namemethod="TCLEx.BI.BuildIndices:UpdateCubes2()"
+        
+        // идем по ^SpeedI.DeltaP("BiRLab.Data.InvoiceEpisodeItem")
+        set class="BiRLab.Data.InvoiceEpisodeItem"
+        #dim obj1 As BiRLab.Data.InvoiceEpisodeItem
+        set id=""
+        for {
+	        set id=$order(^SpeedI.DeltaP(class,id)) if id="" quit
+	        set obj1=$ClassMethod(class,"%OpenId",id)  //##class(BiRLab.Data.InvoiceEpisodeItem).%OpenId(id) //.%OpenId(id)
+	        if $IsObject(obj1) {
+		        set epistestsetid=obj1.EpisodeItem.IdEPVisitTestSet
+		        set epis=$piece(epistestsetid,"||",1)
+		        if epis'="" {
+			        set ^||bufRecountEpis(epis)=""
+		        } else {
+			        do ##class(TCLEx.Function.General).WriteError("Объект класса BiRLab.Data.InvoiceEpisodeItem c id="_id_": obj.EpisodeItem.IdEPVisitTestSet="_$get(epistestsetid)_" (нет номера эпизода)",namemethod)  
+		        }
+	        } else {
+		       do ##class(TCLEx.Function.General).WriteError("Объект класса BiRLab.Data.InvoiceEpisodeItem c id="_id_" не существует.",namemethod)   
+	        }
+	        
+	        set ^||bufRecountEpis(epis)=""
+        }
+        
+        // идем по ^SpeedI.DeltaP("BiRLab_Data.Episode")
+        #dim obj2 As BiRLab.Data.Episode
+        set class="BiRLab.Data.Episode"
+        set id=""
+        for {
+	        set id=$order(^SpeedI.DeltaP(class,id)) if id="" quit
+	        set obj2=$ClassMethod(class,"%OpenId",id)  
+	        if $IsObject(obj2) {
+		        set epis=obj2.Episode
+		        if epis'="" {
+			        set ^||bufRecountEpis(epis)=""
+		        } else {
+			        do ##class(TCLEx.Function.General).WriteError("Объект класса BiRLab.Data.Episode c id="_id_": obj.Episode="_$get(epis)_" (нет номера эпизода)",namemethod)  
+		        }
+	        } else {
+		       do ##class(TCLEx.Function.General).WriteError("Объект класса BiRLab.Data.Episode c id="_id_" не существует.",namemethod)   
+	        }
+	        
+	        set ^||bufRecountEpis(epis)=""
+        }
+
+        // идем по ^SpeedI.DeltaP("BiRLab_Data.EpisodeItem")
+        #dim obj3 As BiRLab.Data.EpisodeItem
+        set class="BiRLab.Data.EpisodeItem"
+        set id=""
+        for {
+	        set id=$order(^SpeedI.DeltaP(class,id)) if id="" quit
+	        set obj3=$ClassMethod(class,"%OpenId",id)  
+	        if $IsObject(obj3) {
+		        set epistestsetid=obj3.IdEPVisitTestSet
+		        set epis=$piece(epistestsetid,"||",1)
+		        if epis'="" {
+			        set ^||bufRecountEpis(epis)=""
+		        } else {
+			        do ##class(TCLEx.Function.General).WriteError("Объект класса BiRLab.Data.EpisodeItem c id="_id_": obj.IdEPVisitTestSet="_$get(epistestsetid)_" (нет номера эпизода)",namemethod)  
+		        }
+	        } else {
+		       do ##class(TCLEx.Function.General).WriteError("Объект класса BiRLab.Data.EpisodeItem c id="_id_" не существует.",namemethod)   
+	        }
+	        
+	        set ^||bufRecountEpis(epis)=""
+        }
+        
         // Пересчитываем кубы
 		set epis=""
         for {
 	        set epis=$order(^||bufRecountEpis(epis)) if epis="" quit
+	        
+	        // пересчитываем сначала цены, если надо
+	        set ok=##class(TCLEx.BI.BuildIndices).CreateEPVisitTestSetExt(epis)
+	        if 'ok {
+		        set ^log("UpdateCubes",$zd(+$h,4),cubeepis,epis)=$System.Status.GetErrorText(ok)
+	        }
 	        
 	        // EPVisitNumber
 	        set vals=$get(^SpeedI.DeltaP(cubeepis,epis))
@@ -281,6 +354,157 @@
 	       set ^ERRORS($zn,$i(^ERRORS($zn)))=$system.Status.GetErrorText(ok)   
     }   
   quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CreateEPVisitTestSetExtFirst">
+<Description>
+Заполнение класса TCLEx.Data.EPVisitNumberExt - в первый раз (перед первым строительством кубов по уже имеющимся данным)
+Пока только про цену все придумано</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=1
+	try {
+		// создание индекса для быстрого расчета цены по сарому биллингу
+	    do CreateIndex^PRTCLNRUS05birlab($name(^||invForGetPrice))
+	
+	    kill ^TEPIext
+	
+	    // дата, когда был запущен Birlab
+	    set boundDate=##class(BiRLab.Function.Report).GetDateStartUseBirlab() 
+	    set epis="" 
+	    for {
+		    set epis=$order(^TEPI(epis)) if epis="" quit
+		    set ok1=..CreateEPVisitTestSetExt(epis)
+		    if 'ok1 {
+			    set ok=$system.Status.AppendStatus(ok,ok1)
+			    //quit
+		    }
+        }
+	} catch(e) {
+		
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+// только для тех наборов тестов, для которых цена ещене финальная
+
+]]></Content>
+</UDLText>
+
+<Method name="CreateEPVisitTestSetExt">
+<Description>
+Заполнение класса TCLEx.Data.EPVisitNumberExt - не в первый раз 
+Пока только про цену все придумано</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=1
+	set pEpisode=$get(pEpisode)
+	try {
+		if pEpisode="" {
+			set ok =$$$ERROR($$$GeneralError,"Не указан номер эпизода")
+			quit
+		}
+		// эпизод уже закрыт целиком для пересчета цены
+	    if $lg($get(^TEPIext(epis)),1)=1 quit
+	    
+	    set epis=pEpisode
+		set rec=$get(^TEPI(epis))
+		
+		set flagBiRLab=0
+		set payment="" 
+		set hospitalcode=$piece(rec,"\",20)
+        set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
+        set payepisnew=""
+        if payepis="" {
+	        set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
+        }
+        if (payepisnew'="") {
+	        set flagBiRLab=1
+	        set payment=payepisnew
+        }
+        
+        set cito=$piece(rec,"\",15) // cito нужно только для расчета цены по встроенному в трек биллингу, а это было только в Бионе - поэтому cito берем только на уровне эпизода
+
+	    set ts="",flagFinalEpis=1
+        for {
+	        set ts=$order(^TEPI(epis,1,ts)) if ts="" quit
+	        set tscnt=""
+	        for {
+		        set tscnt=$o(^TEPI(epis,1,ts,tscnt),1,rects) if tscnt="" quit
+		        set status=$piece(rects,"\",31) 
+		        set reason=$piece(rects,"\",52)
+		        if (status'="A")&&(reason="") continue 
+		        
+                if flagBiRLab=0 {
+	                ; плательщик (на уровне набора тестов)
+                    set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                    set:payment="" payment=payepis
+                }
+		         
+		        Set superset=$p(rects,"\",29)
+		        
+		        set price=""
+		        set flagFinalPrice=0
+		        
+		        if reason'="" {   // если причина невыполения проставлена, то пишем цену 0 и проставляем флаг окончательности цены
+		            set price=0,flagFinalPrice=1
+		        }
+		        set authdate=$Piece(rects,"\",4)
+		        set billingitem=ts
+		        if superset'="" {
+	                Set billingitem=superset
+	                // если на какой-то набор тестов из супер набора уже записана цена за супернабор, то на другие наборы тестов записываем 0
+	                If $Data(^||Report.Amount(billingitem,epis)) {
+		                set price=0
+		                set flagFinalPrice=^||Report.Amount(billingitem,epis)
+	                }
+                    //if '##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) continue ????
+                    set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
+                    Set ^||Report.Amount(billingitem,epis)="" 
+                }
+	            // расчет цены по старому биллингу
+                if ((boundDate="")||(authdate<boundDate)) {
+	                if '$data(^TEPIext(epis)) set $list(^TEPIext(epis),1)=1  // для этого эпизода не пересчитываем цены никогда
+	                     if price="" {
+		                     Set price=$$GetBillingItemAmount^PRTCLNRUS05birlab(payment,epis,authdate,billingitem,cito,$name(^||invForGetPrice))
+	                     }
+	                     set flagFinalPrice=1
+                }
+                // расчет цены по новому биллингу 
+                else {
+	                    if price="" {
+		                    // смотрим цену окончательно закрепленную
+		                    set price=##class(BiRLab.Function.Invoice).GetFinalPrice(epis,billingitem,.cito,.flagFinalPrice,.error)
+		                    if (flagFinalPrice=0)&&(error="") {
+			                    Set price=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error,payment,tscnt,ts) 
+		                    }
+	                    }
+                }
+                if $data(^||Report.Amount(billingitem,epis)) {
+	                Set ^||Report.Amount(billingitem,epis)=flagFinalPrice
+                }
+                // запись в TCLEx.Data.EPVisitNumberExt
+                set ^TEPIext(epis,1,ts,tscnt)=$listbuild(payment,price,flagFinalPrice)
+                if (flagFinalEpis=1)&&(flagFinalPrice=0) {
+	                set flagFinalEpis=0
+                } 
+	        }
+	        if ($listget($get(^TEPIext(epis)),1)'=1)&&(flagFinalEpis=1) {
+		        set $list(^TEPIext(epis),1)=1
+	        }
+        }
+	} catch(e) {
+		set ok=e.AsStatus()
+		do ##class(TCLEx.Function.General).WriteError($ze,"TCLEx.BI.BuildIndices:CreateEPVisitTestSetExt:episode="_$get(epis))
+	}
+	quit ok
 ]]></Implementation>
 </Method>
 
