@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="BiRLab.Data.EpisodeItem">
+<Description>
+Услуги по эпизоду</Description>
+<Super>%Persistent,%ZEN.DataModel.Adaptor,%IndexBuilder</Super>
+<TimeCreated>62294,51950.895786</TimeCreated>
+<Inheritance>right</Inheritance>
+
+<Property name="Item">
+<Description>
+Услуга</Description>
+<Type>BiRLab.CT.Item</Type>
+</Property>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Property Amount As %Float;
+
+]]></Content>
+</UDLText>
+
+<Property name="CITO">
+<Description>
+Цена услуги
+Налог ????
+Коэффициент CITO</Description>
+<Type>BiRLab.CT.Priority</Type>
+</Property>
+
+<Property name="DateTimeOfChangeStatus">
+<Description>
+Дата и время изменения статуса</Description>
+<Type>%TimeStamp</Type>
+</Property>
+
+<Property name="Status">
+<Description>
+Статус ???  1 - создан, 2 - авторизован, 3 - отменен, 4 - удален</Description>
+<Type>BiRLab.CT.EpisodeItemStatus</Type>
+</Property>
+
+<Property name="SupressBilling">
+<Type>%Boolean</Type>
+</Property>
+
+<Property name="IdEPVisitTestSet">
+<Description>
+ID услуги из ЛИС EP_VisitTestSet</Description>
+<Type>%String</Type>
+</Property>
+
+<Property name="Episode">
+<Description>
+Эпизод</Description>
+<Type>BiRLab.Data.Episode</Type>
+<Cardinality>one</Cardinality>
+<Inverse>Items</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Index name="EpisodeIndex">
+<Properties>Episode</Properties>
+</Index>
+
+<Index name="ItemIndex">
+<Type>bitmap</Type>
+<Properties>Item</Properties>
+</Index>
+
+<Index name="SupressBillingIndex">
+<Type>bitmap</Type>
+<Properties>SupressBilling</Properties>
+</Index>
+
+<Index name="StatusIndex">
+<Type>bitmap</Type>
+<Properties>Status</Properties>
+</Index>
+
+<Index name="EpisodeStatusIndex">
+<Properties>Episode,Status</Properties>
+</Index>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Index EpisodeStatusBMIndex On (Episode, Status) [ Type = bitmap ];
+
+]]></Content>
+</UDLText>
+
+<Index name="EpisodeSupressBillingIndex">
+<Properties>Episode,SupressBilling</Properties>
+</Index>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+ClassMethod EditAmount(pId, pAmount) As %Status
+{
+	set obj = ..%OpenId(pId)
+	set obj.Amount = pAmount
+	quit obj.%Save()
+}
+
+*/
+]]></Content>
+</UDLText>
+
+<Method name="GetSupressBillingItem">
+<Description>
+[ Type = bitmap ];</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode,pItem</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	&sql(select SupressBilling into :sup
+		 from BiRLab_Data.EpisodeItem
+		 where Episode->Episode=:pEpisode and Item=:pItem
+	)
+	if SQLCODE=0 quit sup
+	quit ""
+]]></Implementation>
+</Method>
+
+<Method name="GetItems">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEp</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	kill ^||Episode
+	&sql(declare cEpisode cursor for
+		 select ID as id,Item as item,CITO as cito, SupressBilling
+		 	into :id,:item,:cito, :sup
+		 from BiRLab_Data.EpisodeItem	
+		 where Episode=:pEp and Status=2
+	)
+	set list = ""
+	&sql(open cEpisode)
+	for {
+		&sql(fetch cEpisode)
+		quit:SQLCODE'=0
+		;set list = list_$LB(id)
+		set ^||Episode(pEp,id)=$LB(item,cito,sup)
+	}
+	&sql(close cEpisode)
+	;quit list
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ItemsToBill">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPayer,pLpu,pDs,pDpo,pTyp=2</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	;and ( SupressBilling is null or SupressBilling = 0)
+	if pTyp=1 {
+		&sql(declare cTyp1 cursor for 
+			 select ID as id,Item as item,CITO as cito,Episode->ID as idEpis,Episode->PaymentCategory as payCat,Episode->DateOfAuthorization as dtAuth,
+			 	Episode->CITO as citoEp,Episode->Episode as epis,Episode->DateOfCreation as dtCreate, SupressBilling
+			 into :id,:item,:cito,:idEpis,:payCat,:dtAuth,:citoEp,:epis,:dtCreate, :sup
+			 from BiRLab_Data.EpisodeItem A where NOT EXISTS (select EpisodeItem,Status,SupressBilling from BiRLab_Data.InvoiceEpisodeItem B where A.ID=B.EpisodeItem and B.InvoiceEpisode->Invoice->Status<>6 and B.Status<>2)
+			 	and A.Episode->DateOfCreation>=:pDs and A.Episode->DateOfCreation<=:pDpo
+			 	and A.Episode->Hospital=:pLpu and A.Episode->Payer =:pPayer
+			 	and Status=2 
+			 	and A.Episode->Status = 3
+		)
+		&sql(open cTyp1)
+		for {
+			&sql(fetch cTyp1)
+			quit:SQLCODE'=0
+			set ^||Episode(idEpis)=$LB(payCat,dtAuth,citoEp,dtCreate)
+			set ^||Episode(idEpis,id)=$LB(item,cito,sup)
+		}
+		&sql(close cTyp1)
+	}
+	if pTyp=2 {
+		&sql(declare cTyp2 cursor for 
+			 select ID as id,Item as item,CITO as cito,Episode->ID as idEpis,Episode->PaymentCategory as payCat,Episode->DateOfAuthorization as dtAuth,
+			 	Episode->CITO as citoEp,Episode->Episode as epis,Episode->DateOfCreation as dtCreate, SupressBilling
+			 into :id,:item,:cito,:idEpis,:payCat,:dtAuth,:citoEp,:epis,:dtCreate, :sup
+			 from BiRLab_Data.EpisodeItem A where NOT EXISTS (select EpisodeItem,Status,SupressBilling from BiRLab_Data.InvoiceEpisodeItem B where A.ID=B.EpisodeItem and B.InvoiceEpisode->Invoice->Status<>6 and B.Status<>2)
+			 	and A.Episode->DateOfAuthorization>=:pDs and A.Episode->DateOfAuthorization<=:pDpo 
+			 	and A.Episode->Hospital=:pLpu and A.Episode->Payer =:pPayer
+			 	and A.Status=2 
+			 	and A.Episode->Status = 3
+		)
+		&sql(open cTyp2)
+		for {
+			&sql(fetch cTyp2)
+			quit:SQLCODE'=0
+			set ^||Episode(idEpis)=$LB(payCat,dtAuth,citoEp,dtCreate)
+			set ^||Episode(idEpis,id)=$LB(item,cito,sup)
+		}
+		&sql(close cTyp2)
+	}
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>^BiRLab.Data.EpisodeItemD</DataLocation>
+<DefaultData>EpisodeItemDefaultData</DefaultData>
+<IdLocation>^BiRLab.Data.EpisodeItemD</IdLocation>
+<IndexLocation>^BiRLab.Data.EpisodeItemI</IndexLocation>
+<StreamLocation>^BiRLab.Data.EpisodeItemS</StreamLocation>
+<Data name="EpisodeItemDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Item</Value>
+</Value>
+<Value name="3">
+<Value>Amount</Value>
+</Value>
+<Value name="4">
+<Value>CITO</Value>
+</Value>
+<Value name="5">
+<Value>Episode</Value>
+</Value>
+<Value name="6">
+<Value>DateTimeOfChangeStatus</Value>
+</Value>
+<Value name="7">
+<Value>Status</Value>
+</Value>
+<Value name="8">
+<Value>SupressBilling</Value>
+</Value>
+<Value name="9">
+<Value>IdEPVisitTestSet</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+</Property>
+<Property name="CITO">
+</Property>
+<Property name="DateTimeOfChangeStatus">
+</Property>
+<Property name="Episode">
+</Property>
+<Property name="IdEPVisitTestSet">
+</Property>
+<Property name="Item">
+</Property>
+<Property name="Status">
+</Property>
+<Property name="SupressBilling">
+</Property>
+<SQLMap name="$EpisodeItem">
+<BlockCount>-4</BlockCount>
+</SQLMap>
+<SQLMap name="EpisodeIndex">
+<BlockCount>-25516</BlockCount>
+</SQLMap>
+<SQLMap name="EpisodeStatusIndex">
+<BlockCount>-15420</BlockCount>
+</SQLMap>
+<SQLMap name="EpisodeSupressBillingIndex">
+<BlockCount>-14160</BlockCount>
+</SQLMap>
+<SQLMap name="IDKEY">
+<BlockCount>-80240</BlockCount>
+</SQLMap>
+<SQLMap name="ItemIndex">
+<BlockCount>-4188</BlockCount>
+</SQLMap>
+<SQLMap name="StatusIndex">
+<BlockCount>-56</BlockCount>
+</SQLMap>
+<SQLMap name="SupressBillingIndex">
+<BlockCount>-72</BlockCount>
+</SQLMap>
+</Storage>
+</Class>
+</Export>

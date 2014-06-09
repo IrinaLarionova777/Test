@@ -1,0 +1,1321 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="BiRLab.Data.InvoiceEpisodeItem">
+<Description>
+Элементы эпизода</Description>
+<Super>%Persistent,%ZEN.DataModel.Adaptor</Super>
+<TimeCreated>62293,59927.703466</TimeCreated>
+<Inheritance>right</Inheritance>
+
+<Property name="Item">
+<Description>
+Услуга</Description>
+<Type>BiRLab.CT.Item</Type>
+</Property>
+
+<Property name="EpisodeItem">
+<Description>
+Услуга по эпизоду</Description>
+<Type>BiRLab.Data.EpisodeItem</Type>
+</Property>
+
+<Property name="Amount">
+<Description>
+Налог???
+Цена услуги</Description>
+<Type>%Float</Type>
+</Property>
+
+<Property name="CITO">
+<Description>
+Коэффициент CITO</Description>
+<Type>BiRLab.CT.Priority</Type>
+</Property>
+
+<Property name="Status">
+<Description>
+Статус услуги в счете ??? 1 - добавлен, 2 - отменен  </Description>
+<Type>BiRLab.CT.InvoiceEpisodeItemStatus</Type>
+</Property>
+
+<Property name="DateTimeOfChangeStatus">
+<Description>
+Дата биллинга</Description>
+<Type>%TimeStamp</Type>
+</Property>
+
+<Property name="User">
+<Description>
+Пользователь ??? отдельный класс User</Description>
+<Type>%String</Type>
+</Property>
+
+<Property name="InvoiceEpisode">
+<Description>
+Эпизод</Description>
+<Type>BiRLab.Data.InvoiceEpisode</Type>
+<Cardinality>parent</Cardinality>
+<Inverse>InvoiceEpisodeItem</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Index name="InvoiceEpisodeIndex">
+<Properties>InvoiceEpisode</Properties>
+</Index>
+
+<Index name="DateTimeOfChangeStatusIndex">
+<Properties>DateTimeOfChangeStatus</Properties>
+</Index>
+
+<Index name="ItemIndex">
+<Properties>Item</Properties>
+</Index>
+
+<Index name="StatusIndex">
+<Properties>Status</Properties>
+</Index>
+
+<Index name="EpisodeItemIndex">
+<Properties>EpisodeItem</Properties>
+</Index>
+
+<Method name="MySave">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode,pItem,pAmount,pCITO,pEpItem,pStatus=1</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set obj = ..%New()
+	set obj.Item = ##class(BiRLab.CT.Item).%OpenId(pItem)
+	set obj.EpisodeItem = ##class(BiRLab.Data.EpisodeItem).%OpenId(pEpItem)
+	set obj.Amount = pAmount
+	set obj.CITO = ##class(BiRLab.CT.Priority).%OpenId(pCITO)
+	set obj.Status = ##class(BiRLab.CT.InvoiceEpisodeItemStatus).%OpenId(pStatus)
+	set obj.DateTimeOfChangeStatus = $ZDT($H,3)
+	set obj.User = $UserName
+	do obj.InvoiceEpisodeSetObjectId(pEpisode)
+	set rez = obj.%Save()
+	;s ^tmp(pItem)=rez_"!"_pStatus_"!"_pAmount
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="SetStatus">
+<Description>
+Установить статус</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pItem="",pStatus=2</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	quit:pItem=""
+	quit:pStatus=""
+	if '..%ExistsId(pItem) quit 0
+	set obj = ..%OpenId(pItem)
+	set obj.Status = ##class(BiRLab.CT.InvoiceEpisodeItemStatus).%OpenId(pStatus)
+	set obj.DateTimeOfChangeStatus = $ZDT($H,3)
+	do obj.%Save()
+	if '..YesItem1(obj.InvoiceEpisode) {
+		do ##class(BiRLab.Data.InvoiceEpisode).SetStatus(obj.InvoiceEpisode,2)
+	}
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="YesItem1">
+<Description>
+если для InvoiceEpisode в данном счете больше нет InvoiceEpisodeItem со статусом =1 (Добавлен), 
+то статус самого InvoiceEpisode в данном счете тоже должен стать =2 (Удален). Это упростит отбор эпизодов при выставлении счетов</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	&sql(select ID into :id
+		 from BiRLab_Data.InvoiceEpisodeItem
+		 where InvoiceEpisode=:pEpisode and Status=1
+	)
+	if SQLCODE=0 quit 1
+	quit 0
+]]></Implementation>
+</Method>
+
+<Method name="Clear">
+<Description>
+Удалить</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	quit:$G(pEpisode)="" ""
+	&sql(delete from BiRLab_Data.InvoiceEpisodeItem
+			where InvoiceEpisode=:pEpisode
+	)
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="GetIdEpisodes">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pInvoice</FormalSpec>
+<ReturnType>%List</ReturnType>
+<Implementation><![CDATA[
+	&sql(declare cEpisode cursor for
+		 select ID
+		 	into :id
+		 from BiRLab_Data.InvoiceEpisode	
+		 where (Status = 1 or Status is NULL) and Invoice=:pInvoice
+	)
+	set list = ""
+	&sql(open cEpisode)
+	for {
+		&sql(fetch cEpisode)
+		quit:SQLCODE'=0
+		set list = list_$LB(id)
+	}
+	&sql(close cEpisode)
+	quit list
+]]></Implementation>
+</Method>
+
+<Method name="GetIdAllEpisodes">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pInvoice</FormalSpec>
+<ReturnType>%List</ReturnType>
+<Implementation><![CDATA[
+	&sql(declare cEpisodeAll cursor for
+		 select ID
+		 	into :id
+		 from BiRLab_Data.InvoiceEpisode	
+		 where Invoice=:pInvoice
+	)
+	set list = ""
+	&sql(open cEpisodeAll)
+	for {
+		&sql(fetch cEpisodeAll)
+		quit:SQLCODE'=0
+		set list = list_$LB(id)
+	}
+	&sql(close cEpisodeAll)
+	quit list
+]]></Implementation>
+</Method>
+
+<Query name="findRS">
+<Description>
+Запрос для таблицы поиска </Description>
+<Type>%Query</Type>
+<FormalSpec>P1:%String,P2:%String,P3:%String,P4:%String,P5:%String,P6:%String,P7:%String,P8:%String,P9:%String,P10:%String,P11:%String,P12:%String,P13:%String</FormalSpec>
+<Parameter name="ROWSPEC" value="ID:%String,NEpisode:%String,FIO:%String,DateReg:%Date,DateAuth:%Date,Item:%String,Summa:%String,ItemStatus:%String"/>
+</Query>
+
+<Method name="findRSExecute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,P1:%String,P2:%String,P3:%String,P4:%String,P5:%String,P6:%String,P7:%String,P8:%String,P9:%String,P10:%String,P11:%String,P12:%String,P13:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Kill ^||res
+	Set qHandle=""
+	/*
+	if P11=1 {
+		set idEpis = ..GetIdAllEpisodes(P1)
+	} else {
+		set idEpis = ..GetIdEpisodes(P1)
+	}
+	*/
+	;,FIO:%String
+	set sql="SELECT %ID, InvoiceEpisode->Episode->Episode,  "
+	set sql=sql_" InvoiceEpisode->Episode->Surname ||' '|| coalesce(InvoiceEpisode->Episode->Name,'') ||' '|| coalesce(InvoiceEpisode->Episode->FatherName,'') as fio, "
+	set sql=sql_" InvoiceEpisode->Episode->DateOfCreation, InvoiceEpisode->Episode->DateOfAuthorization, "
+	set sql=sql_" Item, Amount, Status->Code"
+	set sql=sql_" from BirLab_Data.InvoiceEpisodeItem"
+	set where=" where InvoiceEpisode->Invoice='"_P1_"' and "
+	;set where=where_" InvoiceEpisode %INLIST ? and "
+	; хреного как то
+	if P2'="" set where=where_" InvoiceEpisode->Episode->Episode='"_P2_"' and "
+	if P3'="" set where=where_" InvoiceEpisode->Episode->Surname LIKE '%"_P3_"%' and "
+	if P4'="" set where=where_" InvoiceEpisode->Episode->Name LIKE '%"_P4_"%' and "
+	if P5'="" set where=where_" Item='"_P5_"' and "
+	if P6'="" set where=where_" InvoiceEpisode->Episode->DateOfCreation>='"_P6_"' and "
+	if P7'="" set where=where_" InvoiceEpisode->Episode->DateOfCreation<='"_P7_"' and "
+	if P8'="" set where=where_" InvoiceEpisode->Episode->DateOfAuthorization>='"_P8_"' and "
+	if P9'="" set where=where_" InvoiceEpisode->Episode->DateOfAuthorization<='"_P9_"' and "
+	if P10'="" set where=where_" CITO='"_P10_"' and "
+	if P11'=1 {
+		set where=where_" Status->Code<>'2' and "
+	}
+	if P12'="" set where=where_" InvoiceEpisode->Episode->Episode LIKE '"_P12_"%' and "
+	if $G(P13)'=1 set where=where_" Status->Code<>'3' and "
+	;
+	set rs = ##class(%ResultSet.SQL).%New()
+	if where=" where" set where=""
+	set sql=sql_where
+	set:sql[" and" $E(sql,$L(sql)-4,$L(sql)-1)=""
+	;s ^tmp=sql_"!"_P1 
+	set rs=##class(%ResultSet.SQL).%Prepare(sql)
+	quit:'rs ""
+	while (rs.%Next()) {
+		set fio = rs.%GetData(3)
+		set fio = ##class(BiRLab.Utils.Convert).SokrFio(fio) ;$P(fio," ",1)_" "_$E($P(fio," ",2))_"."_$E($P(fio," ",3))_"."
+		set sum = rs.%GetData(7)
+		set status = rs.%GetData(8)
+		if status = 3 {
+			set sum = "0"
+		}
+		Set ^||res(rs.%GetData(1))=$LB(rs.%GetData(1),rs.%GetData(2),fio,rs.%GetData(4),rs.%GetData(5),rs.%GetData(6),sum,status)
+	}
+
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="findRSClose">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary]]></FormalSpec>
+<PlaceAfter>findRSExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Kill ^||res
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="findRSFetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>findRSExecute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	quit:'$D(^||res) $$$OK
+	Set qHandle=$Order(^||res(qHandle))
+	If qHandle="" Set AtEnd=1,Row="" Quit $$$OK
+	Set Row=$G(^||res(qHandle))
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Query name="findRS2">
+<Description>
+Запрос для таблицы поиска </Description>
+<Type>%Query</Type>
+<FormalSpec>P1:%String,P2:%String,P3:%String,P4:%String,P5:%String,P6:%String,P7:%String,P8:%String,P9:%String,P10:%String,P11:%String,P12:%String,P13:%String,P14:%String,P15:%String,PR1:%String</FormalSpec>
+<Parameter name="ROWSPEC" value="ID:%String,Episode:%String,FIO:%String,DateReg:%Date,DateAuth:%Date,Item:%String,Summa:%String,Lpu:%String,NumInvoice:%String,DateInvoice:%String,PerInvoice:%String,SummaInvoice:%String,StatusInvoice:%String"/>
+</Query>
+
+<Method name="findRS2Execute">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,P1:%String,P2:%String,P3:%String,P4:%String,P5:%String,P6:%String,P7:%String,P8:%String,P9:%String,P10:%String,P11:%String,P12:%String,P13:%String,P14:%String,P15:%String,PR1:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Kill ^||res
+	Set qHandle=""
+	/*
+	Set ^||res(1)=$LB(1,,,"62456")
+	Set ^||res(2)=$LB(2,,,"62455")
+	Set ^||res(3)=$LB(3,,,"62456")
+	Set ^||res(4)=$LB(4,,,"62091")
+	Set ^||res(5)=$LB(5,,,"62453")
+	q 1
+	Set ^||res(1)=$LB(1,,,"31.12.2011")
+	Set ^||res(2)=$LB(2,,,"30.12.2010")
+	Set ^||res(3)=$LB(3,,,"31.12.2011")
+	Set ^||res(4)=$LB(4,,,"31.12.2010")
+	Set ^||res(5)=$LB(5,,,"29.12.2011")
+	q 1*/
+	
+	
+	
+	
+	SET P8 = $G(%session.Data("TmpFind","d1"))
+	SET P16 = $G(%session.Data("TmpFind","d2"))
+	SET P9 = $G(%session.Data("TmpFind","da1"))
+	SET P17 = $G(%session.Data("TmpFind","da2"))
+	SET P18 = $G(%session.Data("TmpFind","cancelItem"))
+	SET numorder = $G(%session.Data("TmpFind","numorder"))
+	SET noAutItem = $G(%session.Data("TmpFind","noAutItem"))
+	SET statusItem = $G(%session.Data("TmpFind","statusItem"))
+
+
+	KILL %session.Data("TmpFind")
+	
+	
+	/*
+	s (P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18)=""
+	s P9="01.05.2012"
+	s P17="30.05.2012"
+	
+	s PR1="rez2"
+	*/
+	; "Выставленные услуги"
+	if PR1="rez1" {
+		do ..SetItem(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,numorder,noAutItem,statusItem)
+		quit $$$OK
+	}	
+	; "Невыставленные услуги"
+	if PR1="rez2" {
+		;дата регистрации эпизода попадает в отчетный период
+		do ..NoSetItem(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem)
+		quit $$$OK
+	}
+	; "Услуги с нулевой ценой"
+	if PR1="rez3" {
+		; 1 Выбрать услуги, которые не попали в счета. услуги с нулевой ценой в счета попадать не должны
+		; 2 по каждой услуге определить цену. По сути это алгоритм, который отрабатывает при выставлении счетов. В результаты поиска должны попасть услуги, у которые цена =0 или пустая
+		do ..ItemZero(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,numorder,noAutItem,statusItem)
+		quit $$$OK
+	}
+	
+	
+	do ..SetItem(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,numorder,noAutItem,statusItem)
+	do ..NoSetItem(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,numorder,noAutItem,statusItem)
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="findRS2Close">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary]]></FormalSpec>
+<PlaceAfter>findRS2Execute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Kill ^||res
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="findRS2Fetch">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&qHandle:%Binary,&Row:%List,&AtEnd:%Integer=0]]></FormalSpec>
+<PlaceAfter>findRS2Execute</PlaceAfter>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	quit:'$D(^||res) $$$OK
+	Set qHandle=$Order(^||res(qHandle))
+	If qHandle="" Set AtEnd=1,Row="" Quit $$$OK
+	Set Row=$G(^||res(qHandle))
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="GetSql">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,P19,P20</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	SET P8 = $G(%session.Data("TmpFind","d1"))
+	SET P16 = $G(%session.Data("TmpFind","d2"))
+	SET P9 = $G(%session.Data("TmpFind","da1"))
+	SET P17 = $G(%session.Data("TmpFind","da2"))
+	SET P18 = $G(%session.Data("TmpFind","cancelItem"))
+	SET numorder = $G(%session.Data("TmpFind","numorder"))
+	set rez = $G(%session.Data("TmpFind","r1"))
+	SET noAutItem = $G(%session.Data("TmpFind","noAutItem"))
+	SET statusItem = $G(%session.Data("TmpFind","statusItem"))
+	
+	set sql = ""
+
+	if rez="rez1" {
+		set sql = ..SetItem(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem)
+	}	
+	; "Невыставленные услуги"
+	if rez="rez2" {
+		;дата регистрации эпизода попадает в отчетный период
+		set sql =  ..NoSetItem(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem)
+		;s ^tmp=sql
+	}
+	; "Услуги с нулевой ценой"
+	if rez="rez3" {
+		; 1 Выбрать услуги, которые не попали в счета. услуги с нулевой ценой в счета попадать не должны
+		; 2 по каждой услуге определить цену. По сути это алгоритм, который отрабатывает при выставлении счетов. В результаты поиска должны попасть услуги, у которые цена =0 или пустая
+		set sql =  ..ItemZero(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem)
+	}
+	; Все
+	if rez="rez4" {
+		set sql = ..AllItem(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem)
+	}
+	; "Выведенные из оплаты   "	
+	if rez="rez5" {
+		set sql = ..SuppresItem(P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem)
+	}
+	s ^tmp=sql_"!"_rez
+	quit sql_"^"_rez
+]]></Implementation>
+</Method>
+
+<Method name="FetchRS">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pRS:%ResultSet,rez,params</FormalSpec>
+<ReturnType>%List</ReturnType>
+<Implementation><![CDATA[
+	/*
+	SET P8 = $G(%session.Data("TmpFind","d1"))
+	SET P16 = $G(%session.Data("TmpFind","d2"))
+	SET P9 = $G(%session.Data("TmpFind","da1"))
+	SET P17 = $G(%session.Data("TmpFind","da2"))
+	SET P18 = $G(%session.Data("TmpFind","cancelItem"))
+	SET numorder = $G(%session.Data("TmpFind","numorder"))
+	set rez = $G(%session.Data("TmpFind","r1"))
+	SET noAutItem = $G(%session.Data("TmpFind","noAutItem"))
+	SET statusItem = $G(%session.Data("TmpFind","statusItem"))
+	*/
+	; "Выставленные услуги"
+	if rez="rez1"!(rez="rez4")!(rez="rez5") {
+		set id = pRS.%GetData(1)
+		set ds = pRS.%Get("d1") //12
+		set dpo = pRS.%Get("d2") //13
+		set per = ##class(BiRLab.Utils.Date).Date(ds)_" - "_##class(BiRLab.Utils.Date).Date(dpo)
+		if per=" - " set per = ""
+		set dtcreate = pRS.%Get("dtCrEp") //11
+		set:dtcreate'="" dtcreate = ##class(BiRLab.Utils.Date).ConvData3($P(dtcreate," "))_" "_$P(dtcreate," ",2)
+		set fio = pRS.%GetData(3)
+		set fio = ##class(BiRLab.Utils.Convert).SokrFio(fio) ;$P(fio," ",1)_" "_$E($P(fio," ",2))_"."_$E($P(fio," ",3))_"."
+		set item = pRS.%Get("Item")
+		
+		set numEnv = pRS.%Get("numInvoice") 
+		set sumEnv = $FN(pRS.%Get("summaInvoice"),"",2)
+		set statusEnv = pRS.%Get("statusInvoice")
+		set itemStatus = pRS.%Get("itemStatus")
+
+		;set sum1 = sum1 + pRS.%GetData(7)
+		;set sum2 = sum2 + pRS.%Get("summaInvoice")
+		set sum = pRS.%GetData(7)
+		if +sum=0 {
+			set sum=""
+		} else {
+			set sum=$FN(sum,"",2)
+		}
+		if +sumEnv=0 set sumEnv=""
+		if rez="rez4" {
+			set itemStatusInvoice = pRS.%Get("itemStatusInvoice")
+			if itemStatusInvoice=2 {
+				set (sum,numEnv,dtcreate,per,sumEnv,statusEnv) = ""
+			
+			}
+		}
+		Set lb=$LB(id,pRS.%GetData(2),fio,pRS.%GetData(4),pRS.%GetData(5),itemStatus,item,sum,pRS.%Get("lpu"),numEnv,dtcreate,per,sumEnv,statusEnv)
+	/*
+	if sum1>0||(sum2>0) {
+		Set ^||res("zzz")=$LB(,"Итого:",,,,,$FN(sum1,"",2),,,,,$FN(sum2,"",2),,)
+	}
+	*/
+		}
+	; "Невыставленные услуги"
+	if rez="rez2" {
+		set id = pRS.%GetData(1)
+		set ep = pRS.%Get("Episode")
+		set fio = pRS.%Get("fio")
+		set fio = ##class(BiRLab.Utils.Convert).SokrFio(fio) ;$P(fio," ",1)_" "_$E($P(fio," ",2))_"."_$E($P(fio," ",3))_"."
+		set item = pRS.%Get("Item")
+		set dc = pRS.%Get("DateOfCreation")
+		set da = pRS.%Get("DateOfAuthorization")
+		;set:dc dc = ##class(BiRLab.Utils.Date).Date(dc)
+		;set:da da = ##class(BiRLab.Utils.Date).Date(da)
+		set lpu = pRS.%Get("lpu")
+		set noAutItem = pRS.%Get("tmpCol1")
+		set itemStatus = pRS.%Get("itemStatus")
+		/*
+		set fam = pRS.%Get("fam")
+		set nam = pRS.%Get("nam")
+		set cito = pRS.%Get("cito")
+		set payer = pRS.%Get("payer")
+		set supress = pRS.%Get("supress")
+		s ^tmp("params")=params
+		
+		if $LG(params,2)'="" {
+			if ep'=$LG(params,2) quit $LB("continue")
+		}
+		if $LG(params,3)'="" {
+			if fam'[$LG(params,3) quit $LB("continue")
+		}
+		if $LG(params,4)'="" {
+			if nam'[$LG(params,4) quit $LB("continue")
+		}
+		if $LG(params,5)'="" {
+			if $P(lpu," ")'=$LG(params,5) quit $LB("continue")
+		}
+		if $LG(params,7)'="" {
+			if item'=$LG(params,7) quit $LB("continue")
+		}
+		if $LG(params,18)'="" {
+			set val = ##class(BiRLab.Utils.Date).Hor($LG(params,18))
+			if dc<val quit $LB("continue")
+		}
+		if $LG(params,19)'="" {
+			set val = ##class(BiRLab.Utils.Date).Hor($LG(params,19))
+			if dc>val quit $LB("continue")
+		}
+		if $LG(params,10)'="" {
+			if cito'=$LG(params,10) quit $LB("continue")
+		}
+		if $LG(params,11)'="" {
+			if payer'=$LG(params,11) quit $LB("continue")
+		}
+		if '$LG(params,17) {
+			if supress=1 quit $LB("continue")
+		}
+		if '$LG(params,22) {
+			if noAutItem'=0 quit $LB("continue")
+		}
+		if $LG(params,25)'="" {
+			if itemStatus'=$LG(params,25) quit $LB("continue")
+		}
+		*/
+		set lb = $LB(id,ep,fio,dc,da,itemStatus,item,,lpu,"","","","","",noAutItem)
+	}
+	; "Услуги с нулевой ценой"
+	if rez="rez3" {
+		set id = pRS.%GetData(1)
+		set payer = pRS.%Get("payer")
+		set lpu = pRS.%Get("lpuCode")
+		set pc = pRS.%Get("pc")
+		set da = pRS.%Get("da")
+		set item = pRS.%Get("item")
+		if '..ZeroPrice(id,payer,lpu,pc,da,item) quit $LB("continue")
+		if ..ChkEpisodeItem(id) quit $LB("continue")
+		set fio = pRS.%GetData(3)
+		set fio = ##class(BiRLab.Utils.Convert).SokrFio(fio) ; $P(fio," ",1)_" "_$E($P(fio," ",2))_"."_$E($P(fio," ",3))_"."
+		set item = pRS.%Get("Item")
+		set itemStatus = pRS.%Get("itemStatus")
+	
+		Set lb=$LB(id,pRS.%GetData(2),fio,pRS.%GetData(4),pRS.%GetData(5),itemStatus,item,"",pRS.%Get("lpu"),"","","","","")
+	}
+	;s ^tmp=lb
+	quit lb
+]]></Implementation>
+</Method>
+
+<Method name="SuppresItem">
+<Description>
+"Выведенные из оплаты   "</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set P9 = ##class(BiRLab.Utils.Date).Hor(P9)
+	set P8 = ##class(BiRLab.Utils.Date).Hor(P8)
+	set P17 = ##class(BiRLab.Utils.Date).Hor(P17)
+	set P16 = ##class(BiRLab.Utils.Date).Hor(P16)
+	set P13 = ##class(BiRLab.Utils.Date).Hor(P13)
+	set P14 = ##class(BiRLab.Utils.Date).Hor(P14)
+	set P15 = ##class(BiRLab.Utils.Date).Hor(P15)
+
+	set sql="select a.ID,a.Episode->Episode,a.Episode->Surname ||' '|| coalesce(a.Episode->Name,'') ||' '|| coalesce(a.Episode->FatherName,'') as fio, "
+	set sql=sql_" a.Episode->DateOfCreation,a.Episode->DateOfAuthorization , a.Item, 0, a.Episode->Hospital ||' '|| a.Episode->Hospital->Description as lpu, "
+
+	set sql=sql_" b.Amount,b.InvoiceEpisode->Invoice->Payer ||' '|| b.InvoiceEpisode->Invoice->Number as numInvoice, b.InvoiceEpisode->Invoice->DateOfCreation as dtCrEp, "
+	set sql=sql_" b.InvoiceEpisode->Invoice->StartDate as d1, b.InvoiceEpisode->Invoice->EndDate as d2, "
+	set sql=sql_" b.InvoiceEpisode->Invoice->Amount as summaInvoice, "
+	
+	set sql=sql_" b.InvoiceEpisode->Invoice->Status->Description as statusInvoice, a.Status->Description as itemStatus, b.Status as itemStatusInvoice"
+	//BiRLab.SqlProc_GetLastStatus(b.ID) as statusInvoice
+
+	set sql=sql_" from BiRLab_Data.EpisodeItem as a LEFT OUTER JOIN BiRLab_Data.InvoiceEpisodeItem as b on "
+	set sql=sql_" (a.ID=b.EpisodeItem) "
+	set where = " where a.SupressBilling = 1 and "
+
+	if P2'="" set where=where_" A.Episode->Episode='"_P2_"' and "
+	if P3'="" set where=where_" A.Episode->Surname LIKE '%"_P3_"%' and "
+	if P4'="" set where=where_" A.Episode->Name LIKE '%"_P4_"%' and "
+	if P5'="" set where=where_" A.Episode->Hospital='"_P5_"' and "
+	/*
+	if P6'="" {
+		set P6 = ##class(BiRLab.CT.Hospital).%OpenId(P6)
+		if $IsObject(P6) set P6 = P6.Description
+		set where=where_" A.Episode->Hospital->Description='"_P6_"' and "
+	}*/
+	if P7'="" set where=where_" A.Item='"_P7_"' and "
+
+	if P8'="" set where=where_" A.Episode->DateOfCreation>='"_P8_"' and "
+	if P16'="" set where=where_" A.Episode->DateOfCreation<='"_P16_"' and "
+
+	if P9'="" set where=where_" a.Episode->DateOfAuthorization>='"_P9_"' and "
+	if P17'="" set where=where_" a.Episode->DateOfAuthorization<='"_P17_"' and "
+
+
+	if P10'="" set where=where_" A.CITO='"_P10_"' and "
+	if P11'="" set where=where_" A.Episode->Payer='"_P11_"' and "
+
+	;if P13'="" set where=where_" b.InvoiceEpisode->Invoice->StartDate>='"_P13_"' and "
+	;if P14'="" set where=where_" b.InvoiceEpisode->Invoice->EndDate<='"_P14_"' and "
+	if P15'="" set where=where_" b.InvoiceEpisode->Invoice->Status='"_P15_"' and "
+	if numorder'="" set where=where_" InvoiceEpisode->Episode->Episode LIKE '"_numorder_"%' and "
+
+	;if 'P18 {
+	;	set where=where_" ( SupressBilling is null or SupressBilling = 0) and "
+	;}
+	if numorder'="" set where=where_" A.Episode->Episode LIKE '"_numorder_"%' and "
+	if 'noAutItem {
+		; авторизованные невыставленные услугу, у которых эпизод не авторизован:
+		; EpisodeItem.Status=2 and EpisodeItem->Episode->Status<>3 and <невыставленная услуга, то есть нет счета со статусом не "Аннулирован", в котором данная услуга в статусе "Добавлен">
+		set where=where_" BiRLab.SqlProc_noAutItem(A.Status,A.Episode->Status,A.Episode->DateOfAuthorization,"_P9_","_P17_")=0 and "
+	}
+	if statusItem'="" {
+		set where=where_" A.Status='"_statusItem_"' and "
+	}
+
+
+	if where=" where" set where=""
+	set sql=sql_where
+	set:sql[" and" $E(sql,$L(sql)-4,$L(sql)-1)=""
+	
+	s ^tmp=sql
+	quit sql
+]]></Implementation>
+</Method>
+
+<Method name="AllItem">
+<Description>
+"Все услуги"</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set P9 = ##class(BiRLab.Utils.Date).Hor(P9)
+	set P8 = ##class(BiRLab.Utils.Date).Hor(P8)
+	set P17 = ##class(BiRLab.Utils.Date).Hor(P17)
+	set P16 = ##class(BiRLab.Utils.Date).Hor(P16)
+	set P13 = ##class(BiRLab.Utils.Date).Hor(P13)
+	set P14 = ##class(BiRLab.Utils.Date).Hor(P14)
+	set P15 = ##class(BiRLab.Utils.Date).Hor(P15)
+
+
+	;coalesce(b.Status->Description,a.Status->Description)
+
+	set sql="select a.ID,a.Episode->Episode,a.Episode->Surname ||' '|| coalesce(a.Episode->Name,'') ||' '|| coalesce(a.Episode->FatherName,'') as fio, "
+	set sql=sql_" a.Episode->DateOfCreation,a.Episode->DateOfAuthorization , a.Item, 0, a.Episode->Hospital ||' '|| a.Episode->Hospital->Description as lpu, "
+
+	set sql=sql_" b.Amount,b.InvoiceEpisode->Invoice->Payer ||' '|| b.InvoiceEpisode->Invoice->Number as numInvoice, b.InvoiceEpisode->Invoice->DateOfCreation as dtCrEp, "
+	set sql=sql_" b.InvoiceEpisode->Invoice->StartDate as d1, b.InvoiceEpisode->Invoice->EndDate as d2, "
+	set sql=sql_" b.InvoiceEpisode->Invoice->Amount as summaInvoice, "
+	
+	set sql=sql_" b.InvoiceEpisode->Invoice->Status->Description as statusInvoice, a.Status->Description as itemStatus, b.Status as itemStatusInvoice"
+	//BiRLab.SqlProc_GetLastStatus(b.ID) as statusInvoice
+
+	set sql=sql_" from BiRLab_Data.EpisodeItem as a LEFT OUTER JOIN BiRLab_Data.InvoiceEpisodeItem as b on "
+	set sql=sql_" (a.ID=b.EpisodeItem) "
+	set where = " where "
+	if P2'="" set where=where_" A.Episode->Episode='"_P2_"' and "
+	if P3'="" set where=where_" A.Episode->Surname LIKE '%"_P3_"%' and "
+	if P4'="" set where=where_" A.Episode->Name LIKE '%"_P4_"%' and "
+	if P5'="" set where=where_" A.Episode->Hospital='"_P5_"' and "
+	/*
+	if P6'="" {
+		set P6 = ##class(BiRLab.CT.Hospital).%OpenId(P6)
+		if $IsObject(P6) set P6 = P6.Description
+		set where=where_" A.Episode->Hospital->Description='"_P6_"' and "
+	}*/
+	if P7'="" set where=where_" A.Item='"_P7_"' and "
+
+	if P8'="" set where=where_" A.Episode->DateOfCreation>='"_P8_"' and "
+	if P16'="" set where=where_" A.Episode->DateOfCreation<='"_P16_"' and "
+
+	if P9'="" set where=where_" a.Episode->DateOfAuthorization>='"_P9_"' and "
+	if P17'="" set where=where_" a.Episode->DateOfAuthorization<='"_P17_"' and "
+
+
+	if P10'="" set where=where_" A.CITO='"_P10_"' and "
+	if P11'="" set where=where_" A.Episode->Payer='"_P11_"' and "
+
+	;if P13'="" set where=where_" b.InvoiceEpisode->Invoice->StartDate>='"_P13_"' and "
+	;if P14'="" set where=where_" b.InvoiceEpisode->Invoice->EndDate<='"_P14_"' and "
+	if P15'="" set where=where_" b.InvoiceEpisode->Invoice->Status='"_P15_"' and "
+	if numorder'="" set where=where_" InvoiceEpisode->Episode->Episode LIKE '"_numorder_"%' and "
+
+	;if 'P18 {
+	;	set where=where_" ( SupressBilling is null or SupressBilling = 0) and "
+	;}
+	if numorder'="" set where=where_" A.Episode->Episode LIKE '"_numorder_"%' and "
+	if 'noAutItem {
+		; авторизованные невыставленные услугу, у которых эпизод не авторизован:
+		; EpisodeItem.Status=2 and EpisodeItem->Episode->Status<>3 and <невыставленная услуга, то есть нет счета со статусом не "Аннулирован", в котором данная услуга в статусе "Добавлен">
+		set where=where_" BiRLab.SqlProc_noAutItem(A.Status,A.Episode->Status,A.Episode->DateOfAuthorization,"_P9_","_P17_")=0 and "
+	}
+	if statusItem'="" {
+		set where=where_" A.Status='"_statusItem_"' and "
+	}
+	/*
+	if P12'="" {
+		set P12 = ##class(BiRLab.CT.Payer).%OpenId(P12)
+		if $IsObject(P12) set P12 = P12.DescriptionShort
+		set where=where_" A.Episode->Payer->DescriptionShort='"_P12_"' and "
+	}
+	*/
+	;if P15'="" set where=where_" InvoiceEpisode->Invoice->Status='"_P15_"' and "
+
+	set rs = ##class(%ResultSet.SQL).%New()
+	if where=" where " {
+		set where=""
+	} else {
+		set $E(where,$L(where)-4,$L(where)-1)=""
+	}
+	set sql=sql_where_" and BiRLab.SqlProc_GetLastInvoice(A.Episode->Episode,A.Episode->Payer)=InvoiceEpisode->Invoice->ID group by a.Episode->Episode,a.Item"
+	
+	;s ^tmp = sql
+	
+	quit sql
+	
+	/*
+	set sql="SELECT %ID, InvoiceEpisode->Episode->Episode,  "
+	set sql=sql_" InvoiceEpisode->Episode->Surname ||' '|| coalesce(InvoiceEpisode->Episode->Name,'') ||' '|| coalesce(InvoiceEpisode->Episode->FatherName,'') as fio, "
+	set sql=sql_" InvoiceEpisode->Episode->DateOfCreation, InvoiceEpisode->Episode->DateOfAuthorization, "
+	set sql=sql_" Item, Amount, Status->Description, InvoiceEpisode->Episode->Hospital ||' '|| InvoiceEpisode->Episode->Hospital->Description as lpu, "
+	set sql=sql_" InvoiceEpisode->Invoice->Payer ||' '|| InvoiceEpisode->Invoice->Number as numInvoice, InvoiceEpisode->Invoice->DateOfCreation as dtCrEp, "
+	set sql=sql_" InvoiceEpisode->Invoice->StartDate as d1, InvoiceEpisode->Invoice->EndDate as d2, "
+	set sql=sql_" InvoiceEpisode->Invoice->Amount as summaInvoice, InvoiceEpisode->Invoice->Status->Description as statusInvoice, Status->Description as itemStatus"
+	set sql=sql_" from BirLab_Data.InvoiceEpisodeItem"
+	set where=" where"
+	;set where=where_" InvoiceEpisode %INLIST ? and "
+	; хреного как то
+	if P2'="" set where=where_" InvoiceEpisode->Episode->Episode='"_P2_"' and "
+	if P3'="" set where=where_" InvoiceEpisode->Episode->Surname LIKE '%"_P3_"%' and "
+	if P4'="" set where=where_" InvoiceEpisode->Episode->Name LIKE '%"_P4_"%' and "
+	if P5'="" set where=where_" InvoiceEpisode->Episode->Hospital='"_P5_"' and "
+
+	if P7'="" set where=where_" Item='"_P7_"' and "
+	;if P8'="" set where=where_" InvoiceEpisode->Episode->DateOfCreation='"_P8_"' and "
+	;if P9'="" set where=where_" InvoiceEpisode->Episode->DateOfAuthorization='"_P9_"' and "
+
+	if P8'="" set where=where_" InvoiceEpisode->Episode->DateOfCreation>='"_P8_"' and "
+	if P16'="" set where=where_" InvoiceEpisode->Episode->DateOfCreation<='"_P16_"' and "
+	if P9'="" set where=where_" InvoiceEpisode->Episode->DateOfAuthorization>='"_P9_"' and "
+	if P17'="" set where=where_" InvoiceEpisode->Episode->DateOfAuthorization<='"_P17_"' and "
+
+	if P10'="" set where=where_" CITO='"_P10_"' and "
+	if P11'="" set where=where_" InvoiceEpisode->Invoice->Payer='"_P11_"' and "
+	if P13'="" set where=where_" InvoiceEpisode->Invoice->StartDate>='"_P13_"' and "
+	if P14'="" set where=where_" InvoiceEpisode->Invoice->EndDate<='"_P14_"' and "
+	if P15'="" set where=where_" InvoiceEpisode->Invoice->Status='"_P15_"' and "
+	if numorder'="" set where=where_" InvoiceEpisode->Episode->Episode LIKE '"_numorder_"%' and "
+	*/
+	;set where=where_" InvoiceEpisode->Status<>2 and InvoiceEpisode->Invoice->Status<>6 and "
+	;
+	set rs = ##class(%ResultSet.SQL).%New()
+	if where=" where" set where=""
+	set sql=sql_where
+	set:sql[" and" $E(sql,$L(sql)-4,$L(sql)-1)=""
+	;s ^tmp=sql ;_"!"_P1_"!"_idEpis
+	
+	quit sql_" group by a.Episode->Episode,a.Item"
+]]></Implementation>
+</Method>
+
+<Method name="SetItem">
+<Description>
+"Выставленные услуги"</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set P9 = ##class(BiRLab.Utils.Date).Hor(P9)
+	set P8 = ##class(BiRLab.Utils.Date).Hor(P8)
+	set P17 = ##class(BiRLab.Utils.Date).Hor(P17)
+	set P16 = ##class(BiRLab.Utils.Date).Hor(P16)
+	set P13 = ##class(BiRLab.Utils.Date).Hor(P13)
+	set P14 = ##class(BiRLab.Utils.Date).Hor(P14)
+	set P15 = ##class(BiRLab.Utils.Date).Hor(P15)
+
+	set sql="SELECT %ID, InvoiceEpisode->Episode->Episode,  "
+	set sql=sql_" InvoiceEpisode->Episode->Surname ||' '|| coalesce(InvoiceEpisode->Episode->Name,'') ||' '|| coalesce(InvoiceEpisode->Episode->FatherName,'') as fio, "
+	set sql=sql_" InvoiceEpisode->Episode->DateOfCreation, InvoiceEpisode->Episode->DateOfAuthorization, "
+	set sql=sql_" Item, Amount, Status->Description, InvoiceEpisode->Episode->Hospital ||' '|| InvoiceEpisode->Episode->Hospital->Description as lpu, "
+	set sql=sql_" InvoiceEpisode->Invoice->Payer ||' '|| InvoiceEpisode->Invoice->Number as numInvoice, InvoiceEpisode->Invoice->DateOfCreation as dtCrEp, "
+	set sql=sql_" InvoiceEpisode->Invoice->StartDate as d1, InvoiceEpisode->Invoice->EndDate as d2, "
+	set sql=sql_" InvoiceEpisode->Invoice->Amount as summaInvoice, InvoiceEpisode->Invoice->Status->Description as statusInvoice, Status->Description as itemStatus"
+	set sql=sql_" from BirLab_Data.InvoiceEpisodeItem"
+	set where=" where"
+	;set where=where_" InvoiceEpisode %INLIST ? and "
+	; хреного как то
+	if P2'="" set where=where_" InvoiceEpisode->Episode->Episode='"_P2_"' and "
+	if P3'="" set where=where_" InvoiceEpisode->Episode->Surname LIKE '%"_P3_"%' and "
+	if P4'="" set where=where_" InvoiceEpisode->Episode->Name LIKE '%"_P4_"%' and "
+	if P5'="" set where=where_" InvoiceEpisode->Episode->Hospital='"_P5_"' and "
+	/*
+	if P6'="" {
+		set P6 = ##class(BiRLab.CT.Hospital).%OpenId(P6)
+		if $IsObject(P6) set P6 = P6.Description
+		set where=where_" InvoiceEpisode->Episode->Hospital->Description='"_P6_"' and "
+	}*/
+	if P7'="" set where=where_" Item='"_P7_"' and "
+	;if P8'="" set where=where_" InvoiceEpisode->Episode->DateOfCreation='"_P8_"' and "
+	;if P9'="" set where=where_" InvoiceEpisode->Episode->DateOfAuthorization='"_P9_"' and "
+
+	if P8'="" set where=where_" InvoiceEpisode->Episode->DateOfCreation>='"_P8_"' and "
+	if P16'="" set where=where_" InvoiceEpisode->Episode->DateOfCreation<='"_P16_"' and "
+	if P9'="" set where=where_" InvoiceEpisode->Episode->DateOfAuthorization>='"_P9_"' and "
+	if P17'="" set where=where_" InvoiceEpisode->Episode->DateOfAuthorization<='"_P17_"' and "
+
+	if P10'="" set where=where_" CITO='"_P10_"' and "
+	if P11'="" set where=where_" InvoiceEpisode->Invoice->Payer='"_P11_"' and "
+	/*
+	if P12'="" {
+		set P12 = ##class(BiRLab.CT.Payer).%OpenId(P12)
+		if $IsObject(P12) set P12 = P12.DescriptionShort
+		set where=where_" InvoiceEpisode->Invoice->Payer->DescriptionShort='"_P12_"' and "
+	}*/
+	if P13'="" set where=where_" InvoiceEpisode->Invoice->StartDate>='"_P13_"' and "
+	if P14'="" set where=where_" InvoiceEpisode->Invoice->EndDate<='"_P14_"' and "
+	if P15'="" set where=where_" InvoiceEpisode->Invoice->Status='"_P15_"' and "
+	if numorder'="" set where=where_" InvoiceEpisode->Episode->Episode LIKE '"_numorder_"%' and "
+	set where=where_" InvoiceEpisode->Status<>2 and InvoiceEpisode->Invoice->Status<>6 and "
+	set where=where_" ( EpisodeItem->SupressBilling is null or EpisodeItem->SupressBilling = 0) and "
+	;
+	set rs = ##class(%ResultSet.SQL).%New()
+	if where=" where" set where=""
+	set sql=sql_where
+	set:sql[" and" $E(sql,$L(sql)-4,$L(sql)-1)=""
+	;s ^tmp=sql ;_"!"_P1_"!"_idEpis
+	
+	quit sql
+	
+	
+	
+	
+	set rs=##class(%ResultSet.SQL).%Prepare(sql,,,)
+	quit:'rs ""
+	set sum1=0
+	set sum2=0
+	while (rs.%Next()) {
+		set id = rs.%GetData(1)
+		set ds = rs.%Get("d1") //12
+		set dpo = rs.%Get("d2") //13
+		set per = ds_" - "_dpo
+		set dtcreate = rs.%Get("dtCrEp") //11
+		set:dtcreate'="" dtcreate = ##class(BiRLab.Utils.Date).ConvData3($P(dtcreate," "))_" "_$P(dtcreate," ",2)
+		set fio = rs.%GetData(3)
+		set fio = ##class(BiRLab.Utils.Convert).SokrFio(fio)
+		set item = rs.%Get("Item")
+		
+		set numEnv = rs.%Get("numInvoice") 
+		set sumEnv = $FN(rs.%Get("summaInvoice"),"",2)
+		set statusEnv = rs.%Get("statusInvoice")
+
+		set sum1 = sum1 + rs.%GetData(7)
+		set sum2 = sum2 + rs.%Get("summaInvoice")
+		Set ^||res(id)=$LB(id,rs.%GetData(2),fio,rs.%GetData(4),rs.%GetData(5),item,$FN(rs.%GetData(7),"",2),rs.%Get("lpu"),numEnv,dtcreate,per,sumEnv,statusEnv)
+	}
+	if sum1>0||(sum2>0) {
+		Set ^||res("zzz")=$LB(,"Итого:",,,,,$FN(sum1,"",2),,,,,$FN(sum2,"",2),,)
+	}
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="NoSetItem">
+<Description>
+"Невыставленные услуги"</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set P9 = ##class(BiRLab.Utils.Date).Hor(P9)
+	set P17 = ##class(BiRLab.Utils.Date).Hor(P17)
+	
+	set sql="select ID,Episode->Episode,Episode->Surname ||' '|| coalesce(Episode->Name,'') ||' '|| coalesce(Episode->FatherName,'') as fio, "
+	set sql=sql_" A.Episode->DateOfCreation,A.Episode->DateOfAuthorization , Item, 0, Episode->Hospital ||' '|| Episode->Hospital->Description as lpu, "
+	set sql=sql_" BiRLab.SqlProc_noAutItem(A.Status,A.Episode->Status,A.Episode->DateOfAuthorization,"_P9_","_P17_") as tmpCol1, Status->Description as itemStatus"
+	set sql=sql_" ,Episode->Surname as fam, coalesce(Episode->Name,'') as nam, CITO->Code as cito"
+	set sql=sql_" ,A.Episode->Payer as payer, A.SupressBilling as supress "
+	set sql=sql_" from BiRLab_Data.EpisodeItem A "
+	set sql=sql_" where A.Episode->DateOfAuthorization between "_P9_" and "_P17_""
+	set where = " and A.Episode->CurrentInvoiceEpisode is null and "
+	
+	;;; старая версия запроса
+	/*
+	set sql="select ID,Episode->Episode,Episode->Surname ||' '|| coalesce(Episode->Name,'') ||' '|| coalesce(Episode->FatherName,'') as fio, "
+	set sql=sql_" A.Episode->DateOfCreation,A.Episode->DateOfAuthorization , Item, 0, Episode->Hospital ||' '|| Episode->Hospital->Description as lpu, "
+	set sql=sql_" BiRLab.SqlProc_noAutItem(A.Status,A.Episode->Status,A.Episode->DateOfAuthorization,"_P9_","_P17_") as tmpCol1, Status->Description as itemStatus"
+	
+	set sql=sql_" ,Episode->Surname as fam, coalesce(Episode->Name,'') as nam, CITO->Code as cito"
+	set sql=sql_" ,A.Episode->Payer as payer, A.SupressBilling as supress "
+
+	set sql=sql_" from BiRLab_Data.EpisodeItem A where NOT EXISTS "
+	set sql=sql_" (select * from BiRLab_Data.InvoiceEpisodeItem B where A.ID=B.EpisodeItem and B.InvoiceEpisode->Invoice->Status<>6 and B.Status<>2)"
+	set sql=sql_" and A.Episode->DateOfAuthorization between "_P9_" and "_P17_""
+	;;;;q sql
+	set where = " and "
+	*/
+	
+	if P2'="" set where=where_" A.Episode->Episode='"_P2_"' and "
+	if P3'="" set where=where_" A.Episode->Surname LIKE '%"_P3_"%' and "
+	if P4'="" set where=where_" A.Episode->Name LIKE '%"_P4_"%' and "
+	if P5'="" set where=where_" A.Episode->Hospital='"_P5_"' and "
+	/*
+	if P6'="" {
+		set P6 = ##class(BiRLab.CT.Hospital).%OpenId(P6)
+		if $IsObject(P6) set P6 = P6.Description
+		set where=where_" A.Episode->Hospital->Description='"_P6_"' and "
+	}*/
+	if P7'="" set where=where_" A.Item='"_P7_"' and "
+
+	if P8'="",P16="" set where=where_" A.Episode->DateOfCreation>="_P8_" and "
+	if P16'="",P8="" set where=where_" A.Episode->DateOfCreation<="_P16_" and "
+	if P8'="",P16'="" set where=where_" A.Episode->DateOfCreation between "_P8_" and "_P16_" and "
+
+	if P10'="" set where=where_" A.CITO='"_P10_"' and "
+	if P11'="" set where=where_" A.Episode->Payer='"_P11_"' and "
+	if 'P18 {
+		;set where=where_" ( SupressBilling is null or SupressBilling = 0) and "
+		set where=where_" ( A.SupressBilling <>1) and "
+	}
+	if numorder'="" set where=where_" A.Episode->Episode LIKE '"_numorder_"%' and "
+	if 'noAutItem {
+		; авторизованные невыставленные услугу, у которых эпизод не авторизован:
+		; EpisodeItem.Status=2 and EpisodeItem->Episode->Status<>3 and <невыставленная услуга, то есть нет счета со статусом не "Аннулирован", в котором данная услуга в статусе "Добавлен">
+		set where=where_" BiRLab.SqlProc_noAutItem(A.Status,A.Episode->Status,A.Episode->DateOfAuthorization,"_P9_","_P17_")=0 and "
+		;;;set where=where_" A.Status=2 and (A.Episode->Status<>3 or (A.Episode->Status=3 and A.Episode->DateOfAuthorization>"_P17_")) and "
+	}
+	if statusItem'="" {
+		set where=where_" A.Status='"_statusItem_"' and "
+	}
+	/*
+	if P12'="" {
+		set P12 = ##class(BiRLab.CT.Payer).%OpenId(P12)
+		if $IsObject(P12) set P12 = P12.DescriptionShort
+		set where=where_" A.Episode->Payer->DescriptionShort='"_P12_"' and "
+	}
+	*/
+	;if P15'="" set where=where_" InvoiceEpisode->Invoice->Status='"_P15_"' and "
+
+	set rs = ##class(%ResultSet.SQL).%New()
+	if where=" and " {
+		set where=""
+	} else {
+		set $E(where,$L(where)-4,$L(where)-1)=""
+	}
+	set sql=sql_where
+	
+	;s ^tmp = sql
+	
+	quit sql
+	
+	set rs=##class(%ResultSet.SQL).%Prepare(sql,,,)
+	quit:'rs ""
+	;s ^tmp=sql
+	while (rs.%Next()) {
+		set id = rs.%GetData(1)
+		set fio = rs.%Get("fio")
+		set fio = ##class(BiRLab.Utils.Convert).SokrFio(fio) ;$P(fio," ",1)_" "_$E($P(fio," ",2))_"."_$E($P(fio," ",3))_"."
+		set item = rs.%Get("Item")
+		Set ^||res(id)=$LB(id,rs.%Get("Episode"),fio,rs.%Get("DateOfCreation"),rs.%Get("DateOfAuthorization"),item,,rs.%Get("lpu"),"","","","","")
+	}
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ItemZero">
+<Description>
+"Услуги с нулевой ценой"</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>P1,P2,P3,P4,P5,P6,P7,P8,P9,P10,P11,P12,P13,P14,P15,P16,P17,P18,numorder,noAutItem,statusItem</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set P9 = ##class(BiRLab.Utils.Date).Hor(P9)
+	set P8 = ##class(BiRLab.Utils.Date).Hor(P8)
+	set P17 = ##class(BiRLab.Utils.Date).Hor(P17)
+	set P16 = ##class(BiRLab.Utils.Date).Hor(P16)
+	set sql="SELECT %ID, Episode->Episode,  "
+	set sql=sql_" Episode->Surname ||' '|| coalesce(Episode->Name,'') ||' '|| coalesce(Episode->FatherName,'') as fio, "
+	set sql=sql_" Episode->DateOfCreation, Episode->DateOfAuthorization as da, "
+	set sql=sql_" Item as item, Status->Description, Episode->Hospital ||' '|| Episode->Hospital->Description as lpu, "
+	set sql=sql_" Episode->Payer as payer,Episode->Hospital as lpuCode, Episode->PaymentCategory as pc, Status->Description as itemStatus"
+	set sql=sql_" from BirLab_Data.EpisodeItem"
+	set where=" where"
+	;set where=where_" InvoiceEpisode %INLIST ? and "
+	; хреного как то
+	if P2'="" set where=where_" Episode->Episode='"_P2_"' and "
+	if P3'="" set where=where_" Episode->Surname LIKE '%"_P3_"%' and "
+	if P4'="" set where=where_" Episode->Name LIKE '%"_P4_"%' and "
+	if P5'="" set where=where_" Episode->Hospital='"_P5_"' and "
+	/*
+	if P6'="" {
+		set P6 = ##class(BiRLab.CT.Hospital).%OpenId(P6)
+		if $IsObject(P6) set P6 = P6.Description
+		set where=where_" Episode->Hospital->Description='"_P6_"' and "
+	}
+	*/
+	if P7'="" set where=where_" Item='"_P7_"' and "
+	;if P8'="" set where=where_" InvoiceEpisode->Episode->DateOfCreation='"_P8_"' and "
+	;if P9'="" set where=where_" InvoiceEpisode->Episode->DateOfAuthorization='"_P9_"' and "
+	/*
+	SET P8 = $G(%session.Data("TmpFind","d1"))
+	SET P16 = $G(%session.Data("TmpFind","d2"))
+	SET P9 = $G(%session.Data("TmpFind","da1"))
+	SET P17 = $G(%session.Data("TmpFind","da2"))
+	KILL %session.Data("TmpFind")
+	*/
+	if P8'="" set where=where_" Episode->DateOfCreation>='"_P8_"' and "
+	if P16'="" set where=where_" Episode->DateOfCreation<='"_P16_"' and "
+	if P9'="" set where=where_" Episode->DateOfAuthorization>='"_P9_"' and "
+	if P17'="" set where=where_" Episode->DateOfAuthorization<='"_P17_"' and "
+
+	if P10'="" set where=where_" CITO='"_P10_"' and "
+	if P11'="" set where=where_" Episode->Payer='"_P11_"' and "
+	/*
+	if P12'="" {
+		set P12 = ##class(BiRLab.CT.Payer).%OpenId(P12)
+		if $IsObject(P12) set P12 = P12.DescriptionShort
+		set where=where_" Episode->Payer->Description='"_P12_"' and "
+	}
+	*/
+	;if P13'="" set where=where_" Episode->DateOfAuthorization>='"_P13_"' and "
+	;if P14'="" set where=where_" Episode->DateOfAuthorization<='"_P14_"' and "
+	if P15'="" set where=where_" Episode->Status='"_P15_"' and "
+	if numorder'="" set where=where_" Episode->Episode LIKE '"_numorder_"%' and "
+	if statusItem'="" {
+		set where=where_" Status='"_statusItem_"' and "
+	}
+	;
+	set rs = ##class(%ResultSet.SQL).%New()
+	if where=" where" set where=""
+	set sql=sql_where
+	set:sql[" and" $E(sql,$L(sql)-4,$L(sql)-1)=""
+	;s ^tmp=sql ;_"!"_P1_"!"_idEpis
+	
+	quit sql
+	
+	set rs=##class(%ResultSet.SQL).%Prepare(sql,,,)
+	quit:'rs ""
+	while (rs.%Next()) {
+		set id = rs.%GetData(1)
+		set payer = rs.%Get("payer")
+		set lpu = rs.%Get("lpuCode")
+		set pc = rs.%Get("pc")
+		set da = rs.%Get("da")
+		set item = rs.%Get("item")
+		continue:'..ZeroPrice(id,payer,lpu,pc,da,item)
+		continue:..ChkEpisodeItem(id)
+		set fio = rs.%GetData(3)
+		set fio = ##class(BiRLab.Utils.Convert).SokrFio(fio) ;$P(fio," ",1)_" "_$E($P(fio," ",2))_"."_$E($P(fio," ",3))_"."
+		set item = rs.%Get("Item")
+		
+		Set ^||res(id)=$LB(id,rs.%GetData(2),fio,rs.%GetData(4),rs.%GetData(5),item,"",rs.%Get("lpu"),"","","","","")
+	}
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ZeroPrice">
+<Description>
+Нулевая ли цена услуги</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpItem,pPayer,pLpu,pPc,pDa,pItem</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	set objHPCV = ##class(BiRLab.CT.HospitalPaymentCategory).GetVersionPrice2(pPayer,pLpu,pPc,pDa)
+	if '$IsObject(objHPCV) quit 0
+	;s ^tmp(1)=objHPCV_"!"_pPayer_"!"_pLpu_"!"_pPc_"!"_pDa
+	set plh = objHPCV.PriceList.%Id()
+	;zw plh
+	set pl = ##class(BiRLab.CT.PriceList).GetVersionPriceV2(plh,pDa)
+	;zw pl
+	if '$IsObject(pl) quit 0
+	set price = ##class(BiRLab.CT.PriceListVersionDetails).GetPrice(pl.%Id(),pItem)
+	if +price=0 q 1
+	quit 0
+	/*
+	set obj = ##class(BiRLab.Data.EpisodeItem).%OpenId(pEpItem)
+	set pl = ##class(BiRLab.CT.PriceList).GetVersionPrice(obj.Episode.DateOfAuthorization)
+	if $IsObject(pl) set pl = pl.%Id()
+	set item = obj.Item.Code
+	;zw
+	set price = ##class(BiRLab.CT.PriceListVersionDetails).GetPrice(pl,item)
+	if +price=0 q 1
+	quit 0
+	*/
+]]></Implementation>
+</Method>
+
+<Method name="ChkEpisodeItem">
+<Description>
+Есть ли данная услуга у счете </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpItem</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	&sql(select ID into :id
+		 from BiRLab_Data.InvoiceEpisodeItem
+		 where EpisodeItem=:pEpItem
+	)
+	if SQLCODE=0 quit 1
+	quit 0
+]]></Implementation>
+</Method>
+
+<Method name="UnSetItem">
+<Description>
+услуга эпизода не вошла ни в один счет или в счете имеет статус Удален
+свойство SupressBilling = True</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pId,pItem</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	&sql(select ID,InvoiceEpisode->Episode,Item into :id,:ep,:item
+		 from BiRLab_Data.InvoiceEpisodeItem
+		 where ID<>:pId and (Item<>:pItem or Status=2)
+	)
+	if SQLCODE'=0 quit 0
+	quit ##class(BiRLab.Data.EpisodeItem).GetSupressBillingItem(ep,item)
+]]></Implementation>
+</Method>
+
+<Method name="NoBillItem">
+<Description>
+Данная услуга в биллинге не участвует</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpItem,pEp</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	&sql(select ID
+		 	into :id
+		 from BiRLab_Data.InvoiceEpisodeItem	
+		 where EpisodeItem=:pEpItem and Status=1 
+		 and InvoiceEpisode->Invoice->Status->Code<>6
+	)
+	if SQLCODE=0 quit 1
+	quit 0
+]]></Implementation>
+</Method>
+
+<Method name="NoReBillItem">
+<Description>
+Данная услуга в Reбиллинге не участвует</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpItem,pEp,pNum</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	&sql(select ID
+		 	into :id
+		 from BiRLab_Data.InvoiceEpisodeItem	
+		 where EpisodeItem=:pEpItem and Status=1 
+		 and InvoiceEpisode->Invoice->Status->Code<>6
+		 and InvoiceEpisode->Invoice->Number <> :pNum
+	)
+	if SQLCODE=0 quit 1
+	quit 0
+]]></Implementation>
+</Method>
+
+<Method name="SupressBillingEpisodeItem">
+<Description>
+Вывести услугу из оплаты</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pInvoiceEpisodeItem:%String,pReason:%String,pUser:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    set:$G(pUser)="" pUser = ##class(BiRLab.CT.Users).SessionUserId()
+    set objUserLIS = ##class(BiRLab.CT.Users).%OpenId(pUser)
+	set userLIS=objUserLIS.UserID
+    // id услуги в ЛИС
+    &sql(select EpisodeItem->IdEPVisitTestSet into :idlis
+		 from BirLab_Data.InvoiceEpisodeItem
+		 where ID = :pInvoiceEpisodeItem
+	)
+	if SQLCODE'=0 quit $$$OK
+	set obj = ##class(User.EPVisitTestSet).%OpenId(idlis)
+	quit:'$IsObject(obj) $$$OK
+	if $D(pReason) {
+		set obj.VISTSSupressBilling="Y"
+		set obj.VISTSDateOfSupressBilling=+$H
+	    do obj.VISTSSupressReason.Insert($G(pReason))
+		}
+	if $G(pReason)="" {
+		set obj.VISTSSupressBilling=""
+		set obj.VISTSDateOfSupressBilling=""
+		do obj.VISTSSupressReason.Clear()
+		}
+	do obj.VISTSUserSupressDRSetObjectId(userLIS)
+	set rez = obj.%Save()
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="GetIdItem">
+<Description>
+Вернет ИД услуги по эпизоду и услуге</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pNumEp,pItem</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	;and (EpisodeItem->SupressBilling is null or EpisodeItem->SupressBilling = 0)
+	&sql(select top 1 ID
+		 	into :id
+		 from BiRLab_Data.InvoiceEpisodeItem	
+		 where InvoiceEpisode->Episode->Episode=:pNumEp and Item=:pItem 
+		 Order By DateTimeOfChangeStatus desc
+	)
+	if SQLCODE=0 quit id
+	quit ""
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>{%%PARENT}("InvoiceEpisodeItem")</DataLocation>
+<DefaultData>InvoiceEpisodeItemDefaultData</DefaultData>
+<IdLocation>^BiRLab.Data.InvoiceEpisodesC("InvoiceEpisodeItem")</IdLocation>
+<IndexLocation>^BiRLab.Data.InvoiceEpis4FC6I</IndexLocation>
+<StreamLocation>^BiRLab.Data.InvoiceEpis4FC6S</StreamLocation>
+<Data name="InvoiceEpisodeItemDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Item</Value>
+</Value>
+<Value name="3">
+<Value>Amount</Value>
+</Value>
+<Value name="4">
+<Value>CITO</Value>
+</Value>
+<Value name="5">
+<Value>Status</Value>
+</Value>
+<Value name="6">
+<Value>DateTimeOfChangeStatus</Value>
+</Value>
+<Value name="7">
+<Value>User</Value>
+</Value>
+<Value name="8">
+<Value>EpisodeItem</Value>
+</Value>
+</Data>
+<Property name="%%CLASSNAME">
+</Property>
+<Property name="Amount">
+</Property>
+<Property name="CITO">
+</Property>
+<Property name="DateTimeOfChangeStatus">
+</Property>
+<Property name="EpisodeItem">
+</Property>
+<Property name="InvoiceEpisode">
+</Property>
+<Property name="Item">
+</Property>
+<Property name="Status">
+</Property>
+<Property name="User">
+</Property>
+<Property name="childsub">
+</Property>
+<SQLMap name="DateTimeOfChangeStatusIndex">
+<BlockCount>-10936</BlockCount>
+</SQLMap>
+<SQLMap name="EpisodeItemIndex">
+<BlockCount>-21704</BlockCount>
+</SQLMap>
+<SQLMap name="IDKEY">
+<BlockCount>-144576</BlockCount>
+</SQLMap>
+<SQLMap name="InvoiceEpisodeIndex">
+<BlockCount>-10752</BlockCount>
+</SQLMap>
+<SQLMap name="ItemIndex">
+<BlockCount>-13556</BlockCount>
+</SQLMap>
+<SQLMap name="StatusIndex">
+<BlockCount>-10756</BlockCount>
+</SQLMap>
+</Storage>
+</Class>
+</Export>
