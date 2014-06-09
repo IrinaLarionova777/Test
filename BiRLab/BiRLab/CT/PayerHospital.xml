@@ -1,0 +1,486 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="BiRLab.CT.PayerHospital">
+<Super>%Persistent,%ZEN.DataModel.Adaptor</Super>
+<TimeCreated>62276,67941.790789</TimeCreated>
+<Inheritance>right</Inheritance>
+
+<Property name="Hospital">
+<Type>BiRLab.CT.Hospital</Type>
+</Property>
+
+<Property name="Payer">
+<Type>BiRLab.CT.Payer</Type>
+<Cardinality>parent</Cardinality>
+<Inverse>Hospital</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Property name="PaymentCategory">
+<Type>BiRLab.CT.HospitalPaymentCategory</Type>
+<Cardinality>children</Cardinality>
+<Inverse>PayerHospital</Inverse>
+<Relationship>1</Relationship>
+</Property>
+
+<Index name="PayerIndex">
+<Properties>Payer</Properties>
+</Index>
+
+<Index name="HospitalIndex">
+<IdKey>1</IdKey>
+<Properties>Hospital</Properties>
+<Unique>1</Unique>
+</Index>
+
+<Method name="MySave">
+<Description>
+Add available hospitals</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPayer,pCode</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set obj = ..%New()
+	set obj.Hospital = ##class(BiRLab.CT.Hospital).%OpenId(pCode)
+	;;do obj.PayerSetObjectId(pPayer)
+	set obj.Payer = ##class(BiRLab.CT.Payer).%OpenId(pPayer)
+	quit obj.%Save()
+]]></Implementation>
+</Method>
+
+<Method name="GetPayerByHospital">
+<Description>
+Если однозначно определить Плательщика не получилось, т.е. к ЛПУ привязано более одного Плательщика или Плательщик вообще не привязан, то ....</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pLpu</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	&sql(select Payer->Code,count(ID) into :payer,:cnt from BiRLab_CT.PayerHospital
+			where Hospital=:pLpu
+	)
+	IF SQLCODE'=0 quit ""
+	if cnt=1 quit payer
+	quit ""
+]]></Implementation>
+</Method>
+
+<Method name="Clear">
+<Description>
+Delete available hospitals</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPayer</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	quit:$G(pPayer)="" ""
+	&sql(delete from BiRLab_CT.PayerHospital
+			where Payer=:pPayer 
+	)
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ClearPayerByLpu">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pLpu</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	&sql(delete from BiRLab_CT.PayerHospital
+			where Hospital=:pLpu
+	)
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ClearSelectLpu">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPayer,pHos</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	&sql(delete from BiRLab_CT.PayerHospital
+			where Payer=:pPayer and ID=:pHos
+	)
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="ClearSelectPayer">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pPayer,pHos</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	&sql(delete from BiRLab_CT.PayerHospital
+			where ID=:pPayer and Hospital=:pHos
+	)
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="LoadPC">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pBuf,pId</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	
+	quit:$G(pId)="" $$$OK
+	kill @pBuf
+	&sql(declare cPC1 cursor for
+		 SELECT Hospital,Hospital->Description,Payer->DescriptionShort,ID
+		    into :hoscode,:hosdesc,:payerdesc,:payer
+		    from BiRLab_CT.PayerHospital
+		 where Hospital=:pId
+		 )
+	&sql(open cPC1)
+	for {
+		&sql(fetch cPC1)
+		quit:SQLCODE'=0
+		set @pBuf@(payer)=$LB(payer,hosdesc,payerdesc)
+	}
+	&sql(close cPC1)
+	
+	;	 ,CurrentVersion->PriceList->Description,CurrentVersion->PriceList->PriceListVersion->Version,CurrentVersion
+	;,:pldesc,:plver,:currver
+	&sql(declare cPC cursor for
+		 SELECT PayerHospital->ID,PayerHospital->Payer,PayerHospital,PaymentCategory->Description
+		    	, ActiveFrom, ActiveTo
+		    into :phid,:payer,:pccode,:pcdesc,:dts,:dtpo
+		    from BiRLab_CT.HospitalPaymentCategory
+		 where PayerHospital->Hospital=:pId
+		 )
+	&sql(open cPC)
+	for {
+		&sql(fetch cPC)
+		quit:SQLCODE'=0
+		set dt = dtpo
+		set:dt="" dt = dts
+		set objPl = ##class(BiRLab.CT.PriceList).GetVersionPrice(dt)
+		set objPHCV = ##class(BiRLab.CT.HospitalPaymentCategory).GetVersionPrice(payer,dt)
+		;zw dt,objPl,objPHCV
+		set pldesc = ""
+		set plver = ""
+		set currver = ""
+		if $IsObject(objPl) {
+			set pldesc = objPl.PriceList.Description
+			set plver = objPl.Version
+		}
+		if $IsObject(objPHCV) {
+			set currver = objPHCV.%Id()
+		}
+		set @pBuf@(phid,payer)=$LB(pccode,pcdesc,pldesc,plver,currver)
+	}
+	&sql(close cPC)
+		 
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="LoadPC2">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pBuf,pId</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	
+	quit:$G(pId)="" $$$OK
+	kill @pBuf
+	&sql(declare cPC10 cursor for
+		 SELECT Hospital,Hospital->Description,Payer->DescriptionShort,ID,Payer->Code
+		    into :hoscode,:hosdesc,:payerdesc,:payer,:payercode
+		    from BiRLab_CT.PayerHospital
+		 where Hospital=:pId
+		 )
+	&sql(open cPC10)
+	for {
+		&sql(fetch cPC10)
+		quit:SQLCODE'=0
+		set @pBuf@(payercode)=$LB(payercode,hosdesc,payerdesc)
+	}
+	&sql(close cPC10)
+	
+	; ,CurrentVersion->PriceList->Description,CurrentVersion->PriceList->PriceListVersion->Version,CurrentVersion
+	; ,:pldesc,:plver,:currver
+	&sql(declare cPC5 cursor for
+		 SELECT PayerHospital->ID,PayerHospital->Payer,PayerHospital->Payer->Code,PayerHospital,PaymentCategory->Description
+		 		,PaymentCategory,Def, ActiveFrom, ActiveTo
+		    into :phid,:payer,:payercode,:phcode,:pcdesc,:pccode,:def,:dts,:dtpo
+		    from BiRLab_CT.HospitalPaymentCategory
+		 where PayerHospital->Hospital=:pId
+		 )
+	&sql(open cPC5)
+	for {
+		&sql(fetch cPC5)
+		quit:SQLCODE'=0
+		if def set def = "Да"
+		else  set def = "" ;"Нет"
+		set dt = dtpo
+		set:dt="" dt = dts
+		set objPl = ##class(BiRLab.CT.PriceList).GetVersionPrice(dt)
+		set objPHCV = ##class(BiRLab.CT.HospitalPaymentCategory).GetVersionPrice(payer,dt)
+		;zw dt,objPl,objPHCV
+		set pldesc = ""
+		set plver = ""
+		set currver = ""
+		if $IsObject(objPl) {
+			set pldesc = objPl.PriceList.Description
+			set plver = objPl.Version
+		}
+		if $IsObject(objPHCV) {
+			set currver = objPHCV.%Id()
+		}
+		set @pBuf@(payercode,pccode)=$LB(pccode,pcdesc,def,pldesc,plver,currver)
+	}
+	&sql(close cPC5)
+		 
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="LoadPC3">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pBuf,pId,pPayer,pF1,pF2,pF3</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	quit:$G(pId)="" $$$OK
+	kill @pBuf
+	&sql(declare cPC20 cursor for
+		 SELECT Hospital,Hospital->Description,Payer->DescriptionShort,ID,Payer->Code,
+		 		Payer->InsuranceCompany
+		    into :hoscode,:hosdesc,:payerdesc,:payer,:payercode,:strah
+		    from BiRLab_CT.PayerHospital
+		 where Hospital=:pId
+		 )
+	&sql(open cPC20)
+	for {
+		&sql(fetch cPC20)
+		quit:SQLCODE'=0
+		set @pBuf@(payercode)=$LB(payercode,hosdesc,payerdesc,strah)
+	}
+	&sql(close cPC20)
+
+	&sql(declare cPC25 cursor for
+		 SELECT %ID,HospitalPaymentCategory->PayerHospital->Payer->Code,
+		 		HospitalPaymentCategory->PaymentCategory->Description,
+		 		PriceList->Description,
+		 		HospitalPaymentCategory->PaymentCategory,HospitalPaymentCategory->Def,
+		 		HospitalPaymentCategory->ActiveFrom,HospitalPaymentCategory->ActiveTo,
+		 		ActiveFrom as ac,PriceList
+		    into :id,:payercode,:pcdesc,:pldesc,:pccode,:def,:pcdts,:pcdtpo,:pldts,:idPl
+		    from BiRLab_CT.HospitalPaymentCategoryVersion
+		 where HospitalPaymentCategory->PayerHospital->Hospital=:pId
+		 Order By HospitalPaymentCategory->PaymentCategory, ac
+		 )
+	&sql(open cPC25)
+	for {
+		&sql(fetch cPC25)
+		quit:SQLCODE'=0
+		if def set default = "Да"
+		else  set default = "" ;"Нет"
+		;set dt = pcdtpo
+		;set:dt="" dt = pcdts
+		;set objPl = ##class(BiRLab.CT.PriceList).GetVersionPriceV2(idPl,dt)
+		set objPl = ##class(BiRLab.CT.PriceList).GetVersionPriceV2(idPl,pldts)
+		;s ^tmp(id)=idPl_"!"_dt
+		set plver = ""
+		set pl = ""
+		if $IsObject(objPl) {
+			set plver = objPl.Version
+			set pl = objPl.%Id()
+		}
+		set s = ##class(BiRLab.Utils.Date).Date(pcdts)
+		set po = ##class(BiRLab.Utils.Date).Date(pcdtpo)
+		;set per = ##class(BiRLab.CT.PriceListVersion).GetPeriod(pl)
+		set per = "с "_s_" по "_po
+		if pcdtpo="" set per = "с "_s
+		;set @pBuf@(payercode,pccode_"^"_pl)=$LB(pccode_"^"_pl,pcdesc,default,pldesc,plver,per,id,pcdts,pcdtpo,pldts)
+		set @pBuf@(payercode,pccode_"^"_pl_"^"_pldts)=$LB(pccode_"^"_pl_"^"_pldts,per,pcdesc,default,##class(BiRLab.Utils.Date).Date(pldts),pldesc,plver,id,pcdts,pcdtpo)
+	}
+	&sql(close cPC25)
+	
+	/*
+	;,PriceList->PriceListVersion,PriceList->PriceListVersion->Version
+	;,:plver,:plcode,:pl
+	&sql(declare cPC25 cursor for
+		 SELECT %ID,HospitalPaymentCategory->PayerHospital->Payer->Code,
+		 		HospitalPaymentCategory->PaymentCategory->Description,
+		 		PriceList->Description,
+		 		HospitalPaymentCategory->PaymentCategory,HospitalPaymentCategory->Def,
+		 		HospitalPaymentCategory->ActiveFrom,HospitalPaymentCategory->ActiveTo,
+		 		ActiveFrom
+		    into :id,:payercode,:pcdesc,:pldesc,:pccode,:def,:pcdts,:pcdtpo,:pldts
+		    from BiRLab_CT.HospitalPaymentCategoryVersion
+		 where HospitalPaymentCategory->PayerHospital->Hospital=:pId
+		 )
+	&sql(open cPC25)
+	for {
+		&sql(fetch cPC25)
+		quit:SQLCODE'=0
+		if def set default = "Да"
+		else  set default = "" ;"Нет"
+		set dt = pcdtpo
+		set:dt="" dt = pcdts
+		set objPl = ##class(BiRLab.CT.PriceList).GetVersionPrice(dt)
+		set plver = ""
+		set pl = ""
+		if $IsObject(objPl) {
+			set plver = objPl.Version
+			set pl = objPl.%Id()
+		}
+		set per = ##class(BiRLab.CT.PriceListVersion).GetPeriod(pl)
+		set @pBuf@(payercode,pccode_"^"_pl)=$LB(pccode_"^"_pl,pcdesc,default,pldesc,plver,per,id,pcdts,pcdtpo,pldts)
+	}
+	&sql(close cPC25)
+	*/
+	;
+	set pPayer = $G(pPayer)
+	quit:pPayer="" $$$OK
+	set pF1 = $G(pF1,0)
+	set pF2 = $G(pF2,0)
+	set pF3 = $G(pF3,0)
+	do ..FilterBuf($NA(@pBuf@(pPayer)),+(pF1_pF2_pF3))
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="FilterBuf">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pBuf,pTyp</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	quit:pTyp=0 $$$OK
+	quit:pTyp=111 $$$OK
+	set h = +$H 
+	set code = ""
+	;s ^tmp=pTyp
+	for {
+	 	set code = $O(@pBuf@(code),1,list)
+	 	quit:code=""
+		set dts = $LG(list,9)
+		set dtpo = $LG(list,10)
+		if pTyp=1 {
+			if dts>h continue
+		}
+		if pTyp=10 {
+			if h>dtpo continue
+		}
+		if pTyp=100 {
+	 	;s ^tmp=h_"!"_dts_"!"_
+			if h'<dts,h'>dtpo continue
+		}
+		if pTyp=11 {
+			if (dts>h)!(h>dtpo) continue
+		}
+		if pTyp=110 {
+			if ((h'<dts)&(h'>dtpo))!(h>dtpo) continue
+		}
+		kill @pBuf@(code)
+	}
+
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Trigger name="PayerHospitalbeforeupdate">
+<Code>	// В случае before update записываем код ЛПУ, который был
+	// Будем пересчитывать все эпизоды, которые еще не заимпортились в Бирлаб, с этими кодом ЛПУ
+	do ..ProcessingTrigger({ID})</Code>
+<Event>UPDATE</Event>
+<Order>1</Order>
+</Trigger>
+
+<Trigger name="PayerHospitalafterupdate">
+<Code>	// В случае after update записываем только код ЛПУ, который стал, 
+	// Будем пересчитывать все эпизоды, которые еще не заимпортились в Бирлаб, с этими кодом ЛПУ
+	// Для эпиодов, которые уже в Бирлабе, ослеживаем изменения плательщика уже на уровне изменения класса BiRLab.Data.Episode 
+    do ..ProcessingTrigger({ID})</Code>
+<Event>UPDATE</Event>
+<Order>1</Order>
+<Time>AFTER</Time>
+</Trigger>
+
+<Trigger name="PayerHospitalafterinsert">
+<Code>	// В случае insert записываем код ЛПУ, который стал
+	do ..ProcessingTrigger({ID})</Code>
+<Event>INSERT</Event>
+<Order>1</Order>
+<Time>AFTER</Time>
+</Trigger>
+
+<Method name="%OnBeforeSave">
+<Description><![CDATA[
+<P>If this method returns an error then the call to <METHOD>%Save</METHOD> will fail.]]></Description>
+<FormalSpec>insert:%Boolean</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[
+	// В случае insert код ЛПУ будет известен After save
+	// В случае update записываем код ЛПУ, который был
+	quit $select(insert=0:..ProcessingTrigger(..%Id()),1:1)
+]]></Implementation>
+</Method>
+
+<Method name="%OnAfterSave">
+<Description><![CDATA[
+This callback method is invoked by the <METHOD>%Save</METHOD> method to 
+provide notification that the object is being saved. It is called after 
+the object's data has been successfully written to disk.
+
+<P><VAR>insert</VAR> will be set to 1 if this object is being saved for the first time.
+
+<P>If this method returns an error then the call to <METHOD>%Save</METHOD> will fail.]]></Description>
+<FormalSpec>insert:%Boolean</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[
+	// В случае after update записываем только код ЛПУ, который стал, 
+	// Будем пересчитывать все эпизоды, которые еще не заимпортились в Бирлаб, с этими кодом ЛПУ
+	// Для эпиодов, которые уже в Бирлабе, ослеживаем изменения плательщика уже на уровне изменения класса BiRLab.Data.Episode 
+	quit ..ProcessingTrigger(..%Id())
+]]></Implementation>
+</Method>
+
+<Method name="ProcessingTrigger">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pId:%String=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+			set obj=##class(BiRLab.CT.PayerHospital).%OpenId(pId)
+			set hospital=""
+			if $IsObject(obj) {
+				set hospital=obj.Hospital.Code
+			}
+			if hospital'="" {
+				set epis=""
+		        for {
+			        set epis=$order(^TEPIext("FlagFinalPriceHospital",0,hospital,epis)) if epis="" quit
+			        if $data(^BiRLab.Data.EpisodeI("EpisodeIndex"," "_epis)) continue  // ослеживаем изменения плательщика уже на уровне изменения класса BiRLab.Data.Episode 
+			        set ok=##class(TCLEx.BI.BuildIndices).BIClassChange("TCLEx.Data.EPVisitNumberExt",epis,0)
+		        }
+			}
+	} catch(e) {
+		set ok=e.AsStatus()
+		do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME()_":"_"ProcessingTrigger id="_$get(pId))
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Storage name="Default">
+<Type>%Library.CacheStorage</Type>
+<DataLocation>{%%PARENT}("Hospital")</DataLocation>
+<DefaultData>PayerHospitalDefaultData</DefaultData>
+<IdLocation>^BiRLab.CT.PayerC("Hospital")</IdLocation>
+<IndexLocation>^BiRLab.CT.PayerHospitalI</IndexLocation>
+<StreamLocation>^BiRLab.CT.PayerHospitalS</StreamLocation>
+<Data name="PayerHospitalDefaultData">
+<Value name="1">
+<Value>%%CLASSNAME</Value>
+</Value>
+<Value name="2">
+<Value>Hospital</Value>
+</Value>
+</Data>
+</Storage>
+</Class>
+</Export>
