@@ -190,6 +190,119 @@ Active From</Description>
 ]]></Implementation>
 </Method>
 
+<Method name="GetHospitalPayer">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pId:%String="",&pInfo:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ 
+ set ok=$$$OK,pInfo=""
+ try {
+	 if pId'="" {
+		set obj=$ClassMethod($CLASSNAME(),"%OpenId",pId)
+		if $IsObject(obj) {
+				set hospital=obj.HospitalPaymentCategory.PayerHospital.Hospital
+				set payer=obj.HospitalPaymentCategory.PayerHospital.Payer
+				set pInfo=hospital_$c(0)_payer
+		}
+	 }
+ } catch(e) {
+	 set ok=e.AsStatus()
+ }
+ quit ok
+]]></Implementation>
+</Method>
+
+<Trigger name="HPCVafterupdate">
+<Code>	do ..ProcessingTrigger({ID},0)</Code>
+<Event>UPDATE</Event>
+<Order>1</Order>
+<Time>AFTER</Time>
+</Trigger>
+
+<Trigger name="HPCVafterinsert">
+<Code>    do ..ProcessingTrigger({ID},0)</Code>
+<Event>INSERT</Event>
+<Order>1</Order>
+<Time>AFTER</Time>
+</Trigger>
+
+<Trigger name="HPCVafterdelete">
+<Code>	do ..ProcessingTrigger({ID},1)</Code>
+<Event>DELETE</Event>
+<Order>1</Order>
+<Time>AFTER</Time>
+</Trigger>
+
+<Method name="%OnAfterSave">
+<Description><![CDATA[
+This callback method is invoked by the <METHOD>%Save</METHOD> method to 
+provide notification that the object is being saved. It is called after 
+the object's data has been successfully written to disk.
+
+<P><VAR>insert</VAR> will be set to 1 if this object is being saved for the first time.
+
+<P>If this method returns an error then the call to <METHOD>%Save</METHOD> will fail.]]></Description>
+<FormalSpec>insert:%Boolean</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[    quit ..ProcessingTrigger(..%Id(),0)
+]]></Implementation>
+</Method>
+
+<Method name="%OnDelete">
+<Description><![CDATA[
+This callback method is invoked by the <METHOD>%Delete</METHOD> method to 
+provide notification that the object specified by <VAR>oid</VAR> is being deleted.
+
+<P>If this method returns an error then the object will not be deleted.]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>oid:%ObjectIdentity</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<ServerOnly>1</ServerOnly>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		set id=$listget(oid,1)
+		set ok=..ProcessingTrigger(id,1)
+	} catch(e) {
+		set ok=e.AsStatus()
+		do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME()_":"_"%OnDelete id="_$get(id))
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="ProcessingTrigger">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pId:%String="",pFlagDelete:%Boolean="N"</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+			set obj=##class(BiRLab.CT.HospitalPaymentCategoryVersion).%OpenId(pId)
+			set hospitalcode="",payercode=""
+			if $IsObject(obj) {
+				set hospital=obj.HospitalPaymentCategory.PayerHospital.Hospital.Code
+			    set payer=obj.HospitalPaymentCategory.PayerHospital.Payer.Code
+			}
+			if (hospital'="")&&(payer'="") {
+				set epis=""
+		        for {
+			        set epis=$order(^TEPIext("FlagFinalPriceHospitalPayer",0,hospital,payer,epis)) if epis="" quit
+			        set ok=##class(TCLEx.BI.BuildIndices).BIClassChange("TCLEx.Data.EPVisitNumberExt",epis,0)
+		        }
+		    }
+	} catch(e) {
+		set ok=e.AsStatus()
+		do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME()_":"_"ProcessingTrigger id="_$get(pId))
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
 <Storage name="Default">
 <Type>%Library.CacheStorage</Type>
 <DataLocation>{%%PARENT}("Version")</DataLocation>
