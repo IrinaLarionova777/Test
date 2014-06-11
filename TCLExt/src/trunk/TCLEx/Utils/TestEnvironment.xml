@@ -275,7 +275,9 @@
 			if date="" continue
 			set time=$select(date=yesterdaydate:yeasterdaytime,1:currtime)
 			if time="" continue
-		    set date1=$zd(date,8),time1=$tr($zt(time),":","")
+		    set date1=$zd(date,8),time1=+$tr($zt(time),":","")
+		    /*
+		    // SQL запрос дает 10 записей, а query 2 записи ????
 	        SET rset=##class(%ResultSet).%New("ECUBE.Object.Event:LogErrorEvent")
             set ok=rset.Execute(date1,time1)
             if 'ok continue
@@ -284,6 +286,20 @@
 	            set @pGlb@($i(@pGlb))="Error: "_rset.Data("ID")_":"_rset.Data("TypeEvent")_":"_rset.Data("DateEvent")_":"_rset.Data("TimeEvent")_":"_rset.Data("GroupEvent")_":"_rset.Data("Description")_":"_rset.Data("Error")_":"_rset.Data("Episode")_":"_rset.Data("Location")_":"_rset.Data("OrderId")_":"_rset.Data("SuperOrder")
             }
 	        do rset.Close()
+	        */
+	        set timeevent=time1 //-0.5
+	        for {
+		        set timeevent=$order(^ECUBE.Object.EventI("DateTime",date1,timeevent)) if timeevent="" quit
+		        set npp=""
+		        for {
+			        set npp=$order(^ECUBE.Object.EventI("DateTime",date1,timeevent,npp)) if npp="" quit
+			        set rec=$get(^ECUBE.Object.EventD(npp))
+			        set typeEvent=$listget(rec,2),dateEvent=$listget(rec,3),timeEvent=$listget(rec,4)
+			        set groupEvent=$listget(rec,6),description=$listget(rec,7),error=$listget(rec,8)
+			        set episode=$listget(rec,10),location=$listget(rec,11),orderId=$listget(rec,12),superOrder=$listget(rec,13)
+			        set @pGlb@($i(@pGlb))="Error: "_npp_":"_typeEvent_":"_dateEvent_":"_timeEvent_":"_groupEvent_":"_description_":"_error_":"_episode_":"_location_":"_orderId_":"_superOrder
+		        }
+	        }    
         } 
 	} catch(e) {
 		set ok=e.AsStatus()
@@ -300,11 +316,11 @@
 	set ok=$$$OK
 	try {
 		set currdate=+$h,currtime=+$piece($h,",",2)
-		if currtime<7201 {
+		if currtime<3601 {
 			set currdate=currdate-1
-			set limit=(24*3600)+(currtime-7201) 
+			set limit=(24*3600)+(currtime-3601) 
 		} else {
-		    set limit=currtime-7201	
+		    set limit=currtime-3601	
 		}
 		set date=currdate-1
 		for {
@@ -353,7 +369,10 @@
 	try {
 		set ts=""
         for {
-	       set ts=$o(^TTAB("TS",ts)) if ts="" quit
+	       set ts=$o(^TTAB("TS",ts),1,rec) if ts="" quit
+	       if '$data(^TTAB("TS",ts,0)) continue  // если нет шаблона
+	       if $piece(rec,"\",12)'="Y" continue
+	       if $piece(rec,"\",31)="" continue
 	       set specimen=##class(TCLEx.Function.TestSet).DefaultSpecimen(ts)
 	       if specimen="" {
 		       if $$open^LVBCTTSY(ts,"","","","","","","","","")
