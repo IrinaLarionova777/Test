@@ -10,17 +10,6 @@
 <Implementation><![CDATA[
 	set ok=$$$OK
 	try {
-		set cubeepis="lab.EPVisitNumber"
-		set cubeepisBI=$piece(cubeepis,".",2) //"TCBI.Cubes.EPVisitNumber"
-		
-		set cubetestset="lab.EPVisitTestSet"
-		set cubetestsetBI=$piece(cubetestset,".",2) //"TCBI.Cubes.EPVisitTestSet"
-		
-		set cubetestsetdata="lab.EPVisitTestSetData"
-		set cubetestsetdataBI=$piece(cubetestsetdata,".",2) //"TCBI.Cubes.EPVisitTestSetData"
-		
-		set cubetestsetqueue="lab.EPVisitTestSetQueue"
-		set cubetestsetqueueBI=$piece(cubetestsetqueue,".",2) //"TCBI.Cubes.EPVisitTestSetQueue"
 		
 		// создаем буфер эпизодов, по которым будем пересчитывать все кубы
 		//(TCBI.Cubes.EPVisitNumber,TCBI.Cubes.EPVisitTestSet,TCBI.Cubes.EPVisitTestSetQueue,TCBI.Cubes.EPVisitTestSetData)
@@ -54,7 +43,14 @@
 <Implementation><![CDATA[
 	set ok=$$$OK
 	try {
+		if $get(pBuffer)="" set pBuffer=$name(^||bufRecountEpis)
 		kill @pBuffer
+		
+		set cubeepis="lab.EPVisitNumber"
+		set cubetestset="lab.EPVisitTestSet"
+		set cubetestsetdata="lab.EPVisitTestSetData"
+		set cubetestsetqueue="lab.EPVisitTestSetQueue"
+		
 		// идем по ^SpeedI.DeltaP(cubeepis)
 		set epis=""
         for {
@@ -105,8 +101,20 @@
 <FormalSpec>pBuffer:%String</FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-	set ok1=$$$OK
+	set ok1=$$$OK,iserrors=0
 	try {
+		set cubeepis="lab.EPVisitNumber"
+		set cubeepisBI=$piece(cubeepis,".",2) //"TCBI.Cubes.EPVisitNumber"
+		
+		set cubetestset="lab.EPVisitTestSet"
+		set cubetestsetBI=$piece(cubetestset,".",2) //"TCBI.Cubes.EPVisitTestSet"
+		
+		set cubetestsetdata="lab.EPVisitTestSetData"
+		set cubetestsetdataBI=$piece(cubetestsetdata,".",2) //"TCBI.Cubes.EPVisitTestSetData"
+		
+		set cubetestsetqueue="lab.EPVisitTestSetQueue"
+		set cubetestsetqueueBI=$piece(cubetestsetqueue,".",2) //"TCBI.Cubes.EPVisitTestSetQueue"
+
 		set epis=""
         for {
 	        set epis=$order(@pBuffer@(epis),1,flagRecalcPrice) if epis="" quit
@@ -114,6 +122,7 @@
 	        // пересчитываем сначала цены, код плательщика и т д, если надо
 	        set ok=##class(TCLEx.BI.BuildIndices).CreateEPVisitTestSetExt(epis,flagRecalcPrice)
 	        if 'ok {
+		        set iserrors=1
 		        do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),"TCLEx.BI.BuildIndices:CreateEPVisitTestSetExt: episode="_$get(epis))
 	        }
 	        
@@ -131,6 +140,7 @@
 			    kill ^SpeedI.DeltaP(cubeepis,epis)
 		    } 
 		    else  {
+			    set iserrors=1
 			    do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),"TCLEx.BI.BuildIndices:Update cube "_$get(cubeepisBI)_", episode="_$get(epis))
 		    }
 	        
@@ -147,6 +157,7 @@
 			        kill ^SpeedI.DeltaP(cubetestset,id)
 		        }
 		        else  {
+			        set iserrors=1
 			        do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),"TCLEx.BI.BuildIndices:Delete cube "_$get(cubetestsetBI)_", id="_$get(id))
 		        }
             }
@@ -164,6 +175,7 @@
 				        kill ^SpeedI.DeltaP(cubetestset,id) 
 			        }
 		            else  {
+			            set iserrors=1
 			            do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),"TCLEx.BI.BuildIndices:Update cube "_$get(cubetestsetBI)_", id="_$get(id))
 		            }
 		        }
@@ -185,6 +197,7 @@
 			        kill ^SpeedI.DeltaP(cubetestsetqueue,id)
 		        }
 		        else  {
+			        set iserrors=1
 			        do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),"TCLEx.BI.BuildIndices:Update cube "_$get(cubetestsetqueueBI)_", id="_$get(id))
 		        }
             }
@@ -205,12 +218,16 @@
 			        kill ^SpeedI.DeltaP(cubetestsetdata,id)
 		        }
 		        else  {
+			        set iserrors=1
 			        do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),"TCLEx.BI.BuildIndices:Update cube "_$get(cubetestsetdataBI)_", id="_$get(id))
 		        }
             }
 		    
         }
 	} catch(e) { set ok1=e.AsStatus() }
+	if (iserrors=1)&&(ok1=1) {
+		set ok1=$$$ERROR($$$GeneralError,"Били ошибки при пересчете кубов. См. ^ERRORS")
+	}
 	quit ok1
 ]]></Implementation>
 </Method>
@@ -308,13 +325,15 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		set flagBiRLab=0
 		set payment="" 
 		set hospitalcode=$piece(rec,"\",20)
+		set dateEnter=$piece(rec,"\",8)
         set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
         set payepisnew=""
         if payepis="" {
 	        set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
         }
-        if (payepisnew'="") {
-	        set flagBiRLab=1
+        
+        if (payepisnew'="")&&((pDateStartBirlab'="")&&(dateEnter'<pDateStartBirlab)) { // в этом случае плательщика определяем только через Бирлаб (был период, когда уже работал Бирлаб, а плательщик опредеелялся из трека)
+	        set flagBiRLab=1 
 	        set payment=payepisnew
         }
         
@@ -358,10 +377,10 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		                set flagSuperSetPrice=0
 	                } else {
 		                set flagSuperSetPrice=1
+		                Set ^||Report.Amount(billingitem,epis)="" 
 	                }
                     //if '##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) continue ????
                     set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
-                    Set ^||Report.Amount(billingitem,epis)="" 
                 }
 	            // расчет цены по старому биллингу
                 if ((pDateStartBirlab="")||(authdate<pDateStartBirlab)) {
@@ -400,7 +419,7 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		                    }
 	                 }
                 }
-                if $data(^||Report.Amount(billingitem,epis)) {
+                if ($data(^||Report.Amount(billingitem,epis)))&&(flagSuperSetPrice=1) {
 	                Set ^||Report.Amount(billingitem,epis)=flagFinalPrice
                 }
                 
