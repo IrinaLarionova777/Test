@@ -1,1 +1,246 @@
-***DELETED***
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTONRRUS" type="INT" languagemode="0"><![CDATA[
+PRTONRRUS ; OverNight reports for Trak
+ // Russia
+ // Удаление вспомогательный файлов всевозможных
+ set datecurr=+$h
+ //set ^test("startPRTONRRUS")=1
+ // Удаление устареших логов по работе интеграции
+ set requestid=""
+ for {
+	 set requestid=$order(^TCLExlog(requestid)) if requestid="" quit
+	 set datemax=0
+	 set node=""
+	 for {
+		 set node=$order(^TCLExlog(requestid,node)) if node="" quit
+		 set datetime=$order(^TCLExlog(requestid,node,""),-1) 
+		 if +datetime>datemax set datemax=+datetime
+	 }
+  
+	 if (+$h-datemax)>21 {
+		 kill ^TCLExlog(requestid)
+	 }
+ }
+ // Удаление устаревших файлов с отчетами (и вспомогательных) для отчетов, созданных по схеме СПАРМ
+ set limit=7 // удаляем файлы старше limit дней
+ set dirClear=$$Path^REPORTSPB()
+ if dirClear'="" set dirClear=dirClear_"\Clients"
+ set extensions="xml,xsl,htm,html,err"
+ set ok=$$ClearFilesfromDir(dirClear,extensions,limit)
+ //set ^test($zn,"okDelREPORTPSB")=ok
+ if 'ok {
+	  do LogErrors($System.Status.GetErrorText(ok))
+  }
+ 
+ // Удаление устаревших файлов pdf в папке ...\Reports\ ($$Path^REPORTSPB()) (напрмер файлы возникают при предварительно просмотре результатов)
+ set limit=7 // удаляем файлы старше limit дней
+ set dirClear=$$Path^REPORTSPB()
+ set extensions="pdf"
+ set ok=$$ClearFilesfromDir(dirClear,extensions,limit)
+ //set ^test($zn,"okDelREPORTPSB")=ok
+ if 'ok {
+	  do LogErrors($System.Status.GetErrorText(ok))
+  }
+ 
+ /* 
+ // Удаление устаревших вспомогательных файлов для печати word DRP в виде pdf файлов (pdf-файлы без header and footer в директории, где хранятся word-результаты)
+ set limit=2 // удаляем файлы старше limit дней
+ set dirClear=$piece($get(^CF("SM",1)),"^",1)
+ set extensions="pdf"
+ set ok=$$ClearFilesfromDirIncluded(dirClear,extensions,limit)
+ //set ^test($zn,"okDelPDF1")=ok
+ if 'ok {
+	  do LogErrors($System.Status.GetErrorText(ok))
+  }
+  
+ // Удаление устаревших вспомогательных файлов для печати word DRP в виде pdf файлов (уже готовые файлы с header and footer)
+ set limit=2 // удаляем файлы старше limit дней
+ set dirClear=$$PDFResultFromWordDirTemp^Settings.Reports()
+ set extensions="pdf"
+ set ok=$$ClearFilesfromDir(dirClear,extensions,limit)
+ // set ^test($zn,"okDelPDF2")=ok_"*"_$h
+ if 'ok {
+	  do LogErrors($System.Status.GetErrorText(ok))
+  }
+ */
+ 
+ // Перегрузка процесса soffice.exe (используется для конвертации doc->pdf) 
+ /*
+ set ^test($zn,"beforeSoffice")=ok_"*"_$h
+ set ok=$$ReloadSoffice()
+  set ^test($zn,"okSoffice")=ok
+ if 'ok {
+	  do LogErrors($System.Status.GetErrorText(ok))
+  }
+  */
+  quit
+
+ ; удаляем файлы старше limit дней в директории dirClear
+ClearFilesfromDir(dirClear,extensions,limit)
+  set ok=1
+  try {
+	  if ($get(dirClear)="")||(+$get(limit)'>0) {
+		   set ok=$$Error^%apiOBJ(5001,"Не определены параметры")
+		   quit
+	  }
+  
+      set extensions=$get(extensions)
+      set dateCurrent=+$h,errors=""
+      if (dirClear'="")&&(##class(%File).Exists(dirClear)) {
+	     Set rs=##class(%ResultSet).%New("%File:FileSet")
+	     set pattern="*.*"
+	     if $length(extensions,",")=1 set pattern="*."_extensions
+	     Set ok=rs.Execute(dirClear,"*.*")  
+	     If 'ok Quit
+	     While rs.%Next() { 
+	        set file=$Get(rs.Data("Name"))
+	        if file="" continue
+	        Set filename=$zconvert(##class(%File).GetFilename(file),"L")  
+ 	        set ext=$piece(filename,".",$length(filename,"."))
+ 	        if (extensions'="")&&('$find(extensions,ext)) continue
+  	        set dateModified=+##class(%File).GetFileDateModified(file)  
+ 	        if (dateModified>0)&&((dateCurrent-dateModified)>limit) {
+	 	       set ret=##class(%File).Delete(file)
+	 	       /*
+	 	       if 'ret {
+		 	       if errors="" set errors="Не удалось удалить файлы в директории "_dirClear_" : "
+		 	       set errors=errors_filename_","
+		 	       continue
+	 	       }
+	 	       */
+ 	        }
+	     }
+	  }
+  } catch(exeption) {
+ 	set ok=exeption.AsStatus()
+  }
+  if ok&&(errors'="") {
+	  set ok=$$Error^%apiOBJ(5001,errors)
+  }
+  quit ok
+  
+  ; удаляем файлы старше limit дней во всех поддиректориях директории dirClear
+ClearFilesfromDirIncluded(dirClear,extensions,limit)
+  set ok=1
+  try {
+	  if ($get(dirClear)="")||(+$get(limit)'>0) {
+		   set ok=$$Error^%apiOBJ(5001,"Не определены параметры")
+		   quit
+	  }
+  
+      set extensions=$get(extensions)
+      set dateCurrent=+$h,errors=""
+      if (dirClear'="")&&(##class(%File).Exists(dirClear)) {
+	     Set rs=##class(%ResultSet).%New("%File:FileSet")
+	     Set ok=rs.Execute(dirClear,"*.*")  
+	     If 'ok Quit
+	     While rs.%Next() { 
+	         set dir=$Get(rs.Data("Name"))
+	         if '##class(%File).DirectoryExists(dir) {
+		         continue
+	         }
+	         set pattern="*.*"
+	         if $length(extensions,",")=1 set pattern="*."_extensions
+	         Set rs2=##class(%ResultSet).%New("%File:FileSet")
+	         Set ok=rs2.Execute(dir,pattern)  
+	         If 'ok Quit
+	         While rs2.%Next() { 
+	            set file=$Get(rs2.Data("Name"))
+	            if file="" continue
+	            Set filename=$zconvert(##class(%File).GetFilename(file),"L")  
+ 	            set ext=$piece(filename,".",$length(filename,"."))
+ 	            if (extensions'="")&&('$find(extensions,ext)) continue
+ 	        
+ 	            set dateModified=+##class(%File).GetFileDateModified(file)  
+ 	            if (dateModified>0)&&((dateCurrent-dateModified)>limit) {
+	 	           set ret=##class(%File).Delete(file)
+	 	           if 'ret {
+		 	          if errors="" set errors="Не удалось удалить файлы в директории "_dirClear_" : "
+		 	          set errors=errors_filename_","
+		 	          continue
+	 	           }
+ 	            }
+	         }
+	     }
+ 	  }
+  } catch(exeption) {
+ 	set ok=exeption.AsStatus()
+  }
+  if ok&&(errors'="") {
+	  set ok=$$Error^%apiOBJ(5001,errors)
+  }
+  quit ok 
+
+ // Перегрузка процесса soffice.exe (используется для конвертации doc->pdf) 
+ // (флаг перегружать процесс или нет - в +$get(^Settings("WordToPdf","flagReloadSoffice"))=1/0
+ReloadSoffice()
+  set ok=1
+  //set ^test($zn,"startSoffice")=1
+  try {
+	  if $get(^Settings("WordToPdf","flagReloadSoffice"))=1 {
+       // set ^test($zn,"startSoffice2")=1
+	    if $get(^Settings("server","pathWorkJasper"))'="" {
+	    	set pathToCmd=$tr(^Settings("server","pathWorkJasper"),"\","/")
+		    if $extract(pathToCmd,$length(pathToCmd))'="/" set pathToCmd=pathToCmd_"/"
+		    
+		    // остановка процесса soffice.exe
+		    set cmdFile=pathToCmd_"bat/StopSoffice.cmd"
+		    if (##class(%File).Exists(cmdFile)) {
+			    set notok=+$zf(-1,cmdFile)
+			    //set ^test($zn,"notokStopSoffice")=notok
+			    if notok {
+                   set ok=$$Error^%apiOBJ(5001,"Не удалось завершить процесс soffice.exe") 
+                   quit
+		        }
+		    }
+		    hang 5
+		      
+		    // запуск процесса soffice.exe
+		    
+		    set cmdFile=pathToCmd_"bat/StartSoffice.cmd"
+		    if (##class(%File).Exists(cmdFile)) {
+			    set notok=+$zf(-1,cmdFile)
+			   // set ^test($zn,"notokStartSoffice")=notok
+			    if notok {
+                   set ok=$$Error^%apiOBJ(5001,"Не удалось запустить soffice.exe") 
+                   quit
+		        }
+		    }
+		    /*
+		    set pathToSofficeJava=##class(TCLEx.Report.WordEMC).getPathToOpenOfficeForJava()
+	        if pathToSofficeJava'="" {
+	   	      set pathToSoffice=""
+	   	      set pathToSofficeJava=$tr(pathToSofficeJava,"\","/")
+	   	      for i=1:1:$length(pathToSofficeJava,"//") set pathToSoffice=pathToSoffice_$select(pathToSoffice'="":"/",1:"")_$piece(pathToSofficeJava,"//",i)
+	   	      if $extract(pathToSoffice,$length(pathToSoffice))'="/" set pathToSoffice=pathToSoffice_"/"
+	        } 
+	        set command=""""_pathToSoffice_"soffice.exe"" -headless -accept=""socket,host=127.0.0.1,port=8100;urp;"" -nofirststartwizard"
+	        set notok=$zf(-1,command)
+	        if notok {
+                   set ok=$$Error^%apiOBJ(5001,"Не удалось запустить soffice.exe") 
+                   quit
+		    }
+		    */
+	    }
+	  }
+  } catch(exeption) {
+    	set ok=exeption.AsStatus()
+    	do ##class(TCLEx.Function.General).WriteError($ze,$zn)
+  }
+  quit ok
+  
+LogErrors(errortext)
+   new datecurr
+   set datecurr=+$h
+   do ##class(TCLEx.Function.General).WriteError($get(errortext),$zn)
+   quit
+
+
+  // хотела сделать так, но нельзя завести ^TTAB("REPORT-GENERIC") без создания ^SS("REPORT-GENERIC"), а использовать ^SS явно плохо
+ /*
+  s %routine=$p($g(^TTAB("REPORT-GENERIC","CLNRUSCLEAR")),"\",1) i $l(%routine) d
+ .s PARAM=($h-2)_"\"_(+$h),ROWID=$$START^PRTREP00("","",PARAM,"CLNRUSCLEAR")
+ */
+]]></Routine>
+</Export>
