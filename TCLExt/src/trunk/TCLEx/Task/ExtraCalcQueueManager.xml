@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Task.ExtraCalcQueueManager">
+<Description>
+Обработка очереди дополнительных расчетов по эпизодам (например, цены) (liv)</Description>
+<Super>%SYS.Task.Definition</Super>
+<TimeCreated>62649,40906.540356</TimeCreated>
+
+<Parameter name="QUEUERESOURCENAME">
+<Description>
+Имя ресурса, соответствующего очереди </Description>
+<Default>^TCLEx("ExtraCalc","episode")</Default>
+</Parameter>
+
+<Parameter name="STOPPINGQUEUERESOURCENAME">
+<Description>
+Имя ресурса-семафора, наличие которого сигнализирует о том, что выполняется штатный останов процесса/процессов обработки очереди </Description>
+<Default>^Settings("ExtraCalc","stop")</Default>
+</Parameter>
+
+<UDLText name="T">
+<Content><![CDATA[
+// Parameter WAITINTERVAL = 3;
+
+]]></Content>
+</UDLText>
+
+<Method name="OnTask">
+<Description>
+Продолжительность (в секундах) каждой итерации ожидания появления нового сообщения в очереди
+не используется - периодичность задачи в Task Manager Cache
+Callback метод класса задачи</Description>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	if ..isStopping() quit 1
+	if ..isStarted() quit 1
+
+	// на всякий случай удаляем ресурс-семафор, наличие которого сигнализирует о том, что выполняется штатный останов
+	set @..getStoppingResourceName()=0
+		
+	job ##class(TCLEx.UI.ExtraCalcQueueManager).DoTask()
+	
+	Quit 1
+]]></Implementation>
+</Method>
+
+<Method name="DoTask">
+<Description>
+Обработка очереди</Description>
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+  set sc=$$$OK
+  try {
+
+        set ref=..getResourceName()
+        Lock +@ref:5 else  quit	
+	    // обработки очереди
+	
+	    set dateStartBirlab=##class(BiRLab.Function.Report).GetDateStartUseBirlab() // дата начала использования BiRLab 
+	    
+        // все изменения. которые делаются в классах BiRLab, взводят флаги в ^SpeedI.DeltaPext(epis)=$lb()
+        set epis=""
+        for {
+	        set epis=$order(@ref@(epis),1,rec) if epis="" quit
+	        if ..isStopping() quit  // ...проверяем, не инициирован ли останов
+	        set horologQuery=$listget(rec,2)
+	        set horolog=$h
+	        // пересчитываем только эпизоды, для которых с момента выставления флага на пересчет прошло более 2 секунд (чтобы исключить промежуточные формирования файла)
+			if (horologQuery'="")&&(+horologQuery=+horolog)&&(($piece(horolog,",",2)-$piece(horologQuery,",",2))<2) continue
+
+	        set flagRecalcPrice=+$listget(rec,1)
+	        set ok=##class(TCLEx.BI.BuildIndices).CreateEPVisitTestSetExt(epis,flagRecalcPrice,dateStartBirlab)
+	        if 'ok {
+		        do ##class(TCLEx.Function.General).WriteError("episode="_epis_" :"_$system.Status.GetErrorText(ok),$CLASSNAME())
+	        } else {
+		        if horologQuery=$listget($get(^SpeedI.DeltaPext(epis)),3) {
+			        kill @ref@(epis)
+		        }
+		        set ^SpeedI.DeltaP("TCLEx.Data.EPVisitNumberExt",epis)=1  // взводим флаг пересчета кубов по этому эпизоду
+	        }
+        }
+
+	    Lock -@ref
+  } catch ex {
+	   set sc=ex.AsStatus()
+	   if $get(ref)'="" Lock -@ref
+	   do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME())
+  }
+]]></Implementation>
+</Method>
+
+<Method name="InsertInQueue">
+<Description>
+Помещение нового сообщения в очередь</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEisode:%String,pFlagRecalcPrice:%Boolean=0</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	#dim sc As %Status
+	set sc=$$$OK
+    
+    Try {
+         // lock не поставлен сознательно
+   	     set @..getResourceName()@(pEisode)=$listbuild(pFlagRecalcPrice,$h_","_$piece($zts,".",2))
+   	     
+	} catch(exception) {
+		set sc=$$$ERROR($$$GeneralError, "Не удалось поместить эпизод "_$get(pEisode)_" в очередь: "_exception.AsStatus())
+		do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME())
+	}
+	quit sc
+]]></Implementation>
+</Method>
+
+<Method name="stop">
+<Description>
+Инициирование штатного останова, предусматривающего обработку оставшихся в очереди сообщений</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	// создаем ресурс-семафор, наличие которого сигнализирует о том, что выполняется штатный останов
+	set @..getStoppingResourceName()=1
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="isStopping">
+<Description>
+Проверка, не выполняется ли штатный останов процесса обработки очереди</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[	quit +$get(@..getStoppingResourceName())
+]]></Implementation>
+</Method>
+
+<Method name="isStarted">
+<Description>
+Проверка того, что был запущен процесс обработки очереди</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	l +@..getResourceName():0 else  quit 1
+	l -@..getResourceName()
+	quit 0
+]]></Implementation>
+</Method>
+
+<Method name="getResourceName">
+<Description>
+Имя ресурса, соответствующего очереди</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit ..#QUEUERESOURCENAME
+]]></Implementation>
+</Method>
+
+<Method name="getStoppingResourceName">
+<Description>
+Имя ресурса-семафора, наличие которого сигнализирует о том, что выполняется штатный останов процесса/процессов обработки очереди</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit ..#STOPPINGQUEUERESOURCENAME
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+ClassMethod getWaitInterval()
+{
+	quit ..#WAITINTERVAL
+}
+*/
+]]></Content>
+</UDLText>
+
+<UDLText name="T">
+<Content><![CDATA[
+///  Время паузы
+
+]]></Content>
+</UDLText>
+</Class>
+</Export>
