@@ -87,7 +87,7 @@
 	        set id=$order(^SpeedI.DeltaP(class,id)) if id="" quit
 	        set epis=id
 	        set flagRecalcPrice=$select($get(^SpeedI.DeltaP(class,id,"flagRecalcPrice"))=1:1,1:0)
-	        if '$data(@pBuffer@(epis))||(flagRecalcPrice=1) set @pBuffer@(epis)=flagRecalcPrice
+	        if '$data(@pBuffer@(epis)) set @pBuffer@(epis)=flagRecalcPrice
         }
 	} catch(e) { set ok=e.AsStatus() }
 	quit ok
@@ -297,7 +297,7 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 <Implementation><![CDATA[
 	set ok=1
 	set pEpisode=$get(pEpisode)
-	kill ^||Report.Amount
+	kill ^||superset.price
 	try {
 		if pEpisode="" {
 			set ok =$$$ERROR($$$GeneralError,"Не указан номер эпизода")
@@ -319,23 +319,33 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
               set ok1=objepis.%Save()
               if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
         }
+	    
+	    // удаление удаленных EPVisitTestSet
+	    set ts=""
+	    for {
+	        set ts=$order(^TEPIext(epis,1,ts)) if ts="" quit
+	        set tscnt=""
+	        for {
+		        set tscnt=$o(^TEPIext(epis,1,ts,tscnt)) if tscnt="" quit
+		        if '$data(^TEPI(epis,1,ts,tscnt)) {
+			        set rowid=epis_"||"_ts_"||"_tscnt
+                    set ok1=##class(TCLEx.Data.EPVisitTestSetExt).%DeleteId(rowid)
+                    if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
+		        }
+	        }
+	    }
 	    	    
 	    set rec=$get(^TEPI(epis))
 	
 		set flagBiRLab=0
-		set payment="" 
 		set hospitalcode=$piece(rec,"\",20)
 		set dateEnter=$piece(rec,"\",8)
-        set payepis=$piece(rec,"\",7)  //EPVIS_PaymentCode_DR 
-        set payepisnew=""
-        if payepis="" {
-	        set payepisnew=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
-        }
         
-        if (payepisnew'="")&&((pDateStartBirlab'="")&&(dateEnter'<pDateStartBirlab)) { // в этом случае плательщика определяем только через Бирлаб (был период, когда уже работал Бирлаб, а плательщик опредеелялся из трека)
-	        set flagBiRLab=1 
-	        set payment=payepisnew
-        }
+        // код плательщика на уровне эпизода
+        set flagGetPayerFromTestSet=1 // флаг о том, что надо смотреть код плательщика на уровне наборов тестов, если дата авторизации меньше даты начала использования Биралаба
+	    set payment="" 
+        set ok1=##class(TCLEx.Function.Episode2).GetPayer(epis,.payment,.flagGetPayerFromTestSet)
+        if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
         
         set cito=$piece(rec,"\",15) // cito нужно только для расчета цены по встроенному в трек биллингу, а это было только в Бионе - поэтому cito берем только на уровне эпизода
 
@@ -346,14 +356,21 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 	        set tscnt=""
 	        for {
 		        set tscnt=$o(^TEPI(epis,1,ts,tscnt),1,rects) if tscnt="" quit
-		        set status=$piece(rects,"\",31) 
-		        set reason=$piece(rects,"\",52)
-		        if (status'="A")&&(reason="") continue 
+		        set status=$piece(rects,"\",31)
+		        set reason=$piece(rects,"\",52) 
+		        set dateOfreason=$piece(rects,"\",54)
+		        if (status'="A")&&(dateOfreason="") continue 
+		        set authdate=$Piece(rects,"\",4)
 		        
-                if flagBiRLab=0 {
+		        // если набор тестов отменен по причине,для которой выставлен флаг "Все равно оплачивать" в данном контексте это все равно, что набор тесов не отменен
+		        if (dateOfreason'="")&&(reason'="") {
+			            if $piece($get(^TTAB("CTR",reason)),"\",3)="Y" set dateOfreason="",reason=""
+		             }
+		        
+                if (flagGetPayerFromTestSet=1)&&(((pDateStartBirlab'="")&&(authdate<pDateStartBirlab))) {
 	                ; плательщик (на уровне набора тестов)
-                    set payment=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
-                    set:payment="" payment=payepis
+                    set paymentts=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
+                    if paymentts'="" set payment=paymentts
                 }
 		         
 		        Set superset=$p(rects,"\",29)
@@ -361,26 +378,34 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		        set price=""
 		        set flagFinalPrice=0
 		        
-		        if reason'="" {   // если причина невыполения проставлена, то пишем цену 0 и проставляем флаг окончательности цены
-		            set price=0,flagFinalPrice=1
+		        // если причина невыполения проставлена, то пишем цену 0 и проставляем флаг окончательности цены (если это не супернабор)
+		        // в супернаборе часть наборов тестов может быть отменена, а часть сделана
+		        if (dateOfreason'="")&&(superset="") {    
+		            set price=0
+		            set flagFinalPrice=1
 		        }
-		        set authdate=$Piece(rects,"\",4)
 		        
+		          
 		        set billingitem=ts
-		        set flagSuperSetPrice=0 //флаг, что на данной строке (epis,ts,tscnt) лежит цена за супернабор
+		        set flagSuperSetPrice=0 //флаг, что на данной строке (epis,ts,tscnt) лежит цена за супернабор (для обычных наборов тестов всегда 1)
 		        if superset'="" {
 	                Set billingitem=superset
 	                // если на какой-то набор тестов из супер набора уже записана цена за супернабор, то на другие наборы тестов записываем 0
-	                If $Data(^||Report.Amount(billingitem,epis)) {
+	                If $Data(^||superset.price(billingitem,epis)) {
 		                set price=0
-		                set flagFinalPrice=^||Report.Amount(billingitem,epis)
+		                set flagFinalPrice=^||superset.price(billingitem,epis)
 		                set flagSuperSetPrice=0
 	                } else {
-		                set flagSuperSetPrice=1
-		                Set ^||Report.Amount(billingitem,epis)="" 
+		                // если этот набор тестов отменен, то просто записываем в ^TEPIext цену 0 и флаг окончательности цены, но цену жля супернабора не записываем
+		                if dateOfreason="" {
+			                set flagSuperSetPrice=1
+		                    set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
+		                    Set ^||superset.price(billingitem,epis)="" 
+		                }
 	                }
                     //if '##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) continue ????
-                    set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
+                } else {
+	                set flagSuperSetPrice=1 // проставляем 1 для обычных тестов
                 }
 	            // расчет цены по старому биллингу
                 if ((pDateStartBirlab="")||(authdate<pDateStartBirlab)) {
@@ -391,7 +416,7 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 			                Set price=$$GetBillingItemAmount^PRTCLNRUS05birlab(payment,epis,authdate,billingitem,cito,$name(^||invForGetPrice))
 		                } else {
 			                //set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не указан код плательщика для эпизода "_epis_" hospitacode="_$get(hospitalcode)))
-			                set ^test("fras","no_plat",epis,billingitem)=$get(hospitalcode)
+			                //set ^test("fras","no_plat",epis,billingitem)=$get(hospitalcode)
 			                set price=0
 		                }
 	                }
@@ -419,8 +444,8 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		                    }
 	                 }
                 }
-                if ($data(^||Report.Amount(billingitem,epis)))&&(flagSuperSetPrice=1) {
-	                Set ^||Report.Amount(billingitem,epis)=flagFinalPrice
+                if ($data(^||superset.price(billingitem,epis)))&&(flagSuperSetPrice=1) {
+	                Set ^||superset.price(billingitem,epis)=flagFinalPrice
                 }
                 
                 if '$data(^TEPIext(epis)) {
@@ -430,7 +455,7 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
                     if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
                 }
                 	    
-                // запись в TCLEx.Data.EPVisitNumberExt
+                // запись в TCLEx.Data.EPVisitTestSetExt
                 //set ^TEPIext(epis,1,ts,tscnt)=$listbuild(price,flagFinalPrice)
                 set rowid=epis_"||"_ts_"||"_tscnt
                 set obj=##class(TCLEx.Data.EPVisitTestSetExt).%OpenId(rowid)
@@ -448,12 +473,25 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
                 set ok1=obj.%Save()
                 if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
                 
+                // Запись в EPVisitTestSet
+                /*
+                set objmain=##class(User.EPVisitTestSet).%OpenId(rowid)
+                if $IsObject(objmain) {
+	                set objmain.VISTSPrice=+price
+	                do objmain.%SetModified(1)
+	                set ok1=objmain.%Save()
+                    if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
+                } else {
+	                set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$SQLError,"Не найден объект класса EPVisitTestSet с id="_rowid))
+                }
+                */
+                
                 if (flagFinalEpis=1)&&(flagFinalPrice=0) {
 	                set flagFinalEpis=0
                 } 
 	        }
         }
-	    // запись в TCLEx.Data.EPVisitNumberExt
+	    // запись в TCLEx.Data.EPVisitNumberExt and ^EPVisitNumber
         //set ^TEPIext(epis)=$listbuild(hospital,payment,flagFinalPrice)
         set recext=^TEPIext(epis)
         set hospitalold=$listget(recext,1),payerold=$listget(recext,2),flagFinalEpisOld=$listget(recext,3)
@@ -471,6 +509,41 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
                 do objepis.%SetModified(1)
                 set ok1=objepis.%Save()
                 if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
+                
+                // запись в ^EPVisitNumber
+                /*
+                set objepismain=##class(User.EPVisitNumber).%OpenId(epis)
+                if $IsObject(objepismain) {
+	                set objepismain.EPVISPayerBirlab=payment
+	                do objepismain.%SetModified(1)
+	                set ok1=objepismain.%Save()
+                    if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
+                } else {
+	                set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$SQLError,"Не найден объект класса EPVisitNumber с id="_$get(epis)))
+                }
+                */
+        }
+        // если есть в эпизоде супернабор и у него все наборы тестов отменены, то ни у одного набора тестов не будет выставлен флаг цены набора тестов
+        // это надо проверить и подкрутить, если так
+        set superset=""
+        for {
+	        set superset=$order(^TEPIextI("SuperSet",epis,superset)) if superset="" quit
+	        if $data(^TEPIextI("SuperSet",epis,superset,1)) continue  // есть строка с флагом цена за супернабор, равным 1
+	        // если такой строки нет, то взводим этот флаг на первой попавшейся (цена там будет 0)
+	        set ts=$order(^TEPIextI("SuperSet",epis,superset,0,""))
+	        if ts'="" {
+		        set tscnt=$order(^TEPIextI("SuperSet",epis,superset,0,ts,""))
+		        if tscnt'="" {
+			        set rowid=epis_"||"_ts_"||"_tscnt
+		            set obj=##class(TCLEx.Data.EPVisitTestSetExt).%OpenId(rowid)
+                    if $IsObject(obj) {
+	                    set obj.FlagFinalPrice=1
+                        do obj.%SetModified(1)
+                        set ok1=obj.%Save()
+                        if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
+                    }
+		        }
+	        }
         }
 	} catch(e) {
 		set ok1=e.AsStatus()
@@ -483,14 +556,19 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 
 <Method name="BIClassChange">
 <Description>
-Установить флаг изменения класса для пересчета данных для BI</Description>
+Установить флаг изменения для пересчета данных в TCLEx.Data.EPVisitNumberExt (дополнительные данные по эпизоду)
+Несоответсвующее название осталось исторически 
+pClass - deprecated
+pId - номер эпизода
+pFlagDelete - deprecated
+pInfo - флаг пересчета окончательной цены</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pClass:%String="",pId:%String="",pFlagDelete:%Boolean="N",pInfo:%String=""</FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	set ok=$$$OK
 	try {
-		//s ^test("bi",1)=pClass_" "_pId
+		/*
 	    if (pClass'="")&&(pId'="") {
 		    if pFlagDelete="Y" set ^SpeedI.DeltaP(pClass,pId)=0
 	        else  set ^SpeedI.DeltaP(pClass,pId)=1
@@ -499,6 +577,28 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 	    if pInfo'="" {
 		    set ^SpeedI.DeltaP(pClass,pId,"info")=pInfo
 	    }
+	    */
+	    set flagCalcFinalPrice=+pInfo // флаг обязательности пересчета цены (даже если установлен флаг финальной цены (цена взята из BiRLab.Data.InvoiceEpisodeItem))
+	    set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(pId,flagCalcFinalPrice)
+	    
+	} catch(e) { set ok=e.AsStatus() }
+	
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="ExtraDataChange">
+<Description>
+Установить флаг изменения для пересчета данных в TCLEx.Data.EPVisitNumberExt (дополнительные данные по эпизоду)
+pFlagCalcFinalPrice - флаг обязательности пересчета цены (даже если установлен флаг финальной цены (цена взята из BiRLab.Data.InvoiceEpisodeItem))</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String="",pFlagCalcFinalPrice:%Boolean="N"</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+	    set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(pEpisode,pFlagCalcFinalPrice)
+	    
 	} catch(e) { set ok=e.AsStatus() }
 	
 	quit ok
@@ -518,11 +618,11 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 	set ts1=+$h*100000+$p($h,",",2)
 	s ^test("buildcube","start")=$h
 	//do CreateIndex^PRTCLNRUS05birlab($name(^invForGetPrice))
-	set ok=##class(TCLEx.BI.BuildIndices).CreateEPVisitTestSetExtFirst()
+	//set ok=##class(TCLEx.BI.BuildIndices).CreateEPVisitTestSetExtFirst()
 	b  //
 	//d ##class(%DeepSee.Utils).%BuildCube("BBPPackDetails",0)
 	//d ##class(%DeepSee.Utils).%BuildCube("BBPPackTransactions",0)
-	d ##class(%DeepSee.Utils).%BuildCube("EPVisitNumber",0)
+	//d ##class(%DeepSee.Utils).%BuildCube("EPVisitNumber",0)
 	d ##class(%DeepSee.Utils).%BuildCube("EPVisitTestSet",0)
 	d ##class(%DeepSee.Utils).%BuildCube("EPVisitTestSetData",0)
 	//d ##class(%DeepSee.Utils).%BuildCube("EPVisitTestSetDataAntib",0)
@@ -549,7 +649,7 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		// создание индекса для быстрого расчета цены по сарому биллингу
 	    do CreateIndex^PRTCLNRUS05birlab($name(^||invForGetPrice))
 	
-	    kill ^TEPIext
+	    kill ^TEPIext,^TEPIextI
 	
 	    set dateStartBirlab=##class(BiRLab.Function.Report).GetDateStartUseBirlab()
 	    
