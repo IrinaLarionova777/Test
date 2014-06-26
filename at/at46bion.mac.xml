@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="at46bion" type="MAC" languagemode="0"><![CDATA[
+at46bion ; Triggers for SQLUser.EP_VisitTestSet events ;
+POFILINS() [%d] public {
+	Set epis=$Get(%d(0))     			; SQLUser.EP_VisitTestSet\VISTS_ParRef
+	Set testsetid=$Get(%d(1)) 			; SQLUser.EP_VisitTestSet\VISTS_RowId
+	Set testset=$Get(%d(3)) 			; SQLUser.EP_VisitTestSet\VISTS_TestSet_DR
+	//Set type="I" ; Insert
+	If $Get(%d(58))'="" Set type="D" 	; Deleted %d(58)=SQLUser.EP_VisitTestSet\VISTS_Reason_DR
+	//Do SaveChanges(epis,testset,type)
+	Do ##class(TCLEx.Function.TestSet).LogAuthorisationStatus(epis,testsetid,.%d)
+	Do ##class(TCLEx.Function.TestSet).LogEvent("Insert",epis,testsetid,.%d)
+	// для бактериологических тестов автоматически генерируется файл по эпизоду 
+	set department=$extract(testset,1)
+	if department="H" {
+		do SetFlagGenerateReport(department,epis)
+	}
+	//Для расчета дополнительных данных (цена, код плательщика, флаги)
+	set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(epis,0)
+	
+}
+POFILUPD() [%d,%old] public {
+	Set epis=$Get(%d(0))     			; SQLUser.EP_VisitTestSet\VISTS_ParRef
+	Set testsetid=$Get(%d(1)) 			; SQLUser.EP_VisitTestSet\VISTS_RowId
+	Set testset=$Get(%d(3)) 			; SQLUser.EP_VisitTestSet\VISTS_TestSet_DR
+	//Set type="U" ; Insert
+	//If $Get(%d(58))'="" Set type="D" 	; Deleted %d(58)=SQLUser.EP_VisitTestSet\VISTS_Reason_DR
+	//Do SaveChanges(epis,testset,type) 
+	Do ##class(TCLEx.Function.TestSet).LogAuthorisationStatus(epis,testsetid,.%d,.%old) 
+	Do ##class(TCLEx.Function.TestSet).LogEvent("Update",epis,testsetid,.%d,.%old)
+	//Для расчета дополнительных данных (цена, код плательщика, флаги)
+}
+POFILDEL() [%old] public {
+	Set epis=$Get(%old(0))     			; SQLUser.EP_VisitTestSet\VISTS_ParRef
+	Set testsetid=$Get(%old(1)) 		; SQLUser.EP_VisitTestSet\VISTS_TestSet_DR
+	Set testset=$Get(%d(3))
+	Do ##class(TCLEx.Function.TestSet).LogEvent("Delete",epis,testsetid,.%d,.%old)
+	// для бактериологических тестов автоматически генерируется файл по эпизоду 
+	set department=$extract(testset,1)
+	if department="H" {
+		do SetFlagGenerateReport(department,epis)
+	}
+	//Для расчета дополнительных данных (цена, код плательщика, флаги)
+	set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(epis,0)
+	//Do SaveChanges(epis,testset,"D")   ; Deleted 
+}
+
+	/*
+SaveChanges(pEpis,pTestSet,pType) public {
+	If ($Get(pEpis)="")||($Get(pTestSet)="")||($Get(pType)="") Quit
+	Lock +^TMIF("OLMSD",11,pEpis,pTestSet)
+	Set ^TMIF("OLMSD",11,pEpis,pTestSet)=pType
+	Lock -^TMIF("OLMSD",11,pEpis,pTestSet)
+}
+	*/
+
+SetFlagGenerateReport(department,epis)
+{
+	set sc=##class(TCLEx.UI.MicrobiologyQueueManager).enqueue(department,epis)
+}
+
+
+]]></Routine>
+</Export>
