@@ -362,10 +362,14 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		        if (status'="A")&&(dateOfreason="") continue 
 		        set authdate=$Piece(rects,"\",4)
 		        
+		        set flagIsService=0 //флаг, что данная строка будет считаться как одна услуга (для супернабора на ней же лежит цена за супернабор 
+		        
 		        // если набор тестов отменен по причине,для которой выставлен флаг "Все равно оплачивать" в данном контексте это все равно, что набор тесов не отменен
+		        //если набор тестов или супернабор целиком отменены с причиной отмены, которая не отмечена как оплачиваемая, то этот набор тестов или супернабор вообще не считаются услугой (т е для них кол-во услуг=0, сумма услуг=0)
+		        set flagCancel=0  // флаг, что данная строка считает отмененной совсем (услугой не является)
 		        if (dateOfreason'="")&&(reason'="") {
-			            if $piece($get(^TTAB("CTR",reason)),"\",3)="Y" set dateOfreason="",reason=""
-		             }
+			        if $piece($get(^TTAB("CTR",reason)),"\",3)'="Y" set flagCancel=1 //set dateOfreason="",reason="" 
+		        }
 		        
                 if (flagGetPayerFromTestSet=1)&&(((pDateStartBirlab'="")&&(authdate<pDateStartBirlab))) {
 	                ; плательщик (на уровне набора тестов)
@@ -380,33 +384,32 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		        
 		        // если причина невыполения проставлена, то пишем цену 0 и проставляем флаг окончательности цены (если это не супернабор)
 		        // в супернаборе часть наборов тестов может быть отменена, а часть сделана
-		        if (dateOfreason'="")&&(superset="") {    
-		            set price=0
+		        if (flagCancel=1)&&(superset="") {    
+		            set price=0  // в дальнейшем коде цена не пересчитывается в этом случае
 		            set flagFinalPrice=1
+		            set flagIsService=0
 		        }
 		        
-		          
 		        set billingitem=ts
-		        set flagSuperSetPrice=0 //флаг, что на данной строке (epis,ts,tscnt) лежит цена за супернабор (для обычных наборов тестов всегда 1)
+		        
 		        if superset'="" {
 	                Set billingitem=superset
 	                // если на какой-то набор тестов из супер набора уже записана цена за супернабор, то на другие наборы тестов записываем 0
 	                If $Data(^||superset.price(billingitem,epis)) {
 		                set price=0
 		                set flagFinalPrice=^||superset.price(billingitem,epis)
-		                set flagSuperSetPrice=0
+		                set flagIsService=0
 	                } else {
 		                // если этот набор тестов отменен, то просто записываем в ^TEPIext цену 0 и флаг окончательности цены, но цену жля супернабора не записываем
-		                if dateOfreason="" {
-			                set flagSuperSetPrice=1
+		                if flagCancel=0 {
+			                set flagIsService=1
 		                    set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
 		                    Set ^||superset.price(billingitem,epis)="" 
 		                }
 	                }
                     //if '##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) continue ????
-                } else {
-	                set flagSuperSetPrice=1 // проставляем 1 для обычных тестов
                 }
+                
 	            // расчет цены по старому биллингу
                 if ((pDateStartBirlab="")||(authdate<pDateStartBirlab)) {
 	                //if '$data(^TEPIext(epis)) set $list(^TEPIext(epis),1)=1  // для этого эпизода не пересчитываем цены никогда (если в эпизоде хотя бы один набор тестов попал авторизован до появления Бирлаб, то считаем весь эпизод добирлабовским)
@@ -427,24 +430,14 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 	                 if price="" {
 		                    // смотрим цену окончательно закрепленную
 		                    set price=##class(BiRLab.Function.Invoice).GetFinalPrice(epis,billingitem,.cito,.flagFinalPrice,.error)
-		                    if error'="" {
-			                    set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,error))
-			                    //do ##class(TCLEx.Function.General).WriteError(error,"TCLEx.BI.BuildIndices:CreateEPVisitTestSetExt:GetFinalPrice, episode="_$get(epis)_", billingitem="_$get(billingitem))
-			                    set ^test("fras","err_1",epis,ts,tscnt)=error
-		                    }
-		                    if (flagFinalPrice=0)&&(error="") {
+		                    // проверять error '="" категорически не надо (если эпизод еще не заимпорчен, то приедет ошибка) - все сидит в цене - если в подпрограмме случилась настоящая ошибка, то цена будет пусто /*
+		                    if (flagFinalPrice=0) {
 			                    Set price=##class(BiRLab.Function.Invoice).GetPriceEpisodeItem(epis,billingitem,authdate,.cito,.error,payment,tscnt,ts)
-			                    if error'="" {
-				                    //set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,error))
-			                        //do ##class(TCLEx.Function.General).WriteError(error,"TCLEx.BI.BuildIndices:CreateEPVisitTestSetExt:GetPriceEpisodeItem, episode="_$get(epis)_", billingitem="_$get(billingitem)_", dateAuthorization="_$get(authdate))
-			                        set price=0  // Пока что
-			                        if authdate<+$h-30 set flagFinalPrice=1
-			                        set ^test("fras","err_2",epis,ts,tscnt)=error
-		                        }
+			                    // проверять error '="" категорически не надо (если эпизод еще не заимпорчен, то приедет ошибка) - все сидит в цене - если в подпрограмме случилась настоящая ошибка, то цена будет пусто /*
 		                    }
 	                 }
                 }
-                if ($data(^||superset.price(billingitem,epis)))&&(flagSuperSetPrice=1) {
+                if ($data(^||superset.price(billingitem,epis)))&&(flagIsService=1) {
 	                Set ^||superset.price(billingitem,epis)=flagFinalPrice
                 }
                 
@@ -468,7 +461,7 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
                 set obj.Price=price
                 set obj.FlagFinalPrice=flagFinalPrice
                 set obj.SuperSet=superset
-                set obj.FlagSuperSetPrice=flagSuperSetPrice
+                set obj.FlagIsService=flagIsService
                 do obj.%SetModified(1)
                 set ok1=obj.%Save()
                 if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
@@ -523,8 +516,9 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
                 }
                 */
         }
-        // если есть в эпизоде супернабор и у него все наборы тестов отменены, то ни у одного набора тестов не будет выставлен флаг цены набора тестов
-        // это надо проверить и подкрутить, если так
+        // если есть в эпизоде супернабор и у него все наборы тестов , то ни у одного набора тестов не будет выставлен флаг , что это услуга (т е для всех FlagIsService=0)
+        // ну и все хорошо, ничего не надо делать
+        /*
         set superset=""
         for {
 	        set superset=$order(^TEPIextI("SuperSet",epis,superset)) if superset="" quit
@@ -544,12 +538,13 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
                     }
 		        }
 	        }
-        }
+        }*/
 	} catch(e) {
 		set ok1=e.AsStatus()
 		set ok=$system.Status.AppendStatus(ok,ok1)
 		//do ##class(TCLEx.Function.General).WriteError($ze,"TCLEx.BI.BuildIndices:CreateEPVisitTestSetExt:episode="_$get(epis))
 	}
+	if 'ok do ##class(TCLEx.Function.General).WriteError($ze,"TCLEx.BI.BuildIndices:CreateEPVisitTestSetExt:episode="_$get(epis))
 	quit ok
 ]]></Implementation>
 </Method>
@@ -618,11 +613,11 @@ pFlagCalcFinalPrice - флаг обязательности пересчета �
 	set ts1=+$h*100000+$p($h,",",2)
 	s ^test("buildcube","start")=$h
 	//do CreateIndex^PRTCLNRUS05birlab($name(^invForGetPrice))
-	//set ok=##class(TCLEx.BI.BuildIndices).CreateEPVisitTestSetExtFirst()
+	set ok=##class(TCLEx.BI.BuildIndices).CreateEPVisitTestSetExtFirst()
 	b  //
 	//d ##class(%DeepSee.Utils).%BuildCube("BBPPackDetails",0)
 	//d ##class(%DeepSee.Utils).%BuildCube("BBPPackTransactions",0)
-	//d ##class(%DeepSee.Utils).%BuildCube("EPVisitNumber",0)
+	d ##class(%DeepSee.Utils).%BuildCube("EPVisitNumber",0)
 	d ##class(%DeepSee.Utils).%BuildCube("EPVisitTestSet",0)
 	d ##class(%DeepSee.Utils).%BuildCube("EPVisitTestSetData",0)
 	//d ##class(%DeepSee.Utils).%BuildCube("EPVisitTestSetDataAntib",0)
