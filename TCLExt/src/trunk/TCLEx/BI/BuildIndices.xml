@@ -119,12 +119,13 @@
         for {
 	        set epis=$order(@pBuffer@(epis),1,flagRecalcPrice) if epis="" quit
 	        if flagRecalcPrice="" set flagRecalcPrice=0
+	        /*
 	        // пересчитываем сначала цены, код плательщика и т д, если надо
 	        set ok=##class(TCLEx.BI.BuildIndices).CreateEPVisitTestSetExt(epis,flagRecalcPrice)
 	        if 'ok {
 		        set iserrors=1
 		        do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),"TCLEx.BI.BuildIndices:CreateEPVisitTestSetExt: episode="_$get(epis))
-	        }
+	        }*/
 	        
 	        // EPVisitNumber
 	        set vals=$get(^SpeedI.DeltaP(cubeepis,epis))
@@ -359,8 +360,10 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		        set status=$piece(rects,"\",31)
 		        set reason=$piece(rects,"\",52) 
 		        set dateOfreason=$piece(rects,"\",54)
-		        if (status'="A")&&(dateOfreason="") continue 
+		        if (status'="A")&&(reason="") continue 
+		        
 		        set authdate=$Piece(rects,"\",4)
+		        Set superset=$p(rects,"\",29)
 		        
 		        set flagIsService=0 //флаг, что данная строка будет считаться как одна услуга (для супернабора на ней же лежит цена за супернабор 
 		        
@@ -368,17 +371,15 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		        //если набор тестов или супернабор целиком отменены с причиной отмены, которая не отмечена как оплачиваемая, то этот набор тестов или супернабор вообще не считаются услугой (т е для них кол-во услуг=0, сумма услуг=0)
 		        set flagCancel=0  // флаг, что данная строка считает отмененной совсем (услугой не является)
 		        if (dateOfreason'="")&&(reason'="") {
-			        if $piece($get(^TTAB("CTR",reason)),"\",3)'="Y" set flagCancel=1 //set dateOfreason="",reason="" 
+			        if $piece($get(^TTAB("CTR",reason)),"\",3)'="Y" set flagCancel=1  
 		        }
 		        
-                if (flagGetPayerFromTestSet=1)&&(((pDateStartBirlab'="")&&(authdate<pDateStartBirlab))) {
+  		        if (flagGetPayerFromTestSet=1)&&(((pDateStartBirlab'="")&&(authdate<pDateStartBirlab))) {
 	                ; плательщик (на уровне набора тестов)
                     set paymentts=$p(rects,"\",23) 		;VISTS_PaymentCode_DR
                     if paymentts'="" set payment=paymentts
                 }
 		         
-		        Set superset=$p(rects,"\",29)
-		        
 		        set price=""
 		        set flagFinalPrice=0
 		        
@@ -401,10 +402,16 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		                set flagIsService=0
 	                } else {
 		                // если этот набор тестов отменен, то просто записываем в ^TEPIext цену 0 и флаг окончательности цены, но цену жля супернабора не записываем
-		                if flagCancel=0 {
+		                
+		                set flagIsComplete=##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) 
+		                if (flagCancel=0)&&(flagIsComplete=1) {
 			                set flagIsService=1
 		                    set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
 		                    Set ^||superset.price(billingitem,epis)="" 
+		                } else {
+			                set price=0
+			                set flagIsService=0
+			                if flagIsComplete=1 set flagFinalPrice=1
 		                }
 	                }
                     //if '##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) continue ????
@@ -441,13 +448,6 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 	                Set ^||superset.price(billingitem,epis)=flagFinalPrice
                 }
                 
-                if '$data(^TEPIext(epis)) {
-	                set objepis=##class(TCLEx.Data.EPVisitNumberExt).%New()
-	                set objepis.Episode=epis
-	                set ok1=objepis.%Save()
-                    if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
-                }
-                	    
                 // запись в TCLEx.Data.EPVisitTestSetExt
                 //set ^TEPIext(epis,1,ts,tscnt)=$listbuild(price,flagFinalPrice)
                 set rowid=epis_"||"_ts_"||"_tscnt
@@ -466,19 +466,6 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
                 set ok1=obj.%Save()
                 if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
                 
-                // Запись в EPVisitTestSet
-                /*
-                set objmain=##class(User.EPVisitTestSet).%OpenId(rowid)
-                if $IsObject(objmain) {
-	                set objmain.VISTSPrice=+price
-	                do objmain.%SetModified(1)
-	                set ok1=objmain.%Save()
-                    if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
-                } else {
-	                set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$SQLError,"Не найден объект класса EPVisitTestSet с id="_rowid))
-                }
-                */
-                
                 if (flagFinalEpis=1)&&(flagFinalPrice=0) {
 	                set flagFinalEpis=0
                 } 
@@ -489,60 +476,16 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
         set recext=^TEPIext(epis)
         set hospitalold=$listget(recext,1),payerold=$listget(recext,2),flagFinalEpisOld=$listget(recext,3)
         if (hospitalcode'=hospitalold)||(payment'=payerold)||(flagFinalEpis'=flagFinalEpisOld) {
-	        /*
-                if ##class(TCLEx.Data.EPVisitNumberExt).%ExistsId(epis) {
-	                 set objepis=##class(TCLEx.Data.EPVisitNumberExt).%OpenId(epis)
-                } else {
-	                set objepis=##class(TCLEx.Data.EPVisitNumberExt).%New()
-	                set objepis.Episode=epis
-                }*/
                 set objepis.Payer=payment
                 set objepis.FlagFinalPrice=flagFinalEpis
                 do objepis.HospitalSetObjectId(hospitalcode)
                 do objepis.%SetModified(1)
                 set ok1=objepis.%Save()
                 if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
-                
-                // запись в ^EPVisitNumber
-                /*
-                set objepismain=##class(User.EPVisitNumber).%OpenId(epis)
-                if $IsObject(objepismain) {
-	                set objepismain.EPVISPayerBirlab=payment
-	                do objepismain.%SetModified(1)
-	                set ok1=objepismain.%Save()
-                    if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
-                } else {
-	                set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$SQLError,"Не найден объект класса EPVisitNumber с id="_$get(epis)))
-                }
-                */
         }
-        // если есть в эпизоде супернабор и у него все наборы тестов , то ни у одного набора тестов не будет выставлен флаг , что это услуга (т е для всех FlagIsService=0)
-        // ну и все хорошо, ничего не надо делать
-        /*
-        set superset=""
-        for {
-	        set superset=$order(^TEPIextI("SuperSet",epis,superset)) if superset="" quit
-	        if $data(^TEPIextI("SuperSet",epis,superset,1)) continue  // есть строка с флагом цена за супернабор, равным 1
-	        // если такой строки нет, то взводим этот флаг на первой попавшейся (цена там будет 0)
-	        set ts=$order(^TEPIextI("SuperSet",epis,superset,0,""))
-	        if ts'="" {
-		        set tscnt=$order(^TEPIextI("SuperSet",epis,superset,0,ts,""))
-		        if tscnt'="" {
-			        set rowid=epis_"||"_ts_"||"_tscnt
-		            set obj=##class(TCLEx.Data.EPVisitTestSetExt).%OpenId(rowid)
-                    if $IsObject(obj) {
-	                    set obj.FlagFinalPrice=1
-                        do obj.%SetModified(1)
-                        set ok1=obj.%Save()
-                        if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
-                    }
-		        }
-	        }
-        }*/
 	} catch(e) {
 		set ok1=e.AsStatus()
 		set ok=$system.Status.AppendStatus(ok,ok1)
-		//do ##class(TCLEx.Function.General).WriteError($ze,"TCLEx.BI.BuildIndices:CreateEPVisitTestSetExt:episode="_$get(epis))
 	}
 	if 'ok do ##class(TCLEx.Function.General).WriteError($ze,"TCLEx.BI.BuildIndices:CreateEPVisitTestSetExt:episode="_$get(epis))
 	quit ok
