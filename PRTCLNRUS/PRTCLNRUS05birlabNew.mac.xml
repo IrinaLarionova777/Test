@@ -204,9 +204,12 @@ BODY1()  ; обработка данных...
 		 for {
 			 set epis=$order(^TEPIi("AUTHORISED",date,epis)) quit:epis=""  if '$data(^TEPI(epis)) continue
 			 set rec=$get(^TEPI(epis))
+			 set dateOfEntry=$piece(rec,"\",8)
 			 
 			 ; плательщик (на уровне лаб.номера)
 			 set payment=""
+			 set hospitalcode=$piece(rec,"\",20)
+			 set dateOfEntry=$piece(rec,"\",8)
              set flagGetPayerFromTestSet=1 // флаг о том, что надо смотреть код плательщика на уровне наборов тестов, если дата авторизации меньше даты начала использования Биралаба
              set ok1=##class(TCLEx.Function.Episode2).GetPayer(epis,.payment,.flagGetPayerFromTestSet) 
              if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
@@ -216,7 +219,14 @@ BODY1()  ; обработка данных...
 	            if PAYMENT'="*",'$D(PAYMENT(payment)) continue
              }
  	        
-             set cito=$piece(rec,"\",15) 
+ 	         set paymentCategory=##class(BiRLab.Function.InvoiceNew).GetPaymentCategory(payment)
+ 	         set pricelistversion=""
+ 	         set ok1=##class(BiRLab.Function.InvoiceNew).GetPriceList(payment,hospitalcode,paymentCategory,dateOfEntry,.idHPCV,.pricelistversion)
+ 	         if 'ok1 {
+	 	         set pricelistversion=""
+ 	         }
+ 	        
+             set citoepis=$piece(rec,"\",15) 
              ; наборы тестов для лаб.эпизода (ограничение по отделам)
              s ts=$Order(DEP("")) 
              for  {
@@ -227,15 +237,18 @@ BODY1()  ; обработка данных...
 	             for {
 		             set tscnt=$order(^TEPIi("AUTHORISED",date,epis,ts,tscnt)) quit:tscnt=""  
                      Set rects=$Get(^TEPI(epis,1,ts,tscnt))
-                     set reason=$piece(rects,"\",52)
-                     set dateOfreason=$piece(rects,"\",54)
-                     set authdate=$Piece(rects,"\",4)
                      Set superset=$p(rects,"\",29)
                      if superset'="" Set dep=$Extract(superset,1) 
                      If dep=""||('$Data(DEP(dep))) continue
                      ; считаем только "РАЗРЕШЕННЫЕ" наборы тестов, а не "НАЗНАЧЕННЫЕ" !!!
                      set status=$p(rects,"\",31) if status'="A" continue
                      
+                     set reason=$piece(rects,"\",52)
+                     set dateOfreason=$piece(rects,"\",54)
+                     set authdate=$Piece(rects,"\",4)
+                     
+                     set citots=$Piece(rects,"\",10)
+      
                      // если набор тестов отменен по причине,для которой не выставлен флаг "Все равно оплачивать", то вообще не считаем это услугой
 		             if (dateOfreason'="")&&(reason'="") {
 			            if $piece($get(^TTAB("CTR",reason)),"\",3)'="Y" continue
@@ -252,9 +265,10 @@ BODY1()  ; обработка данных...
                      }
                      
                      ; VISTS_UserAuthorised DR
-                     set user=$p(rects,"\",6) if user="" continue       ;если была установлена причина невыполнения
-                     ;s:user="" user="?"
-                     ;set supressbilling=$piece(rects,"\",34) if supressbilling="Y" continue  
+                     //set user=$p(rects,"\",6) if user="" continue   
+                     
+                     //set supressbilling=$piece(rects,"\",34) if supressbilling="Y" continue  
+                     
                      Set billingitem=ts
                      if superset'="" {
 	                     Set billingitem=superset
@@ -266,10 +280,38 @@ BODY1()  ; обработка данных...
                      }
                      if payment="" set payment="?" 
                      
- 	                 set amount=##class(TCLEx.Function.Episode2).GetPrice(epis,ts,tscnt,superset,authdate,payment,cito,boundDate)
-	                                      
-                     s ^test("compare","new",epis,billingitem,ts_"\"_tscnt)=amount_"*"_payment
+                     set cito=$select(citots'="":citots,citoepis'="":citoepis,1:"")
                      
+                     set rowid=epis_"||"_ts_"||"_tscnt
+                     s ^test("par",rowid)=epis_","_ts_","_tscnt_","_superset_","_authdate_","_dateOfEntry_","_cito_","_boundDate_","_payment_","_hospitalcode_","_paymentCategory_","_pricelistversion
+                     set ok1=##class(TCLEx.Function.Episode2).GetPrice(epis,ts,tscnt,superset,authdate,dateOfEntry,cito,boundDate,payment,hospitalcode,paymentCategory,pricelistversion,.amount)
+ 	                 if 'ok1 {
+	 	                 set amount=0
+ 	                 }
+ 	                 
+	                 /*
+	                 set priceCompare=0
+	                 if superset="" {
+		                 set priceCompare= +$p($get(^test("TCBI.UtilsRu",epis_"||"_ts_"||"_tscnt)),"*",3)
+	                 } else {
+		                 set id1=epis_"||"
+	                     for {
+		                    set id1=$o(^test("TCBI.UtilsRu",id1),1,rec11) if (id1="")||($p(id1,"||",1)'=epis) q
+		                    if $p(rec11,"*",1)'=superset continue
+		                    if +$p(rec11,"*",3)'=0  {
+			                    set priceCompare=+$p(rec11,"*",3)
+			                    quit
+		                    }
+	                     } 
+	                 } */
+	                 
+	                 s ^test(222,rowid)=amount
+	                 //set aaa=+$p($get(^test("TCBI.UtilsRu.KolService",rowid)),"*",3)
+	                 //if aaa'=1 set ^test("compare","ras",rowid)=billingitem_"*"_amount_"*"_aaa
+                     s ^test("compare","new",epis,billingitem,ts_"\"_tscnt)=amount_"*"_payment
+                     //if +amount'=priceCompare set ^test("compare","ras2",epis,billingitem,ts_"\"_tscnt)=amount_"*"_priceCompare
+                     //if payment'=$p($get(^test("compare","new",epis,billingitem,ts_"\"_tscnt)),"*",2) set ^test("compare","rasPayer",epis,billingitem,ts_"\"_tscnt)=payment_"*"_$get(^test("compare","new",epis,billingitem,ts_"\"_tscnt))
+                     //s ^test("compare","new2",epis_"||"_ts_"||"_tscnt)=amount_"*"_payment_"*"_billingitem
                      ; формируем индексы для печати выходного файла
                      s @Mas@("REPORT")=$G(@Mas@("REPORT"))+1
                      s @Mas@("REPORT",dep)=$g(@Mas@("REPORT",dep))+1
@@ -336,7 +378,15 @@ BODY2()  ; обработка данных...
          set flagGetPayerFromTestSet=1 // флаг о том, что надо смотреть код плательщика на уровне наборов тестов, если дата авторизации меньше даты начала использования Биралаба
          set ok1=##class(TCLEx.Function.Episode2).GetPayer(epis,.payment,.flagGetPayerFromTestSet)
          if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
-    
+ 
+         set dateOfEntry=$piece(rec,"\",8)   
+         set paymentCategory=##class(BiRLab.Function.InvoiceNew).GetPaymentCategory(payment)
+ 	     set pricelistversion=""
+ 	     set ok1=##class(BiRLab.Function.InvoiceNew).GetPriceList(payment,hospitalcode,paymentCategory,dateOfEntry,.idHPCV,.pricelistversion)
+ 	     if 'ok1 {
+	 	         set pricelistversion=""
+ 	     }
+     
          set cito=$piece(rec,"\",15) 
          ; наборы тестов для лаб.эпизода (ограничение по отделам)
          set ts=$O(DEP("")) 
@@ -353,16 +403,13 @@ BODY2()  ; обработка данных...
                  s status=$p(rects,"\",31) 
                  set authdate=$Piece(rects,"\",4)
                  
+                 set citots=$Piece(rects,"\",10)
+                 if citots'="" set cito=citots
+  
                  // если набор тестов отменен по причине,для которой не выставлен флаг "Все равно оплачивать", то вообще не считаем это услугой
 		         if (dateOfreason'="")&&(reason'="") {
 			            if $piece($get(^TTAB("CTR",reason)),"\",3)'="Y" continue
 		         }
-                 
-                 ; плательщик (на уровне набора тестов)
-                 //s payment=$piece(rects,"\",23) 		;VISTS_PaymentCode_DR
-                 //s:payment="" payment=payepis
-                 ; проверяем ограничение по плательщику
-                 //if PAYMENT'="*",'$D(PAYMENT(payment)) continue  
                  
                  if (flagGetPayerFromTestSet=1)&&(((boundDate'="")&&(authdate<boundDate))) {
 	                     ; плательщик (на уровне набора тестов)
@@ -374,7 +421,8 @@ BODY2()  ; обработка данных...
                          }
                  }
   
-                 ;set supressbilling=$piece(rects,"\",34) if supressbilling="Y" continue      
+                 set supressbilling=$piece(rects,"\",34) if supressbilling="Y" continue      
+                 
                  Set billingitem=ts
                  If superset'="" {
 	                 Set billingitem=superset
@@ -384,9 +432,12 @@ BODY2()  ; обработка данных...
                  }
                  if payment="" set payment="?"
                   
-                 set amount=##class(TCLEx.Function.Episode2).GetPrice(epis,ts,tscnt,superset,authdate,payment,cito,boundDate)
+                 set ok1=##class(TCLEx.Function.Episode2).GetPrice(epis,ts,tscnt,superset,authdate,dateOfEntry,cito,boundDate,payment,hospitalcode,paymentCategory,pricelistversion,.amount)
+ 	             if 'ok1 {
+	 	                 set amount=0
+ 	             }
                  
-                 s ^test("compare","new",epis,billingitem,ts_"\"_tscnt)=amount
+                 //s ^test("compare","new",epis,billingitem,ts_"\"_tscnt)=amount
                  ; ---
                  ; считаем количество "НАЗНАЧЕННЫХ" + "РАЗРЕШЕННЫХ" наборы тестов
                  s @Mas@("REPORT",dep)=$g(@Mas@("REPORT",dep))+1
@@ -446,7 +497,7 @@ XML()      ; Формирование XML...
  S NGr1=0,dep="" f  s dep=$o(@Mas@("REPORT",dep)) q:dep=""  d
  . S NGr1=$i(NGr1)
  . S @MasO@("User",1,"Gr",NGr1,"NGr")=NGr1
- . S @MasO@("User",1,"Gr",NGr1,"Name")=$P($G(^TTAB("DEP",dep)),"\",1)
+ . S @MasO@("User",1,"Gr",NGr1,"Name")="New"_$P($G(^TTAB("DEP",dep)),"\",1)
  . S @MasO@("User",1,"Gr",NGr1,"Count")=+$G(@Mas@("REPORT",dep))
  . S @MasO@("User",1,"Gr",NGr1,"Amount")=+$G(@Mas@("REPORT",dep,"Amount"))
  . i $G(FlagReport)=2 S @MasO@("User",1,"Gr",NGr1,"Count-Exec")=+$G(@Mas@("REPORT",dep,"Exec"))
