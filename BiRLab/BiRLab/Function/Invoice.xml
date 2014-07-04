@@ -22,9 +22,10 @@ output:
 	try {
 		if pTestSet="" set pTestSet=pItem
 		// по данным из BiRLab_Data.InvoiceEpisodeItem
-        set price=..GetPriceEpisodeItem0(pEpisode, pItem, pDate, .pCito, .pError, pTestsetNpp, pTestSet) 
-        if (pError="") quit
-	    
+		set flagFindPrice=0
+        set price=..GetPriceEpisodeItem0(pEpisode, pItem, pDate, .pCito, .pError, pTestsetNpp, pTestSet, .flagFindPrice) 
+        if (flagFindPrice=1) quit
+	      
 	    set codePayer="",codeHospital="",citoEpis="",citoItem="",codePayerItem=""
 	    // по данным из Trak
 		&sql(SELECT VISTS_ParRef->EPVIS_PaymentCode_DR,VISTS_ParRef->EPVIS_HospitalCode_DR,VISTS_ParRef->EPVIS_PriorityCode_DR,
@@ -33,7 +34,7 @@ output:
              FROM SQLUser.EP_VisitTestSet
              WHERE (VISTS_ParRef ->EPVIS_VisitNumber=:pEpisode) and (VISTS_TestSet_DR=:pTestSet)
              )
-        if pPayment'="" {
+        b  if pPayment'="" {
 	        set codePayer=pPayment 
         } else {
 	        if (codePayer="")&&(codePayerItem'="") set codePayer=codePayerItem 
@@ -139,62 +140,27 @@ input:
 output: 
   price As %String (может быть "")
   pCito - 
-  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
+  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки
+  pFlagFindPrice - флаг, найдена ли цена по данным Биралаба]]></Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String,pTestsetNpp:%String="1",pTestSet:%String=""]]></FormalSpec>
+<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pDate:%String,&pCito:%String,&pError:%String,pTestsetNpp:%String="1",pTestSet:%String="",&pFlagFindPrice:%Boolean=0]]></FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
-	set price="",cito="",pError="",pCito=""
+	set price="",cito="",pError="",pCito="",pFlagFindPrice=0
 	try {
 		// смотрим, выставлен ли уже счет 
-		/*
-		set idEpisodeItem=""
-		&sql(select ID into :idEpisodeItem 
-	         from BiRLab_Data.EpisodeItem where (Episode->Episode=:pEpisode) and (Item->Code=:pItem) 
-	    )
-	    if (SQLCODE=0) {
-	       &sql(select Amount,Cito into :price,:cito from BiRLab_Data.InvoiceEpisodeItem where (EpisodeItem=:idEpisodeItem) )
-	       // если счет выставлен, то уже есть цена
-	       if (SQLCODE=0) {
-		      set pCito=cito
-		      quit 
-	       }
-	      */ 
 	    if pTestSet="" set pTestSet=pItem
         set testsetid=pEpisode_"||"_pTestSet_"||"_pTestsetNpp
-        /*
-	    &sql(select Amount,Cito into :price,:cito from BiRLab_Data.InvoiceEpisodeItem
-           where EpisodeItem->Episode->Episode=:pEpisode 
-           and EpisodeItem->IdEPVisitTestSet=:testsetid 
-           and Status=1 and InvoiceEpisode->Invoice->Status<>6
-        )*/
         set cito="",flagFinalPrice=0
-        set price=..GetFinalPrice(pEpisode,pItem,.cito,.flagFinalPrice,.pError)
-        
-        /*
-	    &sql(select Amount,Cito into :price,:cito from BiRLab_Data.InvoiceEpisodeItem
-           where EpisodeItem->Episode->Episode=:pEpisode 
-           and Item=:pItem 
-           and Status=1 and InvoiceEpisode->Invoice->Status<>6
-	    )
-	           
-        if (SQLCODE=0) {
-		      set pCito=cito
-		      quit 
-	    }
-	    */
+        set price=..GetFinalPrice(pEpisode,pItem,pTestSet,pTestsetNpp,.cito,.flagFinalPrice,.pError)
+        if pEpisode=112200081901 s ^test("ppp",4)=cito_","_price_","_flagFinalPrice
 	    if (flagFinalPrice=1) {
 		      set pCito=cito
+		      set pFlagFindPrice=1
 		      quit 
 	    }
 	    
 		set codePayer="",codeHospital="",codePaymentCategory="",dateAuth="",citoEpis="",citoItem="",id=""
-        /*
-	    &sql(select Episode->Payer->Code,Episode->Hospital->Code,Episode->PaymentCategory->Code,Episode->DateOfAuthorization,
-	         Episode->CITO, CITO 
-	         into :codePayer,:codeHospital,:codePaymentCategory,:dateAuth,:citoEpis,:citoItem 
-	         from BiRLab_Data.EpisodeItem where (Episode->Episode=:pEpisode) and (Item->Code=pItem) 
-	    )*/
 	    
 	    &sql(select Episode->Payer->Code,Episode->Hospital->Code,Episode->PaymentCategory->Code,Episode->CITO, CITO,Episode->DateOfAuthorization 
 	         into :codePayer,:codeHospital,:codePaymentCategory,:citoEpis,:citoItem,:dateAuth 
@@ -202,9 +168,10 @@ output:
 	    )
 	    
 	    if (SQLCODE '= 0) {
-		    $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найден эпизод "_pEpisode_"/"_pItem_" в BiRLab_Data.EpisodeItem"))
+		    //$$$ThrowOnError($$$ERROR($$$GeneralError,"Не найден эпизод "_pEpisode_"/"_pItem_" в BiRLab_Data.EpisodeItem"))
+		    quit
 	    }
-	    
+	    if pEpisode=112200081901 s ^test("ppp",3)=codePayer_","_codeHospital_","_codePaymentCategory_","_citoEpis_","_citoItem_","_dateAuth
 	    if (pDate="")&&(dateAuth'="") set pDate=dateAuth
 	    
 	    set pCito=""
@@ -213,12 +180,18 @@ output:
 	    
     	//set price=..GetPrice(codePayer, codeHospital, codePaymentCategory, pItem, dateAuth, pCito, .pError) 
     	set price=..GetPrice(codePayer, codeHospital, codePaymentCategory, pItem, pDate, pCito, .pError)   
-	   	if pError'="" set price="" 
+	   	if pError'="" {
+		   	set price="" 
+		   	set pFlagFindPrice=0
+	   	} else {
+		   	set pFlagFindPrice=1
+	   	}
 	} 
 	catch(exception) {
 		set price=""
 		set pCito=""
 		set pError=$System.Status.GetErrorText(exception.AsStatus())
+		set pFlagFindPrice=0
 	}  
 	quit price
 ]]></Implementation>
@@ -240,18 +213,23 @@ output:
 <FormalSpec><![CDATA[pPayer:%String,pHospital:%String,pPaymentCategory:%String,pItem:%String,pDate:%String,pCito:%String,&pError:%String]]></FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
-	set price="",pError="",pCito=""
+	set price="",pError=""
 	try {
-		set idHPCV=..GetVersionPrice2(pPayer,pHospital,pPaymentCategory,pDate)
+		set idHPCV=##class(BiRLab.CT.HospitalPaymentCategory).GetVersionPrice2(pPayer,pHospital,pPaymentCategory,pDate)
 		if idHPCV="" $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найдена версия в BiRLab.CT.HospitalPaymentCategoryVersion: payer="_$get(pPayer)_", hospital="_$get(pHospital)_", paymentcatrgory="_$get(pPaymentCategory)_", date="_$get(pDate)_"("_$select($get(pDate)'="":$zd(pDate,4),1:"")_")"))
-		
+		   
 		set pricelistid="" 
 		&sql(select PriceList->ID into :pricelistid from BiRLab_CT.HospitalPaymentCategoryVersion where ID=:idHPCV)
 		if (SQLCODE'=0)||(pricelistid="") $$$ThrowOnError($$$ERROR($$$GeneralError,"Не найдена версия в BiRLab.CT.HospitalPaymentCategoryVersionpayer="_$get(pPayer)_", hospital="_$get(pHospital)_", paymentcatrgory="_$get(pPaymentCategory)_", date="_$get(pDate)_"("_$select($get(pDate)'="":$zd(pDate,4),1:"")_"), idHPCV="_idHPCV.%Id())) 
+		  
+		set plv = ##class(BiRLab.CT.PriceList).GetVersionPriceV2(pricelistid,pDate)
+		/*  
+		if ##class(BiRLab.CT.HospitalPaymentCategoryVersionNotSupported).NoSupported(idHPCV,pItem) {
+			set price=0
+			quit
+		}*/
 		
-		set plv = ..GetVersionPriceV2(pricelistid,pDate)
-		set price = ##class(BiRLab.CT.PriceListVersionDetails).GetPrice(plv,pItem)
-		
+		set price = ##class(BiRLab.CT.PriceListVersionDetails).GetPrice(plv,pItem)  
 		set coef = ##class(BiRLab.CT.HospitalPaymentCategoryVersionPriority).GetCito(idHPCV,pCito)
 		if pCito'="",+coef set price = price*coef
 	} 
@@ -392,7 +370,7 @@ output:
   pCito - 
   pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,&pCito:%String,&pFlagFinalPrice:%Boolean,&pError:%String]]></FormalSpec>
+<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pTestSet:%String,pTestSetCounter:%String,&pCito:%String,&pFlagFinalPrice:%Boolean,&pError:%String]]></FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
 	set price="",cito="",pError="",pCito="",pFlagFinalPrice=0
@@ -407,7 +385,14 @@ output:
 		      set pCito=cito
 		      set pFlagFinalPrice=1
 		      quit 
-	 	} 
+	 	}
+	 	
+	 	set flagSupressBilling=$piece($get(^TEPI(pEpisode,1,pTestSet,pTestSetCounter)),"\",34)
+	 	if flagSupressBilling="Y" {
+		 	set price=0
+		 	set pFlagFinalPrice=1
+	 	}
+	 	 
 	} catch(exception) {
 		set price=""
 		set pCito=""
