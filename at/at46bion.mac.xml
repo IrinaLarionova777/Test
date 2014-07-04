@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Export generator="Cache" version="24">
 <Routine name="at46bion" type="MAC" languagemode="0"><![CDATA[
-at46bion ; Triggers for SQLUser.EP_VisitTestSet events ;
+at46bion ; Triggers for SQLUser.EP_VisitTestSet events
 POFILINS() [%d] public {
+    //m ^test(1,"afterinsert")=%d
 	Set epis=$Get(%d(0))     			; SQLUser.EP_VisitTestSet\VISTS_ParRef
 	Set testsetid=$Get(%d(1)) 			; SQLUser.EP_VisitTestSet\VISTS_RowId
 	Set testset=$Get(%d(3)) 			; SQLUser.EP_VisitTestSet\VISTS_TestSet_DR
+
 	//Set type="I" ; Insert
 	If $Get(%d(58))'="" Set type="D" 	; Deleted %d(58)=SQLUser.EP_VisitTestSet\VISTS_Reason_DR
 	//Do SaveChanges(epis,testset,type)
@@ -17,9 +19,10 @@ POFILINS() [%d] public {
 		do SetFlagGenerateReport(department,epis)
 	}
 	//Для расчета дополнительных данных (цена, код плательщика, флаги)
-	set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(epis,0)
+	set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(epis,1)
 	
 }
+
 POFILUPD() [%d,%old] public {
 	Set epis=$Get(%d(0))     			; SQLUser.EP_VisitTestSet\VISTS_ParRef
 	Set testsetid=$Get(%d(1)) 			; SQLUser.EP_VisitTestSet\VISTS_RowId
@@ -30,6 +33,11 @@ POFILUPD() [%d,%old] public {
 	Do ##class(TCLEx.Function.TestSet).LogAuthorisationStatus(epis,testsetid,.%d,.%old) 
 	Do ##class(TCLEx.Function.TestSet).LogEvent("Update",epis,testsetid,.%d,.%old)
 	//Для расчета дополнительных данных (цена, код плательщика, флаги)
+	if ($Get(%d(58))'=$Get(%old(58)))||($Get(%d(37))'=$Get(%old(37))) {   // %d(58)=VISTS_Reason_DR, %d(37)=VISTS_SupressBilling
+    	set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(epis,1)  // пересчитываем с флагом "Пересчитывать финальную цену", так как для отмененных наборов тестов этот флаг устанавливается в 1
+	} elseif ($Get(%d(13))'=$Get(%old(13)))||($Get(%d(7))'=$Get(%old(7))) { // %d(13)-VISTS_Priority_DR, %d(7)-VISTS_DateOfAuthorisation
+    	set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(epis,0)  
+	}
 }
 POFILDEL() [%old] public {
 	Set epis=$Get(%old(0))     			; SQLUser.EP_VisitTestSet\VISTS_ParRef
@@ -42,7 +50,7 @@ POFILDEL() [%old] public {
 		do SetFlagGenerateReport(department,epis)
 	}
 	//Для расчета дополнительных данных (цена, код плательщика, флаги)
-	set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(epis,0)
+	set ok=##class(TCLEx.Task.ExtraCalcQueueManager).InsertInQueue(epis,1)
 	//Do SaveChanges(epis,testset,"D")   ; Deleted 
 }
 
