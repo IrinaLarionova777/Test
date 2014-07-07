@@ -13,12 +13,13 @@ input:
 output: 
   price As %String (может быть "")
   pCito - 
-  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
+  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки
+pPriceListVersionId , pHospitalPayerCategoryVersion - именно по ссылке ]]></Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pTestSet:%String="",pTestsetNpp:%String="1",pDate:%String,&pCito:%String,pPayer:%String="",pHospital:%String,pPaymentCategory:%String="",pPriceListVersion:%String="",&pPrice:%String]]></FormalSpec>
+<FormalSpec><![CDATA[pEpisode:%String,pItem:%String,pTestSet:%String="",pTestsetNpp:%String="1",pDate:%String,&pCito:%String="",pPayer:%String="",pHospital:%String,&pPaymentCategory:%String="",&pPriceListVersion:%String="",&pHospitalPayerCategoryVersion:%String,&pPrice:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
-	set ok=1,pPrice="",pCito=""
+	set ok=1,pPrice=""
 	try {
 		if pTestSet="" set pTestSet=pItem
 
@@ -32,11 +33,10 @@ output:
 		      quit 
 	    }
 	    
-    	$$$ThrowOnError(..GetPrice(pPayer, pHospital, pPaymentCategory, pItem, pDate, pCito, pPriceListVersion, .pPrice ))
+    	$$$ThrowOnError(..GetPrice(pPayer, pHospital, pPaymentCategory, pItem, pDate, pCito, .pPriceListVersion, .pHospitalPayerCategoryVersion, .pPrice ))
 	} 
 	catch(exception) {
 		set pPrice=""
-		set pCito=""
 		set ok=exception.AsStatus()
 		do ##class(TCLEx.Function.General).WriteError($ze,"BiRLab.Function.Invoice:GetPriceEpisodeItem: episode="_$get(pEpisode)_", item="_$get(pItem)_", date="_$get(pDate))
 	} 
@@ -55,18 +55,18 @@ input:
   pCito - 
 output: 
   price As %String (может быть "")
-  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки]]></Description>
+  pError - если все хорошо, то пусто, иначе - строка с описанием ошибки
+  pPriceListVersionId , pHospitalPayerCategoryVersion - в первый раз приходят пустые, а потом одни и те крутятся и не пересчитываются]]></Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pPayer:%String,pHospital:%String,pPaymentCategory:%String,pItem:%String,pDate:%String,pCito:%String,pPriceListVersionId:%String="",pHospitalPayerCategoryVersion:%String="",&pPrice:%String]]></FormalSpec>
+<FormalSpec><![CDATA[pPayer:%String,pHospital:%String,pPaymentCategory:%String,pItem:%String,pDate:%String,pCito:%String,&pPriceListVersionId:%String="",&pHospitalPayerCategoryVersion:%String="",&pPrice:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	set ok=1,pPrice=""
 	try {
 		if (pPriceListVersionId="")||(pHospitalPayerCategoryVersion="") {
 			$$$ThrowOnError(..GetPriceList(pPayer,pHospital,pPaymentCategory,pDate,.pPriceListVersionId,.pHospitalPayerCategoryVersion))
-		    if (pHospitalPayerCategoryVersion="")||(pPriceListVersionId="") {
-			   quit
-		    }
+			if pHospitalPayerCategoryVersion="" set pHospitalPayerCategoryVersion="?"
+			if pPriceListVersionId="" set pPriceListVersionId="?"
 		}
 		/*
 		if ##class(BiRLab.CT.HospitalPaymentCategoryVersionNotSupported).NoSupported(idHPCV,pItem) {
@@ -74,13 +74,18 @@ output:
 			quit
 		}*/
 		
-		set pPrice = ##class(BiRLab.CT.PriceListVersionDetails).GetPrice(pPriceListVersionId,pItem) 
-		 
-		set coef = ##class(BiRLab.CT.HospitalPaymentCategoryVersionPriority).GetCito(pHospitalPayerCategoryVersion,pCito)
-		if pCito'="",+coef set pPrice = pPrice*coef
+		if pPriceListVersionId="?" {
+			set pPrice=""
+		} else {
+			set pPrice = ##class(BiRLab.CT.PriceListVersionDetails).GetPrice(pPriceListVersionId,pItem)
+			if pCito'="" {
+				set coef = ##class(BiRLab.CT.HospitalPaymentCategoryVersionPriority).GetCito(pHospitalPayerCategoryVersion,pCito)
+		        if +coef set pPrice = pPrice*coef
+			}
+		}
 	} 
 	catch(exception) {
-		set pPrice=""
+		set pPrice="",pHospitalPayerCategoryVersion="",pPriceListVersionId=""
 		set ok=exception.AsStatus()
 	}  
 	quit ok
@@ -139,12 +144,6 @@ output:
 		      set pCito=cito
 		      set pFlagFinalPrice=1
 		      quit 
-	 	}
-	 	
-	 	set flagSupressBilling=$piece($get(^TEPI(pEpisode,1,pTestSet,pTestSetCounter)),"\",34)
-	 	if flagSupressBilling="Y" {
-		 	set pPrice=0
-		 	set pFlagFinalPrice=1
 	 	}
 	 	 
 	} catch(exception) {
