@@ -10,7 +10,7 @@
 на уровне наборов тестов - в вызывающей проге надо смотреть в случае, когда дата авторизации меньше даты начала использования Биралаба
 Пока предполагаю, что после ввода Бирлаба код плательщика на уровне набора тестов не брали во внимание (надо спросить у Лены)</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,&pPayer:%String,&pFlagGetPayerFromTestSet:%Boolean]]></FormalSpec>
+<FormalSpec><![CDATA[pEpisode:%String,&pHospital:%String,&pPayer:%String,&pFlagGetPayerFromTestSet:%Boolean]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	set ok=$$$OK
@@ -21,14 +21,16 @@
 		
         // Если уже есть данные TCLEx.Data.EPVisitNumberExt и нет взведенного флага на пересчет этих данных, то берем из TCLEx.Data.EPVisitNumberExtif
         if '$data(^SpeedI.DeltaPext(pEpisode))&&($get(^TEPIext(pEpisode))'="") {
-	        set pPayer=$listget($get(^TEPIext(pEpisode)),2)
+	        set rec=$get(^TEPIext(pEpisode))
+	        set pPayer=$listget(rec,2)
+	        set pHospital=$listget(rec,1)
         }
         if pPayer'="" {
 	        set pFlagGetPayerFromTestSet=0 
 	        quit
         }
         
-        $$$ThrowOnError(..GetPayer0(pEpisode, .pPayer, .pFlagGetPayerFromTestSet))
+        $$$ThrowOnError(..GetPayer0(pEpisode,.pHospital ,.pPayer, .pFlagGetPayerFromTestSet))
         
 
 	} catch(e) { set ok=e.AsStatus() }
@@ -40,9 +42,10 @@
 <Description>
 Получить код плательщика на уровне эпизода
 на уровне наборов тестов - в вызывающей проге надо смотреть в случае, когда дата авторизации меньше даты начала использования Биралаба
-Пока предполагаю, что после ввода Бирлаба код плательщика на уровне набора тестов не брали во внимание (надо спросить у Лены)</Description>
+Пока предполагаю, что после ввода Бирлаба код плательщика на уровне набора тестов не брали во внимание (надо спросить у Лены)
+pHospital - есть эпизоды, в которых в треке прописан один код ЛПУ, а в Бирлабе другой !!!  (например, 121218015902)</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,&pPayer:%String,&pFlagGetPayerFromTestSet:%Boolean]]></FormalSpec>
+<FormalSpec><![CDATA[pEpisode:%String,&pHospital:%String,&pPayer:%String,&pFlagGetPayerFromTestSet:%Boolean]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	set ok=$$$OK
@@ -58,6 +61,7 @@
 	        set id=$order(^BiRLab.Data.EpisodeI("EpisodeIndex",epis,""))
 	        if id'="" {
 		        set pPayer=$listget($get(^BiRLab.Data.EpisodeD(id)),8)
+		        set pHospital=$listget($get(^BiRLab.Data.EpisodeD(id)),7)
 	        }
         }
         if pPayer'="" {
@@ -74,8 +78,8 @@
         }
         
         // иначе берем в Бирлабе по привязке PayerHospital
-        set hospitalcode=$piece(rec,"\",20)
-        set pPayer=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(hospitalcode)
+        set pHospital=$piece(rec,"\",20)
+        set pPayer=##class(BiRLab.CT.PayerHospital).GetPayerByHospital(pHospital)
         
 
 	} catch(e) { set ok=e.AsStatus() }
@@ -88,13 +92,15 @@
 Вобщем то в некотром роде контексная функция (^||invForGetPrice) для отчетов с ценой
 ://штм</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,pTestSet:%String,pTestSetCounter:%String,pSuperSet:%String="",pDateAuthorization:%String,pDateEntry:%String,&pCito:%String,pDateStartBirLab:%String="",pPayer:%String="",pHospital:%String,pPaymentCategory:%String="",pPriceListVersion:%String="",&pPrice:%String]]></FormalSpec>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSet:%String,pTestSetCounter:%String,pSuperSet:%String="",pDateAuthorization:%String,pDateEntry:%String,&pCito:%String,pDateStartBirLab:%String="",pPayer:%String="",pHospital:%String,pPaymentCategory:%String="",&pPriceListVersion:%String="",&pHospitalPayerCategoryVersion:%String="",&pPrice:%String]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	set ok=1,pPrice=""
 	try {
+		
 		// если нет взведенной глобали для пересчета цены и плательщика, то берем готовую
         set isfind=0
+        
         try {
 	        if '$data(^SpeedI.DeltaPext(pEpisode))&&($get(^TEPIext(pEpisode,1,pTestSet,pTestSetCounter))'="") {
 	           if pSuperSet'="" {
@@ -114,7 +120,6 @@
             }
         } catch(e) { set isfind=0} 
         
-        
         if isfind=0 {
 	            set billingitem=$select(pSuperSet'="":pSuperSet,1:pTestSet)
 	            // расчет цены по старому биллингу
@@ -126,7 +131,7 @@
                 }
                 // расчет цены по новому биллингу 
                 else {
-	                 $$$ThrowOnError(##class(BiRLab.Function.InvoiceNew).GetPriceEpisodeItem(pEpisode,billingitem,pTestSet,pTestSetCounter,pDateEntry,.pCito,pPayer,pHospital,pPaymentCategory,pPriceListVersion,.pPrice))
+	                 $$$ThrowOnError(##class(BiRLab.Function.InvoiceNew).GetPriceEpisodeItem(pEpisode,billingitem,pTestSet,pTestSetCounter,pDateEntry,.pCito,pPayer,pHospital,pPaymentCategory,.pPriceListVersion,.pHospitalPayerCategoryVersion,.pPrice))
                 }
         }
 	} catch(e) { 

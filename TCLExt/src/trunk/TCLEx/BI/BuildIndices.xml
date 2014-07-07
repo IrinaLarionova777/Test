@@ -298,7 +298,7 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 <Implementation><![CDATA[
 	set ok=1
 	set pEpisode=$get(pEpisode)
-	kill ^||superset.price
+	   
 	try {
 		if pEpisode="" {
 			set ok =$$$ERROR($$$GeneralError,"Не указан номер эпизода")
@@ -312,6 +312,8 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 	    if pDateStartBirlab="" {
 		    set pDateStartBirlab=##class(BiRLab.Function.Report).GetDateStartUseBirlab() 
 	    }
+	    
+	    kill supersetPrice // локальный массив для супенаборов
 	    
 	    // открываем или создаем объект TCLEx.Data.EPVisitNumberExt
 	    if ##class(TCLEx.Data.EPVisitNumberExt).%ExistsId(epis) {
@@ -346,15 +348,12 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
         // код плательщика на уровне эпизода
         set flagGetPayerFromTestSet=1 // флаг о том, что надо смотреть код плательщика на уровне наборов тестов, если дата авторизации меньше даты начала использования Биралаба
 	    set payment="" 
-        set ok1=##class(TCLEx.Function.Episode2).GetPayer0(epis,.payment,.flagGetPayerFromTestSet)
+        set ok1=##class(TCLEx.Function.Episode2).GetPayer0(epis,.hospitalcode,.payment,.flagGetPayerFromTestSet)
         if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
         
-        set paymentCategory="",pricelistversion=""
+        set paymentCategory=##class(BiRLab.Function.InvoiceNew).GetPaymentCategory(payment) // сейчас все равно он всегда =1
         
-        set paymentCategory=##class(BiRLab.Function.InvoiceNew).GetPaymentCategory(payment)
  	    set hospitalPayerCategoryVersion="",pricelistversion=""
- 	    set ok1=##class(BiRLab.Function.InvoiceNew).GetPriceList(payment,hospitalcode,paymentCategory,dateOfEntry,.pricelistversion,.hospitalPayerCategoryVersion)
-        if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
         
         set citoepis=$piece(rec,"\",15) // cito нужно только для расчета цены по встроенному в трек биллингу, а это было только в Бионе - поэтому cito берем только на уровне эпизода
 
@@ -402,7 +401,6 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		        
 		        set flagIsService=1 //флаг, что данная строка будет считаться как одна услуга (для супернабора на ней же лежит цена за супернабор )
 		        // если набор тестов отменен по причине,для которой выставлен флаг "Все равно оплачивать" в данном контексте это все равно, что набор тесов не отменен
-		        //если набор тестов или супернабор целиком отменены с причиной отмены, которая не отмечена как оплачиваемая, то этот набор тестов или супернабор вообще не считаются услугой (т е для них кол-во услуг=0, сумма услуг=0)
 		        set flagCancel=0  // флаг, что данная строка считает отмененной совсем (услугой не является)
 		        if (dateOfreason'="")&&(reason'="") {
 			        if $piece($get(^TTAB("CTR",reason)),"\",3)'="Y" set flagCancel=1  
@@ -425,19 +423,27 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		            set flagIsService=0
 		        }
 		        
-		        // Если это неоплачиваемая услуга (VISTS_SupressBilling="Y")
+		        // Если это неоплачиваемая услуга (VISTS_SupressBilling="Y"), то 
+		        // для обычных наборов тестов : считаем кол-во услуг 1 и цена 0 и проставляем флаг финальной цены 
+		        // для супернабора - если для "главного" набора тестов ISTS_SupressBilling="Y", то весь супернабор рассматривается как одна услуга с 0 ценой - например такой вариант жизни
 		        set supressbilling=$piece(rects,"\",34)
-		        //if supressbilling="Y" {
-			        
 		        
+		        if (supressbilling="Y")&&(superset="") {  // неоплачиваемый набор тестов (но услуга считается услугой)
+			        set price=0
+			        set flagFinalPrice=1
+			        set flagIsService=$select(authdate'="":1,1:0)
+		        }
+			       	        
 		        set billingitem=ts
 		        
-		        if superset'="" {
+                // обоработка супернабора
+                if superset'="" {
 	                Set billingitem=superset
+	                set flagmaintestset=ts[superset // флаг, что это "главный" Набор тестов в супернаборе 
 	                // если на какой-то набор тестов из супер набора уже записана цена за супернабор, то на другие наборы тестов записываем 0
-	                If $Data(^||superset.price(billingitem,epis)) {
+	                If ($Data(supersetPrice(billingitem,tscnt)))||(flagmaintestset=0) {
 		                set price=0
-		                set flagFinalPrice=^||superset.price(billingitem,epis)
+		                set flagFinalPrice=1  
 		                set flagIsService=0
 	                } else {
 		                // если этот набор тестов отменен, то просто записываем в ^TEPIext цену 0 и флаг окончательности цены, но цену жля супернабора не записываем
@@ -445,7 +451,11 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		                if (flagCancel=0)&&(flagIsComplete=1) {
 			                set flagIsService=1
 		                    set authdate=##class(TCLEx.Function.SuperSet).AuthorisationDate2(epis,superset)
-		                    Set ^||superset.price(billingitem,epis)="" 
+		                    Set supersetPrice(billingitem,tscnt)="" 
+		                    if supressbilling="Y" {
+			                    set price=0
+			                    set flagFinalPrice=1
+		                    }
 		                } else {
 			                set price=0
 			                set flagIsService=0
@@ -453,7 +463,6 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		                }
 	                }
                 }
-                
                 set cito=$select(citots'="":citots,citoepis'="":citoepis,1:"")
                 
 	            // расчет цены по старому биллингу
@@ -462,7 +471,8 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 	                set flagFinalEpis=1
 	                set flagFinalPrice=1
 	                if price="" {
-		                if (payment'="") {
+		                if (payment'="") 
+		                {
 			                Set price=$$GetBillingItemAmount^PRTCLNRUS05birlab(payment,epis,authdate,billingitem,cito,$name(^||invForGetPrice))
 		                } else {
 			                //set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не указан код плательщика для эпизода "_epis_" hospitacode="_$get(hospitalcode)))
@@ -471,21 +481,20 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 		                }
 	                }
                 }
-                // расчет цены по новому биллингу 
+                // расчет цены по новому биллингу
                 else {
 	                 if price="" {
 		                    // смотрим цену окончательно закрепленную
 		                    set ok1=##class(BiRLab.Function.InvoiceNew).GetFinalPrice(epis,billingitem,ts,tscnt,.cito,.flagFinalPrice,.price)
 		                    if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
-		                    
 		                    if (flagFinalPrice=0) {
-			                    set ok1=##class(BiRLab.Function.InvoiceNew).GetPrice(payment, hospitalcode, paymentCategory, billingitem, dateOfEntry, cito, pricelistversion, hospitalPayerCategoryVersion,.price )
+			                    set ok1=##class(BiRLab.Function.InvoiceNew).GetPrice(payment, hospitalcode, paymentCategory, billingitem, dateOfEntry, cito, .pricelistversion, .hospitalPayerCategoryVersion,.price )
 			                    if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
 		                    }
 	                 }
                 }
-                if ($data(^||superset.price(billingitem,epis)))&&(flagIsService=1) {
-	                Set ^||superset.price(billingitem,epis)=flagFinalPrice
+                if ($data(supersetPrice(billingitem,tscnt)))&&(flagIsService=1) {
+	                Set supersetPrice(billingitem,tscnt)=flagFinalPrice
                 }
                 
                 // запись в TCLEx.Data.EPVisitTestSetExt
@@ -510,7 +519,9 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
 	                set flagFinalEpis=0
                 } 
 	        }
+	        
         }
+        
 	    // запись в TCLEx.Data.EPVisitNumberExt and ^EPVisitNumber
         //set ^TEPIext(epis)=$listbuild(hospital,payment,flagFinalPrice)
         set recext=^TEPIext(epis)
@@ -523,6 +534,9 @@ pFlagRecalcFinalPrice - флаг : если=1, то пересчитывать �
                 set ok1=objepis.%Save()
                 if 'ok1 set ok=$system.Status.AppendStatus(ok,ok1)
         }
+        
+        kill supersetPrice
+        
 	} catch(e) {
 		set ok1=e.AsStatus()
 		set ok=$system.Status.AppendStatus(ok,ok1)
@@ -642,8 +656,57 @@ pFlagCalcFinalPrice - флаг обязательности пересчета �
 			    //quit
 		    }
         }
+        do ..SetFlagFinalPrice() // Для некоторых эпизодов насильственно в первый раз поставить флаг окончательности цены
 	} catch(e) {
 		
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="SetFlagFinalPrice">
+<Description>
+Для некоторых эпизодов насильственно в первый раз поставить флаг окончательности цены</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set datelimit=$extract($zd(+$h,8),1,6)-7
+	set ok=1
+	try {
+		set counter=0
+		set hospital=""
+		for {
+			set hospital=$order(^TEPIextI("FlagFinalPriceHospital",0,hospital)) if hospital="" quit
+			set epis=""
+		    for {
+			   set epis=$order(^TEPIextI("FlagFinalPriceHospital",0,hospital,epis)) if epis="" quit
+			   set dateOfEntry=$extract($zd($piece(^TEPI(epis),"\",8),8),1,6)
+			   if dateOfEntry>datelimit continue
+			   set objepis=##class(TCLEx.Data.EPVisitNumberExt).%OpenId(epis)
+			   set objepis.FlagFinalPrice=1
+			   do objepis.%SetModified(1)
+			   set ok1=objepis.%Save()
+			   if 'ok1  do $system.Status.DisplayError(ok1)
+			   set counter=counter+1
+			   set ts=""
+			   for {
+				   set ts=$order(^TEPIext(epis,1,ts)) if ts="" quit
+				   set tscnt=""
+				   for {
+					   set tscnt=$order(^TEPIext(epis,1,ts,tscnt),1,rects) if tscnt="" quit
+					   if $listget(rects,2)=1 continue
+					   set objts=##class(TCLEx.Data.EPVisitTestSetExt).%OpenId(epis_"||"_ts_"||"_tscnt)
+					   set objts.FlagFinalPrice=1
+					   do objts.%SetModified(1)
+					   set ok1=objts.%Save()
+					   if 'ok1  do $system.Status.DisplayError(ok1)
+				   }
+			   }
+		    }
+		}
+		write !,"Для эпизодов полугодовой давности насильственно проставлен флаг финальной цены: "_counter_" эпизодов",!
+	} catch(e) {
+		do $system.Status.DisplayError(e.AsStatus())
 	}
 	quit ok
 ]]></Implementation>
