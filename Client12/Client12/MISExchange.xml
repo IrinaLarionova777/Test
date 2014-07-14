@@ -7,7 +7,7 @@
 <Parameter name="LOCKRESOURCENAME">
 <Description>
 Имя ресурса, соответствующего очереди </Description>
-<Default>^MIS.SendResultsAdnStatusTest</Default>
+<Default>^MIS.SendResultsAdnStatus</Default>
 </Parameter>
 
 <Parameter name="WAITINTERVAL">
@@ -19,7 +19,13 @@
 <Parameter name="STOPPINGRESOURCENAME">
 <Description>
 Имя ресурса-семафора, наличие которого сигнализирует о том, что выполняется штатный останов процесса/процессов обработки очереди </Description>
-<Default>^MIS.StopSendResultsTest</Default>
+<Default>^MIS.StopSendResults</Default>
+</Parameter>
+
+<Parameter name="MAXRECORDSINLOG">
+<Description>
+Максимальное разрешенное кол-во записей в логах (если больше, то удаляются лишние первые записи ) </Description>
+<Default>1000000</Default>
 </Parameter>
 
 <Method name="OnTask">
@@ -49,7 +55,7 @@ Callback метод класса задачи</Description>
 				
 		// Создаем объект клиента для доступа к веб сервису MISservice
 		set ok=##class(Client12.LIS.Client).CreateObjectClient(.objclient)
-		set eventDesc="Создание коннекта к вебсервису (Client12.LIS.ClientSoap)"
+		set eventDesc="Создание коннекта к вебсервису (Client12.LIS.ClientSoap)DT"
 		do ..LogEvent("Client12.MISExchange",$select('ok:"error",1:""),eventDesc,ok,"","","") 
 		if 'ok {
 			  quit
@@ -68,6 +74,7 @@ Callback метод класса задачи</Description>
                 if (error["TCP")||(error["SOAP") {
 	                kill objclient
 		            set objclient=""  // для того, чтобы переустановился коннект
+		            hang 1
 	            }
             }
 	
@@ -80,6 +87,7 @@ Callback метод класса задачи</Description>
                 if (error["TCP")||(error["SOAP") {
 		            kill objclient
 		            set objclient=""  // для того, чтобы переустановился коннект
+		            hang 1
 	            }
             }
 		    
@@ -91,6 +99,18 @@ Callback метод класса задачи</Description>
                 if (error["TCP")||(error["SOAP") {
 		            kill objclient
 		            set objclient=""  // для того, чтобы переустановился коннект
+		            hang 1
+	            }
+            }
+
+		    //Отправка скопившихся сообщений об ошибках (одна попытка)
+	        set ok=..ProcessSendMessage(.objclient)
+	        if 'ok {
+	            set error=$System.Status.GetErrorText(ok)
+                if (error["TCP")||(error["SOAP") {
+		            kill objclient
+		            set objclient=""  // для того, чтобы переустановился коннект
+		            hang 1
 	            }
             }
 		
@@ -141,12 +161,51 @@ Callback метод класса задачи</Description>
 			      kill ^ECUBE("SendStatus",horolog,npp)
 		      }
 		      set desc="Отправлен статус "_status_" по эпизоду "_episode_", OrderId="_orderId
-		      do ..LogEvent("SendOrderStatus",$select(+ok1=0:"error",1:""),desc,$select(+ok1=0:"",1:1),ok1,episode,orderId)
+		      do ..LogEvent("SendOrderStatus",$select(+ok1=0:"error",1:""),desc,$select(+ok1=0:"",1:1),ok1,episode,orderId_"^")
 		      if +ok1=0 {
 				  set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,$piece(ok1,"^",2)))
 			  }
 		  }
 	  }
+  } catch ex {
+	    If $ZERROR["<ZSOAP>" {
+            Set ok=$system.Status.AppendStatus(ok,$get(%objlasterror))
+            } 
+        Else {
+            Set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$CacheError,$ZERROR))
+        }
+  }
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="ProcessSendMessage">
+<Description>
+Отправка скопившихся сообщений об ошибках  (^ECUBE("SendMessage")) (одна попытка отправить сообщение , после нее (как б ыона не закончилась) удаляем сообщения</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pObjClient:Client12.LIS.ClientSoap]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK
+  try {
+
+		  set npp=""
+		  for {
+			  set npp=$order(^ECUBE("SendMessage",npp),1,msg) if npp="" quit
+			  set ok1=1
+		      if msg'="" set ok1=##class(Client12.LIS.Client).SendMSG(.pObjClient,msg)
+		      // ok1 = (0/1/2)^текст ошибки или сообщения (0-ошибка, 1 - все хорошо, 2 - статус отвергается, но не надо переотправлять
+		      if +ok1'=0 {
+			      kill ^ECUBE("SendMessage",npp)
+		      }
+		      else {
+				  set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,$piece(ok1,"^",2)))
+			  }
+		  }
+		  
+		  // Даже если сообщение не отправилось, удаляем сообщения
+		  kill ^ECUBE("SendMessage")
+	
   } catch ex {
 	    If $ZERROR["<ZSOAP>" {
             Set ok=$system.Status.AppendStatus(ok,$get(%objlasterror))
@@ -222,9 +281,40 @@ Callback метод класса задачи</Description>
 	set obj.TimeMicroSec=+$p(zts,".",2)
 	set ok=obj.%Save()
 	if 'ok {
-		set hor=+$h
-		set ^ERRORS(hor,$i(^ERRORS(hor)))=ok
+		do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok))
 	}
+	// Проверка, если слишком много записей лога, то просто удалить первые 100 штук
+	set ok=..TestLimitLogs()
+]]></Implementation>
+</Method>
+
+<Method name="TestLimitLogs">
+<ClassMethod>1</ClassMethod>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		set limit=..GetMaxRecordsInLog()
+		set first=$order(^ECUBE.Object.EventD(""))
+		set last=$order(^ECUBE.Object.EventD(""),-1)
+		if (last-first)>limit {
+			set npp=""
+			for {
+				set npp=$order(^ECUBE.Object.EventD(npp)) if (npp="")||(npp>(first+limit)) quit
+				set obj=##class(ECUBE.Object.Event).%OpenId(npp)
+		        if $IsObject(obj) {
+			        set ok=obj.%DeleteId(npp) 
+			        if 'ok {
+				        do ##class(TCLEx.Function.General).WriteError($ze)
+			        }
+		        }
+			}
+		}
+		
+	} catch ex {
+		set ok=ex.AsStatus()
+	}
+	quit ok
 ]]></Implementation>
 </Method>
 
@@ -249,6 +339,14 @@ Callback метод класса задачи</Description>
 Имя ресурса-семафора, наличие которого сигнализирует о том, что выполняется штатный останов процесса/процессов обработки очереди</Description>
 <ClassMethod>1</ClassMethod>
 <Implementation><![CDATA[	quit ..#STOPPINGRESOURCENAME
+]]></Implementation>
+</Method>
+
+<Method name="GetMaxRecordsInLog">
+<Description>
+Максимальное разрешенное кол-во записей в логах (если больше, то удаляются лишние первые записи )</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[	quit ..#MAXRECORDSINLOG
 ]]></Implementation>
 </Method>
 
