@@ -36,7 +36,117 @@ Namespace. Change this to the namespace used by the web service.</Description>
 	}
 	;
 	Set ok=..InsertTestSets2(pOrder.EpisId,pOrder.TestSets,pOrder.Specimens,pOrder.Containers)
+	
 	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="CorrectOrder">
+<Description>
+Корректирование существующего заказа </Description>
+<FormalSpec>pOrderNumber:%String,pProperties:%String,pOrder:TCLEx.Object.LabOrder</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	Set patientid=pOrder.PatientId
+	Set ok=..InsertPatient(.patientid)
+	If 'ok Quit ok
+	Set pOrder.PatientId=patientid 
+	//
+	Kill ^||Episodes
+	Do ##class(TCLEx.Function.LabOrder).CreateOrderEpisodesGlb(pOrderNumber,$Name(^||Episodes))
+	Set episode=""
+	Set ok=$$$OK
+	Kill emails
+	For  {
+		Set episode=$Order(^||Episodes(episode))
+		If episode="" Quit
+		Set episobj=##class(User.EPVisitNumber).%OpenId(episode)
+		If '$IsObject(episobj) {
+			Set ok=$$$ERROR($$$GeneralError,"Не удалось открыть объект эпизода "_episode_" !")
+		}Else {
+			Set email=episobj.EPVISPhoneWork
+			If (email'="")&&('$Data(emails(email))) {
+				Set emails(email)=""
+				Do ##class(TCLEx.Function.EMail).DeletePatientEMail(pOrderNumber,email)
+			}
+			Set ok=..CorrectEpisode(episode,pProperties,pOrder)
+			Do ##class(TCLEx.Function.Episode).ResendResult(episode)
+		}
+		If 'ok Quit
+	}	
+	Quit ok
+]]></Implementation>
+</Method>
+
+<Method name="CorrectEpisode">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisodeId:%String,pProperties:%String,pOrder:TCLEx.Object.LabOrder</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisodeId)
+	If '$IsObject(episobj) Quit $$$ERROR($$$GeneralError,"Не удалось открыть объект эпизода "_pEpisodeId_" !")
+	Set cnt=$Length(pProperties,",")
+	For i=1:1:cnt {
+		Set property=$Piece(pProperties,",",i)
+		If property="PatientId" {
+			Do episobj.EPVISDebtorNumberDRSetObjectId(pOrder.PatientId) 
+		}ElseIf property="Surname" {
+			Set episobj.EPVISSurname=pOrder.Surname
+		}ElseIf property="Name" {
+			Set episobj.EPVISGivenName=pOrder.Name
+		}ElseIf property="FatherName" {
+			Set episobj.EPVISName1=pOrder.FatherName
+		}ElseIf property="DOB" {
+			Set episobj.EPVISDateOfBirth=pOrder.DOB
+		}ElseIf property="Sex" {
+			Do episobj.EPVISSpeciesDRSetObjectId(pOrder.Sex) 
+		}ElseIf property="DateOfRequest" {
+			Set episobj.EPVISDateOfRequest=pOrder.DateOfRequest
+		}ElseIf property="DateOfCollection" {
+			Set episobj.EPVISDateOfCollection=pOrder.DateOfCollection
+		}ElseIf property="TimeOfCollection" {
+			Set episobj.EPVISTimeOfCollection=pOrder.TimeOfCollection
+		}ElseIf property="Priority" {
+			Do episobj.EPVISPriorityCodeDRSetObjectId(pOrder.Priority) 
+		}ElseIf property="ClinicalConditions" {
+			Do episobj.EPVISClinicalConditionsDRSetObjectId(pOrder.ClinicalConditions) 
+		}ElseIf property="Pregnant" {
+			Set episobj.EPVISPregnant=pOrder.Pregnant
+		}ElseIf property="PregnantNumberOfWeeks" {
+			Set episobj.EPVISPregnantNumberOfWeeks=pOrder.PregnantNumberOfWeeks
+		}ElseIf property="HospitalDepartment" {
+			Set episobj.EPVISExtra8=pOrder.HospitalDepartment
+		}ElseIf property="Doctor" {
+			Do episobj.EPVISDoctorCodeDRSetObjectId(pOrder.Doctor) 
+		}ElseIf property="PatientAddress1" {
+			Set episobj.EPVISPatientAddress1=pOrder.PatientAddress1
+		}ElseIf property="PatientAddress2" {
+			Set episobj.EPVISPatientAddress2=pOrder.PatientAddress2
+		}ElseIf property="InsuranceCompany" {
+			Set episobj.EPVISExtra9=pOrder.InsuranceCompany
+		}ElseIf property="PolicySeries" {
+			Set episobj.EPVISExtra10=pOrder.PolicySeries
+		}ElseIf property="PolicyNumber" {
+			Set episobj.EPVISExtra11=pOrder.PolicyNumber
+		}ElseIf property="Pasport" {
+			Set episobj.EPVISExtra12=pOrder.Pasport
+		}ElseIf property="MobilePhone" {
+			Set episobj.EPVISPhoneHome=pOrder.MobilePhone
+		}ElseIf property="EMail" {
+			Set episobj.EPVISPhoneWork=pOrder.EMail
+		}ElseIf property="MedicalComment" {
+			Set episobj.EPVISExtra13=pOrder.MedicalComment
+		}ElseIf property="Height" {
+			Set episobj.EPVISExtra5=pOrder.Height
+		}ElseIf property="Weight" {
+			Set episobj.EPVISExtra6=pOrder.Weight
+		}ElseIf property="DailyDiuresis" {
+			Set episobj.EPVISExtra7=pOrder.DailyDiuresis
+		}
+		
+	}
+	Quit episobj.%Save()
 ]]></Implementation>
 </Method>
 
@@ -111,6 +221,8 @@ Namespace. Change this to the namespace used by the web service.</Description>
 	Set PLIST(83)=pOrder.PolicySeries 			;EPVIS_Extra10
 	Set PLIST(114)=pOrder.PolicyNumber 			;EPVIS_Extra11
 	Set PLIST(115)=pOrder.Pasport	 			;EPVIS_Extra12
+	Set PLIST(117)="WebER"	 					;EPVIS_Extra14 - Признак, что заказ добавлен из WebER
+	Set PLIST(118)=pOrder.ExternalOrderNumber	;EPVIS_Extra15
 
 	;Set PLIST(32)=pOrder.Diagnosis 			;???
 	;Set PLIST(33)=pOrder.Antibiotics 			;??
@@ -211,6 +323,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 			set ok=$$$ADDSC(ok,ok1)
 			continue
 		}
+		
 		// Проверяем наличие actions SD and SF и выполняем их
 		set ok1=..ActionsTestSet(rowid,.inputDataForTSCheckLVBVIS7)
 		if 'ok1 {
@@ -239,6 +352,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 		set testsetstr=$piece(testsetstr,$char(1),1)
  		Set testset=$Piece(testsetstr,":",1)
 		Set superset=$Piece(testsetstr,":",2)
+		Set priority=$Piece(testsetstr,":",3)
 		If testset="" quit
 		set tscnt=$Order(^TEPI(pEpisode,1,testset,""),-1)+1
 		Kill PLIST
@@ -246,6 +360,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 		Set PLIST(2)=tscnt		                                    // VISTS_TestSetCounter
 		Set PLIST(3)=testset										// VISTS_TestSet_DR
 		Set PLIST(32)=superset										// VISTS_SuperSet_DR
+		Set PLIST(13)=priority 										// VISTS_Priority_DR
 		Set specimenstr=$Piece(pSpecimens,",",pNum)
 		If $Length(specimenstr,";")>1 {
 			Set specimenstr=""
@@ -327,15 +442,18 @@ Namespace. Change this to the namespace used by the web service.</Description>
 		        if (typeAction="TR0")||(typeAction="TA0") {
 			        set testsetnew=$piece($piece(rec,$char(1),2),$char(2),1)
 			        if testsetnew="" continue
+			        Set priority=$Piece($Piece(pTestSets,",",testcnt),":",3)
 			        if '$data(^TTAB("TS",testsetnew)) continue
 			        if typeAction="TR0" {
 				        //if $find(pTestSets,testsetnew)'=0 continue  // если набор тестов уже есть, то не заменяем на него
+				        If priority'="" Set $Piece(testsetnew,":",3)=priority
 				        set $piece(pTestSets,",",testcnt)=testsetnew 
 				        set flagReplaceTestSet=1
 				        continue
 			        }
 			        if typeAction="TA0" {
 				        //if $find(pTestSets,testsetnew)'=0 continue  // если набор тестов уже есть, то не добавляем его
+				        If priority'="" Set $Piece(testsetnew,":",3)=priority
 				        set pTestSets=pTestSets_","_testsetnew_$char(1)_"Y"
 				        set allcnt=allcnt+1
 				        continue
@@ -391,7 +509,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 	    // функция $$TScheck^LVBVIS7 проверяет условия срабатываения действий и возвращает действия, которые надо выполнить 
 	    kill PLIST m PLIST=inputDataForTSCheck
 	    set PLIST=$order(PLIST(""),-1)
-		set SQLCODE=$$TScheck^LVBVIS7(pRowidVisitTestSet,"TA","","A","") b  
+		set SQLCODE=$$TScheck^LVBVIS7(pRowidVisitTestSet,"TA","","A","")  
 		If +SQLCODE'=0 {
 			//Set ok=$$$ERROR($$$GeneralError,"TScheck^LVBVIS7: SQLCODE="_SQLCODE_",rowid="_pRowidVisitTestSet) 
 			quit
@@ -404,7 +522,7 @@ Namespace. Change this to the namespace used by the web service.</Description>
 		    set typeAction=$piece(rec,$char(1),1)
 		    // TR0-Replace Test Set, TA0- Test Set Add, SD - Set Data, SF - Set Field
 		    //if (typeAction'="SD")&&(typeAction'="SF") continue
-		    b  if (typeAction'="SF")&&(typeAction'="VQ0") continue
+		    if (typeAction'="SF")&&(typeAction'="VQ0") continue
 		    // изменение указанного поля (Set Field)
 		    if typeAction="SF" {
 			    set numChangeField=$piece(rec,$char(1),6)
