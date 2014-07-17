@@ -89,10 +89,10 @@ pHospital - есть эпизоды, в которых в треке пропи�
 
 <Method name="GetPrice">
 <Description>
-Вобщем то в некотром роде контексная функция (^||invForGetPrice) для отчетов с ценой
-://штм</Description>
+Вобщем то в некотором роде контексная функция (^||invForGetPrice) для отчетов с ценой
+pFlagRecalcPrice =1 - не брать предрассчитанную цену (from ^TEPIext). По умолчанию pFlagRecalcPrice=0</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec><![CDATA[pEpisode:%String,pTestSet:%String,pTestSetCounter:%String,pSuperSet:%String="",pDateAuthorization:%String,pDateEntry:%String,&pCito:%String,pDateStartBirLab:%String="",pPayer:%String="",pHospital:%String,pPaymentCategory:%String="",&pPriceListVersion:%String="",&pHospitalPayerCategoryVersion:%String="",&pPrice:%String]]></FormalSpec>
+<FormalSpec><![CDATA[pEpisode:%String,pTestSet:%String,pTestSetCounter:%String,pSuperSet:%String="",pDateAuthorization:%String,pDateEntry:%String,&pCito:%String,pDateStartBirLab:%String="",pPayer:%String="",pHospital:%String,pPaymentCategory:%String="",&pPriceListVersion:%String="",&pHospitalPayerCategoryVersion:%String="",&pPrice:%String,pFlagRecalcPrice:%Boolean=0]]></FormalSpec>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	set ok=1,pPrice=""
@@ -100,25 +100,32 @@ pHospital - есть эпизоды, в которых в треке пропи�
 		
 		// если нет взведенной глобали для пересчета цены и плательщика, то берем готовую
         set isfind=0
-        
-        try {
-	        if '$data(^SpeedI.DeltaPext(pEpisode))&&($get(^TEPIext(pEpisode,1,pTestSet,pTestSetCounter))'="") {
-	           if pSuperSet'="" {
-		           set isfind=0
-		           set ts1=$order(^TEPIextI("SuperSet",pEpisode,pSuperSet,1,""))
-		           if ts1'="" {
-			           set tscnt1=$order(^TEPIextI("SuperSet",pEpisode,pSuperSet,1,ts1,""))
-			           if tscnt1'="" {
-				          set pPrice=+$listget(^TEPIext(pEpisode,1,ts1,tscnt1),1)
-				          set isfind=1
-			          }
+        if pFlagRecalcPrice=0 {
+	      try {
+		    set rec=$get(^TEPIext(pEpisode,1,pTestSet,pTestSetCounter))
+	        if '$data(^SpeedI.DeltaPext(pEpisode))&&(rec'="") {
+		       if pSuperSet'="" {
+			       if $listget(rec,4)=1 {   // если это строка, на которой лежит цена (FlagIsService=1), то сразу берем эту цену (так всегда должно быть)
+				      set pPrice=+$listget(^TEPIext(pEpisode,1,pTestSet,pTestSetCounter),1)
+		              set isfind=1
+			       } else {
+				       set ts1=""
+				       for {
+					       set ts1=$order(^TEPIextI("SuperSet",pEpisode,pSuperSet,1,ts1)) if ts1="" quit
+					       if $data(^TEPIextI("SuperSet",pEpisode,pSuperSet,1,ts1,pTestSetCounter)) {
+						       set pPrice=+$listget(^TEPIext(pEpisode,1,ts1,pTestSetCounter),1)
+				               set isfind=1
+				               quit
+					       }
+				       }
 		           }
 	           } else {
 		           set pPrice=+$listget(^TEPIext(pEpisode,1,pTestSet,pTestSetCounter),1)
 		           set isfind=1
 	           }
             }
-        } catch(e) { set isfind=0} 
+          } catch(e) { set isfind=0 } 
+        }
         
         if isfind=0 {
 	            set billingitem=$select(pSuperSet'="":pSuperSet,1:pTestSet)
