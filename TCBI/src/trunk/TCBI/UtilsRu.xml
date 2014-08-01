@@ -49,12 +49,13 @@
 
 <Method name="GetWeekday">
 <Description>
-//##class(TCBI.Utils).GetWeekday(%source.EPVISDateOfReceiving)</Description>
+//##class(TCBI.Utils).GetWeekday(%source.EPVISDateOfReceiving)
+depricated</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pDateOfReceiving:%String=""</FormalSpec>
+<FormalSpec>pDateOfReceiving:%String="",pDateOfEntry:%String=""</FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
-	set pDateOfReceiving=..GetDateOfReceiving(pDateOfReceiving)  // если пустая дата получения пробирки, то она заменится на дату ввода заявки
+	set pDateOfReceiving=..GetDateOfReceiving(pDateOfReceiving,pDateOfEntry)  // если пустая дата получения пробирки, то она заменится на дату ввода заявки
 	///return day of week as an integer to force correct sequence
 	/*
 	&SQL(SELECT DISTINCT {fn DAYOFWEEK (:pDateOfReceiving)} into :returnVal)
@@ -64,9 +65,9 @@
 	*/
 	set returnVal=""
 	if pDateOfReceiving>0 {
-		set returnVal=$zdate(pDateOfReceiving,10)
-		if returnVal=0 set returnVal=7
+		set returnVal=..GetWeekDay2(pDateOfReceiving)
 	}
+	//if '((returnVal>0)&&(returnVal<8)) set ^test("week",$i(^test("week")))=pDateOfReceiving
 	Quit returnVal
 ]]></Implementation>
 </Method>
@@ -107,6 +108,7 @@ return priority (если не определен, то считаем , что 
 	set val=$get(val)
 	// если установлен приоритет на уровне эпизода и не установлен приоритет на уровне набора тестов, то приоритет на уровне эпизода распространяется на все наборы тестов в этом эпизоде
 	if val="" {
+		s ^test("111")=$get(testsetid)
 	    set epis=$piece($get(testsetid),"||",2)	
 	    if epis'="" set val=$piece($get(^TEPI(epis)),"\",15)
 	}
@@ -356,11 +358,14 @@ return priority (если не определен, то считаем , что 
 		for {
 			set tscnt=$order(^TEPI(pEpisode,1,ts,tscnt),1,rec) if tscnt="" quit
 			set superset=$piece(rec,"\",29)
+			set returnValue=returnValue+..GetKolService(pEpisode_"||"_ts_"||"_tscnt,superset)
+			/*
 			if superset'="" {
 				if $data(vsp(superset)) continue
 				set vsp(superset)=""
 			}
 			set returnValue=returnValue+1
+			*/
 		}
 	}
 	kill vsp
@@ -768,6 +773,239 @@ GetDateOfReceiving
 	if +pDateOfReceiving'=0 quit pDateOfReceiving
     if +pDateOfEntry'=0 quit pDateOfEntry
 	quit ""
+]]></Implementation>
+</Method>
+
+<Method name="GetAllDateEpisode">
+<Description>
+Получить список со всеми датами на уровне эпизода и их дни недели
+output: $listbuild(DateOfCollection, DateOfReceiving, DateOfEntry, weekdayOfCollection, weekdayOfReceiving, weekdayOfEntry,timeOfCollection,timeOfReceiving,timeOfEntry) 
+(дата забора материала, дата поступления материала в лабораторию, дата регистрации эпизода, день недели забора материала, день недели поступления материала в лабораторию, день недели регистрации эпизода)
+время в минутах</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateOfCollection:%String="",pTimeOfCollection:%String="",pDateOfReceiving:%String="",pTimeOfReceiving:%String="",pDateOfEntry:%String="",pTimeOfEntry:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+   // $listbuild(DateOfCollection, DateOfReceiving, DateOfEntry,weekdayOfCollection,weekdayOfReceiving,weekdayOfEntry,timeOfCollection,timeOfReceiving,timeOfEntry)
+   set returnValue=$listbuild("","","","","","","","","")  
+   set dateOfCollection="",dateOfReceiving="",dateOfEntry=""
+   set weekdayOfCollection="",weekdayOfReceiving="",weekdayOfEntry=""
+   set timeOfCollection="",timeOfReceiving="",timeOfEntry=""
+   try {
+	   set dateOfCollection=$select(+pDateOfCollection>0:pDateOfCollection,+pDateOfReceiving>0:pDateOfReceiving,+pDateOfEntry>0:pDateOfEntry,1:"")
+	   if dateOfCollection>0 set weekdayOfCollection=..GetWeekDay2(dateOfCollection)
+	   	   
+	   set dateOfReceiving=$select(+pDateOfReceiving>0:pDateOfReceiving,+pDateOfEntry>0:pDateOfEntry,1:"")
+	   if dateOfReceiving>0 set weekdayOfReceiving=..GetWeekDay2(dateOfReceiving)
+	   
+	   set dateOfEntry=$select(+pDateOfEntry>0:pDateOfEntry,1:"")
+	   if dateOfEntry>0 set weekdayOfEntry=..GetWeekDay2(dateOfEntry)
+	   
+	   if (+pTimeOfCollection>0) {
+		   set timeOfCollection=pTimeOfCollection
+	   } else {
+		   if dateOfCollection'="" {
+			   if ((+pTimeOfReceiving>0)&&(dateOfCollection=dateOfReceiving)) {
+		           set timeOfCollection=pTimeOfReceiving
+	           } elseif ((pTimeOfEntry>0)&&(dateOfCollection=dateOfEntry)) {
+		           set timeOfCollection=pTimeOfEntry
+	           }
+	       }
+	   }
+
+	   if (+pTimeOfReceiving>0) {
+		   set timeOfReceiving=pTimeOfReceiving
+	   } else {
+		   if dateOfReceiving'="" {
+	           if ((pTimeOfEntry>0)&&(dateOfReceiving=dateOfEntry)) {
+		           set timeOfReceiving=pTimeOfEntry
+	           }
+	       }
+	   }
+
+       if (+pTimeOfEntry>0) {
+		   set timeOfEntry=pTimeOfEntry
+	   }
+	   
+	   set returnValue=$listbuild(dateOfCollection,dateOfReceiving,dateOfEntry,weekdayOfCollection,weekdayOfReceiving,weekdayOfEntry,timeOfCollection,timeOfReceiving,timeOfEntry)
+	   
+   } catch(e) {
+	    do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME()_".GetAllDateEpisode("_$get(pDateOfCollection)_","_$get(pDateOfReceiving)_","_$get(pDateOfEntry)_")")   
+   }
+   quit returnValue
+]]></Implementation>
+</Method>
+
+<Method name="GetWeekDay2">
+<Description>
+Получить код дня недели в такой кодировке (1-понедельник, 2-вторник, 3-среда, 4-четверг, 5-пятница, 6-суббота, 7-воскресенье)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDate:%String=""</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	set returnValue=""
+	if pDate>0 {
+		set returnValue=$zdate(pDate,10)
+		if returnValue=0 set returnValue=7
+	}
+	quit returnValue
+]]></Implementation>
+</Method>
+
+<Method name="GetAllDateTestSet">
+<Description>
+Получить список со всеми датами и временами (время) на уровне набора тестов + ТАТ
+output: $listbuild(DateOfCollection, DateOfReceiving, DateOfCreation, timeOfCollection,timeOfReceiving,timeOfCreation,TAT) 
+(дата забора материала для этого набора тестов, дата поступления материала в лабораторию для этого НТ, дата регистрации НТ,время забора материала для этого набора тестов, время поступления материала в лабораторию для этого НТ, время регистрации НТ,Turn Around Time)
+время в минутах</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pId:%String,pDateOfCollection:%String="",pTimeOfCollection:%String="",pDateOfReceiving:%String="",pTimeOfReceiving:%String="",pDateOfCreation:%String="",pTimeOfCreation:%String="",pDateOfAuthorisation:%String="",pTimeOfAuthorisation:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+   set returnValue=$listbuild("","","","","","","")  
+   set dateOfCollection="",dateOfReceiving="",dateOfCreation=""
+   set weekdayOfCollection="",weekdayOfReceiving="",weekdayOfCreation=""
+   set timeOfCollection="",timeOfReceiving="",timeOfCreation=""
+   set TAT=""
+   try {
+	   set rec=""
+	   set dateOfCollectionEpis="",dateOfReceivingEpis="",dateOfEntryEpis=""
+	   set timeOfCollectionEpis="",timeOfReceivingEpis="",timeOfEntryEpis=""
+	   set episode=$piece(pId,"||",1)
+	   
+	   // dateOfCollection 
+	   if +pDateOfCollection>0 {
+		   set dateOfCollection=pDateOfCollection
+	   } else {
+		   if rec="" set rec=$get(^TEPI(episode))
+		   if dateOfCollectionEpis="" set dateOfCollectionEpis=+$piece(rec,"\",10)
+		   if dateOfCollectionEpis>0 set dateOfCollection=dateOfCollectionEpis
+		   if dateOfCollection="" {
+			   if dateOfReceivingEpis="" set dateOfReceivingEpis=+$piece(rec,"\",32)
+			   if dateOfReceivingEpis>0 set dateOfCollection=dateOfReceivingEpis
+		   }
+		   if dateOfCollection="" {
+			   if dateOfEntryEpis="" set dateOfEntryEpis=+$piece(rec,"\",8)
+			   if dateOfEntryEpis>0 set dateOfCollection=dateOfEntryEpis
+		   }
+	   }
+
+	   // dateOfReceiving 
+	   if +pDateOfReceiving>0 {
+		   set dateOfReceiving=pDateOfReceiving
+	   } else {
+		   if rec="" set rec=$get(^TEPI(episode))
+		   if dateOfReceivingEpis="" set dateOfReceivingEpis=+$piece(rec,"\",32)
+		   if dateOfReceivingEpis>0 set dateOfReceiving=dateOfReceivingEpis
+		   if dateOfReceiving="" {
+			   if dateOfEntryEpis="" set dateOfEntryEpis=+$piece(rec,"\",8)
+			   if dateOfEntryEpis>0 set dateOfReceiving=dateOfEntryEpis
+		   }
+	   }
+
+	   // dateOfCreation
+	   if +pDateOfCreation>0 {
+		   set dateOfCreation=pDateOfCreation
+	   } else {
+		   if rec="" set rec=$get(^TEPI(episode))
+		   if dateOfEntryEpis="" set dateOfEntryEpis=+$piece(rec,"\",8)
+		   if dateOfEntryEpis>0 set dateOfCreation=dateOfEntryEpis
+	   }
+	   
+	   // timeOfCollection
+	   if (+pTimeOfCollection>0) {
+		   set timeOfCollection=pTimeOfCollection
+	   } else {
+		   // Сначала смотрим на время забора на уровне эпизода (если даты одинаковые)
+		   if timeOfCollection="" {
+		       if rec="" set rec=$get(^TEPI(episode))
+		       if dateOfCollectionEpis="" set dateOfCollectionEpis=+$piece(rec,"\",10)
+		       if timeOfCollectionEpis="" set timeOfCollectionEpis=+$piece(rec,"\",11)
+		       if ((timeOfCollectionEpis>0)&&(dateOfCollection=dateOfCollectionEpis)) {
+			       set timeOfCollection=timeOfCollectionEpis
+		       }
+	       }
+           // затем смотрим на время получения пробирки на уровне НТ, потом на время создания НТ (если даты одинаковые)
+		   if (timeOfCollection="")&&(dateOfCollection'="") {
+			   if ((+pTimeOfReceiving>0)&&(dateOfCollection=dateOfReceiving)) {
+		           set timeOfCollection=pTimeOfReceiving
+	           } elseif ((pTimeOfCreation>0)&&(dateOfCollection=dateOfCreation)) {
+		           set timeOfCollection=pTimeOfCreation
+	           }
+	       
+	           // затем смотрим на время получения пробирки на уровне эпизода
+	           if timeOfCollection="" {
+		           if rec="" set rec=$get(^TEPI(episode))
+		           if dateOfReceivingEpis="" set dateOfReceivingEpis=+$piece(rec,"\",32)
+		           if timeOfReceivingEpis="" set timeOfReceivingEpis=+$piece(rec,"\",33)
+		           if ((timeOfReceivingEpis>0)&&(dateOfCollection=dateOfReceivingEpis)) {
+			           set timeOfCollection=timeOfReceivingEpis
+		           }
+	           }
+	           // затем смотрим на время регистрации эпизода
+	           if timeOfCollection="" {
+		           if rec="" set rec=$get(^TEPI(episode))
+		           if dateOfEntryEpis="" set dateOfEntryEpis=+$piece(rec,"\",8)
+		           if timeOfEntryEpis="" set timeOfEntryEpis=+$piece(rec,"\",9)
+		           if ((timeOfEntryEpis>0)&&(dateOfCollection=dateOfEntryEpis)) {
+			           set timeOfCollection=timeOfEntryEpis
+		           }
+	           }
+		   }
+	   }
+
+	   // timeOfReceiving
+	   if (+pTimeOfReceiving>0) {
+		   set timeOfReceiving=pTimeOfReceiving
+	   } else {
+		   // Сначала смотрим на время получения пробирки на уровне эпизода (если даты одинаковые)
+		   if timeOfReceiving="" {
+		       if rec="" set rec=$get(^TEPI(episode))
+		       if dateOfReceivingEpis="" set dateOfReceivingEpis=+$piece(rec,"\",32)
+		       if timeOfReceivingEpis="" set timeOfReceivingEpis=+$piece(rec,"\",33)
+		       if ((timeOfReceivingEpis>0)&&(dateOfReceiving=dateOfReceivingEpis)) {
+			           set timeOfReceiving=timeOfReceivingEpis
+		           }
+	       }
+           // затем смотрим на на время создания НТ (если даты одинаковые)
+		   if (timeOfReceiving="")&&(dateOfReceiving'="") {
+	           if ((pTimeOfCreation>0)&&(dateOfReceiving=dateOfCreation)) {
+		           set timeOfReceiving=pTimeOfCreation
+	           }
+	       
+	           // затем смотрим на время регистрации эпизода
+	           if timeOfReceiving="" {
+		           if rec="" set rec=$get(^TEPI(episode))
+		           if dateOfEntryEpis="" set dateOfEntryEpis=+$piece(rec,"\",8)
+		           if timeOfEntryEpis="" set timeOfEntryEpis=+$piece(rec,"\",9)
+		           if ((timeOfEntryEpis>0)&&(dateOfReceiving=dateOfEntryEpis)) {
+			           set timeOfReceiving=timeOfEntryEpis
+		           }
+	           }
+		   }
+	   }
+	   
+	   // timeOfCreation
+	   if (+pTimeOfCreation>0) {
+		   set timeOfCreation=pTimeOfCreation
+	   } else {
+		   // Сначала смотрим на время регистрации эпизода на уровне эпизода (если даты одинаковые)
+		       if rec="" set rec=$get(^TEPI(episode))
+		       if dateOfEntryEpis="" set dateOfEntryEpis=+$piece(rec,"\",8)
+		       if timeOfEntryEpis="" set timeOfEntryEpis=+$piece(rec,"\",9)
+		       if ((timeOfEntryEpis>0)&&(dateOfCreation=dateOfEntryEpis)) {
+			        set timeOfCreation=timeOfEntryEpis
+		       }
+	   }
+
+       set TAT=..GetTAT(pId,pDateOfAuthorisation,pTimeOfAuthorisation,dateOfCollection,timeOfCollection,dateOfReceiving,timeOfReceiving,dateOfCreation,timeOfCreation) 
+       
+       set returnValue=$listbuild(dateOfCollection,dateOfReceiving,dateOfCreation,timeOfCollection,timeOfReceiving,timeOfCreation,TAT)
+	   
+   } catch(e) {
+	    do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME()_".GetAllDateEpisode("_$get(pDateOfCollection)_","_$get(pDateOfReceiving)_","_$get(pDateOfCreation)_")")   
+   }
+   quit returnValue
 ]]></Implementation>
 </Method>
 </Class>
