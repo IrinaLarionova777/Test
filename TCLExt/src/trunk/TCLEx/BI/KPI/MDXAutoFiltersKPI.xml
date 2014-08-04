@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.BI.KPI.MDXAutoFiltersKPI">
+<Description><![CDATA[
+Use this superclass to create an MDX-based KPI that automatically 
+adds a %FILTER clause to your MDX query. The %FILTER clause includes
+any selections in any filters that use levels from the appropriate cube.
+<p>To use this superclass:
+<ul>
+<li>Specify sourceType="mdx" in &lt;kpi>.</li>
+<li>Specify a query within the mdx attribute of &lt;kpi></li>
+<li>Specify the CUBE parameter so that we can automatically fetch the members
+of the levels for use as filters.</li>
+Instead, all levels of the associated cube are automatically available as filters.
+</ul>
+<p>Or, if you want more control over the form of the query, override %OnGetMDX() as usual
+and include the following line after creating your basic MDX query:
+<p>set pMDX=pMDX_..FilterBuilder()
+<p>This method gets the current filter state, creates the %FILTER clause, 
+and tacks it on to the end of your query.
+<p>If you want more control over the members of one or more filters, override 
+%OnGetFilterMembers() as usual. To get all the members for a given level/filter, 
+use this: 
+<p>set sc=..%GetMembersForFilter(..#CUBE,pFilter,.pMembers)
+<p>And then do something different as needed in other scenarios.
+<p>To add additional filters (to be used in a different way):
+<ul>
+<li>Within &lt;kpi>, declare the filters that you want to make available. 
+The logical name for each filter must be of the form of an MDX level specifier, e.g.,
+[dimension].[hierarchy].[level]. This is needed so that we can retrieve the 
+level members.</li>
+<li>Override %OnGetFilters(). In your implementation, get the filters from the 
+cube by calling #super() and then add your custom filters to the array.</li>
+</ul>]]></Description>
+<Abstract>1</Abstract>
+<Super>%DeepSee.KPI</Super>
+<TimeCreated>62557,53139.853805</TimeCreated>
+
+<Parameter name="CUBE">
+<Description>
+Specifies the cube that this KPI uses. Specify the logical cube name.</Description>
+<Type>%String</Type>
+</Parameter>
+
+<Method name="%OnGetFilterMembers">
+<Description>
+Implementation; can be overridden.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFilter:%String,*pMembers:%List,pSearchKey:%String="",pDataSourceName:%String=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    set sc=..%GetMembersForFilter(..#CUBE_".cube",pFilter,.pMembers)
+	Quit sc
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetMDX">
+<Description>
+Implementation; can be overridden.</Description>
+<FormalSpec><![CDATA[&pMDX:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+     set pMDX=pMDX_..FilterBuilder()
+     quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="FilterBuilder">
+<Description>
+Examines the filters defined in the cube, determines the current value of each, 
+returns a string that can be used as the %FILTER clause.</Description>
+<Private>1</Private>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+ 	set tFilters=""
+ 	set tSC = ##class(%DeepSee.Dashboard.Utils).%GetFiltersForDataSource(..#CUBE_".cube",.tFilters)
+	quit:$$$ISERR(tSC) ""
+   
+    //iterate through defined filters and build up usedFilters array
+	set i = "",usedFilters=0
+	for {
+		set i = $order(tFilters(i))
+		quit:i=""
+
+	    set filter=tFilters(i)
+	   	set filterName=$LI(filter,2)
+		set filterValue=$PROPERTY(..%filterValues,filterName)
+
+		if filterValue'="" { 
+		    set usedFilters=usedFilters+1
+			do ..ParseFilterValue(filterValue,.FilterStateArray)
+			// create usedFilters array
+	    	//used FilterStateArray and build the string for this filter
+	    	set string=..BuildString(filterName,.FilterStateArray)
+	    	set usedFilters(usedFilters)=string
+	    } ; end of looking at non-null filters
+
+    } ; end of looking at defined filters
+    
+    set where=""
+    if usedFilters>=1 {
+       set where=..CombineFilterStrings(.usedFilters)
+    }
+    quit where
+]]></Implementation>
+</Method>
+
+<Method name="CombineFilterStrings">
+<Description>
+Uses usedFilters array and returns a string that can be used
+as the %FILTER clause of a MDX query.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&usedFilters]]></FormalSpec>
+<Private>1</Private>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+    set where=""
+	if (usedFilters=1) {
+	    set where=" %FILTER "_usedFilters(1)
+   } elseif (usedFilters>1) {
+	    set where=usedFilters(1)
+		for i=2:1:usedFilters {
+			set where="NONEMPTYCROSSJOIN("_usedFilters(i)_","_where_")"
+	  	}
+	  	set where=" %FILTER "_where
+    }
+    quit where
+]]></Implementation>
+</Method>
+
+<Method name="ParseFilterValue">
+<Description>
+Given a filter value, returns, by reference, a FilterStateArray, 
+which describes the filter state.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>filterValue:%String,*FilterStateArray</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    //initialize this node 
+    kill FilterStateArray  
+    set FilterStateArray("not")=0
+    
+	Set filterValue = $ZSTRIP(filterValue,"<>W")
+	set firstbit=$EXTRACT(filterValue,1,4)
+	if firstbit="%NOT" {
+		set FilterStateArray("not")=1
+		set filterValue=$EXTRACT(filterValue,6,*)
+	}
+
+    //now check if we have a set
+    set nextbit=$EXTRACT(filterValue)
+    if nextbit="{" {
+	    //take off { from the start and } from the end
+	    set filterValue=$EXTRACT(filterValue,2,*-1)
+        
+		//parse the list of values the same way that Joe does
+		Set valueCount=..%SplitList(filterValue,.tList)
+		set FilterStateArray=valueCount
+		for i=1:1:valueCount {
+			set FilterStateArray(i)=tList(i)
+			}
+	    
+	} else {
+		//list has only 1 item; put it into the array
+		set FilterStateArray=1
+		set FilterStateArray(1)=filterValue
+	}
+
+	quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="BuildString">
+<Description>
+Given a filter name and a FilterStateArray, 
+returns a string that can be used as an MDX set.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[filterName,&FilterStateArray]]></FormalSpec>
+<Private>1</Private>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+    if (FilterStateArray = 1) {
+	    set string=filterName_"."_FilterStateArray(1)
+        if (FilterStateArray("not")=1) {
+	       set string=string_".%NOT"
+	       }
+    } else {
+	    set string="%OR({"
+	    for i=1:1:FilterStateArray{
+		   set string=string_filterName_"."_FilterStateArray(i)_","
+		   } 
+        //remove trailing comma and close set (which is wrapped in %OR)
+        set string=$EXTRACT(string,1,*-1)
+	    set string=string_"})"
+	   
+        //deal with NOT case
+        if FilterStateArray("not")=1 {
+	       set string="EXCEPT("_filterName_".MEMBERS,"_string_")"
+	       }
+	}
+	quit string
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetFilterList">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>*pFilters:%List,pDataSourceName:%String=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+		set tSC = ##class(%DeepSee.Dashboard.Utils).%GetFiltersForDataSource(..#CUBE_".cube",.tFilters)
+		quit:$$$ISERR(tSC)
+		
+		set i = ""
+		for {
+			set i = $order(tFilters(i), 1, data)
+			quit:i=""
+			
+			set pFilters($i(pFilters)) = $lb($lg(data,2), $lg(data,1),,1)
+		}
+        Quit $$$OK
+]]></Implementation>
+</Method>
+</Class>
+</Export>
