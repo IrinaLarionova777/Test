@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTCLNRUS61" type="INT" languagemode="0"><![CDATA[
+PRTCLNRUS61   ; Статистическая медиана значения теста по пациентам за день на приборе (Бурденко) (Бельгийский проект КК)
+ q
+ ;
+ ; Отчет CLNRUS61  +  CLNRUS61.xsl  + DLL: ReportVB.clsStart
+ ; 
+ ; Используется сервисная программа  ^REPORTSPB
+ ;==================================================================================================================
+ ; Формирование VB-формы для отчета (задаем входные параметры для формирования отчета)
+ ; Возвращает:   имя массива  
+FORM(USER) new (USER) s USER=$G(USER) 
+ S Par="^TEMP($J)" k @Par             
+ ; период дат
+ s @Par@("PAR1a")="Label   : 100 : 200 : 1000 : 300 : Дата от:"
+ s @Par@("PAR1")="DateText: 1300: 200 : 1100 : 300 : t :True"
+ s @Par@("PAR2a")="Label   : 3000: 200 : 1000 : 300 : Дата до:"
+ s @Par@("PAR2")="DateText: 4100: 200 : 1100 : 300 : t:True"
+ ; ---
+ ; список отделов
+ s @Par@("PAR3a")="Label   : 100 : 650 : 1000 : 300 : Отдел:"
+ s default=$$ListDep^UDFSPARM001($G(USER),"VB","PAR3")
+ if $data(@Par@("PAR3")) set @Par@("PAR3",0)="Все отделы"
+ s @Par@("PAR3")="ListBox: 100 : 900 : 6000 : 2000 : :True: 0 : Checkbox  "
+ ; ---
+  ; список Местоположений пациентов (CT_Hospital)
+ s @Par@("PAR4a")="Label   : 100 : 2900 : 6000 : 300 : Местоположение пациента:"
+ s code="",cnt=0 for {
+	  set code=$O(^TTAB("RH",code),1,rec) if code="" quit
+	  if (code'=$C(1))&&($piece(rec,"\",22)="Y") {
+		  set @Par@("PAR4",code)=$piece(rec,"\",1) 
+		  set cnt=cnt+1
+	  }
+ }
+ if cnt>1 s @Par@("PAR4","0")="* Все местоположения"
+ s default=$S(cnt>1:0,1:$O(@Par@("PAR4","")))
+ s @Par@("PAR4")="ListBox: 100 : 3150 : 6000 : 2000 : :True: 0 : Checkbox  "
+ ; ---
+ ; список приборов
+ s @Par@("PAR5a")="Label   : 100 : 5150 : 1000 : 300 : Анализатор:"
+ set default="0"
+ s @Par@("PAR5")="ListBox :  100 : 5400 : 6000 : 2000 : :True: 0 : Checkbox  " 
+ set id=""
+ for {
+	 set id=$order(^TMIF(id),1,record) if id="" quit
+	 set name=$piece(record,"\",1)
+	 ;set @Par@("PAR5",name_$char(4)_id)=name
+	 set @Par@("PAR5",id)=name
+ }
+ if $data(@Par@("PAR5")) set @Par@("PAR5",0)="Все анализаторы"
+ /*
+ ; Биоматериала
+ s @Par@("PAR6a")="Label   : 100 : 7350 : 3000 : 300 : Биоматериал:"
+ set default="SE" // сыворотка
+ s @Par@("PAR6")="ComboBox :  100 : 7600 : 6000 : 300 : :True: "_default_" :List" ;Standart 
+ set id=""
+ for {
+	 set id=$order(^TTAB("SPEC",id),1,record) if id="" quit
+	 set name=$piece(record,"\",1)
+	 ;set @Par@("PAR5",name_$char(4)_id)=name
+	 set @Par@("PAR6",id)=name
+ }
+ ; ---
+ */
+ ; настройка формы
+ s @Par@("form")="Контроль качества - медиана по пациентам ("_USER_"):500:300:Формиров.:Выход"
+ q "^TEMP("_$J_")" 
+ ;==================================================================================================================
+START(USER,PAR) n (USER,PAR)  s USER=$G(USER),PAR=$G(PAR) 
+ i $G(PAR)="" q "100^нет входных параметров!"    ;при выходе из DLL была нажата кнопка Отмена
+ ;
+ ;k ^zz  ;m ^zz("FORM")=^TEMP($j) s ^zz="$j="_$j_" ; $h="_$h   s ^zz("PAR")=PAR  ;@@@
+ ; сохраняем для обработки входных данных (списка наборов тестов)
+ k MasForm m MasForm=^TEMP($j) 
+ k ^TEMP($J)
+ s Mas="^TEMP($J,""START"")"
+ s MSGERROR=""            
+ set sc=$$INIT() 
+ if 'sc {
+	 k ^TEMP($zn,$J),^TEMP($j)
+	 s MSGERROR="100^"_$System.Status.GetErrorText(sc) 
+	 quit MSGERROR
+ }
+ set sc=$$BODY() 
+ if 'sc {
+	 k ^TEMP($zn,$J),^TEMP($j)
+	 quit "100^"_$System.Status.GetErrorText(sc) 
+ }
+ 
+ if '$D(^||data("res")) quit "100^Нет данных!"
+ 
+ set glxml=$name(^TEMP($J,"XML"))
+ set sc=$$XML(glxml)
+ if 'sc {
+	 k ^TEMP($zn,$J),^TEMP($j)
+	 quit "100^"_$System.Status.GetErrorText(sc) 
+ }
+ S MSGERROR=$$WriteFileLabTrakClient^REPORTSPB(glxml,"CLNRUS61.xsl",USER,$get(PAR))
+ 
+ k ^TEMP($zn,$J),^TEMP($j)
+ q $G(MSGERROR)  ;код^сообщение (об ошибке) для возврата в DLL^имя файла^имя проги для открытия файла
+ 
+INIT() ; инициализация входных параметров
+ set ok=1
+ try {
+	 New mas,str,i,j
+     d PARAM^REPORTSPB(PAR,"mas")
+     s j="" f  s j=$O(mas(j)) q:j=""  s @j=$g(mas(j))
+     ; период дат
+     if $G(PAR1)="" set ok=$$Error^%apiOBJ(5001,"Не определено значение <Дата от>") quit
+     if $G(PAR2)="" set ok=$$Error^%apiOBJ(5001,"Не определено значение <Дата до>") quit
+     if PAR1>PAR2 set ok=$$Error^%apiOBJ(5001,"Значение <Дата от> больше значения <Дата до>") quit
+     set dateFrom=PAR1,dateTo=PAR2
+     
+     ; Отделы
+     if $G(PAR3)="" set ok=$$Error^%apiOBJ(5001,"Не определено значение <Отдел>") quit
+     ; ---
+     kill Departments
+     for i=1:1:$length(PAR3,$char(1)) {
+	    set dep=$piece(PAR3,$char(1),i)
+	    if dep=0 set Departments=1 quit
+	    if dep'="" set Departments(dep)=""
+     }
+     
+     ; Местоположения пациента
+     if $G(PAR4)="" set ok=$$Error^%apiOBJ(5001,"Не определено значение <Местоположение пациента>") quit
+     ; ---
+     kill Hospitals
+     for i=1:1:$length(PAR4,$char(1)) {
+	    set hosp=$piece(PAR4,$char(1),i)
+	    if hosp=0 set Hospitals=1 quit
+	    if hosp'="" set Hospitals(hosp)=""
+     }    
+     
+     ; Анализаторы
+     if $G(PAR5)="" set ok=$$Error^%apiOBJ(5001,"Не определено значение <Анализатор>") quit
+     ; ---
+     kill Analyzers
+     for i=1:1:$length(PAR5,$char(1)) {
+	    set analyzer=$piece(PAR5,$char(1),i)
+	    if analyzer=0 set Analyzers=1 quit
+	    if analyzer'="" set Analyzers(analyzer)=""
+     }
+     /*
+     ; Биоматериал
+     if $G(PAR6)="" set ok=$$Error^%apiOBJ(5001,"Не определено значение <Биоматериал>") quit
+     set Specimen=$piece(PAR6,$char(1),1)
+     if $G(Specimen)'="SE" set ok=$$Error^%apiOBJ(5001,"Пока можно выбирать только Биометериал=Сыворотка") quit
+     ; ---
+     */
+ } catch(e) { set ok=e.AsStatus() }
+ quit ok
+ 
+BODY()
+ set ok=1
+ try {
+	 kill ^||data
+	 set Analyzers=+$get(Analyzers)
+	 set date=dateFrom-1 
+     for {
+	     set date=$order(^TDAY(4,date)) quit:date=""  quit:date>dateTo  
+	     set epis="" 
+	     for {
+		     set epis=$order(^TDAY(4,date,0,epis)) quit:epis=""  if '$Data(^TEPI(epis)) continue
+		     set rec=$get(^TEPI(epis))
+		     //set patientcode=$piece(rec,"\",18)
+		     //if patientcode="" set patientcode=$piece(rec,"\",1)_$c(1)_$piece(rec,"\",2)_$c(1)_$piece($get(^TEPI(epis,0)),"\",23)_$c(1)_$piece(rec,"\",4)
+             set hospital=$piece(rec,"\",20)
+             if (Hospitals'=1)&&((hospital="")||('$data(Hospitals(hospital)))) continue
+             
+             set ts=""
+             for {
+	             set ts=$o(^TEPI(epis,1,ts)) quit:ts="" 
+	             set dep=$extract(ts,1) 
+	             set specimen="" //##class(TCLEx.Function.TestSet).DefaultSpecimen(ts)
+	             //if specimen'=Specimen continue
+	             set tscnt="",cnt=0 
+                 for {
+	                 set tscnt=$o(^TEPI(epis,1,ts,tscnt),1,rects) quit:tscnt=""  
+	                 set superset=$piece(rects,"\",29)
+	                 if superset'="" set dep=$extract(superset,1)
+	                 if (Departments'=1)&&((dep="")||('$data(Departments(dep)))) continue
+	                 set test=""
+	                 for {
+		                 set test=$order(^TEPI(epis,1,ts,tscnt,"DATA",test),1,recdata) if test="" quit
+		                 set analyzer=$piece(recdata,"\",6) if analyzer="" continue
+	                     if (Analyzers'=1)&&('$data(Analyzers(analyzer))) continue		                 
+		                 set res=$piece(recdata,"\",1)
+		                 set group=date_$c(1)_analyzer_$c(1)_specimen_$c(1)_test
+		                 set npp=$i(^||data("res",group))
+	                     set ^||data("res",group,npp)=res	
+	                     set ^||data("sort",group,res,npp)=""                 
+
+	                 }
+                 }
+             }
+	     }
+     }
+     ; calculate totals	
+     set group=""
+     for {
+	     set group=$order(^||data("res",group)) if group="" quit
+	     set test=$piece(group,$c(1),4)
+	     set format=$piece($get(^TTAB("TC",test)),"\",3) 
+	     if $extract(format,1)'="N" {
+		     kill ^||data("res",group)
+		     continue
+	     }
+	     set precision=+$extract(format,2,*)
+	     set npp="",count=0
+	     for {
+		     set npp=$order(^||data("res",group,npp),1,res) if npp="" quit 
+		     set count=count+1
+	     }
+         ; calculate median
+         set median=""
+         set parity=count#2
+         set count0=count\2,count1=(count+1)\2,count2=(count+2)\2 // for calculation median
+
+         set res="",cnt=0,stop=0
+         for {
+	        set res=$order(^||data("sort",group,res)) if (res="")||(stop=1) quit
+            set npp=""
+            for {
+               set npp=$order(^||data("sort",group,res,npp)) if npp="" quit 
+	           set cnt=cnt+1
+		       if parity'=0,count1=cnt set stop=1,median=res quit
+		       if parity=0,count0=cnt set median=res
+		       if parity=0,count2=cnt set stop=1,median=(median+res)/2 quit 
+	        }
+	        if stop=1 quit
+         }
+         
+         //set $piece(^||data("res",group),$char(0),2,7)=$j(median,0,precision)_$c(0)_count_$c(0)_count0_$c(0)_count1_$c(0)_count2_$c(0)_parity
+         set $piece(^||data("res",group),$char(0),2)=$j(median,0,precision+1)
+     }
+     //kill ^zz1 M ^zz1=^||data
+     
+ } catch(exception) {
+	 set ok=exception.AsStatus()
+ }
+
+ quit ok
+ ;------------------------------------------------
+XML(MasO)  ; обработка данных...
+ ; Формирование XML...
+ set ok=1
+ try {
+   set codeEnglish=2
+   set NameOrg=$p(^CF("SM",1),"^",6)
+   if NameOrg="" set NameOrg="NSI Moscow"
+   set decimalSymbol=##class(TCLEx.Report.Function).GerDecimalPoint()
+   set group="",nn=0
+   for {
+	 set group=$order(^||data("res",group),1,rec) if group="" quit
+	 //set group=date_$c(1)_analyzer_$c(1)_specimen_$c(1)_test
+	 set date=$piece(group,$c(1),1)
+	 set analyzer=$piece(group,$c(1),2)
+	 set specimen=$piece(group,$c(1),3)
+	 set test=$piece(group,$c(1),4)
+	 set date=$zdate(date,4)
+	 set analyzername=$piece($get(^TMIF(analyzer)),"\",1)
+	 set specimencode="OUT" //$select(specimen="SE":"E",1:"")
+	 set receng=$get(^TTAB("TC",test,"LAN",codeEnglish))
+	 set testname=$piece(receng,"\",1)
+	 if testname="" set testname=$piece($get(^TTAB("TC",test)),"\",1)
+	 set units=$piece(receng,"\",2)
+	 if units="" set units=$tr($piece($get(^TTAB("TC",test)),"\",2),$c(16),"^")
+	 set nn=nn+1
+     set @MasO@("User",1,"Group",nn,"NameOrg")=NameOrg 
+     set @MasO@("User",1,"Group",nn,"Date")=date
+     set @MasO@("User",1,"Group",nn,"Analyzer")=analyzername 
+     set @MasO@("User",1,"Group",nn,"Specimen")=specimencode
+     set @MasO@("User",1,"Group",nn,"Test")=testname 
+     set @MasO@("User",1,"Group",nn,"Units")=units 
+     set @MasO@("User",1,"Group",nn,"Median")=##class(TCLEx.Report.Function).TransValueForExcel($piece(rec,$c(0),2),decimalSymbol)
+   }
+   ;
+   ; шапка
+   //s @MasO@("User",1,"NameReport")="Контроль качества : медиана по пациентам"
+   //S @MasO@("User",1,"DateFrom")=$TR($$extdate2^SSUTIL4(dateFrom),"/",".")
+   //S @MasO@("User",1,"DateTo")=$TR($$extdate2^SSUTIL4(dateTo),"/",".")
+   //S @MasO@("User",1,"Footer")=$$Footer^UDFSPARM001($G(USER))     ; подвал: "дата/время печати + пользователь"
+   ;
+   //kill ^zz M ^zz=@MasO     ;@@@
+ } catch(e) { set ok=e.AsStatus() }
+ quit ok
+
+]]></Routine>
+</Export>
