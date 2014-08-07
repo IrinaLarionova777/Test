@@ -1,0 +1,357 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2014.1.1 (Build 702U)" ts="2014-08-07 17:37:34">
+<Class name="%DeepSee.PlugIn.AverageDay">
+<Description>
+This Analytic plug-in computes the AVGDAY on a given measure for a given cube.</Description>
+<Super>%DeepSee.KPIPlugIn</Super>
+<System>4</System>
+<TimeChanged>63401,43981.986986</TimeChanged>
+<TimeCreated>62376,66990.849548</TimeCreated>
+
+<Parameter name="BASECUBE">
+<Description>
+Cube(s) that this plug-in is based on.</Description>
+<Default>*</Default>
+</Parameter>
+
+<Parameter name="LISTINGSOURCE">
+<Default>FactTable</Default>
+</Parameter>
+
+<Parameter name="PLUGINTYPE">
+<Default>Pivot</Default>
+</Parameter>
+
+<XData name="KPI">
+<XMLNamespace>http://www.intersystems.com/deepsee/kpi</XMLNamespace>
+<Data><![CDATA[
+<kpi name="%DeepSee.AverageDay" displayName="Average Day" caption="Average Day" >
+
+<filter name="%cube" displayName="Subject Area"/>
+<!-- Measure, которое будем усреднять по календарному кол-ву дней  -->
+<filter name="%measure" displayName="Measure"/>
+<!-- Указать по какому dimention типа time надо рассчитывать среднее (не по фактическому кол-ву дне, а по календарному кол-ву дней) -->
+<filter name="%dimension" displayName="Dimension"/>
+
+<filter name="%CONTEXT" displayName="Context"/>
+
+<!-- %typeCalc=1 - всегда брать весь календарный месяц, если хоть один день из него попал в расчет -->
+<!-- %typeCalc=0 - брать кол-во календарных дней с минимальной даты по максимальную -->
+<!-- <filter name="%typeCalc" displayName="Type Of Calculation" defaultValue="1" />-->
+
+<property name="AVGDAY" displayName="Average for Day" description="Compute the average for day" />
+
+</kpi>
+]]></Data>
+</XData>
+
+<Method name="%OnGetMDX">
+<Description>
+Get the base query for this plug-in.</Description>
+<FormalSpec><![CDATA[&pMDX:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tBaseCube = ""
+
+	// Use %cube filter to find the base cube
+	If $IsObject(..%filterValues) {
+		If (..%filterValues.%cube'="") {
+			Set tBaseCube = ..%filterValues.%cube
+		}
+	}
+    s ^test("ds","QueryKey")=..%QueryKey
+	If (tBaseCube'="") {
+		Set pMDX = "SELECT FROM "_tBaseCube
+	}
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetListingFields">
+<Description>
+Returns the field list (RETURN clause) of the listing used to supply data for this plug-in.
+In this case, determine which measure we need.</Description>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+
+	// JMD1124 return error by default
+	Set tListingFields = ""
+	If $IsObject(..%filterValues) {
+		Set tMeasure = ..%filterValues.%measure
+		Set tDimension = ..%filterValues.%dimension
+		if tMeasure'="" {
+			if tMeasure="%COUNT" {
+				set tListingFields = "COUNT(ID) Measure"
+			} else {
+				Set tListingFields = "SUM("_tMeasure_") Measure"
+			}
+		}
+		if tDimension'="" {
+			Set tListingFields = tListingFields_$select(tListingFields'="":", ",1:"")_"MAX("_tDimension_") DimensionMax, MIN("_tDimension_") DimensionMin "
+		}
+	
+	}
+	if tListingFields="" set tListingFields="ERROR"
+	s ^test("ds",66,$i(^test("ds",66)))=tListingFields
+	Quit tListingFields
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetListingFieldsOld">
+<Description>
+Returns the field list (RETURN clause) of the listing used to supply data for this plug-in.
+In this case, determine which measure we need.</Description>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	/*
+	Set tBaseCube = ..#BASECUBE
+	If $IsObject(..%filterValues) {
+		If (..%filterValues.%cube'="") {
+			Set tBaseCube = ..%filterValues.%cube
+		}
+	}*/
+
+	// JMD1124 return error by default
+	Set tListingFields = ""
+	If $IsObject(..%filterValues) {
+		Set tMeasure = ..%filterValues.%measure
+		Set tDimension = ..%filterValues.%dimension
+		if tMeasure'="" Set tListingFields = tMeasure _ " Measure"
+		if tDimension'="" Set tListingFields = tListingFields_$select(tListingFields'="":", ",1:"")_tDimension_" Dimension"
+	
+		/*
+		If (..%filterValues.%measure'="") {
+			Set tMeasure = ..%filterValues.%measure
+			Set tDimension = ..%filterValues.%dimension
+			// JMD1124 remove []
+			Set:$E(tMeasure)="[" tMeasure = $E(tMeasure,2,*-1)
+			Set:$E(tBaseCube)="[" tBaseCube = $E(tBaseCube,2,*-1)
+			
+			Set tListingFields = "" 
+		
+			// find fact name for measure
+			if tMeasure'="%COUNT" {
+			     Set tSC = ##class(%DeepSee.Utils).%GetDimensionInfo(tBaseCube,"[Measures].["_tMeasure_"]",.tDNO,.tHNO,.tLNO)
+			     If $$$ISOK(tSC) {
+				     Set tSC = ##class(%DeepSee.Utils).%GetDimensionFact(tBaseCube,tDNO,tHNO,0,.tMeasureFact)
+				     If $$$ISOK(tSC) {
+					    If (tMeasureFact'="") {
+						   Set tListingFields = tMeasureFact _ " Measure"
+					    }
+				     }
+			     }
+			} else { Set tListingFields = "%partition  Measure" }
+						
+			if tListingFields'="" {
+			     // find fact name for dimension
+			     Set tSC = ##class(%DeepSee.Utils).%GetDimensionInfo(tBaseCube,tDimension,.tDNO,.tHNO,.tLNO)
+			     If $$$ISOK(tSC) {
+				           //Set tSC = ##class(%DeepSee.Utils).%GetDimensionFact(tBaseCube,tDNO,tHNO,tLNO,.tDimensionFact)
+				           Set tInfo = $G($$$DeepSeeMetaGLVN("cubes",tBaseCube,"mbr#",tDNO,tHNO,tLNO))
+				           set tSC=1
+				           set tDimensionFact=$listget(tInfo,7) //"DxCreationDay"
+				           If $$$ISOK(tSC) {
+					          If (tDimensionFact'="") {
+						         Set tListingFields = tListingFields_", "_tDimensionFact_" Dimension"
+					          }
+				           }
+			     }
+			}
+			if tListingFields="" set tListingFields="'ERROR:No Measure ("_tMeasure_")' Measure"
+        
+		}
+		*/
+	}
+	if tListingFields="" set tListingFields="ERROR"
+	s ^test("ds",66,$i(^test("ds",66)))=tListingFields
+	Quit tListingFields
+]]></Implementation>
+</Method>
+
+<Method name="%OnCompute">
+<Description>
+Compute the average value for calendar days within the result set.</Description>
+<FormalSpec>pSQLRS:%SQL.StatementResult,pFactCount:%Integer</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	set params=pSQLRS.%GetMetadata().columns
+	s ^test("ds",555,$i(^test("ds",555)))=params.Count()
+	for ii=1:1:params.Count() {
+		s ^test("ds",555,$i(^test("ds",555)))=params.GetAt(ii).colName
+	} 
+	Try {
+		Set tTotal = ""
+		Set tErrMsg = ""
+		set min="",max=""
+
+		While (pSQLRS.%Next(.tSC)) {
+			If $$$ISERR(tSC) {
+				Set tErrMsg = $System.Status.GetErrorText(tSC)
+				Quit
+			}
+
+            // величина, которую усредняем
+			Set tTotal = pSQLRS.Measure
+			If ($ZSTRIP($P(tTotal,":"),"<>W")="ERROR") {
+				Set tErrMsg = $P(tTotal,":",2)
+				Quit
+			}
+			
+			// dimension (type=time), минимальная дата
+			set min=pSQLRS.DimensionMin
+			If ($ZSTRIP($P(min,":"),"<>W")="ERROR") {
+				Set tErrMsg = $P(min,":",2)
+				Quit
+			}
+
+			// dimension (type=time), максимальная дата
+			set max=pSQLRS.DimensionMax
+			If ($ZSTRIP($P(max,":"),"<>W")="ERROR") {
+				Set tErrMsg = $P(max,":",2)
+				Quit
+			}
+			
+			quit
+
+		}
+
+		// place answer in KPI output
+		Set ..%seriesCount = 1
+		Set ..%seriesNames(1) = "Total"
+		If (tErrMsg'="") {
+			Set ..%data(1,"AVGDAY") = tErrMsg
+		}
+		ElseIf (tTotal="") {
+			Set ..%data(1,"AVGDAY")=""
+		} Else {
+			Set ..%data(1,"AVGDAY") = ..Average(tTotal,min,max)
+		}
+
+	}
+	Catch(ex) {
+		Set tSC = ex.AsStatus()
+	}
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="%OnComputeOld">
+<Description>
+Compute the average value for calendar days within the result set.</Description>
+<FormalSpec>pSQLRS:%SQL.StatementResult,pFactCount:%Integer</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	Try {
+		Set tTotal = ""
+		Set tCount = 0
+		Set tErrMsg = ""
+		Set n = 0
+		set min=9999999999,max=0
+
+		While (pSQLRS.%Next(.tSC)) {
+			If $$$ISERR(tSC) {
+				Set tErrMsg = $System.Status.GetErrorText(tSC)
+				Quit
+			}
+			Set n = n + 1
+
+            // величина, которую усредняем
+			Set tValue = pSQLRS.Measure
+			If ($ZSTRIP($P(tValue,":"),"<>W")="ERROR") {
+				Set tErrMsg = $P(tValue,":",2)
+				Quit
+			}
+			
+			// dimension (type=time), по которому берем календарные дни 
+			set dimValue=pSQLRS.Dimension
+			If ($ZSTRIP($P(dimValue,":"),"<>W")="ERROR") {
+				Set tErrMsg = $P(dimValue,":",2)
+				Quit
+			}
+			if +dimValue>0 {
+				if dimValue<min { set min=dimValue }
+				if dimValue>max { set max=dimValue }
+			} 
+			
+			If (tValue'="") {
+				Set tTotal = tTotal + tValue
+			}
+
+			// update pct complete
+			If (n#100 = 0) {
+				Do ..%SetPercentComplete(100*(n/pFactCount))
+			}
+		}
+
+		// place answer in KPI output
+		Set ..%seriesCount = 1
+		Set ..%seriesNames(1) = "Total"
+		If (tErrMsg'="") {
+			Set ..%data(1,"AVGDAY") = tErrMsg
+		}
+		ElseIf (tTotal="") {
+			Set ..%data(1,"AVGDAY")=""
+		} Else {
+			Set ..%data(1,"AVGDAY") = ..Average(tTotal,min,max)
+		}
+
+	}
+	Catch(ex) {
+		Set tSC = ex.AsStatus()
+	}
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="Average">
+<Description>
+Find the median value within the temp file.</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pSumma:%Float,pMinDate:%Integer=0,pMaxDate:%Integer=0</FormalSpec>
+<ReturnType>%Float</ReturnType>
+<Implementation><![CDATA[
+	//s ^test("ds",55,$i(^test("ds",55)))=pSumma_"*"_pMinDate_"*"_pMaxDate
+	if (pMinDate>0)&&(pMinDate=pMaxDate) {
+		set monthyear=$extract($zd(pMaxDate,8),1,6)
+		set lastday=..LastDayOfMonth(monthyear)
+		set pMinDate=$zdh(monthyear_"01",8)
+		set pMaxDate=$zdh(monthyear_$tr($j(lastday,2)," ","0"),8) 
+	} else {
+		// если первая дата pMinDate не первое число месяца, то делаем ее первым числом этого месяца
+	    if pMinDate>0 {
+		  set date=$zd(pMinDate,8)
+	      if $e(date,7,8)'="01" {
+		    set pMinDate=$zdh($extract(date,1,6)_"01",8)
+	      }
+	    }
+	    // если последняя дата pMaxDate не последний день месяца, то делаем ее последним днем
+	    if pMaxDate>0 {
+		  set monthyear=$extract($zd(pMaxDate,8),1,6)
+		  set lastday=..LastDayOfMonth(monthyear)
+		  set pMaxDate=$zdh(monthyear_$tr($j(lastday,2)," ","0"),8)
+	    }
+	}
+	set qItems=pMaxDate-pMinDate+1
+	set value=0
+	if qItems>0 set value=pSumma/qItems
+	s ^test("ds",55,$i(^test("ds",55)))=pSumma_"*"_pMinDate_"*"_pMaxDate_" qItems="_qItems_" Value="_value
+	Quit value
+]]></Implementation>
+</Method>
+
+<Method name="LastDayOfMonth">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pYearMonth:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if pYearMonth'="" {
+		set month=+$extract(pYearMonth,5,6)
+		quit $select(month=1:31,month=2:28,month=3:31,month=4:30,month=5:31,month=6:30,month=7:31,month=8:31,month=9:30,month=10:31,month=11:30,month=12:31)
+	}
+	quit ""
+]]></Implementation>
+</Method>
+</Class>
+</Export>

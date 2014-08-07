@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2014.1.1 (Build 702U)" ts="2014-08-07 17:37:58">
+<Class name="%DeepSee.PlugIn.QWeekDay">
+<Description>
+This Analytic plug-in computes the количество календарных дней с указанной DataFrom до указазнной DateTo, соответсвующих дню недели
+в выборке строк таблицы фактов должен быть только один день недели
+Используется в TCLEx.BI.KPI.AvgCountDayReceivingWeekDay (таблица: строки-дни недели, столбцы-среднее кол-во эпизодов за календарный день с dateFrom по dateTo</Description>
+<Super>%DeepSee.KPIPlugIn</Super>
+<TimeChanged>63406,39701.074887</TimeChanged>
+<TimeCreated>63401,59687.951101</TimeCreated>
+
+<Parameter name="BASECUBE">
+<Description>
+Cube(s) that this plug-in is based on.</Description>
+<Default>*</Default>
+</Parameter>
+
+<Parameter name="LISTINGSOURCE">
+<Default>FactTable</Default>
+</Parameter>
+
+<Parameter name="PLUGINTYPE">
+<Default>Pivot</Default>
+</Parameter>
+
+<XData name="KPI">
+<XMLNamespace>http://www.intersystems.com/deepsee/kpi</XMLNamespace>
+<Data><![CDATA[
+<kpi name="%DeepSee.QWeekDay" displayName="Количество календарных дней в периоде, соответсвующих одному дню недели" caption="Количество календарных дней в периоде, соответсвующих одному дню недели" >
+
+<filter name="%cube" displayName="Subject Area"/>
+
+<filter name="DateFrom" displayName="Дата начала день (календарная из фильтра)"/>
+<filter name="DateTo" displayName="Дата окончания день (календарная из фильтра)"/>
+
+<property name="QWeekDay" displayName="Количество календарных дней в периоде, соответсвующих одному дню недели" description="" />
+
+</kpi>
+]]></Data>
+</XData>
+
+<Method name="%OnGetMDX">
+<Description>
+Get the base query for this plug-in.</Description>
+<FormalSpec><![CDATA[&pMDX:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tBaseCube = ""
+
+	// Use %cube filter to find the base cube
+	If $IsObject(..%filterValues) {
+		If (..%filterValues.%cube'="") {
+			Set tBaseCube = ..%filterValues.%cube
+		}
+	}
+	If (tBaseCube'="") {
+		Set pMDX = "SELECT FROM "_tBaseCube
+	}
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="%OnGetListingFields">
+<Description>
+Returns the field list (RETURN clause) of the listing used to supply data for this plug-in.
+In this case, determine which measure we need.</Description>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+
+	// JMD1124 return error by default
+	Set tListingFields = ""
+	If $IsObject(..%filterValues) {
+		Set tMeasure = ..%filterValues.%measure
+		Set tDimension = ..%filterValues.%dimension
+		set dateFrom= ..%filterValues.DateFrom
+		set dateTo= ..%filterValues.DateTo
+
+	    Set tListingFields = tListingFields_$select(tListingFields'="":", ",1:"")_" DxRecDayOfWeek DayOfWeek "
+	    Set tListingFields = tListingFields_$select(tListingFields'="":", ",1:"")_dateFrom_" DateFrom, "_dateTo_" DateTo "
+	}
+	if tListingFields="" set tListingFields="ERROR"
+	//s ^test("ds",66,$i(^test("ds",66)))=tListingFields
+	Quit tListingFields
+]]></Implementation>
+</Method>
+
+<Method name="%OnCompute">
+<Description>
+Compute the average value for calendar days within the result set.</Description>
+<FormalSpec>pSQLRS:%SQL.StatementResult,pFactCount:%Integer</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set tSC = $$$OK
+	Try {
+        set returnValue=1
+        set tErrMsg=""
+        
+		While (pSQLRS.%Next(.tSC)) {
+			If $$$ISERR(tSC) {
+				Set tErrMsg = $System.Status.GetErrorText(tSC)
+				Quit
+			}
+
+            // величина, которую усредняем
+			Set dayOfWeek = pSQLRS.DayOfWeek
+			If ($ZSTRIP($P(dayOfWeek,":"),"<>W")="ERROR") {
+				Set tErrMsg = $P(dayOfWeek,":",2)
+				Quit
+			}
+			//1:Понедельник;2:Вторник;3:Среда;4:Четверг;5:Пятница;6:Суббота;7:Воскресенье;
+			//set dayOfWeekcode=$select(dayOfWeek="Понедельник":1,dayOfWeek="Вторник":2,dayOfWeek="Среда":3,dayOfWeek="Четверг":4,dayOfWeek="Пятница":5,dayOfWeek="Суббота":6,dayOfWeek="Воскресенье":7,1:0)
+			
+			Set dateFrom = pSQLRS.DateFrom
+			If ($ZSTRIP($P(dateFrom,":"),"<>W")="ERROR") {
+				Set tErrMsg = $P(dateFrom,":",2)
+				Quit
+			}
+
+			Set dateTo = pSQLRS.DateTo
+			If ($ZSTRIP($P(dateTo,":"),"<>W")="ERROR") {
+				Set tErrMsg = $P(dateTo,":",2)
+				Quit
+			}
+			
+			// расчет кол-ва дней недели dayOfWeekcode в периоде с dateFrom до dateTo включительно
+			set count=..GetQWeekDay(dateFrom,dateTo,dayOfWeek)
+			//set ^test("ds",888,$i(^test("ds",888)))=dateFrom_"*"_dateTo_"*"_dayOfWeek_"*"_count
+			if count>0 {
+				set returnValue=count
+			}
+			
+			quit // одну запись надо
+
+		}
+
+		// place answer in KPI output
+		Set ..%seriesCount = 1
+		Set ..%seriesNames(1) = "Total"
+		If (tErrMsg'="") {
+			Set ..%data(1,"QWeekDay") = tErrMsg
+		} Else {
+			Set ..%data(1,"QWeekDay") = returnValue
+		}
+
+	}
+	Catch(ex) {
+		Set tSC = ex.AsStatus()
+	}
+	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="GetQWeekDay">
+<Description>
+расчет кол-ва дней недели pDayOfWeekCode в периоде с pDateFrom до pDateTo включительно
+pDayOfWeekCode : 1-понедельник, 2-вторник, 3-среда, 4-четверг, 5-пятница, 6-суббота, 7-воскресенье</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateFrom:%String="",pDateTo:%String,pDayOfWeekCode:%Integer=0</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	set returnValue=1
+	try {
+		if (pDateTo>pDateFrom)&&(pDateFrom>0)&&(pDayOfWeekCode>0) {
+				set weekday1=..GetWeekDay(pDateFrom)
+				set count=0,datecur=pDateFrom
+				set ras=weekday1-pDayOfWeekCode
+				//kill test // for testing
+				// искомый день недели
+				if ras=0 {
+					set count=count+1
+					//set test(datecur)=$zd(datecur,4) // for testing
+				}
+				elseif ras>0 {
+					set datecur=datecur+(7-ras)
+					set count=count+1
+					//set test(datecur)=$zd(datecur,4) // for testing
+				} else {
+					set datecur=datecur-ras
+					set count=count+1
+					//set test(datecur)=$zd(datecur,4) // for testing
+				}
+				while (datecur<pDateTo) {
+			        set datecur=datecur+7
+			        if datecur>pDateTo quit
+			        set count=count+1		
+			        //set test(datecur)=$zd(datecur,4) // for testing
+				}
+				set returnValue=count
+		} 
+	} catch(e) {
+			set returnValue=1
+	}
+	zw test	
+	quit returnValue
+]]></Implementation>
+</Method>
+
+<Method name="GetWeekDay">
+<Description>
+Получить код дня недели в такой кодировке (1-понедельник, 2-вторник, 3-среда, 4-четверг, 5-пятница, 6-суббота, 7-воскресенье)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDate:%String=""</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	set returnValue=""
+	if pDate>0 {
+		set returnValue=$zdate(pDate,10)
+		if returnValue=0 set returnValue=7
+	}
+	quit returnValue
+]]></Implementation>
+</Method>
+</Class>
+</Export>
