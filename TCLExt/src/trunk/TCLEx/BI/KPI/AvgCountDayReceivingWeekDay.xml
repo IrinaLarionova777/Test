@@ -5,7 +5,7 @@
 Таблица: строки-дни недели по дате доставки в лабораторию, 
 столбцы-среднее количество эпизодов за календарный день, если есть фильтр по дням достаки, 
 если такой фильтр не задан, то среднее за календарный день (период - от минимального до максимального фактического дня доставки, обе граничные даты дополнены до полного месяца) </Description>
-<Super>TCLEx.BI.KPI.AvgCountDateReceivingTimeRange</Super>
+<Super>%DeepSee.KPI</Super>
 <TimeCreated>63403,55767.911055</TimeCreated>
 
 <Parameter name="DOMAIN">
@@ -18,6 +18,13 @@
 <Default>EPVISITNUMBER</Default>
 </Parameter>
 
+<UDLText name="T">
+<Content><![CDATA[
+// Parameter CACHEABLE = 1;
+
+]]></Content>
+</UDLText>
+
 <XData name="KPI">
 <Description>
 Этот блок XData содержит определение KPI</Description>
@@ -29,7 +36,9 @@
  mdx='SELECT NON EMPTY {%LABEL({%KPI("%DeepSee.AverageDay","AVGDAY",1,"%measure","%COUNT","%dimension","DxReceivingDay","%CONTEXT")},"","#")} ON 0,  NON EMPTY [ReceivingDayOfWeek].[H1].[ReceivingDayOfWeek].Members ON 1  FROM [EPVisitNumber]'
 >
 <property name="Avg" displayName="Среднее да день" columnNo="1"/>
-<!-- for testing : <property name="PatCount" displayName="Количество" columnNo="2"/>-->
+<!--<property name="PatCount" displayName="Количество" columnNo="2"/>-->
+<!--<property name="Qdays" displayName="Количество дней" columnNo="3"/>-->
+
 
 <filter name="[RECEIVINGDATE].[H1].[RECEIVINGDAY]" displayName="Период"  filterProperty="Day" searchType="day" />
 </kpi>
@@ -43,16 +52,102 @@ Implementation; can be overridden.</Description>
 <ReturnType>%Status</ReturnType>
 <Implementation><![CDATA[
 	 set qDays=0
-	 set stringFilters=..FilterBuilder(.qDays)
-	 if qDays>0 {
-		 set mdx="SELECT NON EMPTY {%LABEL({[Measures].[%COUNT]/"_qDays_"},"""",""#""),[Measures].[%COUNT]} ON 0,  NON EMPTY [ReceivingDayOfWeek].[H1].[ReceivingDayOfWeek].Members ON 1  FROM [EPVisitNumber]"
+	 set stringFilters=..FilterBuilder(.dateFrom,.dateTo)
+	 //set ^test("ds","dates")=$g(dateFrom)_"*"_$g(dateTo)
+	 if (dateTo>dateFrom)&&(dateFrom>0) {
+		 set mdx="SELECT NON EMPTY {%LABEL({[Measures].[%COUNT]/%KPI(""%DeepSee.QWeekDay"",""QWeekDay"",1,""DateFrom"","""_dateFrom_""",""DateTo"","""_dateTo_""",""%CONTEXT"")},"""",""#"")} ON 0,  NON EMPTY [ReceivingDayOfWeek].[H1].[ReceivingDayOfWeek].Members ON 1  FROM [EPVisitNumber]"
+		 // for testing
+		 //set mdx="SELECT NON EMPTY {%LABEL({[Measures].[%COUNT]/%KPI(""%DeepSee.QWeekDay"",""QWeekDay"",1,""DateFrom"","""_dateFrom_""",""DateTo"","""_dateTo_""",""%CONTEXT"")},"""",""#""),[Measures].[%COUNT],%KPI(""%DeepSee.QWeekDay"",""QWeekDay"",1,""DateFrom"","""_dateFrom_""",""DateTo"","""_dateTo_""",""%CONTEXT"") } ON 0,  NON EMPTY [ReceivingDayOfWeek].[H1].[ReceivingDayOfWeek].Members ON 1  FROM [EPVisitNumber]"
 	 } else {
-		 set mdx="SELECT NON EMPTY {%LABEL({%KPI(""%DeepSee.AverageDay"",""AVGDAY"",1,""%measure"",""%COUNT"",""%dimension"",""DxReceivingDay"",""%CONTEXT"")},"""",""#""),[Measures].[%COUNT]} ON 0,  NON EMPTY [ReceivingDayOfWeek].[H1].[ReceivingDayOfWeek].Members ON 1  FROM [EPVisitNumber]"
+		 set mdx="SELECT NON EMPTY {[Measures].[%COUNT]} ON 0,  NON EMPTY [ReceivingDayOfWeek].[H1].[ReceivingDayOfWeek].Members ON 1  FROM [EPVisitNumber]"
+		 // for testing
+		 //set mdx="SELECT NON EMPTY {[Measures].[%COUNT],[Measures].[%COUNT]} ON 0,  NON EMPTY [ReceivingDayOfWeek].[H1].[ReceivingDayOfWeek].Members ON 1  FROM [EPVisitNumber]"
 	 }
 	 set pMDX=mdx_stringFilters
-	 set ^test("ds",777,$i(^test("ds",777)))=pMDX
+	 //set ^test("ds",777,$i(^test("ds",777)))=pMDX
 	 quit $$$OK
 ]]></Implementation>
 </Method>
+
+<Method name="%OnGetFilterMembers">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFilter:%String,*pMembers:%List,pSearchKey:%String=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+    set status = $$$OK
+
+    try {
+        do ..%GetMembersForFilter("EPVISITNUMBER.cube",pFilter,.pMembers,pSearchKey)
+    }
+    catch(ex) {
+        set status = ex.AsStatus()
+    }
+
+    quit status
+]]></Implementation>
+</Method>
+
+<Method name="FilterBuilder">
+<Description><![CDATA[
+Examines the filters defined in the cube, determines the current value of each, 
+returns a string that can be used as the %FILTER clause.
+pQdays - кол-во дней из фильтра по дню доставки
+Если pQdays>0, то один mdx, иначе - другой mdx]]></Description>
+<FormalSpec><![CDATA[&pDateFrom:%Integer,&pDateTo:%Integer]]></FormalSpec>
+<Private>1</Private>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	set pDateFrom=0,pDateTo=0  // даты начала и окончания периода
+ 	set tFilters=""
+ 	set tSC = ##class(%DeepSee.Dashboard.Utils).%GetFiltersForDataSource(..#CUBE_".cube",.tFilters)
+	quit:$$$ISERR(tSC) ""
+   
+    //iterate through defined filters and build up usedFilters array
+	set i = "",usedFilters=0
+	for {
+		set i = $order(tFilters(i))
+		quit:i=""
+
+	    set filter=tFilters(i)
+	   	set filterName=$LI(filter,2)
+		set filterValue=$PROPERTY(..%filterValues,filterName)
+		
+		if filterValue'="" { 
+		   //set ^test("ds",888,$i(^test("ds",888)))=filterName_"*"_filterValue
+		   if filterName="[ReceivingDate].[H1].[ReceivingDay]" {
+			    set pDateFrom=##class(TCLEx.BI.KPI.AvgCountDateReceivingTimeRange).ParseFilterDate($piece(filterValue,":",1))
+			    set pDateTo=$piece(filterValue,":",2)
+			    if pDateTo'="" { set pDateTo=##class(TCLEx.BI.KPI.AvgCountDateReceivingTimeRange).ParseFilterDate(pDateTo) }
+			    else { set pDateTo=pDateFrom }
+		    }
+		    set usedFilters=usedFilters+1
+			do ##class(TCLEx.BI.KPI.MDXAutoFiltersKPI).ParseFilterValue(filterValue,.FilterStateArray)
+			// create usedFilters array
+	    	//used FilterStateArray and build the string for this filter
+	    	set string=##class(TCLEx.BI.KPI.MDXAutoFiltersKPI).BuildString(filterName,.FilterStateArray)
+	    	set usedFilters(usedFilters)=string
+	    } ; end of looking at non-null filters
+
+    } ; end of looking at defined filters
+    
+    set where=""
+    if usedFilters>=1 {
+       set where=##class(TCLEx.BI.KPI.MDXAutoFiltersKPI).CombineFilterStrings(.usedFilters)
+    }
+    quit where
+]]></Implementation>
+</Method>
+
+<UDLText name="T">
+<Content><![CDATA[
+/*
+Method %OnComputeKPITimestamp(ByRef pTimestamp As %String, pSourceType As %String, pQueryText As %String = "") As %Status
+{
+	set ^test("ds",777,$i(^test("ds",777)))="pSourceType="_pSourceType_", pQueryText"_pQueryText
+	quit 1
+}
+*/
+]]></Content>
+</UDLText>
 </Class>
 </Export>
