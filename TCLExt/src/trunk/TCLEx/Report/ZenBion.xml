@@ -280,7 +280,14 @@ pRepParamGlb - глобал с данными</Description>
  	If $Get(pDepCode)="" Quit
 	Set summarytestset=##class(TCLEx.Function.SuperSet).SummaryTestSet(pDepCode)
 	Set (authtestset,canceltestset)=""
-	Set key="",testobj="",canceledobj=""
+	set hospitalcode=$get(@pRepParamGlb@("НospitalCode"))
+	set flagSpecialHospital=0
+	// Для некоторых ЛПУ (список их через запятую в ^Settings("DRP","SpecialHospitals")) надо писать фио последнего авторизовавшего врача
+	if (hospitalcode'="")&&($get(^Settings("DRP","SpecialHospitals"))'="")&&(","_^Settings("DRP","SpecialHospitals")_","[","_hospitalcode_",") {
+		set flagSpecialHospital=1
+	}
+	kill ^||vsptestsets1,^||vsptestsets2 
+	set key="",testobj="",canceledobj=""
 	For  {
 		Set testobj=episobj.ChildEPVisitTestSet.GetNext(.key)
 		If key="" Quit
@@ -295,22 +302,45 @@ pRepParamGlb - глобал с данными</Description>
 				Set @pRepParamGlb@("Sections")=$Get(@pRepParamGlb@("Sections"))+1
 				Set @pRepParamGlb@("Sections",sectioncode)=sectionname
 			}	
+		}
+		If (##class(TCLEx.Function.TestSet).IsAuthorised(testobj)) {
+			if flagSpecialHospital=1 {
+				set datetimeauth=testobj.VISTSDateOfAuthorisation*100000+testobj.VISTSTimeOfAuthorisation
+			     if datetimeauth'=0 set ^||vsptestsets1(datetimeauth)=testsetid
+			}
+			if authtestset="" Set authtestset=testsetid 
 		}	
-		If (##class(TCLEx.Function.TestSet).IsAuthorised(testobj))&&(authtestset="") {
-			Set authtestset=testsetid
-		}	
-		If (##class(TCLEx.Function.TestSet).IsCanceled(testobj))&&(canceltestset="") {
-			Set canceltestset=testsetid
+		If (##class(TCLEx.Function.TestSet).IsCanceled(testobj)) {
+			if flagSpecialHospital=1 {
+			     set datetimecancel=testobj.VISTSDateOfReason*100000+testobj.VISTSTimeOfReason
+			     if datetimecancel'=0 set ^||vsptestsets2(datetimecancel)=testsetid
+			}
+			if canceltestset="" Set canceltestset=testsetid
 		}	
 	}
 	Set testsetid=""
-	If (authtestset'="") {						// Либо берем подходящий авторизованный набор тестов
-		Set testsetid=authtestset
-	} Else {
-		If (canceltestset'="") {				// (если нет авторизованных, то берем отмененный)
-			Set testsetid=canceltestset
-		}	
+	if flagSpecialHospital=1 {
+		// последняя дата авторизации набора тестов	
+		set lastdatetime=$order(^||vsptestsets1(""),-1)
+		if lastdatetime'="" set testsetid=$get(^||vsptestsets1(lastdatetime))
+		// последняя дата отмены набора тестов
+		If testsetid="" {
+			set lastdatetime=$order(^||vsptestsets2(""),-1)
+			if lastdatetime'="" set testsetid=$get(^||vsptestsets2(lastdatetime))
+		}
+		kill ^||vsptestsets1,^||vsptestsets2
+		
+	}
+	if testsetid="" {
+		If (authtestset'="") {						// Либо берем подходящий авторизованный набор тестов
+		   Set testsetid=authtestset
+	    } Else {
+		   If (canceltestset'="") {				// (если нет авторизованных, то берем отмененный)
+			  Set testsetid=canceltestset
+		   }	
+	    }
 	}		
+	
 	If testsetid="" Quit
 	Do ..SetTestSetVals(testsetid,pLanguage,pRepParamGlb)
 ]]></Implementation>
