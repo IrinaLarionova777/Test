@@ -282,8 +282,11 @@ pPDFFileName - по ссылке возвращается или передае�
 	Set reportclassname=##class(TCLEx.Report.Settings).GetZenResultClassName() 
 	 
 	Kill ^||ResultForm.EpisodePCL
-	Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResultWithSection(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL),FlagPreview)
-	//Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL),FlagPreview)
+	if +$get(^Settings("DRP","NotUseSections"))=0 {
+		Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResultWithSection(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL),FlagPreview)
+	} else {
+		Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResult(reportclassname,pEpis,.pTestSets,pLanguage,$Name(^||ResultForm.EpisodePCL),FlagPreview)
+	}
 	If '$Data(^||ResultForm.EpisodePCL) {
 		set ok=$$$ERROR($$$GeneralError,"Нет данных для эпизода "_pEpis_" !")
 		quit
@@ -723,14 +726,14 @@ pRepParamGlb - глобал с данными</Description>
 <Description>
 Код и название секции для набора тестов</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pTestSetId:%String</FormalSpec>
+<FormalSpec>pTestSetId:%String,pLanguage:%String=""</FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
 	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
 	If ('$IsObject(testsetobj))||('$IsObject(testsetobj.VISTSTestSetDR)) Quit ""
 	Set sectionobj=testsetobj.VISTSTestSetDR.CTTSSectionDR
 	If '$IsObject(sectionobj) Quit ""
-	quit ..SectionInfo(sectionobj)
+	quit ..SectionInfo(sectionobj,pLanguage)
 ]]></Implementation>
 </Method>
 
@@ -738,7 +741,7 @@ pRepParamGlb - глобал с данными</Description>
 <Description>
 Код и название секции для набора тестов</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pSectionObject:User.CTSections</FormalSpec>
+<FormalSpec>pSectionObject:User.CTSections,pLanguage:%String=""</FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
 	if '$IsObject(pSectionObject) quit $lb("","","","")
@@ -747,16 +750,41 @@ pRepParamGlb - глобал с данными</Description>
 	// Description
 	Set name=pSectionObject.CTDSDescription
     // Header
-	set header="",key=""
-	for { 
-	   set str=pSectionObject.CTDSPrintHeader.GetNext(.key) if key="" quit
-		if str'="" set header=header_$select(header'="":"|",1:"")_str
+	//^TTAB("DS","A1","LAN",2,"F",1)
+	if pLanguage'="" {
+		set objtranslation=##class(User.CTSectionsTranslation).%OpenId(code_"||"_pLanguage)
+		if $IsObject(objtranslation) {
+			set header="",key=""
+	        for { 
+	           set str=objtranslation.CTDSAHeader.GetNext(.key) if key="" quit
+		       if str'="" set header=header_$select(header'="":"|",1:"")_str
+	        }
+		}
+	}
+	if header="" {
+		set key=""
+	    for { 
+	       set str=pSectionObject.CTDSPrintHeader.GetNext(.key) if key="" quit
+		   if str'="" set header=header_$select(header'="":"|",1:"")_str
+	    }
 	}
     // Footer
-	set footer="",key=""
-	for { 
-	   set str=pSectionObject.CTDSPrintFooter.GetNext(.key) if key="" quit
-		if str'="" set footer=footer_$select(footer'="":"|",1:"")_str
+    if pLanguage'="" {
+		set objtranslation=##class(User.CTSectionsTranslation).%OpenId(code_"||"_pLanguage)
+		if $IsObject(objtranslation) {
+			set footer="",key=""
+	        for { 
+	            set str=objtranslation.CTDSPrintFooter.GetNext(.key) if key="" quit
+		        if str'="" set footer=footer_$select(footer'="":"|",1:"")_str
+	        }
+		}
+	}
+	if footer="" {
+		set key=""
+	    for { 
+	       set str=pSectionObject.CTDSPrintFooter.GetNext(.key) if key="" quit
+		   if str'="" set footer=footer_$select(footer'="":"|",1:"")_str
+	    }
 	}
 	Quit $lb(code,name,header,footer)
 ]]></Implementation>
