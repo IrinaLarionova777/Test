@@ -263,8 +263,15 @@ pRepParamGlb - глобал с данными</Description>
 	;
 	Set sexobj=episobj.EPVISSpeciesDR
 	If $IsObject(sexobj) {
-		Set @pRepParamGlb@("SexCode")=$$RemomeNotPrintableCharacters^KSUTIL1(sexobj.CTSPCode)
-		Set @pRepParamGlb@("Sex")=$$RemomeNotPrintableCharacters^KSUTIL1(sexobj.CTSPDesc)
+		set sexcode=sexobj.CTSPCode
+		set sexdesc=""
+		if sexcode'="" {
+			if pLanguage'="" set sexdesc=$get(^TTAB("SP",sexcode,"LAN",pLanguage))
+			if sexdesc="" set sexdesc=$piece($get(^TTAB("SP",sexcode)),"|",1)
+		}
+		Set @pRepParamGlb@("SexCode")=$$RemomeNotPrintableCharacters^KSUTIL1(sexcode)
+		
+		Set @pRepParamGlb@("Sex")=$$RemomeNotPrintableCharacters^KSUTIL1(sexdesc)
 	}	
 	Set condobj=episobj.EPVISClinicalConditionsDR
 	If $IsObject(condobj) Set @pRepParamGlb@("CyclePhase")=$$RemomeNotPrintableCharacters^KSUTIL1(condobj.CTCLCDescription)
@@ -295,12 +302,14 @@ pRepParamGlb - глобал с данными</Description>
 		Set testsetid=testobj.%Id()
 		If '..IsTestSet4Department(testsetid,.pTestSets,pDepCode,summarytestset) Continue
 		If '##class(User.CTSuperSet).%ExistsId(pDepCode) {
-			Set sectionstr=..TestSetSection(testsetid)
-			Set sectioncode=$Piece(sectionstr,$Char(1),1)
-			Set sectionname=$Piece(sectionstr,$Char(1),2)
+			Set sectionstr=##class(TCLEx.Report.DRP).TestSetSection(testsetid,pLanguage)
+			Set sectioncode=$listget(sectionstr,1)
+			Set sectionname=$listget(sectionstr,2)
+			set header=$translate($listget(sectionstr,3),"|"," ")
+			//set footer=$listget(sectionstr,4)
 			If (sectioncode'="")&&('$Data(@pRepParamGlb@("Sections",sectioncode))) {
 				Set @pRepParamGlb@("Sections")=$Get(@pRepParamGlb@("Sections"))+1
-				Set @pRepParamGlb@("Sections",sectioncode)=sectionname
+				Set @pRepParamGlb@("Sections",sectioncode)=$select(header'="":header,1:sectionname)
 			}	
 		}
 		If (##class(TCLEx.Function.TestSet).IsAuthorised(testobj)) {
@@ -366,8 +375,14 @@ pRepParamGlb - глобал с данными</Description>
 	If $IsObject(cttestsetobj) { 
 		Set depobj=cttestsetobj.CTTSDepartmentDR
 		If $IsObject(depobj) {
-			Set @pRepParamGlb@("TS_DepartmentName")=depobj.CTDEPName
-			Set @pRepParamGlb@("TS_DepartmentCode")=depobj.%Id()
+			set depCode=depobj.%Id()
+			set depName=""
+			if pLanguage'="" {
+				set depName=$piece($get(^TTAB("DEP",depCode,"LAN",pLanguage)),"\",1)
+			}
+			if depName="" set depName=depobj.CTDEPName
+			Set @pRepParamGlb@("TS_DepartmentName")=depName
+			Set @pRepParamGlb@("TS_DepartmentCode")=depCode
 		}
 	}	
 	;
@@ -415,13 +430,12 @@ pRepParamGlb - глобал с данными</Description>
 ]]></Implementation>
 </Method>
 
-<Method name="TestSetSection">
-<Description>
-Код и название секции для набора тестов</Description>
-<ClassMethod>1</ClassMethod>
-<FormalSpec>pTestSetId:%String</FormalSpec>
-<ReturnType>%String</ReturnType>
-<Implementation><![CDATA[
+<UDLText name="T">
+<Content><![CDATA[
+/*
+/// Код и название секции для набора тестов
+ClassMethod TestSetSection(pTestSetId As %String) As %String
+{
 	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
 	If ('$IsObject(testsetobj))||('$IsObject(testsetobj.VISTSTestSetDR)) Quit ""
 	Set sectionobj=testsetobj.VISTSTestSetDR.CTTSSectionDR
@@ -430,8 +444,10 @@ pRepParamGlb - глобал с данными</Description>
 	If code="" Quit ""	
 	Set name=sectionobj.CTDSDescription
 	Quit code_$Char(1)_name
-]]></Implementation>
-</Method>
+}
+*/
+]]></Content>
+</UDLText>
 
 <Method name="%OnBeforeReport">
 <Description>
@@ -459,62 +475,6 @@ and before it is run.</Description>
 ]]></Implementation>
 </Method>
 
-<UDLText name="T">
-<Content><![CDATA[
-/*
-/// This method outputs the contents of the PDF report
-/// RenderServer is set to the port of the hot JVM server
-/// There is also a queuing hot JVM server which queues files for PDF rendering later
-/// This is queuing mechanism is never called visually but only by AsynchGenerateReport which always generates PDFs  
-Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", async As %Boolean = 0, ByRef xmlfile As %String, ByRef xslfile As %String, ByRef pdffile As %String, ByRef lockfile As %String) As %Status
-{
-	Set tSC=$$$OK
-	Do {
-		#; Generate data file and XSLT stylesheet which transforms data to HTML
-		Set tSC = ..%MakeXMLDataFile(.xmlfile,0) Quit:$$$ISERR(tSC)
-		Set tSC = ..%MakeToXSLFOFile(.xslfile) Quit:$$$ISERR(tSC)
-
-		#; Generate filenames for log/pdf
-		Set tmpdir=..GetRootDir()
-		Set tRootName=..GetSafeRootName()
-		if tRootName="" Set logfile = tmpdir_##class(%FileBinaryStream).NewFileName("txt",..%GetTempDir())		
-		if tRootName'="" Set logfile = ..MakeFileName(..GetRootDir(),tRootName,".txt")
-		if tRootName="" Set pdffile = tmpdir_##class(%FileBinaryStream).NewFileName("pdf",..%GetTempDir())
-		if tRootName'="" Set pdffile = ..MakeFileName(..GetRootDir(),tRootName,".pdf")
-		if (async'=0) {
-			if tRootName="" Set lockfile = tmpdir_##class(%FileBinaryStream).NewFileName("lck",..%GetTempDir())
-			if tRootName'="" Set lockfile = ..MakeFileName(..GetRootDir(),tRootName,".lck")
-		}
-
-
-		#; Command line callout to FOP or XEP
-		Set tSC = ..%PerformTransform(xmlfile, xslfile, pdffile, logfile, 1, RenderServer, async, $g(lockfile))
-
-		If $$$ISOK(tSC),'async {
-			If DisplayLog {
-				Set oid = ##class(%CSP.StreamServer).GetOidForFile(logfile)
-			}
-			Else {
-				Set oid = ##class(%CSP.StreamServer).GetOidForFile(pdffile)
-			}
-			if (..#HANG'=0) hang ..#HANG
-			Set stream=##class(%Stream.Object).%Open(oid)
-			$$$SETIO("RAW")
-			Do stream.OutputToDevice()
-		}
-		; if in asynch mode generation of PDF is done by queuing hot JVM server which has responsibility for
-		; deleting xmlfile and xslfile.  The queing hot JVM server needs to be connected to a print management system
-		; that has the responsibilty for deleting the pdf file when renered.  No logfile is created when PDF rendering
-		; is done by hot JVM server.
-		//if ('async) do ..DeleteTempFiles(.xmlfile,.xslfile,.pdffile,.logfile)
-	} While (0)
-
-	Quit tSC
-}
-*/
-]]></Content>
-</UDLText>
-
 <Method name="GenerateReportXML">
 <Description>
 Генерация XML данных отчета
@@ -532,7 +492,7 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 </Method>
 
 <Method name="ResultHeader">
-<FormalSpec>pDepCode:%String,pRepParamGlb:%String</FormalSpec>
+<FormalSpec>pDepCode:%String,pRepParamGlb:%String,pLanguage:%String=""</FormalSpec>
 <ReturnType>%GlobalCharacterStream</ReturnType>
 <Implementation><![CDATA[
 	Set stream=##class(%GlobalCharacterStream).%New()
@@ -617,7 +577,7 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 	Do stream.WriteLine("<xsl:attribute name='font-weight'>bold</xsl:attribute>")
 	Do stream.WriteLine("<xsl:attribute name='space-before.optimum'>5mm</xsl:attribute>")
 	Do stream.WriteLine("<xsl:attribute name='text-align'>center</xsl:attribute>")
-	Set caption=..ResultHeaderCaption(pDepCode,pRepParamGlb)
+	Set caption=..ResultHeaderCaption(pDepCode,pRepParamGlb,pLanguage)
 	Do stream.WriteLine($ZConvert(caption,"O","XML"))
 	Do stream.WriteLine("</fo:block>")
 	Do stream.WriteLine("<fo:block><fo:leader leader-pattern='space' rule-thickness='1px'/></fo:block>")
@@ -632,22 +592,30 @@ Method %DisplayPDF1(DisplayLog As %Boolean = 0, RenderServer As %String = "", as
 Это либо название супер-набора,
 Либо название отдела
 Либо название секции (если в отдел результата pDepCode попадают наборы тестов только 1 секции)</Description>
-<FormalSpec>pDepCode:%String,pRepParamGlb:%String</FormalSpec>
+<FormalSpec>pDepCode:%String,pRepParamGlb:%String,pLanguage:%String=""</FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
 	If ##class(User.CTSuperSet).%ExistsId(pDepCode) {
 		Set supersetobj=##class(User.CTSuperSet).%OpenId(pDepCode)
 		If '$IsObject(supersetobj) Quit ""
-		Quit supersetobj.CTSSDesc
+		set supersetname=""
+		if pLanguage'="" set supersetname=$get(^TTAB("SUPTS",pDepCode,"LAN",pLanguage))
+		if supersetname="" set supersetname=supersetobj.CTSSDesc
+		Quit supersetname  
 	}
 	Set sectioncnt=$Get(@pRepParamGlb@("Sections"))
 	If sectioncnt=1 {
 		Set sectioncode=$Order(@pRepParamGlb@("Sections",""))
 		If sectioncode'="" Quit $Get(@pRepParamGlb@("Sections",sectioncode))
 	}	
-	If (pDepCode="H")||(pDepCode="M") Quit "Микробиологический отчет"
+	//If (pDepCode="H") Quit "Микробиологический отчет"
 	Set depobj=##class(User.CTDepartment).%OpenId(pDepCode)
-	If $IsObject(depobj) Quit depobj.CTDEPName
+	If $IsObject(depobj) {
+		set depname=""
+		if pLanguage'="" set depname=$get(^TTAB("DEP",pDepCode,"LAN",pLanguage))
+		if depname="" set depname=depobj.CTDEPName
+		Quit depname
+	}
 	Quit ""
 ]]></Implementation>
 </Method>
@@ -988,7 +956,7 @@ pLogoFileName - возвращаеый по ссылке путь к логот�
 			If dep="" Quit
 			Kill ^||ZenEMC.Vals
 			Do ..CreateValuesBuf(..Episode,,dep,..Language,$Name(^||ZenEMC.Vals))
-			Set headerstream=..ResultHeader(dep,$Name(^||ZenEMC.Vals))
+			Set headerstream=..ResultHeader(dep,$Name(^||ZenEMC.Vals),..Language)
 			Set page=""
 			For  {
 				Set page=$Order(@glb@(dep,page))
