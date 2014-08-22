@@ -243,16 +243,31 @@ pRepParamGlb - глобал с данными</Description>
 	If '$IsObject(episobj) Quit
 	//
 	Set @pRepParamGlb@("CardNumber")=$$RemomeNotPrintableCharacters^KSUTIL1($Piece(episobj.EPVISHospitalEpisodeURNumber,",",2))
-	Set @pRepParamGlb@("FullName")=$$RemomeNotPrintableCharacters^KSUTIL1($$FullName^KSPCLUtils(episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1,40))
-	Set @pRepParamGlb@("DOB")=$$RemomeNotPrintableCharacters^KSUTIL1($$DisplayDate^KSPCLUtils(episobj.EPVISDateOfBirth))
-	Set @pRepParamGlb@("Address1")=$$RemomeNotPrintableCharacters^KSUTIL1($Extract(episobj.EPVISPatientAddress1,1,45))
-	Set @pRepParamGlb@("Address2")=$$RemomeNotPrintableCharacters^KSUTIL1($Extract(episobj.EPVISPatientAddress2,1,45))
+	set fio=""
+	If pLanguage=2 {
+		Set @pRepParamGlb@("FullName")=$$FullName^KSPCLUtils(episobj.EPVISExtra1,episobj.EPVISExtra2,episobj.EPVISExtra3,40)
+	} Else {
+		Set @pRepParamGlb@("FullName")=$$FullName^KSPCLUtils(episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1,40)
+	}
+	if @pRepParamGlb@("FullName")="" {
+		Set @pRepParamGlb@("FullName")=$$FullName^KSPCLUtils(episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1,40)
+	}
 	
-	Set @pRepParamGlb@("InsCompany")=$$RemomeNotPrintableCharacters^KSUTIL1(episobj.EPVISExtra9)
-	Set @pRepParamGlb@("InsSerial")=$$RemomeNotPrintableCharacters^KSUTIL1(episobj.EPVISExtra10)
-	Set @pRepParamGlb@("InsNumber")=$$RemomeNotPrintableCharacters^KSUTIL1(episobj.EPVISExtra11)
+	Set @pRepParamGlb@("FullName")=$$RemomeNotPrintableCharacters^KSUTIL1(fio)
+	Set @pRepParamGlb@("DOB")=$$RemomeNotPrintableCharacters^KSUTIL1($$DisplayDate^KSPCLUtils(episobj.EPVISDateOfBirth))
+	
+	set address1=$select(pLanguage=2:"",1:$Extract(episobj.EPVISPatientAddress1,1,45))
+	set address2=$select(pLanguage=2:"",1:$Extract(episobj.EPVISPatientAddress2,1,45))
+	
+	Set @pRepParamGlb@("Address1")=$$RemomeNotPrintableCharacters^KSUTIL1(address1)
+	Set @pRepParamGlb@("Address2")=$$RemomeNotPrintableCharacters^KSUTIL1(address2)
+	
+	Set @pRepParamGlb@("InsCompany")=$$RemomeNotPrintableCharacters^KSUTIL1($select(pLanguage=2:"",1:episobj.EPVISExtra9))
+	Set @pRepParamGlb@("InsSerial")=$$RemomeNotPrintableCharacters^KSUTIL1($select(pLanguage=2:"",1:episobj.EPVISExtra10))
+	Set @pRepParamGlb@("InsNumber")=$$RemomeNotPrintableCharacters^KSUTIL1($select(pLanguage=2:"",1:episobj.EPVISExtra11))
 	
 	Set @pRepParamGlb@("HospitalDepartment")=$$RemomeNotPrintableCharacters^KSUTIL1(episobj.EPVISExtra8)
+	
 	Set time=episobj.EPVISTimeOfCollection
 	If time=" " Set time=""
 	If time'="" Set time=time*60
@@ -267,7 +282,7 @@ pRepParamGlb - глобал с данными</Description>
 		set sexdesc=""
 		if sexcode'="" {
 			if pLanguage'="" set sexdesc=$get(^TTAB("SP",sexcode,"LAN",pLanguage))
-			if sexdesc="" set sexdesc=$piece($get(^TTAB("SP",sexcode)),"|",1)
+			if sexdesc="" set sexdesc=$piece($get(^TTAB("SP",sexcode)),"\",1)
 		}
 		Set @pRepParamGlb@("SexCode")=$$RemomeNotPrintableCharacters^KSUTIL1(sexcode)
 		
@@ -387,9 +402,15 @@ pRepParamGlb - глобал с данными</Description>
 	}	
 	;
 	Set userobj=testsetobj.VISTSUserAuthorisedDR
-	If $IsObject(userobj) { 
-		Set @pRepParamGlb@("TS_AuthorisedDoctorId")=userobj.%Id()
-		Set @pRepParamGlb@("TS_AuthorisedDoctor")=userobj.SSUSRName
+	If $IsObject(userobj) {
+		set userid= userobj.%Id()
+		Set @pRepParamGlb@("TS_AuthorisedDoctorId")=userid
+		set username=""
+		if pLanguage'="" {
+				set username=$piece($get(^SSU("SSUSR",1,userid,"LAN",pLanguage)),"\",1)
+		}
+		if username="" set username=userobj.SSUSRName
+		Set @pRepParamGlb@("TS_AuthorisedDoctor")=username
 	}	
 	;
 	Set specimen=""
@@ -503,65 +524,83 @@ and before it is run.</Description>
 	Do stream.WriteLine("	<fo:table-column column-width='98mm'/>")
 	Do stream.WriteLine("	<fo:table-body>")
 	Do stream.WriteLine("		<fo:table-row>")
-	Do stream.WriteLine("			<fo:table-cell number-columns-spanned='2'><fo:block><fo:inline>"_$ZConvert("Ист.бол./Амб.карта ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("CardNumber")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("ЛПУ: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("Нospital")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_MRN",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell number-columns-spanned='2'><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("CardNumber")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_PatientLocation",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("Нospital")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
 	Do stream.WriteLine("		</fo:table-row>")
 	Do stream.WriteLine("		<fo:table-row>")
-	Do stream.WriteLine("			<fo:table-cell number-columns-spanned='2'><fo:block><fo:inline>"_$ZConvert("Ф.И.О.: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("FullName")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("Отделение: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("HospitalDepartment")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_PatientName",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell number-columns-spanned='2'><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("FullName")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_PatientLocationDepartment ",pLanguage)_" "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("HospitalDepartment")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
 	Do stream.WriteLine("		</fo:table-row>")
 	Do stream.WriteLine("		<fo:table-row>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("Дата рождения: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("DOB")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("Пол: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("Sex")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("Ф.И.О. врача: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("Doctor")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_PatientDOB",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("DOB")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_PatientSex",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("Sex")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_RequestingDoctor",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("Doctor")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
 	Do stream.WriteLine("		</fo:table-row>")
 	Set str="&#160;"
 	If $Get(@pRepParamGlb@("SexCode"))="Ж" {
 		If $Get(@pRepParamGlb@("CyclePhase"))'=""  {
 			Set str="<fo:inline>"
-			Set str=str_$ZConvert("Фаза цикла:","o","XML")
+			set text=..GetTextVBMessage("ResultReport_PhaseCycle",pLanguage)_":"
+			Set str=str_$ZConvert(text,"o","XML")
 			Set str=str_"</fo:inline><fo:inline  font-weight='bold'>"
 			Set str=str_$ZConvert($Get(@pRepParamGlb@("CyclePhase")),"o","XML")
 			Set str=str_"</fo:inline>"
 		} ElseIf $Get(@pRepParamGlb@("PregnancyWeeks"))'="" {	
 			Set str="<fo:inline>"
-			Set str=str_$ZConvert("Срок беременности:","o","XML")
+			set text=..GetTextVBMessage("ResultReport_PregnancyWeeks",pLanguage)_":"
+			Set str=str_$ZConvert(text,"o","XML")
 			Set str=str_"</fo:inline><fo:inline  font-weight='bold'>"
 			Set str=str_$ZConvert($Get(@pRepParamGlb@("PregnancyWeeks")),"o","XML")
 			Set str=str_"</fo:inline>"
-			Set str=str_"<fo:inline>"_$ZConvert(" нед.","o","XML")_"</fo:inline>"
+			set text=" "_$select(pLanguage=2:"weeks",1:"нед.")
+			Set str=str_"<fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline>"
 		}	
 	}
 	Do stream.WriteLine("		<fo:table-row>")
 	Do stream.WriteLine("			<fo:table-cell number-columns-spanned='2'><fo:block>"_str_"</fo:block></fo:table-cell>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("Дата/время взятия материала: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("DateTimeOfCollection")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_SamplingDateTime",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("DateTimeOfCollection")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
 	Do stream.WriteLine("		</fo:table-row>")
 
-	Set str="<fo:inline>"_$ZConvert("Адрес: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("Address1"))_" "_$Get(@pRepParamGlb@("Address2")),"o","XML")_"</fo:inline>"
+    set text=..GetTextVBMessage("ResultReport_PatientAddress",pLanguage)_": "
+	Set str="<fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("Address1"))_" "_$Get(@pRepParamGlb@("Address2")),"o","XML")_"</fo:inline>"
 	Do stream.WriteLine("		<fo:table-row>")
 	Do stream.WriteLine("			<fo:table-cell number-rows-spanned='2' number-columns-spanned='2'><fo:block>"_str_"</fo:block></fo:table-cell>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("Дата доставки материала: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("DateOfReceiving")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_DeliveryDateTime",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("DateOfReceiving")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
 	Do stream.WriteLine("		</fo:table-row>")
 
 	Do stream.WriteLine("		<fo:table-row>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("Номер заказа: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Extract(..Episode,1,10),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_RequestNumber",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Extract(..Episode,1,10),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
 	Do stream.WriteLine("		</fo:table-row>")
 
 	Do stream.WriteLine("		<fo:table-row>")
-	Do stream.WriteLine("			<fo:table-cell number-columns-spanned='2'><fo:block><fo:inline>"_$ZConvert("Страховая компания: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("InsCompany")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_InsuranceCompany",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell number-columns-spanned='2'><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("InsCompany")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
 	Set str="&#160;"
 	
 	If $Length(..Episode)=12 {
-		Set str="<fo:inline>"_$ZConvert("Номер образца: ","o","XML")_"</fo:inline>"
+		set text=..GetTextVBMessage("ResultReport_SampleNumber",pLanguage)_": "
+		Set str="<fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline>"
 		Set str=str_"<fo:inline  font-weight='bold'>"_$ZConvert(..Episode,"o","XML")_"</fo:inline>"
 	}
 	
 	Do stream.WriteLine("			<fo:table-cell ><fo:block>"_str_"</fo:block></fo:table-cell>")
 	Do stream.WriteLine("		</fo:table-row>")
 	
-	Set str="<fo:inline>"_$ZConvert("Стр. полис: Серия ","o","XML")_"</fo:inline>"
+	set text=..GetTextVBMessage("ResultReport_InsurancePolicySeries",pLanguage)_" "
+	Set str="<fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline>"
 	Set str=str_"<fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("InsSerial")),"o","XML")_"</fo:inline>"
-	Set str=str_"<fo:inline>"_$ZConvert(" Номер ","o","XML")_"</fo:inline>"
+	set text=" "_..GetTextVBMessage("ResultReport_InsurancePolicyNumber",pLanguage)_" " 
+	Set str=str_"<fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline>"
 	Set str=str_"<fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("InsNumber")),"o","XML")_"</fo:inline>"
 	Do stream.WriteLine("		<fo:table-row>")
 	Do stream.WriteLine("			<fo:table-cell number-columns-spanned='2'><fo:block>"_str_"</fo:block></fo:table-cell>")
@@ -621,7 +660,7 @@ and before it is run.</Description>
 </Method>
 
 <Method name="ResultTable">
-<FormalSpec>pDepCode:%String,pPageNumber:%Integer,pTotalPages:%Integer,pPageGlb:%String,pRepParamGlb:%String</FormalSpec>
+<FormalSpec>pDepCode:%String,pPageNumber:%Integer,pTotalPages:%Integer,pPageGlb:%String,pRepParamGlb:%String,pLanguage:%String=""</FormalSpec>
 <ReturnType>%GlobalCharacterStream</ReturnType>
 <Implementation><![CDATA[
 	
@@ -635,19 +674,25 @@ and before it is run.</Description>
 	If (pDepCode'="D")&&(pDepCode'="H")&&(pDepCode'="G")&&(pDepCode'="M") {
 		Do stream.WriteLine("        <fo:table-row line-height='5mm'>")		// Для RUS - заголовок в 2 строках по 5 мм
 		Do stream.WriteLine("		<xsl:attribute name='font-weight'>bold</xsl:attribute>")
-		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='37' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>Наименование теста</fo:block></fo:table-cell>")
+		set text=..GetTextVBMessage("ResultReport_TblTestName",pLanguage)
+		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='37' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>"_text_"</fo:block></fo:table-cell>")
 		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='10' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>&#160;</fo:block></fo:table-cell>")
-		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='12' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>Результат</fo:block></fo:table-cell>")
-		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='12' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>Единицы измерения</fo:block></fo:table-cell>")
+		set text=..GetTextVBMessage("ResultReport_TblResult",pLanguage)
+		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='12' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>"_text_"</fo:block></fo:table-cell>")
+		set text=..GetTextVBMessage("ResultReport_TblUnits",pLanguage)
+		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='12' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>"_text_"</fo:block></fo:table-cell>")
 		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='3' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>&#160;</fo:block></fo:table-cell>")
-		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='16' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>Референсные значения</fo:block></fo:table-cell>")
+		set text=..GetTextVBMessage("ResultReport_TblTestRanges",pLanguage)
+		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='16' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>"_text_"</fo:block></fo:table-cell>")
 		Do stream.WriteLine("        </fo:table-row >")
 	}
 	If (pDepCode="G") {
 		Do stream.WriteLine("        <fo:table-row line-height='10mm'>")		// Для RUS - заголовок в 2 строках по 5 мм
 		Do stream.WriteLine("		<xsl:attribute name='font-weight'>bold</xsl:attribute>")
-		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='37' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>Наименование теста</fo:block></fo:table-cell>")
-		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='53' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>Результат</fo:block></fo:table-cell>")
+		set text=..GetTextVBMessage("ResultReport_TblTestName",pLanguage)
+		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='37' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>"_text_"</fo:block></fo:table-cell>")
+		set text=..GetTextVBMessage("ResultReport_TblResult",pLanguage)
+		Do stream.WriteLine("          <fo:table-cell number-columns-spanned='53' border-bottom-width='1pt' border-bottom-style='solid'><fo:block text-align='center'>"_text_"</fo:block></fo:table-cell>")
 		Do stream.WriteLine("        </fo:table-row >")
 	}	
     if (pDepCode="D")||(pDepCode="H")||(pDepCode="M") {
@@ -713,7 +758,7 @@ and before it is run.</Description>
 </Method>
 
 <Method name="Footer">
-<FormalSpec>pPageNumber:%Integer,pTotalPages:%Integer,pRepParamGlb:%String</FormalSpec>
+<FormalSpec>pPageNumber:%Integer,pTotalPages:%Integer,pRepParamGlb:%String,pLanguage:%String=""</FormalSpec>
 <ReturnType>%GlobalCharacterStream</ReturnType>
 <Implementation><![CDATA[
 	//!!!
@@ -730,8 +775,10 @@ and before it is run.</Description>
 	Do stream.WriteLine("	<fo:table-column column-width='55mm'/>")
 	Do stream.WriteLine("	<fo:table-body>")
 	Do stream.WriteLine("		<fo:table-row>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("Выпускающий врач: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("TS_AuthorisedDoctor")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
-	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert("Дата выдачи: ","o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("TS_DateOfAuthorisation")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_AuthUser",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("TS_AuthorisedDoctor")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
+	set text=..GetTextVBMessage("ResultReport_IssueDate",pLanguage)_": "
+	Do stream.WriteLine("			<fo:table-cell ><fo:block><fo:inline>"_$ZConvert(text,"o","XML")_"</fo:inline><fo:inline  font-weight='bold'>"_$ZConvert($Get(@pRepParamGlb@("TS_DateOfAuthorisation")),"o","XML")_"</fo:inline></fo:block></fo:table-cell>")
 	Do stream.WriteLine("		</fo:table-row>")
 	Do stream.WriteLine("	</fo:table-body>")
 	Do stream.WriteLine("</fo:table>")
@@ -793,7 +840,7 @@ and before it is run.</Description>
 	}
 
 	Do stream.WriteLine("<fo:block-container z-index='1' position='absolute' left='135mm' top='240mm' width='30mm' height='10mm' overflow='hidden'>")
-	Set str="Стр. "_pPageNumber_" из "_pTotalPages
+	Set str=$select(pLanguage=2:"Page ",1:"Стр. ")_pPageNumber_$select(pLanguage=2:" from ",1:" из ")_pTotalPages
 	Do stream.WriteLine("<fo:block xsl:use-attribute-sets='NORMAL'>"_$ZConvert(str,"o","XML")_"</fo:block>")
 	Do stream.WriteLine("</fo:block-container>")
 	If pPageNumber<pTotalPages {
@@ -949,23 +996,24 @@ pLogoFileName - возвращаеый по ссылке путь к логот�
 <Implementation><![CDATA[
 	Set stream=##class(%GlobalCharacterStream).%New()
 	Set glb=..DataGlobal
+	set language=..Language
 	If ..OrderNumber="" {
 		Set dep="",pagenumber=0
 		For  {
 			Set dep=$Order(@glb@(dep))
 			If dep="" Quit
 			Kill ^||ZenEMC.Vals
-			Do ..CreateValuesBuf(..Episode,,dep,..Language,$Name(^||ZenEMC.Vals))
-			Set headerstream=..ResultHeader(dep,$Name(^||ZenEMC.Vals),..Language)
+			Do ..CreateValuesBuf(..Episode,,dep,language,$Name(^||ZenEMC.Vals))
+			Set headerstream=..ResultHeader(dep,$Name(^||ZenEMC.Vals),language)
 			Set page=""
 			For  {
 				Set page=$Order(@glb@(dep,page))
 				If page="" Quit
 				Set pagenumber=pagenumber+1
 				Do stream.CopyFrom(headerstream)
-				Set tablestream=..ResultTable(dep,pagenumber,..TotalPages,$Name(@glb@(dep,page)),$Name(^||ZenEMC.Vals))
+				Set tablestream=..ResultTable(dep,pagenumber,..TotalPages,$Name(@glb@(dep,page)),$Name(^||ZenEMC.Vals),language)
 				Do stream.CopyFrom(tablestream)
-				Set footerstream=..Footer(pagenumber,..TotalPages,$Name(^||ZenEMC.Vals))
+				Set footerstream=..Footer(pagenumber,..TotalPages,$Name(^||ZenEMC.Vals),language)
 				Do stream.CopyFrom(footerstream)
 			}	
 		}
@@ -981,17 +1029,17 @@ pLogoFileName - возвращаеый по ссылке путь к логот�
 				Set dep=$Order(@glb@(epis,dep))
 				If dep="" Quit
 				Kill ^||ZenEMC.Vals
-				Do ..CreateValuesBuf(..Episode,,dep,..Language,$Name(^||ZenEMC.Vals))
-				Set headerstream=..ResultHeader(dep,$Name(^||ZenEMC.Vals))
+				Do ..CreateValuesBuf(..Episode,,dep,language,$Name(^||ZenEMC.Vals))
+				Set headerstream=..ResultHeader(dep,$Name(^||ZenEMC.Vals),language)
 				Set page=""
 				For  {
 					Set page=$Order(@glb@(epis,dep,page))
 					If page="" Quit
 					Set pagenumber=pagenumber+1
 					Do stream.CopyFrom(headerstream)
-					Set tablestream=..ResultTable(dep,pagenumber,..TotalPages,$Name(@glb@(epis,dep,page)),$Name(^||ZenEMC.Vals))
+					Set tablestream=..ResultTable(dep,pagenumber,..TotalPages,$Name(@glb@(epis,dep,page)),$Name(^||ZenEMC.Vals),language)
 					Do stream.CopyFrom(tablestream)
-					Set footerstream=..Footer(pagenumber,..TotalPages,$Name(^||ZenEMC.Vals))
+					Set footerstream=..Footer(pagenumber,..TotalPages,$Name(^||ZenEMC.Vals),language)
 					Do stream.CopyFrom(footerstream)
 				}	
 			}
@@ -1009,6 +1057,21 @@ pLogoFileName - возвращаеый по ссылке путь к логот�
 <Implementation><![CDATA[
 	quit ##class(TCLEx.Report.Function).ImagePath()
 	//Quit "C:\InterSystems\Ensemble\CSP\bion\Report"
+]]></Implementation>
+</Method>
+
+<Method name="GetTextVBMessage">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCodeVBMessage:%String="",pLanguage:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	if (pCodeVBMessage="")&&('$data(^SS("VBM",0,pCodeVBMessage))) quit ""
+	if pLanguage="" {
+		quit $get(^SS("VBM",0,pCodeVBMessage))
+	} else {
+		set text=$get(^SSLAN("VBM",0,pCodeVBMessage,pLanguage))
+		quit $select(text'="":text,1:$get(^SS("VBM",0,pCodeVBMessage)))
+	}
 ]]></Implementation>
 </Method>
 
