@@ -1064,12 +1064,16 @@ Output: $listbuild(
 10: код пациента (вспомогательное поле - для вычисляемого измерения "Кол-во пациентов" на уровне наборов тестов)
 11: код типа образца
 12: наименование типа образца
+13: кол-во контейнеров -отключено
+14: номер контейнера (реально там лежит поле $p(rects,"\",47) (без типа контейнера через ":"), если оно пустое, то $p(rects,"\",46), если и это пустое, то "?" (для подсчета кол-ва контейнеров) медленного и долгого 
+15: кол-во выполненных тестов тестов
+16: кол-во выполненных невычисляемых тестов тестов
 )</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pId:%String,pSuperSet:%String=""</FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
-   set returnValue=$listbuild("","","","","","","","","","","","")  
+   set returnValue=$listbuild("","","","","","","","","","","","","","","","")  
    try {
 	   set rec=""
 	   set episode=$piece(pId,"||",1)
@@ -1103,36 +1107,87 @@ Output: $listbuild(
 	   // цена за набор тестов (для услуги (супернабор) на одном из наборов тестов цена не нулевая)
 	   set price=+$listget(recext,1) 
 	   
-	   // результат норма или вне нормы ( если все тесты в норме, то НТ в норме, если хотя бы один не в норме - НТ не в норме )
-	   set flagNorma=""
+	   set flagNorma="" // результат норма или вне нормы ( если все тесты в норме, то НТ в норме, если хотя бы один не в норме - НТ не в норме )
+	   set qtTest=0 // кол-во выполненных тестов 
+	   set qtTestNoCalc=0 // кол-во выполненных невычисляемых тестов 
 	   set test=""
 	   for {
-		   set test=$order(^TEPI(episode,1,testset,"DATA",test),1,rec) if test="" quit
+		   set test=$order(^TEPI(episode,1,testset,tscnt,"DATA",test)) if test="" quit
+		   set qtTest=qtTest+1
+		   set flagTest=""
 		   if '$data(^||data("bitweenCubes1",pId)) {
-			   set flagTest=..GetAbnormalFlag(episode,testset,tscnt,test)
+			   if flagNorma'="A" set flagTest=..GetAbnormalFlag(episode,testset,tscnt,test)
+			   set flagCalculation=$select($data(^TTAB("TC",test,3,testset)):1,1:0)
 		   } else {
-			   set flagTest=^||data("bitweenCubes1",pId)
+			   set recvsp=^||data("bitweenCubes1",pId)
+			   if flagNorma'="A" set flagTest=$listget(recvsp,1)
+			   set flagCalculation=$listget(recvsp,2)
 		   }
-		   if flagTest'="" {
+		   if (flagTest'="")&&(flagNorma'="A") {
 			   set flagNorma=flagTest
-			   if flagNorma="A" quit
+			   //if flagNorma="A" quit
 		   }
+		   if flagCalculation=0 set qtTestNoCalc=qtTestNoCalc+1 
 	   }
+	   set rec=$get(^TEPI(episode))
 	   // код пациента
-	   set patientcode=$piece($get(^TEPI(episode)),"\",18)
+	   set patientcode=$piece(rec,"\",18)
 	   
+	   set rects=$get(^TEPI(episode,1,testset,tscnt))
 	   // тип образца
-	   set typeSpecimen=$piece($get(^TEPI(episode)),"\",46)
+	   set typeSpecimen=$piece(rects,"\",46)
+	   /*
 	   if typeSpecimen="" {
 		   set typeSpecimen=##class(TCLEx.Function.TestSet).DefaultSpecimen(testset)
-	   }
+	   }*/
 	   set nameSpecimen=""
 	   if typeSpecimen'="" {
 		  set nameSpecimen=$piece($get(^TTAB("SPEC",typeSpecimen)),"\",1) 
 	   }
 	   
-       set returnValue=$listbuild(dep,depName,depService,depServiceName,serviceCode,serviceDesc,qServices,price,flagNorma,patientcode,typeSpecimen,nameSpecimen)
+	   // кол-во контейнеров
+	   set qtContainers=0
+	   /*
+	   set specimenNo=$piece(rects,"\",47)
+	   if '$data(^||data("container",episode)) {
+		  $$$ThrowOnError(..CreateDimContainres(episode,$name(^||data("container",episode))))
+	   } 
 	   
+	   if specimenNo'="" {
+		   for ii=1:1:$length(specimenNo,";") {
+			   set container=$piece($piece(specimenNo,";",ii),":",1)
+			   if container="" continue
+			   set count=+$get(^||data("container",episode,container))
+			   if count>0 set qtContainers=qtContainers+(1/count)
+		   }
+	   } elseif (typeSpecimen'="") {
+		   set count=+$get(^||data("container",episode,typeSpecimen))
+		   if count>0 set qtContainers=(1/count)
+	   } else {
+		   set count=+$get(^||data("container",episode,"?"))
+		   if count>0 set qtContainers=(1/count)
+		      
+	   }
+	   */
+	   
+	   // номер контейнера
+	   set containers=""
+	   set specimenNo=$piece(rects,"\",47)
+	   if specimenNo'="" {
+		   for ii=1:1:$length(specimenNo,";") {
+			   set container=$piece($piece(specimenNo,";",ii) ,":",1)
+			   if container="" continue
+			   set containers=containers_$select(containers'="":";",1:"")_container
+		   }
+	   } elseif (typeSpecimen'="") {
+		   	   set containers=typeSpecimen
+	   } else {
+		   set containers="?" 
+	   }
+
+       set returnValue=$listbuild(dep,depName,depService,depServiceName,serviceCode,serviceDesc,qServices,price,flagNorma,patientcode,typeSpecimen,nameSpecimen,qtContainers,containers,qtTest,qtTestNoCalc)
+       //                          1     2        3             4             5           6           7     8       9        10            11           12            13         14        15      16
+	   s ^test("ds","ds",pId)=returnValue
 	   
    } catch(e) {
 	    do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME()_".GetAllDateEpisode("_$get(pDateOfCollection)_","_$get(pDateOfReceiving)_","_$get(pDateOfCreation)_")")   
@@ -1150,20 +1205,20 @@ Output: $listbuild(
 2 : Флаг о том, что результат был получен с анализатора, а потом изменен (0 - не изменен, 1 - изменен)
 3 : Флаг о том, что результат был получен с анализатора, а потом удалена информация, что результат получен с анализатора (ошибка в программе) (0 - не изменен, 1 - изменен)
 4 : Флаг о том, что результат был получен с анализатора, а потом изменен (0 - не изменен, 1 - изменен (type=1), 2 - изменен (type=2))
+5 : Флаг о том, что тест является вычисляемым
 )</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec>pId:%String</FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
-   set returnValue=$listbuild("","","","")  
+   set returnValue=$listbuild("","","","","")  
    try {
-	   set rec=""
 	   set episode=$piece(pId,"||",1)
 	   set testset=$piece(pId,"||",2)
 	   set tscnt=$piece(pId,"||",3)
 	   set test=$piece(pId,"||",4)
 	   
-	   set flagNorma= "N" //..GetAbnormalFlag(episode,testset,tscnt,test)
+	   set flagNorma=..GetAbnormalFlag(episode,testset,tscnt,test)
 	   
 	   set flag1=0 //Флаг о том, что результат был получен с анализатора, а потом изменен (0 - не изменен, 1 - изменен)
 	   set flag2=0 // Флаг о том, что результат был получен с анализатора, а потом удалена информация, что результат получен с анализатора (ошибка в программе) (0 - не изменен, 1 - изменен)
@@ -1191,8 +1246,13 @@ Output: $listbuild(
 	      if (flag1'=0)||(flag2'=0)||(flag3'=0) quit	
 	    }
 	   //}
-       set returnValue=$listbuild(flagNorma,flag1,flag2,flag3)
-       //set ^||data("bitweenCubes1",pId)=flagNorma // для использования в кубе EPVisitTestSet
+	   
+	   // Флаг о том, что тест является вычисляемым
+	   set flagCalculation=$select($data(^TTAB("TC",test,3,testset)):1,1:0)
+	   
+       set returnValue=$listbuild(flagNorma,flag1,flag2,flag3,flagCalculation)
+       
+       set ^||data("bitweenCubes1",pId)=$listbuild(flagNorma,flagCalculation) // для использования в кубе EPVisitTestSet
 	   
 	   
    } catch(e) {
@@ -1209,12 +1269,78 @@ Output: $listbuild(
 	s returnVal=""
 	s testdata=$p($g(^TEPI(pEpisode,1,pTestSet,pTestSetCnt,"DATA",pTest)),"\",1)
 	
-	if testdata'="" d 
-	.set flag=$extract($$validres^LVBVIS1(pEpisode,pTestSet,testdata,pEpisode_"||"_pTestSet_"||"_pTestSetCnt,1),1)
-	.if flag'="N" set flag="A"  // "L","H" --> "A" (abnormal)
-  	.//s flag=$P($G(^TTAB("TC",m4,2,testdata)),"\",1) // было в кубе, который привез Володя (это работает, когда стандартный комментарий и testdata="ERR")
- 	.s returnVal=flag
+	if testdata'="" {
+		set flag=$extract($$validres^LVBVIS1(pEpisode,pTestSet,testdata,pEpisode_"||"_pTestSet_"||"_pTestSetCnt,1),1)
+	    if flag'="N" set flag="A"  // "L","H" --> "A" (abnormal)
+  	    //s flag=$P($G(^TTAB("TC",m4,2,testdata)),"\",1) // было в кубе, который привез Володя (это работает, когда стандартный комментарий и testdata="ERR")
+ 	    s returnVal=flag
+	}
  	quit returnVal
+]]></Implementation>
+</Method>
+
+<Method name="GetAllInfoEpisode">
+<Description>
+Получить всю информацию по эпизоду, которая рассчитывается
+Output: $listbuild(
+1 : кол-во контейнеров,
+)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pId:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+   set returnValue=$listbuild("")  
+   try {
+	   set qtContainers=0
+	   kill ^||data("container",pId)
+	   $$$ThrowOnError(..CreateDimContainres(pId,$name(^||data("container",pId))))
+   
+	   set container=""
+	   for {
+		   set container=$order(^||data("container",pId,container)) if container="" quit
+		   set qtContainers=qtContainers+1
+	   }
+       set returnValue=$listbuild(qtContainers)
+	   
+   } catch(e) {
+	    do ##class(TCLEx.Function.General).WriteError($ze,$CLASSNAME()_".GetAllInfoEpisode("_$get(pId)_")")   
+   }
+   quit returnValue
+]]></Implementation>
+</Method>
+
+<Method name="CreateDimContainres">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pGlb:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+	   kill @pGlb
+	   set ts=""
+	   for {
+		   set ts=$order(^TEPI(pEpisode,1,ts)) if ts="" quit
+		   set tscnt=""
+		   for {
+			   set tscnt=$order(^TEPI(pEpisode,1,ts,tscnt),1,rects) if tscnt="" quit
+			   set specno=$piece(rects,"\",47)
+			   set spectype=$piece(rects,"\",46)
+			   if specno'="" {
+				   for ii=1:1:$length(specno,";") {
+					   set container=$piece($piece(specno,";",ii),":",1)
+					   if (container'="") {
+						   if $i(@pGlb@(container))
+					   }
+				   }
+			   } elseif (spectype'="") {
+				   if $i(@pGlb@(spectype))
+			   } else {
+				   if $i(@pGlb@("?"))
+			   }
+		   }
+	   }
+	} catch(e) { set ok=e.AsStatus() }
+	quit ok
 ]]></Implementation>
 </Method>
 </Class>
