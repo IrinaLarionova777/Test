@@ -1,0 +1,609 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR0RU01" type="INT" languagemode="0"><![CDATA[
+PRTDR0RU01
+INIT s MaxLine=44 i $e($$CR(PAR2),1,2)="A5" s MaxLine=17
+ q
+CR(CR) n (CR) s xCR=CR,result="A4" i xCR["-FAX-" s xCR=$p(CR,"-FAX-",1)
+ i '$$select^LVBCTCR(xCR),$e($p(PLIST(4),$c(1)),1,2)="A5" s result="A5" 
+ q result
+ 
+IN ; Numeric  ;IN^PRTDR00 - Left Allignment for Numeric
+ n (result,tc,FORMAT,cnt,lan)
+ i $d(^TTAB("RC",result)) d  q
+ .i $l($g(lan)),$d(^TTAB("RC",result,"LAN",lan)) s result(1)=$p(^(lan),"\",1),result="" q
+ .s result(1)=$p($G(^TTAB("RC",result)),"\",1),result=""
+ s Flag="" i "<>+-"[$e(result) s Flag=$e(result),result=$e(result,2,$l(result))
+ i (result?1.N.E)!(result?1"."1.N.E) s result=+result
+ i (result'?.N.1".".N)!(result="")!(result=".") q
+ i $l(Flag),"<>+-"'[Flag q
+ s result=$j(result,0,$e($p(FORMAT(cnt),$c(2),18),2,4))
+ s result=Flag_result  
+ q  
+ 
+IS ; Standard comments
+IX ; Free Text
+ s width=tsWD-$p(FORMAT(cnt),$c(2),7) i width'>0 s width=0
+ i 'width k result s result=""
+ n (result,tc,width,lan) s resultsave=result ; ****
+ s result=$tr(result,"{}[]"),result=$tr(result,$c(16,17,18,5,6,11,12),"^\|{}[]") ; ****
+ d
+ .i $l(result),$l(result)<30,$d(^TTAB("TC",tc,2,result)) d  s result="" q
+ ..k res s x=0 f i=1:1 s x=$o(^TTAB("TC",tc,2,result,"T",x)) q:x=""  s res(i)=$tr(^(x),$c(16,17,18,5,6,11,12),"^\|{}[]")
+ ..i $l($g(lan)),$d(^TTAB("TC",tc,"2L",result,lan)) do  ;
+ ...k res 
+ ...set transres=$piece($get(^TTAB("TC",tc,"2L",result,lan)),"\",6) if transres'="" set res(1)=$tr(transres,$c(16,17,18,5,6,11,12),"^\|{}[]")
+ ...s x=0 f i=2:1 s x=$o(^TTAB("TC",tc,"2L",result,lan,"T",x)) q:x=""  s res(i)=$tr(^(x),$c(16,17,18,5,6,11,12),"^\|{}[]")
+ .. ; adjust width of the free text to a width of the report
+ ..s x="" f  s x=$o(res(x)) q:x=""  s line=res(x) d
+ ...f  q:$l(line)'>width  d
+ ....f xx1=1:1 i $l($p(line," ",1,xx1))>width s l1=$p(line," ",1,xx1-1),line=$p(line," ",xx1,$l(line," ")) q
+ ....i l1="" s l1=$e(line,1,width),line=$e(width+1,$l(line))
+ ....s xx2=$o(result(""),-1)+1,result(xx2)=l1
+ ...s xx2=$o(result(""),-1)+1,result(xx2)=line
+ .s result=resultsave,result=$tr(result,$c(16,17,18,5,6,11,12),"^\|{}[]") ; ****
+ q
+ 
+IZ ; Special fields
+ if $p(FORMAT(cnt),$c(2),18)'="Z17" quit  // обрабатываем только тип теста "Тип материала" Z17
+ if $get(lan)="" quit  // все делается только ради перевода на английский
+ 
+ s width=tsWD-$p(FORMAT(cnt),$c(2),7) i width'>0 s width=0
+ i 'width k result s result=""
+ n (result,tc,width,lan) 
+ set result=$tr(result,$c(16,17,18,5,6,11,12),"^\|{}[]")
+ s resultsave=result ; ****
+ 
+ i $l(result) do  ;
+ .set str=$zcvt(result,"U")
+ .if '$data(^||indSpecimen) do DoIndexSpecimen()
+ .set codespecimen=$order(^||indSpecimen(str,""))
+ .if codespecimen="" quit
+ .if '$data(^TTAB("SPEC",codespecimen,"LAN",lan)) quit
+ .set res(1)=$piece($get(^TTAB("SPEC",codespecimen,"LAN",lan)),"\",1)
+ . ;
+ . ; adjust width of the free text to a width of the report
+ .s x="" f  s x=$o(res(x)) q:x=""  s line=res(x) d
+ ..f  q:$l(line)'>width  d
+ ...f xx1=1:1 i $l($p(line," ",1,xx1))>width s l1=$p(line," ",1,xx1-1),line=$p(line," ",xx1,$l(line," ")) q
+ ...i l1="" s l1=$e(line,1,width),line=$e(width+1,$l(line))
+ ...s xx2=$o(result(""),-1)+1,result(xx2)=l1
+ ..s xx2=$o(result(""),-1)+1,result(xx2)=line
+ 
+ set result=""
+ quit 
+
+ // Создать индекс по наименованию образца материала 
+DoIndexSpecimen()
+	kill ^||indSpecimen
+	set spec=""
+	for {
+		set spec=$order(^TTAB("SPEC",spec),1,rec) if spec="" quit
+		set name=$piece(rec,"\",1)
+		if name'="" set ^||indSpecimen($zcvt(name,"U"),spec)=""
+	}
+	quit  
+
+ 
+Header(page,par1,par2)  
+	New (page,par1,par2,VISIT,DOC,HOSP,REPID)
+	;
+	Set epis=$Piece($Get(VISIT(2)),$Char(1))
+	Do SetVals(epis)
+	Set depcode=$Get(^||rep("Vals","TS_DepartmentCode"))
+	Set hospcode=$Get(^||rep("Vals","НospitalCode"))
+	;
+	Kill ^PR(REPID,"HDR")  
+	Do ADD^PRTREP00(REPID,"HDR","~RESET")          
+	Do ADD^PRTREP00(REPID,"HDR","~PORTRAIT")     
+	Do ADD^PRTREP00(REPID,"HDR",$Char(27)_"&l26a")  
+	;
+	Set wasimage=0,dyimage=685			; сдвиг по вертикали, если не печатаем растровую графику (заголовок бланка, печать, подпись врача, если печатаем, то 0)
+	Set forpdf=(($Get(page)="")&&($Get(par1)=""))
+	If forpdf { ; Если вывод для последующего преобразования в pdf
+		Do PrintLogo(REPID,"HDR",hospcode,.wasimage)
+		Do PrintStamp(REPID,"HDR",hospcode,.wasimage)
+		Set depcode=$Get(par2)
+		Set depobj=##class(User.CTDepartment).%OpenId(depcode)
+		If $IsObject(depobj) {
+			Set ^||rep("Vals","TS_DepartmentName")=depobj.CTDEPName
+			Set ^||rep("Vals","TS_DepartmentCode")=depcode
+		}
+		Set ^||rep("Vals","SectionName")=$$SectionName(epis,depcode)
+	} Else {
+		Set ^||rep("Vals","SectionName")=$$SectionName(epis,"")
+		If (hospcode'="")&&($Data(^BionImg("ResultReportHeaders",hospcode))) {
+			Set tray1code=##class(TCLEx.Data.Parameter).GetValue("PCLTray1")
+			If tray1code="" {
+				Set tray1code="&l1H"
+			}	
+			Do ADD^PRTREP00(REPID,"HDR",$Char(27)_tray1code)  
+			Do PrintLogo(REPID,"HDR",hospcode,.wasimage)
+		} Else {	
+			Set tray2code=##class(TCLEx.Data.Parameter).GetValue("PCLTray2")
+			If tray2code="" {
+				Set tray2code="&l21H"
+			}	
+			Do ADD^PRTREP00(REPID,"HDR",$Char(27)_tray2code)  
+		}
+		/*
+		If (hospcode'="")&&($Data(^BionImg("ResultReportHeaders",hospcode))) {
+			Do ADD^PRTREP00(REPID,"HDR",$Char(27)_"&l1H")  
+			Do PrintLogo(REPID,"HDR",hospcode,.wasimage)
+		} Else {	
+			Do ADD^PRTREP00(REPID,"HDR",$Char(27)_"&l21H")  
+		}*/
+		
+	}	
+	Do PrintSignature(REPID,"PRT",.wasimage)
+	If wasimage Set dyimage=0 ; не нужен сдвиг по вертикали, если не печатали растровую графику (заголовок бланка, печать, подпись врача...)
+	;
+	Set dyrows=0 ; additional rows (если нет шапки в таблице)
+	;
+	Do ADD^PRTREP00(REPID,"PRT",$C(27)_"*v0O")          
+	Do NORMAL("PRT")
+	Set YH=950,YStep=125     ;шаг строки
+	;
+	Do Line("PRT",150,YH,"Ист.бол./Амб.карта")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","CardNumber")))
+	Do Line("PRT",2950,YH,"ЛПУ:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","Нospital")))
+	Set YH=YH+YStep
+	;
+	Do Line("PRT",150,YH,"Ф.И.О.:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","FullName")))
+	Do Line("PRT",2950,YH,"Отделение:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","HospitalDepartment")))
+	Set YH=YH+YStep
+	;
+	Do Line("PRT",150,YH,"Дата рождения:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","DOB")))
+	Do Line("PRT",1900,YH,"Пол:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","Sex")))
+	Do Line("PRT",2950,YH,"Ф.И.О. врача:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","Doctor")))
+	Set YH=YH+YStep
+	;
+	If $Get(^||rep("Vals","SexCode"))="Ж" {
+		If $Get(^||rep("Vals","CyclePhase"))'=""  {
+			Do Line("PRT",150,YH,"Фаза цикла:")
+			Do AddValue(REPID,"PRT",$Get(^||rep("Vals","CyclePhase")))
+		} ElseIf $Get(^||rep("Vals","PregnancyWeeks"))'="" {	
+			Do Line("PRT",150,YH,"Срок беременности:")
+			Do AddValue(REPID,"PRT",$Get(^||rep("Vals","PregnancyWeeks")))
+			Do Line("PRT",1350,YH,"нед.")
+		}	
+	}
+	Do Line("PRT",2950,YH,"Дата/время взятия материала:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","DateTimeOfCollection")))
+	Set YH=YH+YStep
+	;
+ 
+	;
+	Do Line("PRT",150,YH,"Адрес:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","Address1")))
+	Do Line("PRT",2950,YH,"Дата доставки материала:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","DateOfReceiving")))
+	Set YH=YH+YStep
+	;
+	Do GotoXY(REPID,"PRT",150,YH)
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","Address2")),0)
+	Do Line("PRT",2950,YH,"Номер заказа:")
+	Do AddValue(REPID,"PRT",$Extract(epis,1,10))
+	Set YH=YH+YStep
+	;
+	Do Line("PRT",150,YH,"Страховая компания:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","InsCompany")))
+	Do Line("PRT",2950,YH,"Номер образца:")
+	Do AddValue(REPID,"PRT",epis)
+	Set YH=YH+YStep
+	;
+	Do Line("PRT",150,YH,"Стр. полис: Серия ")
+	Set val=$Get(^||rep("Vals","InsSerial"))
+	Do AddValue(REPID,"PRT",val)
+	If val'="" { Do ADD^PRTREP00(REPID,"PRT","~DX=50")}
+	Else { Do ADD^PRTREP00(REPID,"PRT","~DX=400")} ; Отступ до номера полиса при пустой серии	
+	Do ADD^PRTREP00(REPID,"PRT","Номер ")	
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","InsNumber")))
+	;Do Line("PRT",2950,YH,"Биоматериал:")
+	;Do AddValue(REPID,"PRT",$Get(^||rep("Vals","TS_Specimen")))
+	Set YH=YH+(1.5*YStep\1)
+	;
+	Do ADD^PRTREP00(REPID,"PRT","~BOLD")          
+	Do ADD^PRTREP00(REPID,"PRT","~FONTSIZE=12")
+	Set val=$Get(^||rep("Vals","SectionName"))
+	If val="" {
+		Set val=$Get(^||rep("Vals","TS_DepartmentName"))
+	}	
+	If depcode="H" Set val="Микробиологический отчет"
+	Do Line("PRT",$$CenterPosX^KSPCLUtils(val),YH,val) ;*** Center
+ 
+	Set recty=YH+(0.5*YStep\1)
+	If (depcode="H")||(depcode="D") {
+		Set dyimage=dyimage-415	
+		Set dyrows=280	
+	} Else {
+		Do GotoXY(REPID,"PRT",100,recty)
+		Do ADD^PRTREP00(REPID,"PRT",$Char(27)_"*c5380H")
+		Do ADD^PRTREP00(REPID,"PRT",$Char(27)_"*c300V")
+		Do ADD^PRTREP00(REPID,"PRT",$Char(27)_"*c4G") ;4G
+		Do ADD^PRTREP00(REPID,"PRT",$Char(27)_"*c2P")
+	}	
+	;
+ 
+	If (depcode="H")||(depcode="D") {
+		Set YH=YH+180
+		Set recty=recty ;15
+	} ElseIf depcode="G" {
+		Set YH=YH+(1.5*YStep\1)
+		Do ADD^PRTREP00(REPID,"PRT","~FONTSIZE=10")
+		Do Line("PRT",600,YH,"Наименование теста")
+		Do Line("PRT",3600,YH,"Результат") 
+		Set YH=recty+407
+		Set recty=recty+290 ;300
+	}	
+	  Else {
+		Set YH=YH+(1.5*YStep\1)
+		Do ADD^PRTREP00(REPID,"PRT","~FONTSIZE=10")
+		Do Line("PRT",600,YH,"Наименование теста")
+		Do Line("PRT",2950,YH,"Результат") 
+		Do Line("PRT",3715,YH,"Единицы") 
+		Do Line("PRT",4700,YH,"Референсные")
+		;
+		Set YH=YH+(0.7*YStep\1)
+		Do Line("PRT",3715,YH,"измерения")
+		Do Line("PRT",4700,YH,"значения")
+		Set YH=recty+407
+		Set recty=recty+290 ;300
+	}	
+	If 'forpdf Set recty=recty-5 ; По разному для PDF и для печати центрирование в зебре выглядит
+	
+	Do NORMAL("PRT")
+ 
+	Set rowcount=$$RowCount(depcode)
+	For i=1:1:rowcount {
+		If i#2 Continue
+		Do GotoXY(REPID,"PRT",100,YH)
+		Do ADD^PRTREP00(REPID,"PRT",$Char(27)_"*c5380H")
+		Do ADD^PRTREP00(REPID,"PRT",$Char(27)_"*c100V")
+		Do ADD^PRTREP00(REPID,"PRT",$Char(27)_"*c4G")
+		Do ADD^PRTREP00(REPID,"PRT",$Char(27)_"*c2P")
+		Set YH=YH+200
+	}	
+	; Рамка таблицы
+	Do ADD^PRTREP00(REPID,"PRT",$C(27)_"%0B")          
+	Do ADD^PRTREP00(REPID,"PRT","IN;")          
+	Do ADD^PRTREP00(REPID,"PRT","SP1;")          
+	If (depcode'="H")&&(depcode'="D") { ; Нет шапки у таблицы
+		Do ADD^PRTREP00(REPID,"PRT","PA140,"_(8195-dyimage)_";")          
+		Do ADD^PRTREP00(REPID,"PRT","PD140,"_(8195-dyimage)_",7740,"_(8195-dyimage)_",7740,"_(8610-dyimage)_",140,"_(8610-dyimage)_",140,"_(8195-dyimage)_";")          
+	}
+	Do ADD^PRTREP00(REPID,"PRT","PA140,"_(1820-dyimage-dyrows)_";")          
+	Do ADD^PRTREP00(REPID,"PRT","PD140,"_(1820-dyimage-dyrows)_",7740,"_(1820-dyimage-dyrows)_",7740,"_(8195-dyimage)_",140,"_(8195-dyimage)_",140,"_(1820-dyimage-dyrows)_";")          
+	Do ADD^PRTREP00(REPID,"PRT",$C(27)_"%0A")
+	;          
+	Do GotoXY(REPID,"PRT",100,recty) ; Позиционируемся в нижнюю левую точку заголовка таблицы
+	Do ADD^PRTREP00(REPID,"PRT","!")          
+ 	
+	Quit
+ 
+RowCount(pDepCode) public {
+	If (pDepCode="H")||(pDepCode="D") Quit 47
+	Quit 45
+}	
+ 
+GotoXY(REPID,PSection,pX,pY) [REPID]  public {
+	Do ADD^PRTREP00(REPID,PSection,"~X="_$Get(pX))          
+	Do ADD^PRTREP00(REPID,PSection,"~Y="_$Get(pY))          
+}	 
+ 
+AddValue(REPID,SECTION,pVal,pDX) [REPID,SECTION]  public {
+	If $Get(pDX)>0 Do ADD^PRTREP00(REPID,SECTION,"~DX=50")	
+	Do ADD^PRTREP00(REPID,SECTION,"~BOLD")          
+	Do ADD^PRTREP00(REPID,SECTION,pVal)          
+	Do ADD^PRTREP00(REPID,SECTION,"~MEDIUM")
+	;          
+ 
+}	
+ 
+PrintLogo(REPID,Section,HospId,WasImage) public {
+	Set glb=$Name(^BionImg("ResultReportHeaders","BION"))
+	If ($Get(HospId)'="")&&($Data(^BionImg("ResultReportHeaders",HospId))) { 
+		Set glb=$NA(^BionImg("ResultReportHeaders",HospId))
+	} 		
+	If ($Data(@glb))&&('WasImage) {
+		Set WasImage=1
+	}	
+	Set i=""
+	For  {
+		Set i=$Order(@glb@(i),1,val)
+		If i="" Quit
+		Do ADD^PRTREP00(REPID,Section,val)
+	}	
+}	
+
+	// Печать печати
+PrintStamp(REPID,Section,HospId,WasImage) public {
+	If (HospId'="")&&($Data(^BionImg("ResultReportHeaders",HospId))>1) Quit
+	Set glb=$Name(^BionImg("Stamps","BION") )
+	If ($Data(@glb))&&('WasImage) {
+		Set WasImage=1
+	}	
+	Set i=""
+	For  {
+		Set i=$Order(@glb@(i),1,val)
+		If i="" Quit
+		Do ADD^PRTREP00(REPID,Section,val)
+	}	
+} 
+
+	// Печать факсимиле врача
+PrintSignature(REPID,Section,WasImage) public {
+	Set doctorid=$Get(^||rep("Vals","TS_AuthorisedDoctorId"))
+	If (doctorid="") Quit
+	Set glb=$Name(^BionImg("DoctorSignatures",doctorid))
+	If ($Data(@glb))&&('WasImage) {
+		Set WasImage=1
+	}	
+	Set i=""
+	For  {
+		Set i=$Order(@glb@(i),1,val)
+		If i="" Quit
+		Do ADD^PRTREP00(REPID,Section,val)
+	}	
+} 
+SetVals(pEpis) public {
+	Kill ^||rep
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit
+	Set ^||rep("CurrentEpis")=episobj.%Id()
+	Set ^||rep("Vals","CardNumber")=$Piece(episobj.EPVISHospitalEpisodeURNumber,",",2)
+	Set ^||rep("Vals","FullName")=$$FullName^KSPCLUtils(episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1,40)
+	Set ^||rep("Vals","DOB")=$$DisplayDate^KSPCLUtils(episobj.EPVISDateOfBirth) 
+	Set ^||rep("Vals","Address1")=$Extract(episobj.EPVISPatientAddress1,1,45)
+	Set ^||rep("Vals","Address2")=$Extract(episobj.EPVISPatientAddress2,1,45)
+	
+	Set ^||rep("Vals","InsCompany")=episobj.EPVISExtra9
+	Set ^||rep("Vals","InsSerial")=episobj.EPVISExtra10
+	Set ^||rep("Vals","InsNumber")=episobj.EPVISExtra11
+	
+	Set ^||rep("Vals","HospitalDepartment")=episobj.EPVISExtra8
+	Set ^||rep("Vals","DateTimeOfCollection")=$$DisplayDate^KSPCLUtils(episobj.EPVISDateOfCollection)_" "_$$DisplayTime^KSPCLUtils(episobj.EPVISTimeOfCollection,2)
+	Set ^||rep("Vals","DateOfReceiving")=$$DisplayDate^KSPCLUtils(episobj.EPVISDateOfReceiving) 
+	
+	Set ^||rep("Vals","PregnancyWeeks")=episobj.EPVISPregnantNumberOfWeeks
+	;
+	Set sexobj=episobj.EPVISSpeciesDR
+	If $IsObject(sexobj) {
+		Set ^||rep("Vals","SexCode")=sexobj.CTSPCode
+		Set ^||rep("Vals","Sex")=sexobj.CTSPDesc
+	}	
+	Set condobj=episobj.EPVISClinicalConditionsDR
+	If $IsObject(condobj) Set ^||rep("Vals","CyclePhase")=condobj.CTCLCDescription
+	;
+	Set hospobj=episobj.EPVISHospitalCodeDR
+	If $IsObject(hospobj) {
+		Set ^||rep("Vals","НospitalCode")=hospobj.CTHOSCode
+		Set ^||rep("Vals","Нospital")="("_hospobj.CTHOSCode_") "_hospobj.CTHOSName
+	}	
+	;
+	Set doctobj=episobj.EPVISDoctorCodeDR
+	If $IsObject(doctobj) Set ^||rep("Vals","Doctor")=$$FullName^KSPCLUtils(doctobj.CTDRSurname,doctobj.CTDRGivenName)
+ 
+ 
+	Set key="",testobj=""
+	For  {
+		Set testobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If $$IsAuthorisatedTestSet(testobj) Quit
+		If key="" Quit
+	}
+	If '$IsObject(testobj) Quit
+	Do SetTestSetVals(testobj)
+}	
+SectionName(pEpis,pDepCode) public {
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpis)
+	If '$IsObject(episobj) Quit ""
+	Set pDepCode=$Get(pDepCode)
+	Kill Sections
+	Set key="",testobj="",cnt=0,result=""
+	For  {
+		Set testobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testobj) Continue
+		Set cttestsetobj=testobj.VISTSTestSetDR
+		If '$IsObject(cttestsetobj) Continue
+		If pDepCode'="" {
+			Set depobj=cttestsetobj.CTTSDepartmentDR
+			If $IsObject(depobj)&&(depobj.%Id()'=pDepCode) {
+				Continue
+			}
+		}	
+		Set sectionobj=cttestsetobj.CTTSSectionDR
+		If '$IsObject(sectionobj) Continue
+		Set code=sectionobj.CTDSCode	
+		Set name=sectionobj.CTDSDescription
+		If (code="")||($Data(Sections(code))) Continue
+		Set Sections(code)=name 	
+		Set result=name
+		Set cnt=cnt+1
+		If cnt>1 Quit 	
+	}
+	If cnt=1 Quit result
+	Quit ""
+}	
+IsAuthorisatedTestSet(pTestSetObj) public {
+	If '$IsObject(pTestSetObj) Quit 0
+	If 'pTestSetObj.VISTSDateOfAuthorisation="" Quit 0
+	If '$IsObject(pTestSetObj.VISTSUserAuthorisedDR) Quit 0
+	Quit 1
+}	
+ 
+SetTestSetVals(pTestSetObj) public {
+	If '$IsObject(pTestSetObj) Quit
+	Set ^||rep("Vals","TS_ID")=pTestSetObj.%Id()
+	Set ^||rep("Vals","TS_DateOfAuthorisation")=$$DisplayDate^KSPCLUtils(pTestSetObj.VISTSDateOfAuthorisation)
+	;
+	Set cttestsetobj=pTestSetObj.VISTSTestSetDR
+	If $IsObject(cttestsetobj) { 
+		Set depobj=cttestsetobj.CTTSDepartmentDR
+		If $IsObject(depobj) {
+			Set ^||rep("Vals","TS_DepartmentName")=depobj.CTDEPName
+			Set ^||rep("Vals","TS_DepartmentCode")=depobj.%Id()
+		}
+	}	
+	;
+	Set userobj=pTestSetObj.VISTSUserAuthorisedDR
+	If $IsObject(userobj) { 
+		Set ^||rep("Vals","TS_AuthorisedDoctorId")=userobj.%Id()
+		Set ^||rep("Vals","TS_AuthorisedDoctor")=userobj.SSUSRName
+	}	
+	;
+	Set specimen=""
+	Set specobj=pTestSetObj.VISTSSpecimenTypeDR
+	If $IsObject(specobj) Set specimen=specobj.CTSPEDesc
+	If specimen="" Set specimen=$$TestSpecimen^KSReportSQL($Piece(pTestSetObj.%Id(),"||",2))
+	Set ^||rep("Vals","TS_Specimen")=specimen
+	;
+}	
+ 
+Footer(page,par1,par2) 
+	New (page,par1,par2,REPID,VISIT,DOC,epis,list) 
+ 
+	Set page=$g(page),par1=$G(par1),par2=$G(par2) 
+	Set totalpages=$Order(^TMP("REPORT",$j,""),-1)
+	If 'totalpages Set totalpages=1
+	;
+	If page="" Quit
+	;
+	Set YH=7600,YStep=125
+	Do Line("PRT",150,YH,"Выпускающий врач:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","TS_AuthorisedDoctor")))
+	Do Line("PRT",3680,YH,"Дата выдачи:")
+	Do AddValue(REPID,"PRT",$Get(^||rep("Vals","TS_DateOfAuthorisation")))
+	Set YH=YH+YStep
+	Do Line("PRT",3680,YH,"Стр. "_page_" из "_totalpages)
+	Do ADD^PRTREP00(REPID,"PRT",$C(13))
+	If page'=totalpages {
+		Do ADD^PRTREP00(REPID,"PRT","#")
+	} Else {
+		Set episid=$Get(^||rep("CurrentEpis"))
+		If $Get(episid)'="" {
+			Do MakeEpisodesList()	
+			Set episcount=$Get(^||rep("EpisList"))
+			Set episnumber=$Get(^||rep("EpisList",episid))
+			If (episnumber>0)&&(episnumber<episcount) Do ADD^PRTREP00(REPID,"PRT","#")
+		}
+	}		
+	Quit
+NORMAL(razdel) ;установка шрифта Normal и размера шрифта из описания "Настройка отчетов"
+ S razdel=$G(razdel,"PRT")
+ D ADD^PRTREP00(REPID,razdel,"~NORMAL")                                
+ D ADD^PRTREP00(REPID,razdel,$c(27)_"(s1P")
+ D ADD^PRTREP00(REPID,razdel,"~FONTSIZE=10")
+ D ADD^PRTREP00(REPID,razdel,"~FONTNAME=Courier New Cyr")
+ q
+STAT(razdel)  ;описание формата и шрифта (A4||P||9) для отчета ( PRT-main; HDR-header&footer )
+ S razdel=$G(razdel,"PRT")
+ new rep,razm  s rep=$S(razdel="PRT":"DREP1",1:"DREP0")
+ s razm=+$P($P($G(^TTAB("REPORT-GENERIC",rep)),"\",2),"||",3)
+ s:razm=0 razm=$S(razdel="PRT":9,1:10)
+ q razm
+ ;
+LN  d ADD^PRTREP00(REPID,"PRT","! ") q   
+Line(razdel,x,y,str) ;добавить строку в соответствующий раздел
+ S razdel=$G(razdel,"HDR")
+ S x=$G(x,50),y=$G(y,100),str=$G(str) i $g(str)="" s str=" "
+ d ADD^PRTREP00(REPID,razdel,$C(27)_"&a"_x_"h"_y_"V"_str)   
+ q
+ ; Tests to Follow - формируем список наборов тестов ктр. еше не разрешены
+TTF(epis,list) n (epis,list) s epis=$g(epis),list=$g(list),result=""
+ k printed
+ f n=1:1:$l(list,",") s tscnt=$p(list,",",n) q:tscnt=""  d
+ . s ts=$p(tscnt,"||",2),cnt=$p(tscnt,"||",3)
+ . i $l(ts),$l(cnt) s printed(ts,cnt)=""
+ s sep=""
+ s ts="" f  s ts=$o(^TEPI(epis,1,ts)) q:ts=""  d
+ . ; do not look at empty tests
+ . i '$d(^TTAB("TS",ts,0)) q
+ . ; do not look at non printable tests
+ . s (ok,x)="" f  s x=$o(^TTAB("TS",ts,0,x)) q:x=""  i $p(^(x),"\",8)'="",$p(^(x),"\",13)="Y" s ok=1 q
+ . i ok s cnt="" f  s cnt=$o(^TEPI(epis,1,ts,cnt)) q:cnt=""  d
+ .. i $d(printed(ts,cnt)) q
+ .. s rowid=epis_"||"_ts_"||"_cnt,status=""
+ .. i $$status^LVBVIS1(epis_"||"_ts_"||"_cnt)'="A" d
+ ... s result=result_sep_$p(^TTAB("TS",ts),"\",2),sep="; ",cnt=9999
+ q result
+ 
+MakeEpisodesList() public {
+	Set glb=$NA(^TMP("PRTDR00",$Job,"LIST"))
+	Kill ^||rep("EpisList")
+	Set dh1=""
+	For  {
+		Set dh1=$Order(@glb@(dh1))
+		If dh1="" Quit
+		;
+		Set SORT=""
+		For  {
+			Set SORT=$Order(@glb@(dh1,SORT))
+			If SORT="" Quit
+			;
+			Set dh2=""
+			For  {
+				Set dh2=$Order(@glb@(dh1,SORT,dh2))
+				If dh2="" Quit
+				;
+				Set Master=""
+				For  {
+					Set Master=$Order(@glb@(dh1,SORT,dh2,Master))
+					If Master="" Quit
+					;
+					Set report=""
+					For  {
+						Set report=$Order(@glb@(dh1,SORT,dh2,Master,report))
+						If report="" Quit
+						;
+						Set px=""
+						For  {
+							Set px=$Order(@glb@(dh1,SORT,dh2,Master,report,px))
+							If px="" Quit
+							;
+						
+							Set sort=""
+							For  {
+								Set sort=$Order(@glb@(dh1,SORT,dh2,Master,report,px,sort))
+								If sort="" Quit
+								;
+								Set epis=""
+								For  {
+									Set epis=$Order(@glb@(dh1,SORT,dh2,Master,report,px,sort,epis))
+									If epis="" Quit
+									;
+									Set ^||rep("EpisList",epis)=$Increment(^||rep("EpisList"))
+								}							
+							}
+						}							
+					}							
+				}	
+			}	 
+		}	
+	}		
+}	
+NastImg() public {
+	Kill ^||tmp
+	Kill ^BionImg2 
+	Merge ^BionImg2=^BionImg
+	Set i=""
+	For  {
+		Set i=$Order(^BionImg(i))
+		If i="" Quit
+		Merge ^||tmp("ResultReportHeaders",i)=^BionImg(i)
+	}
+	Kill ^BionImg
+	Merge ^BionImg=^||tmp
+	Merge ^BionImg("ResultReportHeaders","BION")=^||tmp("ResultReportHeaders","DRepHeader2")
+	Kill ^BionImg("ResultReportHeaders","DRepHeader") 	
+	Kill ^BionImg("ResultReportHeaders","DRepHeader2") 	
+}	 
+ 
+]]></Routine>
+</Export>
