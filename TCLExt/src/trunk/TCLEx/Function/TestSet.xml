@@ -976,7 +976,7 @@ pLanguage - язык результата</Description>
 	If (needadd) {
 		Do ##class(TCLEx.Function.LabOrder).NeededResultModes(pEpisId,.needweber,.needhospitalemail,.needpatientemail,.needpatientsms)
 		Set hor=$Horolog
-		Do ..SetAuthorisationStatus(pEpisId,pTestSetId,hor,hor,needweber,needhospitalemail,needpatientemail,needpatientsms)
+	Do ..SetAuthorisationStatus(pEpisId,pTestSetId,hor,hor,needweber,needhospitalemail,needpatientemail,needpatientsms)
 	}	
 	If (needdel) {
 		Do ..KillAuthorisationStatus(pEpisId,pTestSetId)
@@ -1047,7 +1047,7 @@ pLanguage - язык результата</Description>
 		If (episdatetime="")||(episdatetime]pEpisDateTime) Set ^TCLEx("PatientEMail",pEpisId)=pEpisDateTime
 		Lock -^TCLEx("PatientEMail",pEpisId)
 	}
-	If (pPatientEMail) {										// Для отсылки SMS пациенту
+	If (pPatientSMS) {											// Для отсылки SMS пациенту
 		Lock +^TCLEx("PatientSMS",pEpisId)
 		Set ^TCLEx("PatientSMS",pEpisId,pTestSetId)=pTestSetDateTime
 		Set episdatetime=$Get(^TCLEx("PatientSMS",pEpisId))		
@@ -1124,7 +1124,7 @@ pLanguage - язык результата</Description>
 		If '##class(TCLEx.Function.SuperSet).IsComplete(pEpisId,superset) Quit
 		Set pTestSetId=superset
 	}	
-	Do ..SetAuthorisationStatus(pEpisId,pTestSetId,episdatetime,testsetdatetime,1,needhospitalemail,needpatientemail,0)
+	Do ..SetAuthorisationStatus(pEpisId,pTestSetId,episdatetime,testsetdatetime,1,needhospitalemail,needpatientemail,needpatientsms)
 ]]></Implementation>
 </Method>
 
@@ -2011,6 +2011,107 @@ pValues - Значения в формате $ListBuild
 		}
 	}
 	Quit doctorId
+]]></Implementation>
+</Method>
+
+<Method name="IsTime4Result">
+<Description>
+Наступило ли время для формирования результата для указанного набора тестов
+Параметры:
+pTestSetId - ID набора тестов
+pAuthDateTime - время авторизации набора тестов
+Возвращаемое значение:
+0 - рано формировать	
+1 - пора формировать	</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSetId:%String,pAuthDateTime:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set result=1
+	Set episid=$Piece(pTestSetId,"||",1)
+	// Время авторизации первого набора тестов в эпизоде
+	Set firstauthdatetime=##class(TCLEx.Function.Episode).FirstAuthorizationDateTime(episid)
+	If firstauthdatetime="" {		// Если его нет, то берем время аворизации текущего набора тестов (перестраховка, такого быть не должно)
+		Set firstauthdatetime=pAuthDateTime
+	}
+	Set episobj=##class(User.EPVisitNumber).%OpenId(episid)
+	If '$IsObject(episobj) Quit 0
+	Set priority=episobj.EPVISPriorityCodeDRGetObjectId()
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj) Quit 0
+	If '##class(TCLEx.Function.Laboratory).IsCitoPriority(priority) {
+		Set priority=episobj.EPVISPriorityCodeDRGetObjectId()
+	}
+	Set testset=testsetobj.VISTSTestSetDRGetObjectId()
+	Quit ..IsTime4Result2(testset,priority,firstauthdatetime,pAuthDateTime)
+]]></Implementation>
+</Method>
+
+<Method name="IsTime4Result2">
+<Description>
+Наступило ли время для формирования результата для указанного набора тестов
+Параметры:
+pTestSet - код набора тестов
+pPriority - код приоритета
+pMinAuthDateTime - минимальное время авторизации
+pAuthDateTime - время авторизации набора тестов
+Возвращаемое значение:
+0 - рано формировать	
+1 - пора формировать	</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String,pPriority:%String,pMinAuthDateTime:%String,pAuthDateTime:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set result=1
+	Do ..TestSetTimeOuts(pTestSet,pPriority,.firsttimeout,.lasttimeout) 	// Тайм-ауты для эпизода с учетом срочности набора тестов
+	//
+	Set now=$Horolog
+	Set deltatime=$$DeltaTimeSec^KSUTIL1(pMinAuthDateTime,now)	// Сравниваем разницу с момента авторизации первого набора тестов 
+	If deltatime<firsttimeout {
+		Set result=0
+	} Else {
+		Set deltatime=$$DeltaTimeSec^KSUTIL1(pAuthDateTime,now)	// Сравниваем разницу с момента авторизации текщего набора тестов
+		If deltatime<lasttimeout {
+			Set result=0
+		}
+	}		  										
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="TestSetTimeOuts">
+<Description>
+Тайм-ауты для выгрузки набора тестов pTestSetId
+pFirstTimeOut - время с момента авторизации первого набора тестов
+pLastTimeOut - время с момента авторизации последнего набора тестов
+Для Cito приоритетов (могут быть разные коды для разных лабораторий) берутся меньшие тайм-ауты
+Также есть понятия: 
+1) CitoTestSets - т.е. наборов тестов, которые всегда идут с тайм-аутами, как для Cito..
+2) SuperCitoTestSets - т.е. наборов тестов, которые имеют тайм-ауты SuperCito, если приоритет исследования "U" (Cito) и "C" (Срочный) </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pTestSet:%String,pPriority:%String,&pFirstTimeOut:%Integer,&pLastTimeOut:%Integer]]></FormalSpec>
+<Implementation><![CDATA[
+	Set pPriority=$Get(pPriority)
+	Set iscito=##class(TCLEx.Function.Laboratory).IsCitoPriority(pPriority)
+	If ('iscito){
+		Set citotestsets=$$CitoTestSets^Settings.Reports()
+		If (citotestsets'="")&&(pTestSet'="")&&(citotestsets[(","_pTestSet_",")) {
+			Set iscito=1
+		}	
+	}	
+	If iscito {																			// Для CITO
+		Set supercitotestsets=$$SuperCitoTestSets^Settings.Reports()
+		If (supercitotestsets'="")&&(pTestSet'="")&&(supercitotestsets[(","_pTestSet_",")) {
+			Set pFirstTimeOut=$$SuperCitoFirstTestSetTimeOut^Settings.Reports() 					// Сколько ждем с момента  первой авторизации TestSet-а эпизода или последней выгрузки результатов по эпизоду 
+			Set pLastTimeOut=$$SuperCitoLastTestSetTimeOut^Settings.Reports()						// Сколько ждем с момента после авторизации TestSet-а						
+		} Else {	
+			Set pFirstTimeOut=$$CitoFirstTestSetTimeOut^Settings.Reports() 					// Сколько ждем с момента  первой авторизации TestSet-а эпизода или последней выгрузки результатов по эпизоду 
+			Set pLastTimeOut=$$CitoLastTestSetTimeOut^Settings.Reports()						// Сколько ждем с момента после авторизации TestSet-а						
+		}
+	}Else {
+		Set pFirstTimeOut=$$FirstTestSetTimeOut^Settings.Reports()
+		Set pLastTimeOut=$$LastTestSetTimeOut^Settings.Reports()
+	}
 ]]></Implementation>
 </Method>
 </Class>
