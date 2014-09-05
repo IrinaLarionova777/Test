@@ -1038,10 +1038,16 @@ pPDFFileName - по ссылке возвращается имя созданн�
 	Set reportclassname=$$ZenResultClassName^Settings.Reports()
 	Kill ^||ResultForm.OrderTable
 	
+	set dirForFileEMC=""
+	set spisForEMC=","_$ClassMethod(reportclassname,"SpisHospitalsForEMC")_","
+	
+	set rootPathForFilesWeber=##class(TCLEx.Function.LabOrder).PathFilesForWeber()
 	Set epis="",files=""
 	For {
 		Set epis=$Order(^||ResultForm.Episodes(epis))
 		If epis="" Quit
+		set hospital=$piece($get(^TEPI(epis)),"\",20)
+		set flagResultForEMS=$piece($get(^TEPI(epis,"pc")),"\",1)
 		Set languages=##class(TCLEx.Function.Episode).ResultLanguages(epis)
 		Set langcnt=$ListLength(languages)
 		For i=1:1:langcnt {
@@ -1052,6 +1058,28 @@ pPDFFileName - по ссылке возвращается имя созданн�
 			set ok1=##class(TCLEx.Report.DRP).CreateEpisodePDFReport(epis,,extraParams,"",filenamevsp) 
 			if 'ok1 continue
 			set files=files_$select(files'="":$char(0),1:"")_filenamevsp
+			//если по этому эпизоду должен оправляться Pdf-файл с результатами в ЕМC, то копируем промежуточный файл в нужное место
+			if (spisForEMC[","_hospital_",")&&(flagResultForEMS=2) {
+				if dirForFileEMC="" set dirForFileEMC=$ClassMethod(reportclassname,"PathToFilesForEMC")
+				set nameFileEMC=$ClassMethod(reportclassname,"FileNameForEMC",epis,language)
+				if (dirForFileEMC'="")&&(nameFileEMC'="") {
+					set pdfFileNameForEMC=dirForFileEMC_"/"_nameFileEMC
+				    if ##class(%File).Exists(pdfFileNameForEMC) {
+					   set ok1=##class(%File).Delete(pdfFileNameForEMC)
+					   if 'ok1 {
+						   set ok=$$$ERROR($$$errCreatingResultFile,"Не удалось удалить существующий файл "_pdfFileNameForEMC_" !")
+					   	   quit
+					   }
+				    }
+				    set ok1=##class(%File).CopyFile(filenamevsp,pdfFileNameForEMC)
+		            if ok1=0 {
+			            set ok=$$$ERROR($$$GeneralError,"Не удалось скопировать файл "_filenamevsp_" --> "_pdfFileNameForEMC_".")
+		                quit
+		            } else {
+			            if rootPathForFilesWeber'="" Do LogMessage^KSUTIL1(rootPathForFilesWeber_"LIS\",$select(ok1=0:"Не удалось скопировать файл "_filenamevsp_" --> "_pdfFileNameForEMC_".",1:"Успешно создан файл "_pdfFileNameForEMC),1,1)
+		            }
+				}
+			}
 		}
 	}
 	If files="" {
