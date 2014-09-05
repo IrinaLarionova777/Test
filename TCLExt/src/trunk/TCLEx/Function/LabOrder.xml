@@ -16,8 +16,9 @@
 		Kill ^||Episodes
 		Do ..CreateOrderEpisodesGlb(order,$Name(^||Episodes))
 		//
+		//If order=3161004655 Continue
 		Lock +^TCLEx("PDFResult",order)
-		Set ok=..OrderResults2PDFFile(order,.pdffilename,$Name(^||Episodes))
+		Set ok=##class(TCLEx.Report.ResultForm).CreateLabOrderPDFReport(order,,,$ZUtil(12)_"Temp",1,.pdffilename)
 		If 'ok {
 			Do LogStatus^KSUTIL1($ZUtil(12)_"LIS\",ok,3,1)
 			Lock -^TCLEx("PDFResult",order)
@@ -66,7 +67,7 @@
 		Set epis=$Order(^TCLEx("AuthorizedEpisodes",epis),1,datetime)
 		If epis="" Quit
 		Set deltatime=$system.SQL.DATEDIFF("ss",datetime,$ZDateTime($Horolog,3))
-		If deltatime<600 Continue
+		If deltatime<1 Continue
 		Set length=$Length(epis)
 		If (length'=12)&&(length'=10) {
 			Kill ^TCLEx("AuthorizedEpisodes",epis)
@@ -248,18 +249,18 @@
 <Implementation><![CDATA[
 	If pEpis="" Quit 0
 	Set hospid=##class(TCLEx.Function.Episode).HospitalId4Episode(pEpis)
-	If ##class(TCLEx.Function.Hospital).NeedTxtResult4WebER(hospid) Quit 1
-	Quit 0
+	Quit ##class(TCLEx.Function.Hospital).NeedTxtResult4WebER(hospid)
+	//If (hospid=2581)||(hospid=2732)||(hospid=2861)||(hospid=2731)||(hospid=2732) Quit 1
+	//Quit 0
 ]]></Implementation>
 </Method>
 
 <Method name="NeededResultModes">
-<Description><![CDATA[
-&&& Определение типов небходимых результатов для эпизода pEpis
+<Description>
 pWebER - для WebER
 pHospitalEMail - для ЛПУ нужен EMail
 pPatientEMail - для пациента ЛПУ нужен EMail
-pPatientSMS - для пациента ЛПУ нужен SMS]]></Description>
+pPatientSMS - для пациента ЛПУ нужен SMS</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec><![CDATA[pEpis:%String,&pWebER:%Boolean,&pHospitalEMail:%Boolean,&pPatientEMail:%Boolean,&pPatientSMS:%Boolean]]></FormalSpec>
 <Implementation><![CDATA[
@@ -271,14 +272,278 @@ pPatientSMS - для пациента ЛПУ нужен SMS]]></Description>
 	Set hospid=""
 	If $IsObject(episobj.EPVISHospitalCodeDR) Set hospid=episobj.EPVISHospitalCodeDR.%Id()
 	If hospid="" Quit
-	If ##class(TCLEx.Function.Hospital).NeedEMail(hospid) {
-		Set pHospitalEMail=1
+	Set pHospitalEMail=##class(TCLEx.Function.Hospital).NeedHospitalEMail(hospid)
+	
+	If ##class(TCLEx.Function.Hospital).NeedClientEMail(hospid) {
 		If episobj.EPVISPhoneWork'="" Set pPatientEMail=1
 	}	
-	If ##class(TCLEx.Function.Hospital).NeedSMS(hospid) {
+	If ##class(TCLEx.Function.Hospital).NeedClientSMS(hospid) {
 		If episobj.EPVISPhoneHome'="" Set pPatientSMS=1
-	}	 
-	Quit
+	}
+]]></Implementation>
+</Method>
+
+<Method name="GetOrderByEpisode">
+<Description>
+Получить номер заказа по номеру эпизода pEpis</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpis:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	Quit $Extract(pEpis,1,10)
+]]></Implementation>
+</Method>
+
+<Method name="GetMaxAuthorizationTime">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrder:%String,pEpisGlb:%String</FormalSpec>
+<ReturnType>%Integer</ReturnType>
+<Implementation><![CDATA[
+	If $Get(pEpisGlb)="" {
+		Set pEpisGlb=$Name(^||Episodes)
+		Do ..CreateOrderEpisodesGlb(pOrder,pEpisGlb)
+	}	
+	If '$Data(@pEpisGlb) Quit 0
+	Set result=""
+	Set epis=""
+	For  {
+		Set epis=$Order(@pEpisGlb@(epis))
+		If epis="" Quit
+		Set time=##class(TCLEx.Function.Episode).GetMaxAuthorizationTime(epis)
+		If time]]result Set result=time
+	}	
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="OrderStatusGlb">
+<Description>
+Получаем текущее состояние заказа (для выгрузки в файл)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrder:%String,pNewOrder:%Boolean,pGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	If $Get(pOrder)="" Quit
+	// Выход, если информация по заказу уже была получена по другому эпизоду закак
+	If $Data(@pGlb@(pOrder)) Quit	
+	// Получаем список эпизодов заказа и определяем статус их исследований
+	Kill ^||Order.Episodes
+	Do ..CreateOrderEpisodesGlb(pOrder,$Name(^||Order.Episodes))
+	Set (epis,firstsepis)="",complete=1
+	For  {
+		Set epis=$Order(^||Order.Episodes(epis))
+		If epis="" Quit
+		If firstsepis="" {
+			Set firstsepis=epis
+		}	
+		Set episobj=##class(User.EPVisitNumber).%OpenId(epis)
+		If '$IsObject(episobj) Continue
+		Set key=""
+		For  {
+			Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+			If key="" Quit
+			If '$IsObject(testsetobj) Continue
+			//
+			Set testsetid=testsetobj.%Id()
+			If (testsetid="") Continue
+			Set testsetcode=""
+			If $IsObject(testsetobj.VISTSTestSetDR) Set testsetcode=testsetobj.VISTSTestSetDR.%Id()
+			If testsetcode="" Continue
+			//
+			Set specimencode=""
+			If $IsObject(testsetobj.VISTSSpecimenTypeDR) Set specimencode=testsetobj.VISTSSpecimenTypeDR.%Id()
+			//
+			Set superset=""
+			If $IsObject(testsetobj.VISTSSuperSetDR) Set superset=testsetobj.VISTSSuperSetDR.%Id()
+			Set status=""
+			If superset="" {
+				If ##class(TCLEx.Function.TestSet).IsAuthorised(testsetobj) {
+					Set status="+"
+				} Else {
+					If ##class(TCLEx.Function.TestSet).IsCanceled2(testsetobj) {
+						Set status="-"
+					} Else {
+						Set complete=0
+					}		
+				}		
+				Set code=testsetcode
+				If specimencode'="" Set code=testsetcode_":"_specimencode
+				Set @pGlb@(pOrder,"TestSets",code)=status
+			} Else {
+				If $Data(@pGlb@(pOrder,"TestSets",superset)) Continue
+				If ##class(TCLEx.Function.SuperSet).IsComplete(epis,superset) {
+					Set status="+"
+				} Else {
+					Set complete=0
+				}	
+				Set @pGlb@(pOrder,"SuperSets",superset)=status	
+			}		
+		}
+	}
+	Set episobj=##class(User.EPVisitNumber).%OpenId(firstsepis)
+	If '$IsObject(episobj) Quit
+	//
+	Set @pGlb@(pOrder,"OrderData","OrderNumber")=pOrder
+	Set @pGlb@(pOrder,"OrderData","Horolog")=$Horolog
+	Set @pGlb@(pOrder,"OrderData","Complete")=complete
+	//
+	If $Data(pNewOrder) {
+		Set @pGlb@(pOrder,"NewOrder")=pNewOrder
+	}	
+	//
+	Set orderdate=""
+	If episobj.EPVISDateOfRequest'="" Set orderdate=$ZDate(episobj.EPVISDateOfRequest,3)
+	Set @pGlb@(pOrder,"OrderData","DateOfRequest")=orderdate
+	//
+	Set cito=""
+	If $IsObject(episobj.EPVISPriorityCodeDR) Set cito=episobj.EPVISPriorityCodeDR.%Id()
+	Set @pGlb@(pOrder,"OrderData","Cito")=cito
+	//
+	Set (hospid,hospname,hospemail)=""
+	If $IsObject(episobj.EPVISHospitalCodeDR) {
+		Set hospid=episobj.EPVISHospitalCodeDR.%Id()
+		Set hospname=episobj.EPVISHospitalCodeDR.CTHOSName
+		Set hospemail=##class(TCLEx.Function.Hospital).HospitalEMail(hospid)
+	}	
+	Set @pGlb@(pOrder,"OrderData","HospitalId")=hospid
+	Set @pGlb@(pOrder,"OrderData","HospitalName")=hospname
+	Set @pGlb@(pOrder,"OrderData","HospitalEMail")=hospemail
+	//
+	Set doctname=""
+	If $IsObject(episobj.EPVISDoctorCodeDR) Set doctname=episobj.EPVISDoctorCodeDR.CTDRSurname
+	Set @pGlb@(pOrder,"OrderData","DoctorName")=doctname
+	//
+	Set @pGlb@(pOrder,"OrderData","PatientFullName")=$$NameFormat^KSUTIL1(1,episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1)
+	Set @pGlb@(pOrder,"OrderData","PatientShortName")=$$NameFormat^KSUTIL1(2,episobj.EPVISSurname,episobj.EPVISGivenName,episobj.EPVISName1)
+	Set @pGlb@(pOrder,"OrderData","PatientEMail")=episobj.EPVISPhoneWork
+	Set @pGlb@(pOrder,"OrderData","PatientPhoneNumber")=episobj.EPVISPhoneHome
+]]></Implementation>
+</Method>
+
+<Method name="SaveOrdersStatus2Files">
+<Description>
+Записать состояние обновленных заказов из pGlb в файлы</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pGlb:%String,pLogDir:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set dir=$$OrderUpdatesDirectory^Settings.EMail()
+	If $Extract(dir,$Length(dir))'="\" Set dir=dir_"\"
+	If '$$TestDirectory^KSUTIL1(dir) {
+		Do LogMessage^KSUTIL1(pLogDir,"Недоступен каталог архива "_dir,3,1)
+		Quit
+	}	
+	Set order=""
+	For  {
+		Set order=$Order(@pGlb@(order))
+		If order="" Quit
+		Set horolog=$Get(@pGlb@(order,"OrderData","Horolog"),$Horolog)
+		Set complete=$Get(@pGlb@(order,"OrderData","Complete"),0)
+		Set cito=$Get(@pGlb@(order,"OrderData","Cito"))
+		Set hasesupersets=($Data(@pGlb@(order,"SuperSets"))>0)
+		Set neworder=($Get(@pGlb@(order,"NewOrder"))>0)
+		Set eventvals=..OrderStateEvent(order,complete,cito,hasesupersets,neworder)
+		Set filename=$ZDate(+horolog,3)_"_"_$Translate($ZTime($Piece(horolog,",",2)),":")_"_"_$ListGet(eventvals,1)_"_"_order_".txt"
+		Set fullname=dir_filename
+		
+		Set stream=##class(%FileCharacterStream).%New()
+		Set stream.TranslateTable="CP1251"  
+		Set stream.Filename=fullname
+		Do stream.WriteLine("#")
+		Do stream.WriteLine("# SMS-документ, сгенерированный по событию авторизации исследований")
+		Do stream.WriteLine("#")
+		Do stream.WriteLine("# кодировка документа")
+		Do stream.WriteLine("doc.encoding=windows-1251")
+		Do stream.WriteLine("event.type="_$ListGet(eventvals,2))
+		Do stream.WriteLine("event.ts="_$ZDateTime(horolog,3))
+		Do stream.WriteLine("# параметры ЛПУ")
+		Do stream.WriteLine("client.code="_$Get(@pGlb@(order,"OrderData","HospitalId")))
+		Do stream.WriteLine("client.name="_$Get(@pGlb@(order,"OrderData","HospitalName")))
+		Do stream.WriteLine("client.email="_$Get(@pGlb@(order,"OrderData","HospitalEMail")))
+		Do stream.WriteLine("client.doctor="_$Get(@pGlb@(order,"OrderData","DoctorName")))
+		
+		Do stream.WriteLine("patient.fullname="_$Get(@pGlb@(order,"OrderData","PatientFullName")))
+		Do stream.WriteLine("patient.shortname="_$Get(@pGlb@(order,"OrderData","PatientShortName")))
+		Do stream.WriteLine("patient.email="_$Get(@pGlb@(order,"OrderData","PatientEMail")))
+		Do stream.WriteLine("patient.phone="_$Get(@pGlb@(order,"OrderData","PatientPhoneNumber")))
+		
+		Do stream.WriteLine("# параметры заказа")
+		Do stream.WriteLine("order.code="_order)
+		Do stream.WriteLine("order.date="_$Get(@pGlb@(order,"OrderData","DateOfRequest")))
+		Set statuses=..TestSetStatusStr($Name(@pGlb@(order,"TestSets")))
+		Do stream.WriteLine("order.testsets="_statuses)
+		Set statuses=..TestSetStatusStr($Name(@pGlb@(order,"SuperSets")))
+		Do stream.WriteLine("order.supersets="_statuses)
+		Set ok=stream.SaveStream()
+		If ok {
+			Do LogMessage^KSUTIL1(pLogDir,"Успешно сформирован файл "_fullname,1,1)
+		} Else {
+			Do LogStatus^KSUTIL1(pLogDir,"Не удалось сформировать файл "_fullname_" !",3,1)
+		}		
+	}
+]]></Implementation>
+</Method>
+
+<Method name="OrderStateEvent">
+<Description>
+Вернуть краткое и полное событие для заказа pOrder
+$ListBuild("RSU","order.result-update") - добавились результаты, но заказ еще не готов
+$ListBuild("URR","order.urgent-ready") - готов срочный заказ
+$ListBuild("CPR","order.complex-ready") - готов заказ, содержащий панели 
+$ListBuild("RDY","order.ready") - готов заказ
+$ListBuild("TTL","order.transferred2lis") - передача заказа из WebER в ЛИС</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pOrder:%String,pIsComplete:%Boolean,pIsCito:%Boolean,pHasSuperSets:%Boolean,pNewOrder:%Boolean</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=$ListBuild("RSU","order.result-update")
+	If pIsComplete {
+		If pIsCito {
+			Set result=$ListBuild("URR","order.urgent-ready")
+		} ElseIf pHasSuperSets {
+			Set result=$ListBuild("CPR","order.complex-ready")
+		} Else {
+			Set result=$ListBuild("RDY","order.ready")
+		}		
+	}
+	If $Get(pNewOrder) {
+		Set result=$ListBuild("TTL","order.transferred2lis")
+	}	
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="TestSetStatusStr">
+<Description>
+Строка состояния исследований</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pGlb:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set key=""
+	For  {
+		Set key=$Order(@pGlb@(key),1,status)
+		If key="" Quit
+		Set code=$Piece(key,":",1)
+		If code="" Continue
+		Set specimen=$Piece(key,":",2)
+		If specimen="" Set specimen=" "
+		Set statuses(code)=$Get(statuses(code))+1
+		Set statuses(code,specimen)=status
+	}
+	Set code="",result=""
+	For  {
+		Set code=$Order(statuses(code),1,cnt)
+		If code="" Quit
+		Set specimen=""
+		For  {
+			Set specimen=$Order(statuses(code,specimen),1,status)
+			If specimen="" Quit
+			Set val=code
+			If (cnt>1)&&(specimen'=" ") Set val=val_":"_specimen
+			Set val=val_status
+			If result'="" Set result=result_","
+			Set result=result_val
+		}	
+	}	
+	Quit result
 ]]></Implementation>
 </Method>
 </Class>
