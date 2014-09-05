@@ -1012,6 +1012,95 @@ pFlagLogFiles - флаг1 (1/0 флаг создания пустых лог ф�
 ]]></Implementation>
 </Method>
 
+<Method name="CreateLabOrderPDFReportNew">
+<Description>
+Создание файла PDF отчета для результатов заказа
+Параметры:
+pLabOrder - Номер заказа
+pPDFDir - каталог, куда выгружать файл
+pOverWritePDF - если =1 - перезаписывать файл, иначе Set pPDFFileName=$$ArchiveFileName^KSUTIL1(pPDFFileName) 
+pPDFFileName - по ссылке возвращается имя созданного PDF файла
+Возвращаемое значение:
+Результат создания файла в формате %Status</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pLabOrder:%String,pPDFDir:%String,pOverWritePDF:%Boolean=1,&pPDFFileName:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  Set pPDFFileName=""
+  set ok=1
+  try {
+	Kill ^||ResultForm.Episodes
+	Do ##class(TCLEx.Function.LabOrder).CreateOrderEpisodesGlb(pLabOrder,$Name(^||ResultForm.Episodes))
+	If '$Data(^||ResultForm.Episodes) {
+		set ok=$$$ERROR($$$errNoResultData,"Нет данных для заказа "_pLabOrder_" !")
+		quit
+	}	
+	Set reportclassname=$$ZenResultClassName^Settings.Reports()
+	Kill ^||ResultForm.OrderTable
+	
+	Set epis="",files=""
+	For {
+		Set epis=$Order(^||ResultForm.Episodes(epis))
+		If epis="" Quit
+		Set languages=##class(TCLEx.Function.Episode).ResultLanguages(epis)
+		Set langcnt=$ListLength(languages)
+		For i=1:1:langcnt {
+			Set language=$ListGet(languages,i)
+			If language="" Continue
+			set filenamevsp=##class(TCLEx.Report.DRP).NextAuxiliaryFile() 
+			set extraParams=$listbuild(1,pPDFDir,1,language,0,0,"") 
+			set ok1=##class(TCLEx.Report.DRP).CreateEpisodePDFReport(epis,,extraParams,"",filenamevsp) 
+			if 'ok1 continue
+			set files=files_$select(files'="":$char(0),1:"")_filenamevsp
+		}
+	}
+	If files="" {
+		set ok=$$$ERROR($$$errNoResultData,"Нет данных для заказа "_pLabOrder_" !")
+		quit
+	}	
+	//
+	If '$$TestDirectory^KSUTIL1(pPDFDir) {
+		set ok=$$$ERROR($$$errCreatingResultFile,"Не удалось создать каталог  "_pPDFDir_" !")
+		quit
+	}	
+	//
+	Set filename=..CallLabOrderResultFileName(reportclassname,pLabOrder,"","pdf")
+	Set pPDFFileName=pPDFDir_"\"_filename
+	If ##class(%File).Exists(pPDFFileName) {
+		If pOverWritePDF {
+			Set ok=##class(%File).Delete(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) {
+				set ok=$$$ERROR($$$errCreatingResultFile,"Не удалось удалить существующий файл "_pPDFFileName_" !")
+				quit
+			}
+
+		} Else {	
+			Set pPDFFileName=$$ArchiveFileName^KSUTIL1(pPDFFileName)
+			If ##class(%File).Exists(pPDFFileName) {
+				set ok=$$$ERROR($$$errCreatingResultFile,"Не удалось сформировать очередное имя файла для  "_pPDFFileName_" !")
+				quit
+			}
+		}
+	}
+	
+    // если сформировались какие-то файлы и их больше 1, то надо объединить в один pdf файл (пока не делаем общей нумерации страниц -вообще надо бы)
+	if $length(files,$c(0))>1 {
+	       set ok=##class(TCLEx.Report.FunctionsJava).startConcatPDF(files,pPDFFileName,0,1)
+	       if 'ok quit
+	} else {
+		   set ok=##class(%File).Rename(files,pPDFFileName)
+		   if ok=0 set ok=$$$ERROR($$$GeneralError,"Не удалось переместить файл "_files_" --> "_$get(pPDFFileName)_".")
+	}
+	
+  } catch(e) { set ok=e.AsStatus() set pPDFFileName="" }	  
+
+  If 'ok {
+		Set pPDFFileName=""
+  }	
+  Quit ok
+]]></Implementation>
+</Method>
+
 <Method name="CreateLabOrderPDFReport">
 <Description>
 Создание файла PDF отчета для результатов заказа
