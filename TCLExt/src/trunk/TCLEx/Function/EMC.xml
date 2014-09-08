@@ -585,10 +585,11 @@ pValues - значения свойств в формате $LB
 			Set obj.HOSPDoctorReferringDR=##class(User.CTDoctor).%OpenId(pOrderObj.DoctorCode,0)
 		}
 	}
-	If (pOrderObj.RequestDepartmentCode'="") {
-		Do ..UpdateDepartment(pOrderObj.RequestDepartmentCode,pOrderObj.RequestDepartment)
+	set hospital=pOrderObj.RequestDepartmentCode
+	If (hospital'="") {
+		Do ..UpdateDepartment(hospital,pOrderObj.RequestDepartment)
 		If (obj.HOSPLocationDR)="" {
-			Set obj.HOSPLocationDR=##class(User.CTHospital).%OpenId(pOrderObj.RequestDepartmentCode,0)
+			Set obj.HOSPLocationDR=##class(User.CTHospital).%OpenId(hospital,0)
 		}
 	} 	
 	If (pOrderObj.RequestCito=1) {
@@ -609,7 +610,8 @@ pValues - значения свойств в формате $LB
 	
 	// UserSite
 	if pOrderObj.RequestTestCodes.Count()>0 {
-		Do obj.HOSPPatientSiteDRSetObjectId(..GetPatientSiteByTestCodes($ListGet(pOrderObj.RequestTestCodes.GetAt(1),2)))
+		Do obj.HOSPPatientSiteDRSetObjectId(..GetPatientSiteByTestCodes(pOrderObj,hospital))
+		//Do obj.HOSPPatientSiteDRSetObjectId(..GetPatientSiteByTestCodesOld($ListGet(pOrderObj.RequestTestCodes.GetAt(1),2),hospital))
 	}
 		
 	Quit obj
@@ -1177,6 +1179,7 @@ pStatusValuesList - список с перечнем статусов, кото�
 <Implementation><![CDATA[
 	Set reportclassname=$$PCLResultClassName^Settings.Reports()
 	Set logdir=$ZUtil(12)_"LIS"
+	set dirPDFResultsFromBion=..GetPathForPDFResultsFromBion()
 	Set epis=""
 	For  {
 		Set epis=$Order(^TCLEx("ResultFiles",epis))
@@ -1186,10 +1189,14 @@ pStatusValuesList - список с перечнем статусов, кото�
 		Do ##class(TCLEx.Function.Episode).MakeTestSetsBuf(epis,$Name(^||EMC.TestSets))
 		Set firstauth=##class(TCLEx.Function.Episode).FirstAuthorizationDateTime(epis,$Name(^||EMC.TestSets))
 		Kill testsets,testsetsWord
+		kill testsetsBion // наборы тестов, которые отправлялись на внешний аутсорсинг в Бион и по ним есть Pdf-результаты, пришедшие из Биона
+		set refLabBION=..GetRefLaboratoryBION()
+		set orderBion=$extract($piece($get(^TEPI(epis,8)),"\",17),1,10)  // EPVIS_Extra15
 		Set testsetid=""											// Формируем список печатаемых наборов тестов эпизода
 		For  {
 			Set testsetid=$Order(^||EMC.TestSets(testsetid),1,vals)
 			If testsetid="" Quit
+			set refLab=$piece(vals,"\",37) // код внешней лаборатории
 			set isWord=##class(TCLEx.Function.TestSet).IsTestSetWordToPDF($piece(testsetid,"||",2))
 			If ##class(TCLEx.Function.TestSet).IsPrintableLB(vals) {
 				If ##class(TCLEx.Function.TestSet).IsAuthorisedLB(vals) {
@@ -1197,21 +1204,30 @@ pStatusValuesList - список с перечнем статусов, кото�
 					Set authtime=##class(TCLEx.Function.TestSet).GetPropertyValue(vals,"VISTSTimeOfAuthorisation")
 					Set authhor=authdate_","_(60*authtime)
 					If ..IsTime4ResultFiles(epis,testsetid,authhor) {		// Для авторизованных смотрим тайм-ауты для других типов сразу печатаем
-						If isWord {
-							Set testsetsWord(testsetid)=""
-						} Else {
-							Set testsets(testsetid)=""
+					    if (orderBion'="")&&(refLabBION'="")&&(refLab=refLabBION)&&(..IsBindToTestSetBionFormatPDF($piece(testsetid,"||",2))) {
+						    set testsetsBion(testsetid)=""
+					    } else {
+						    If isWord {
+							   Set testsetsWord(testsetid)=""
+						    } Else {
+							   Set testsets(testsetid)=""
+						    }
 						}
 					}	
 				} Else {
-					If isWord {
-							Set testsetsWord(testsetid)=""
-					} Else {
-							Set testsets(testsetid)=""
+					if (orderBion'="")&&(refLabBION'="")&&(refLab=refLabBION)&&(..IsBindToTestSetBionFormatPDF($piece(testsetid,"||",2))) {
+						    set testsetsBion(testsetid)=""
+					} else {
+						    If isWord {
+							   Set testsetsWord(testsetid)=""
+					        } Else {
+							   Set testsets(testsetid)=""
+					        }
 					}
 				}	
 			}
 		}
+		
 		// печать noWord наборов тестов в эпизоде
 		kill ^||EMC.EpisodePCL
 		if $data(testsets) Do ##class(TCLEx.Report.ResultForm).PCLEpisodeResult(reportclassname,epis,.testsets,,$Name(^||EMC.EpisodePCL)) 
@@ -1222,6 +1238,7 @@ pStatusValuesList - список с перечнем статусов, кото�
 			//m ^TCLEx("ResultFilesLog",epis,$h)=testsets
 			Set ok1=..ExportResult2Files(epis,.testsets)
 		}
+		
 		// печать Word наборов тестов в эпизоде (каждый набор тестов в отдельном файле)
 		set noresult2=1,ok2=1
 		set testsetid=""
@@ -1234,8 +1251,15 @@ pStatusValuesList - список с перечнем статусов, кото�
 				if okpr'=1 set ok2=okpr
 			}
 		}
-		set ok=$select((ok1=1)&&(ok2=1):1,1:0)
-		set noresult=$select((noresult1=1)&&(noresult2=1):1,1:0)
+		
+		// Копирование pdf-результатов, приехавших из внешнего аутсорсинга из Биона
+		set noresult3=1,ok3=1
+	    if $data(testsetsBion) {
+		    set ok3=..CopyPDFResultsFromBion(epis,orderBion,logdir,.noresult3)
+	    }   
+		
+    	set ok=$select((ok1=1)&&(ok2=1)&&(ok3=1):1,1:0)
+		set noresult=$select((noresult1=1)&&(noresult2=1)&&(noresult3=1):1,1:0)
 		If ok {
 			Set requestid=""
 			For  {
@@ -1633,7 +1657,39 @@ pAuthDateTime - дата-времени авторизации набора (в 
 <Description>
 Получение кода подразделения (значение справочника CT.UserLocation ) по коду исследования</Description>
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pTestSet:%String</FormalSpec>
+<FormalSpec>pOrderObj:TCLEx.Object.EMCOrder,pHospital:%String=""</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set result=""
+	//$ListGet(pOrderObj.RequestTestCodes.GetAt(1),2)
+	set allispato=1
+	if $IsObject(pOrderObj) {
+		Set cnt=pOrderObj.RequestTestCodes.Count()							// Пробегаем по всем назначенным исследованиям заказ
+		For i=1:1:cnt {
+			Set teststr=pOrderObj.RequestTestCodes.GetAt(i)
+			Set testset=$ListGet(teststr,2)
+		    set department=$Extract(testset,1)
+		    If (department'="H")&&(department'="I")&&(department'="Z") {
+			    set allispato=0
+			    quit
+		    }
+		}
+	}
+		
+	If allispato=1 {
+		Set result="PATO"
+	} Else {
+		Set result=$select(pHospital="BGD":"LFMC",1:"LEMC")
+	} 
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetPatientSiteByTestCodesOld">
+<Description>
+Получение кода подразделения (значение справочника CT.UserLocation ) по коду исследования</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String="",pHospital:%String=""</FormalSpec>
 <ReturnType>%String</ReturnType>
 <Implementation><![CDATA[
 	Set result=""
@@ -1641,9 +1697,137 @@ pAuthDateTime - дата-времени авторизации набора (в 
 	If (department="H")||(department="I")||(department="Z") {
 		Set result="PATO"
 	} Else {
-		Set result="LEMC"
+		Set result=$select(pHospital="BGD":"LFMC",1:"LEMC")
 	} 
 	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetRefLaboratoryBION">
+<Description>
+Получить код внешней лаборатории (Бион)</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[   quit "Bion"
+]]></Implementation>
+</Method>
+
+<Method name="IsBindToTestSetBionFormatPDF">
+<Description>
+Приекреплен ли набор тестов к набору тестов из Биона в формате pdf </Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pTestSet:%String=""</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[   quit 1
+]]></Implementation>
+</Method>
+
+<Method name="GetPathForPDFResultsFromBion">
+<Description>
+Получить директорию, где лежат PDF файлы с результатами из Биона</Description>
+<ClassMethod>1</ClassMethod>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[   quit "c:\temp\bion"
+]]></Implementation>
+</Method>
+
+<Method name="CopyPDFResultsFromBion">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String="",pOrderBion:%String,pPathLog:%String="",&pFlagNoResults=1]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		set flagLogFileCreate=1
+		set dirDestination=$$PDFResultDir^Settings.Reports()
+		set episBion=""
+	        for {
+		       set episBion=$order(^BindEMCBION(pOrderBion,episBion)) if episBion="" quit
+		       set langbion=""
+		       for {
+			      set langbion=$order(^BindEMCBION(pOrderBion,episBion,langbion),1,fileBion) if langbion="" quit
+			      if (fileBion="")||('##class(%File).Exists(fileBion)) continue
+			      set fileResults=""
+			      set ok=..GetNameFilePDFBion(pEpisode,episBion,langbion,.fileResults)
+			      if 'ok quit
+			      if fileResults="" {
+				      set ok=$$$ERROR($$$GeneralError,"Сформировалось пустое имя файла для выгрузки результатов по pdf-данным из Биона")
+				      quit
+			      }
+			      set fileResults=dirDestination_"/"_fileResults  
+			      // Проверка существования lock файла со стороны ЕМС
+			      set fileLockNameEMC=##class(TCLEx.Report.ResultForm).GetNameLockFileEMC(fileResults)
+		          if ##class(TCLEx.Report.Function).TestExistLocFile(pEpisode,fileLockNameEMC) {
+		             set ok=$$$ERROR($$$GeneralError,"Не удалось сформировать файл "_fileResults_", так как существует lock файл "_pEpisode_"-***.lcke!")
+		             quit
+		          }
+		          
+		          if ##class(%File).Exists(fileResults) {
+			          set ok1=##class(%File).Delete(fileResults)
+			          if 'ok1 {
+				          set ok=$$$ERROR($$$GeneralError,"Не удалось удалить файл "_fileResults_".")
+				          quit
+			          }
+		          }
+		          
+		          //Создание lock файла с нашей стороны
+		          set fileLockName=""
+		          if flagLogFileCreate=1 {
+		             set fileLockName=##class(TCLEx.Report.ResultForm).GetNameLockFile(fileResults)
+	                 set ok1=##class(TCLEx.Report.ResultForm).CreateEmptyFile(fileLockName)
+	                 if 'ok1 {
+		                 set ok=$system.Status.AppendStatus(ok,ok1)
+		                 continue
+	                 }
+		          }
+			      
+			      // Копирование файла
+			      set ok1=##class(%File).CopyFile(fileBion,fileResults)
+			      if 'ok1 {
+				      set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не удалось скопировать файл "_fileBion_" в файл "_fileResults_"."))
+				  }
+			      
+				  //Удаление lock файла с нашей стороны
+				  set ok2=1
+		          if flagLogFileCreate=1 {
+			         set ok2=##class(%File).Delete(fileLockName)
+		             if 'ok2 {
+			             set ok=$system.Status.AppendStatus(ok,$$$ERROR($$$GeneralError,"Не удалось удалить lock файл "_fileLockName_"."))
+		             }
+		          }    
+			      if ('ok1)||('ok2) {
+				     continue 
+			      }
+			      
+			      if pPathLog'=""  do LogStatus^KSUTIL1(pPathLog,"Успешно скопирован файл "_$get(fileBion)_" в файл "_$get(fileResults),3,1)
+			      
+			      if pFlagNoResults=1 set pFlagNoResults=0
+		       }
+	        }
+	} catch(e) { 
+	    set ok=e.AsStatus() 
+	    set pFlagNoResults=1
+	    if ($get(fileLockName)'="")&&(##class(%File).Exists(fileLockName)) do ##class(%File).Delete(fileLockName) 
+	}
+	quit ok
+]]></Implementation>
+</Method>
+
+<Method name="GetNameFilePDFBion">
+<Description>
+Получить имя файла с pdf-результатами из Биона для выгрузки в Медиалог</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pEpisode:%String="",pEpisodeBion:%String,pLanguage:%String="",&pFileNameResult:%String]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK,pFileNameResult=""
+	try {
+		set pFileNameResult=pEpisode_"-"_pLanguage_"-"_pEpisodeBion_".pdf"
+	} catch(e) { 
+	    set ok=e.AsStatus() 
+	    set pFileNameResult=""
+	}
+	quit ok
 ]]></Implementation>
 </Method>
 </Class>
