@@ -94,5 +94,56 @@
 	}
 ]]></Implementation>
 </Method>
+
+<Method name="CreateResultStreams">
+<Description>
+Утилита для аварийного переформирования WebER.Data.ResultS (например, при переходе на резервный сервер, на резервном сервере нет копии dataset bionstream)
+pDateFrom, pDateTo в формате dd/mm/yyyy - даты авторизации с-по (включительно)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pDateFrom:%String="",pDateTo:%String=""</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	set ok=$$$OK
+	try {
+		if (pDateFrom="")||(pDateTo="") {
+			set ok=$$$ERROR($$$GeneralError,"Необходимо определить даты начала и окончания периода (даты авторизации).")
+			quit
+		}
+		set dateFrom=$zdh(pDateFrom,4)
+		set dateTo=$zdh(pDateTo,4)
+		
+		set date=dateFrom-1 
+        for {
+		  set date=$order(^TEPIi("AUTHORISED",date)) quit:date=""  quit:date>dateTo  
+		  s epis="" 
+		  for {
+			 set epis=$order(^TEPIi("AUTHORISED",date,epis)) quit:epis=""  if '$data(^TEPI(epis)) continue
+			 
+			 Do ##class(TCLEx.Function.LabOrder).NeededResultModes(epis,.needweber,.needhospitalemail,.needpatientemail,.needpatientsms)
+			 if needweber=0 continue
+			 
+			 set ts="",needadd=0
+			 for {
+				 set ts=$order(^TEPIi("AUTHORISED",date,epis,ts),1,rects) if ts="" quit
+				 Set superset=$p(rects,"\",29)  
+                 If superset'="" {
+		            Set iscompletesuperset=##class(TCLEx.Function.SuperSet).IsComplete(epis,superset,.firsttestsetid) 
+		            if 'iscompletesuperset continue
+                 }
+                 set needadd=1
+                 quit
+			 }
+			 if (needadd=1)&&('$data(^TCLEx("AuthorizedEpisodes",epis))) {
+				Set hor=$Horolog
+				Lock +^TCLEx("AuthorizedEpisodes",epis)
+				Set ^TCLEx("AuthorizedEpisodes",epis)=hor
+		        Lock -^TCLEx("AuthorizedEpisodes",epis)
+	         }
+		  }
+        }
+	} catch(e) { set ok=e.asStatus() }
+	quit ok
+]]></Implementation>
+</Method>
 </Class>
 </Export>
