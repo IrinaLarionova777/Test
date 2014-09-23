@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="SSPRINQ1dop" type="MAC" languagemode="0"><![CDATA[
+SSPRINQ1dop
+ // видны все переменные при вызове из SSPRINQ1
+printDRP()
+ s dROWID=rROWID_"||"_chl
+ i '$$select^LVBPRPRD(dROWID) {
+	 set dTYPE=$p(PLIST(3),$c(1),3)
+     if dTYPE="F" quit  //FAX 
+     // status Printing
+     d update^SSPRINQ1(dROWID,3)
+     ; print to a printer
+     ; проверяем доступность принтера, если он не доступен, то ищем резервный принтер (в справочнике адресатов печати можно к принтеру задать резервный принтер)
+     //if ##class(TCLEx.Function.Printer).TestPrinter(dest) set DEST=dest if 1
+     //else  s DEST=$$find^LVBCTPDA(dest)
+     // print to origin printer
+     set DEST=dest
+     set ok=$$printDest(dROWID,DEST)
+     // если не удалось напечатать, то ищем резервный принтер (в справочнике адресатов печати можно к принтеру задать резервный принтер)
+     // в самом Trak под резервным принтером понимается другое
+     if 'ok {
+	     set DEST=$$find^LVBCTPDA(dest) 
+	     // если резервный принтер указан, существунет и активный  
+	     if (DEST'="")&&($$select^LVBCTPD(DEST,"Y")=0)&&($get(PLIST(13))="Y") {
+		     set ok=$$printDest(dROWID,DEST)
+	     }
+     } 
+     if 'ok {
+	     do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$zn)  
+	     // пытаемся скопировать ненапечатанный файл в заданную директорию 1
+	     set path=##class(TCLEx.Report.PrintPDF).PathForNotPrintableFiles1()
+	     if path'="" {
+		     set ok1=$$copyFile(dROWID,DEST,path)
+		     if 'ok1 {
+			     set path=##class(TCLEx.Report.PrintPDF).PathForNotPrintableFiles2()
+			     if path'="" set ok1=$$copyFile(dROWID,DEST,path)
+		     }
+	     }
+     }
+     // status Printed or Error
+     if $d(dROWID),$get(ok)'="" {
+	     d update^SSPRINQ1(dROWID,$select(ok=1:"0",1:10)) 
+	 }
+ }
+ quit
+
+ // plist
+printDest(dROWID,DEST)
+ set ok=1
+ try {
+	 set rROWID=$piece(dROWID,"||",1)
+	 if $$select^LVBCTPD(DEST,"Y") {
+		 set ok=$$Error^%apiOBJ(5001,"Адресат печати с кодом "_DEST_" не существует или не активный.")
+		 quit
+	 }
+     if PLIST(13)="N" {
+	     set ok=$$Error^%apiOBJ(5001,"Адресат печати с кодом "_DEST_" не активный.")
+	     quit
+     }
+	 set fileName=$get(^PR(rROWID,"PRT","FileName"))
+     if fileName="" {
+	     set ok=$$Error^%apiOBJ(5001,"Файл с отчетом не указан")
+	     quit 
+     }
+     if '##class(%File).Exists(fileName) {
+	     set ok=$$Error^%apiOBJ(5001,"Файл с отчетом "_$get(fileName)_" не существует.")
+         quit
+     }
+     set copies=$$copies^SSPRINT(rROWID,DEST) if +copies=1 set copies=1
+     set ok=1
+     set time1=$p($h,",",2) 
+     set ok=##class(TCLEx.Report.DRP).printPDF(fileName,DEST,copies) s ^test("print")=$g(fileName)_"*"_$g(DEST)_"*"_ok
+     set time2=$p($h,",",2)
+     if (time2-time1)>30 s ^test("logPrint2",dROWID)=$h_"*"_time1_"*"_time2_"*"_(time2-time1)
+
+ } catch(e) {
+	 set ok=e.AsStatus()
+ }
+ // s ^test("ok")=ok
+ //if 'ok do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$zn) 
+ quit ok
+
+ // Печать DRP типа word file (он преобразован в pdf file)
+printWord()
+ s dROWID=rROWID_"||"_chl
+ i '$$select^LVBPRPRD(dROWID) do
+ . ; print to a printer
+ .s DEST=$$find^LVBCTPDA(dest)
+ . ; do not print to printer which is not active
+ .k plist m plist=PLIST
+ .i $$select^LVBCTPD(DEST,"Y") q
+ .i PLIST(13)="N" q
+ .k PLIST m PLIST=plist
+ .s dTYPE=$p(PLIST(3),$c(1),3) d update^SSPRINQ1(dROWID,3)
+ .set okword=1
+ .i dTYPE'="F" do  ;
+ ..set params=$get(^PR(rROWID,"PRT"))
+ ..if params="" quit
+ ..set copies=$$copies^SSPRINT(rROWID,DEST) if +copies=1 set copies=1
+ ..set epis=$piece(params,$char(0),1)
+ ..set testsetid=$piece(params,$char(0),2)
+ ..set user=$piece(params,$char(0),3)
+ ..set language=$piece(params,$char(0),4)
+ ..set okword=##class(TCLEx.Report.WordEMC).CreateAndPrintPDF(epis, testsetid, language, DEST, copies) 
+ .if $d(dROWID) d update^SSPRINQ1(dROWID,$select(okword=1:"0",1:10)) 
+ .l -^PR(rROWID)
+ quit
+ 
+ // пытаемся скопировать ненапечатанный файл в заданную директорию 1
+copyFile(dROWID,DEST,pPath)
+ set ok=1
+ try {
+	 set rROWID=$piece(dROWID,"||",1)
+	 if $$select^LVBCTPD(DEST,"Y") {
+		 set ok=$$Error^%apiOBJ(5001,"Адресат печати с кодом "_DEST_" не существует или не активный.")
+		 quit
+	 }
+     if PLIST(13)="N" {
+	     set ok=$$Error^%apiOBJ(5001,"Адресат печати с кодом "_DEST_" не активный.")
+	     quit
+     }
+	 set fileName=$get(^PR(rROWID,"PRT","FileName"))
+     if fileName="" {
+	     set ok=$$Error^%apiOBJ(5001,"Файл с отчетом не указан")
+	     quit 
+     }
+     if '##class(%File).Exists(fileName) {
+	     set ok=$$Error^%apiOBJ(5001,"Файл с отчетом "_$get(fileName)_" не существует.")
+         quit
+     }
+     set copies=$$copies^SSPRINT(rROWID,DEST) if +copies=1 set copies=1
+     set printerName=##class(TCLEx.Function.Printer).getPrinterNameForJava(DEST)
+     set filenew=pPath_"/"_##class(%File).GetFilename(fileName)
+     set len=$length(filenew,".")
+     if len'>1 {
+	     set ok=$$Error^%apiOBJ(5001,"У файла "_fileName_" нет расширения.")
+	     quit
+     }
+     if printerName="" {
+	     set ok=$$Error^%apiOBJ(5001,"У принтера с кодом "_$get(DEST)_" нет имени.")
+	     quit
+     }
+	 set filenew=$piece(filenew,".",1,len-1)_"_pr-"_printerName_"."_$piece(filenew,".",len)
+     if ##class(%File).Exists(filenew) {
+	     set ok1=##class(%File).Delete(filenew)
+	     if ok1=0 set ok=$$Error^%apiOBJ(5001,"Не удалось удалить файл "_$get(filenew)_".")
+	     quit
+     }
+	     
+     set ok=##class(%File).CopyFile(fileName,filenew)
+     if 'ok quit
+
+ } catch(e) {
+	 set ok=e.AsStatus()
+ }
+ // s ^test("ok")=ok
+ if 'ok do ##class(TCLEx.Function.General).WriteError($system.Status.GetErrorText(ok),$zn) 
+ quit ok
+ 
+]]></Routine>
+</Export>

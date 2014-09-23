@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="SSPRINQ1" type="MAC" languagemode="0"><![CDATA[
+SSPRINQ1 ; PRINT MANAGER - print for single print destination
+SrcVer ;; $Id$
+	;
+	; supported calls:
+	;
+	; $$nextWord^SSPRINQ1()
+	
+	; process all reports ready to print for this destination
+START(dest) n (dest)
+start s dest=$g(dest) i $l(dest) d
+	. l +^PR("SSPRINQ1",dest):0 e  q
+	. k ^||TMP($zn,$j) m ^||TMP($zn,$j)=^PRi("STATUS-DEST","R",dest)
+	. s rep="" f  s rep=$o(^||TMP($zn,$j,rep)) q:rep=""  d PROCESS(rep,dest)
+	. k ^||TMP($zn,$j)
+	. l -^PR("SSPRINQ1",dest)
+	q
+	
+	; process single report for particular destination
+PROCESS(rROWID,dest) n (rROWID,dest) s rROWID=$g(rROWID),dest=$g(dest),$zt="PROCERR^"_$zn
+	i $d(^PRi("STATUS-DEST","I",dest)) q
+	i $l(rROWID),$l(dest) d
+	. s chl=$o(^PRi("STATUS-DEST","R",dest,rROWID,"")) q:chl=""
+	. l +^PR(rROWID):0 e  q
+	. ; !!!
+	. ; Old i $p($g(^PR(rROWID)),"^",8)'="W" d
+    . // Если задание на печать через уже сформированный файл (DRP)
+    . set fileName=$get(^PR(rROWID,"PRT","FileName"))
+    . set reportGeneric=$p($g(^PR(rROWID)),"^",6)
+    . if (reportGeneric'="DRP")||(fileName="")||('##class(%File).Exists(fileName)) do  if 1
+    . . // !!!
+	. . s dROWID=rROWID_"||"_chl
+	. . i '$$select^LVBPRPRD(dROWID) d
+	. . . ; print to a printer
+	. . . s DEST=$$find^LVBCTPDA(dest)
+	. . . ; do not print to printer which is not active
+	. . . k plist m plist=PLIST
+	. . . i $$select^LVBCTPD(DEST,"Y") q
+	. . . i PLIST(13)="N" q
+	. . . k PLIST m PLIST=plist
+	. . . s dTYPE=$p(PLIST(3),$c(1),3) d update(dROWID,3)
+	. . . i dTYPE'="F" s value=$$print^SSPRINT(rROWID,DEST) //s ^test("print",rROWID)=$g(value)_"*"_$g(DEST)
+	. . . ; send to a fax
+	. . . i dTYPE="F",$l(PLIST(8)),$l(PLIST(9)) d
+	. . . . s REPORT=$p(PLIST(1),"||",1),fax=PLIST(8)_$c(1)_PLIST(9)
+	. . . . n PLIST i $$get^LVBPRINT(REPORT,"FAX",fax,dROWID)
+	. . . i $d(dROWID),$d(value) d update(dROWID,value)
+	. . . l -^PR(rROWID)
+	. ; EMC if $p($g(^PR(rROWID)),"^",8)="W",+$get(^Settings("WordToPdf","stop"))=0 do printWord^SSPRINQ1dop()
+    . // !!!
+    . else  do printDRP^SSPRINQ1dop()
+    . l -^PR(rROWID)
+    . // !!!
+
+	q
+	
+	; 1 -Type : C/U/F
+	; 2 -Courier run/User
+	; 3 -Receiver type : H - Hospital
+	;                    D - Doctor
+	; 4 -Receiver
+	; 5 -vtsRID
+	; 6 -Printer
+	; 7 -Bin
+	; 8 -No of Copies
+	; 9 -Destination
+	; 10-dROWID
+	; 11-NameSpace
+	; 12-CR Template
+	; 13-DefTemplate
+	; 14-path to CFSM_PathtoDocumentServer
+	; 15-path to CFSM_PathToTemplateServer
+	; 16-path to CFSM_PathToReportsFax
+	; 17-destroy word object
+select(dROWID) n (dROWID,PLIST) s dROWID=$g(dROWID),rROWID=$p(dROWID,"||")
+	i dROWID'["||" s x=$o(^PR(dROWID,1,"DEST","")) s dROWID=dROWID_"||"_x
+	i '$$select^LVBPRPRD(dROWID) d
+	. f j=1:1:7 s @("x"_j)=$p($g(^PR(rROWID,"WORD")),"\",j)
+	. f j=1:1:17 s @("p"_j)=""
+	. s p1=x1,p2=x2,p3=x3,p4=$tr(x4,"^",$c(16)),p5=x5_"||"_x6_"||"_x7
+	. i x1="C" s p7=$p($p($g(^TTAB("CR",x2)),"\",2),"-",3)
+	. s p9=$p(PLIST(3),$c(1)) i x1="F" s p9=$p(x2,"-",3,4)
+	. i $l(p9) s p9=$$find^LVBCTPDA(p9) i $l(p9) d
+	. . i '$l(p6) s p6=$g(^TTAB("CTDS",p9,2)) i p6["|PRN|" s p6=$p(p6,"|PRN|",2)
+	. . i '$l(p6) s p6=$g(^TTAB("CTDS",p9,1)) i p6["|PRN|" s p6=$p(p6,"|PRN|",2)
+	. s p8=PLIST(4)
+	. s p10=dROWID,p11=$zu(5),p2=$p(p2,"-")
+	. s p12=$s($e(p1)="C":$$seldata^LVBCTCR(p2,8),p1="F":$$seldata^LVBCTCR(p2,10),1:"")
+	. s p13=$s(p1="F":$$seldata^MVBCFLAB(1,13),1:$$seldata^MVBCFLAB(1,15))
+	. s p14=$$seldata^MVBCFSM(1,5)
+	. s p15=$$seldata^MVBCFSM(1,15)
+	. s p16=$$seldata^MVBCFSM(1,31)
+	. s p17=$$seldata^MVBCFLAB(1,102)
+	. k PLIST f j=1:1:17 s PLIST(j)=@("p"_j)
+	s PLIST=$o(PLIST(""),-1)
+	q 0
+	
+	; error process
+PROCERR d BACK^%ETN
+	i $l($g(rROWID)),$d(^PR(rROWID)) d
+	. &SQL(UPDATE PR_Report (PRPR_Status) VALUES ('R') WHERE PRPR_RowID=:rROWID)
+	. l -^PR(rROWID)
+	h 1
+	g start
+	
+copies(xDH1,xDH2,xDH3,copies) n (xDH1,xDH2,xDH3,copies)
+	i $p(xDH2,"-",1)="xxx" s copies=$p($p(xDH2,"-",3,99),"^",7)
+	i $p(xDH2,"-",1)'="xxx" d
+	. i xDH1="D",'$$select^LVBCTDR(xDH2) s copies=$s(xDH3="F":PLIST(39),1:PLIST(14))
+	. i xDH1="H",'$$select^LVBCTHOS(xDH2) s copies=$s(xDH3="F":PLIST(20),1:PLIST(11))
+	q
+	
+update(dROWID,value) d pre("Y") n (dROWID,value) s dROWID=$g(dROWID),value=$g(value),rROWID=$p(dROWID,"||")
+	i $l(value),$l(dROWID) d
+	. s status=$s(value=3:"I",value=4:"R",value=5:"R",value=0:"P",1:"ED")
+	. &SQL(UPDATE PR_ReportDestination (PRPRD_Status) VALUES (:status) WHERE PRPRD_RowID=:dROWID)
+	. i status="P" d
+	. . ; update report record
+	. . i '$$select^LVBPRPR(rROWID),'$l(PLIST(4)),'$l(PLIST(5)) s PLIST(4)=+$h,PLIST(5)=$p($h,",",2) i $$update^LVBPRPR(rROWID)
+	. . ; update report/destination record
+	. . i '$$select^LVBPRPRD(dROWID) s PLIST(6)=+$h,PLIST(7)=$p($h,",",2) i $$update^LVBPRPRD(dROWID)
+	. i status="I" d
+	. . i '$$select^LVBPRPRD(dROWID) s PLIST(5)="I" i $$update^LVBPRPRD(dROWID)
+	q
+	;
+updStat(dROWID,value)  ;
+	D update(dROWID,value)
+	q 0
+	
+nextWord(report) n (report,PLIST) s report=$g(report)
+	k ^||TMP($zn,$j) f j=1:1:$g(PLIST) s dest=PLIST(j) i $l(dest) s ^||TMP($zn,$j,dest)=""
+	
+	s (found,rep)="" f  s rep=$o(^PRi("Word",rep)) q:rep=""  d  q:found
+	. s chl="" f  s chl=$o(^PRi("Word",rep,chl)) q:chl=""  s ok=0 d  q:found
+	. . i 'ok,'$l(report) s ok=1
+	. . i 'ok,$l(report),rep>$p(report,"||",1) s ok=1
+	. . i 'ok,$l(report),$p(report,"||",1)=rep,chl>$p(report,"||",2) s ok=1
+	. . i ok d
+	. . . i '$d(^||TMP($zn,$j)) s found=1 q
+	. . . s dest=$p(^PR(rep,1,"DEST",chl),"^") i $d(^||TMP($zn,$j,dest)) s found=1 q
+	
+	k PLIST
+	s ok=100 i $l(rep),$l(chl) s PLIST(1)=rep_"||"_chl,PLIST(2)=$zu(5),PLIST(3)=$j,ok=0
+	s PLIST=$o(PLIST(""),-1)
+	q ok
+	
+pre(xUpdate) d PreSQL^SSUTIL4()
+	q
+	
+]]></Routine>
+</Export>
