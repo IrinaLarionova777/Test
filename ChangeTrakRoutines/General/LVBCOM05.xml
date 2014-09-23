@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24" zv="Cache for Windows (x86-64) 2010.2.5 (Build 902U)" ts="2014-09-23 14:06:14">
+<Routine name="LVBCOM05" type="MAC" languagemode="0" timestamp="63453,50424"><![CDATA[
+LVBCOM05 ; IG 27/10/2000 ; Common routines
+SrcVer ;; $Id: //trak/lab/L2012/rtn/lvb/LVBCOM05.rtn#5 $
+	;
+	; supported calls:
+	;
+	; $$getFont^LVBCOM05()
+	; $$check^LVBCOM05(rowid)
+	; $$getall1^LVBCOM05(rowid)
+	; $$getall2^LVBCOM05(rowid)
+	; $$getall3^LVBCOM05(rowid)
+	; $$calcDOB^LVBCOM05(age,DoC)
+	; bi^LVBCOM05(class,rowid,delete)
+	; bi2^LVBCOM05(class,rowid,event)
+	; $$checkImage^LVBCOM05(epis)
+	; $$getExternalURL^LVBCOM05(vtsRID)
+	; $$tsUserSite^LVBCOM05(flag,ts)
+	
+	; flag - M_$c(1)_instrument
+	;		  W_$c(1)_ws||wsNo
+tsUserSite(flag,ts) n (flag,ts) s flag=$g(flag),ts=$g(ts),result=""
+	s list=$$seldata^LVBCTTS(ts,40) i $l(list) d
+	. s (count,xx)="" f j=1:1:$l(list,",") s xx=$p(list,",",j) i $l(xx),$d(^TTAB("USLOC",xx)) s count=count+1,site=xx
+	. i count=1 s result=site
+	i '$l(result),$$seldata^MVBCFLAB(1,212)="U" d
+	. i $l(flag) d
+	. . i $p(flag,$c(1))="M" s x1=$p(flag,$c(1),2) i $l(x1) s xx=$$seldata^LVBMIMP(x1,21) i $l(xx),'$l(list)||((","_list_",")[(","_xx_",")) s result=xx
+	. . i $p(flag,$c(1))="W" s x1=$p(flag,$c(1),2) i $l(x1) s xx=$$seldata^LVBWKSR(x1,6) i $l(xx),'$l(list)||((","_list_",")[(","_xx_",")) s result=xx
+	. i '$l(result) s wa=$$user^MVBSSUSR(,2) i $l(wa) s xx=$$seldata^LVBCTWA(wa,4) i $l(xx),'$l(list)||((","_list_",")[(","_xx_",")) s result=xx
+	. i '$l(result) s user=$$user^MVBSSUSR(,1) i $l(user) s xx=$$seldata^MVBSSUSR(user,12) i $l(xx),'$l(list)||((","_list_",")[(","_xx_",")) s result=xx
+	q result
+	
+getExternalURL(vtsRID) n (vtsRID,PLIST) s vtsRID=$g(vtsRID) k PLIST
+	i $l($p($g(^CF("SM",1)),"^",28)),$l($t(@($zn_"getExternalURL^CLN"_$p(^CF("SM",1),"^",28)))) x "s x=$$"_$zn_"getExternalURL^CLN"_$p(^CF("SM",1),"^",28)_"("""_vtsRID_""")"
+	s PLIST=$o(PLIST(""),-1)
+	q 0
+
+getFont() n (PLIST)
+	s font=$$seldata^MVBCFLAB(1,72)
+	s x=$zcvt(font,"O")
+	s return="" f i=1:1:$l(x) s return=return_$s($l(return):",",1:"")_$zhex($a(x,i))
+	q return
+
+checkImage(epis) n (epis) s epis=$g(epis),result=100 k ^||TMP($zn,$j)
+	i '$$select^MVBCFSM(1) d
+	. f j=76,6 s dir=$tr(PLIST(j),$c(16,17,18),"^\|") i $l(dir) q
+	. s rs=##Class(%Library.ResultSet).%New("%File:FileSet")
+	. i rs d
+	. . d rs.Execute(dir,"test.xxx",,1)
+	. . f  q:'rs.Next()  s sub=rs.Data("Name") i $l(sub) s ^||TMP($zn,$j,sub)=""
+	. . d rs.Close()
+	. s sub="" f  s sub=$o(^||TMP($zn,$j,sub),-1) q:sub=""  d  q:'result
+	. . s rs=##Class(%Library.ResultSet).%New("%File:FileSet")
+	. . i rs d
+	. . . d rs.Execute(sub,epis_".*")
+	. . . f  q:'rs.Next()  s result=0 q
+	. . . d rs.Close()
+	k ^||TMP($zn,$j)
+	q result
+
+bi(class,rowid,delete) n (class,rowid,delete) s class=$g(class),rowid=$g(rowid),delete=$g(delete)
+	;i $$seldata^MVBCFLAB(1,179)'="Y" q
+	i $l(class),$l(rowid) d
+	. s class="lab."_$p(class,"User.",2)
+	. i delete="Y" s ^SpeedI.DeltaP(class,rowid)=0_$char(0)_$tr($h,",",".")
+	. e  s ^SpeedI.DeltaP(class,rowid)=1_$char(0)_$tr($h,",",".")
+	q
+	
+	; event:1 - insert
+	;		0 - update
+	;		2 - delete
+bi2(class,rowid,event) n (class,rowid,event) s class=$g(class),rowid=$g(rowid),event=$g(event)
+	i $$seldata^MVBCFSM(1,73)="Y",$l(class),$l(rowid),$l(event) d
+	. ; s class="lab."_$p(class,"User.",2)
+	. // !!! d ##Class(%DeepSee.Utils).%SetDSTimeIndex(class,rowid,event)
+	q
+
+check(rowid) q $s($d(^TPSL(rowid)):0,1:100)
+	
+getall1(rowid) n (rowid,PLIST) k PLIST s rowid=$g(rowid)
+	s x="" f cnt=1:1 s x=$o(^TPSL(rowid,x)) q:x=""  s PLIST(cnt)=x_$c(2)_$$seldata^LVBCTUSL(x,3)_$c(2)_x
+	s PLIST=$o(PLIST(""),-1)
+	q 0
+	
+	; to user site
+getall2(rowid) n (rowid,PLIST) k PLIST s rowid1=$p($g(rowid),"||",1),rowid2=$p($g(rowid),"||",2)
+	s x="" f cnt=1:1 s x=$o(^TPSL(rowid1,rowid2,"US",x)) q:x=""  s PLIST(cnt)=x_$c(2)_$$seldata^LVBCTUSL(x,3)_$c(2)_x
+	s PLIST=$o(PLIST(""),-1)
+	q 0
+	
+	; to refferal lab
+getall3(rowid) n (rowid,PLIST) k PLIST s rowid1=$p($g(rowid),"||",1),rowid2=$p($g(rowid),"||",2)
+	s x="" f cnt=1:1 s x=$o(^TPSL(rowid1,rowid2,"RL",x)) q:x=""  s PLIST(cnt)=x_$c(2)_$$seldata^LVBCTRL(x,3)_$c(2)_x
+	s PLIST=$o(PLIST(""),-1)
+	q 0
+	
+calcDOB(age,DoC) n (age,DoC,PLIST) s age=$g(age),DoC=$g(DoC),result=100 i '$l(DoC) s DoC=+$h
+	s (months,weeks,days)="" k PLIST
+	i $l(age) d
+	. i age=+(age) s result=0 q
+	. s age=$$UPPER^SSUTIL4(age),dateE=$$extdate2^SSUTIL4(DoC),dateI=DoC
+	. i age?.1"0"1"."1.3N s days=+$p(age,".",2)
+	. e  d
+	. . s x=$f(age,"M") i x s x(x)="M"
+	. . s x=$f(age,"W") i x s x(x)="W"
+	. . s x=$f(age,"D") i x s x(x)="D"
+	. . s x="" f  s x=$o(x(x)) q:x=""  d
+	. . . i x(x)="M" s months=+$p(age,"M",1),age=$p(age,"M",2)
+	. . . i x(x)="W" s weeks=+$p(age,"W",1),age=$p(age,"W",2)
+	. . . i x(x)="D" s days=+$p(age,"D",1),age=$p(age,"D",2)
+	i days!weeks!months d  s result=0,PLIST(1)=dateI
+	. i months d  s dateI=$$intdate2^SSUTIL4(dateE)
+	. . i months<$p(dateE,"/",2) s dateE=$p(dateE,"/",1)_"/"_($p(dateE,"/",2)-months)_"/"_$p(dateE,"/",3) q
+	. . i months'<$p(dateE,"/",2) s dateE=$p(dateE,"/",1)_"/"_($p(dateE,"/",2)-months+12)_"/"_($p(dateE,"/",3)-1)
+	. i weeks s dateI=dateI-(weeks*7)
+	. i days s dateI=dateI-days
+	s PLIST=$o(PLIST(""),-1)
+	q result
+	
+]]></Routine>
+</Export>
