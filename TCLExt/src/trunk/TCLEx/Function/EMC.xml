@@ -1190,13 +1190,13 @@ pStatusValuesList - список с перечнем статусов, кото�
 		Set firstauth=##class(TCLEx.Function.Episode).FirstAuthorizationDateTime(epis,$Name(^||EMC.TestSets))
 		Kill testsets,testsetsWord
 		kill testsetsBion // наборы тестов, которые отправлялись на внешний аутсорсинг в Бион и по ним есть Pdf-результаты, пришедшие из Биона
-		set refLabBION=..GetRefLaboratoryBION()
-		set orderBion=$extract($piece($get(^TEPI(epis,8)),"\",17),1,10)  // EPVIS_Extra15
+		//set refLabBION=..GetRefLaboratoryBION()
+		//set orderBion=$extract($piece($get(^TEPI(epis,8)),"\",17),1,10)  // EPVIS_Extra15
 		Set testsetid=""											// Формируем список печатаемых наборов тестов эпизода
 		For  {
 			Set testsetid=$Order(^||EMC.TestSets(testsetid),1,vals)
 			If testsetid="" Quit
-			set refLab=$piece(vals,"\",37) // код внешней лаборатории
+			//set refLab=$piece(vals,"\",37) // код внешней лаборатории
 			set isWord=##class(TCLEx.Function.TestSet).IsTestSetWordToPDF($piece(testsetid,"||",2))
 			If ##class(TCLEx.Function.TestSet).IsPrintableLB(vals) {
 				If ##class(TCLEx.Function.TestSet).IsAuthorisedLB(vals) {
@@ -1204,7 +1204,7 @@ pStatusValuesList - список с перечнем статусов, кото�
 					Set authtime=##class(TCLEx.Function.TestSet).GetPropertyValue(vals,"VISTSTimeOfAuthorisation")
 					Set authhor=authdate_","_(60*authtime)
 					If ..IsTime4ResultFiles(epis,testsetid,authhor) {		// Для авторизованных смотрим тайм-ауты для других типов сразу печатаем
-					    if ..IsTestSetBindEMC0(testsetid,orderBion,refLab,refLabBION) {
+					    if ..IsTestSetBindEMC(testsetid) {
 						    set testsetsBion(testsetid)=""
 					    } else {
 						    If isWord {
@@ -1215,7 +1215,7 @@ pStatusValuesList - список с перечнем статусов, кото�
 						}
 					}	
 				} Else {
-					if (orderBion'="")&&(refLabBION'="")&&(refLab=refLabBION)&&(..IsBindToTestSetBionFormatPDF($piece(testsetid,"||",2))) {
+					if ..IsTestSetBindEMC(testsetid) {
 						    set testsetsBion(testsetid)=""
 					} else {
 						    If isWord {
@@ -1396,7 +1396,7 @@ pStatusValuesList - список с перечнем статусов, кото�
 			set paramsForZen=$listbuild("","") // флаг формированиф файла без персональных данных, флаг формирования файла для предпросмотра результатов (нужен водяной знак)
 			set extraparams=$listbuild(1,pdfdir,1,lang,1,1,"",flagTransferDocToPDF)
 			
-			Set ok=$ClassMethod(reportclassnameDRP,"CreateEpisodePDFReport",pEpis,.pTestSets,extraparams,paramsForZen,.filename)							// PDF Результат с данными пациента
+			Set ok=$ClassMethod(reportclassnameDRP,"CreateEpisodePDFReport",pEpis,.pTestSets,extraparams,paramsForZen,.filename)			// PDF Результат с данными пациента
 			If 'ok Quit
 			set flagTransferDocToPDF=0
 		    set filesize=0 if filename'="" set filesize=##class(%File).GetFileSize(filename) 
@@ -1873,10 +1873,17 @@ pAuthDateTime - дата-времени авторизации набора (в 
 		set epis=$piece(pTestSetId,"||",1) if epis="" quit
 		set testset=$piece(pTestSetId,"||",2) if testset="" quit 
 		set tscnt=$piece(pTestSetId,"||",3) if tscnt="" quit 
-		set refLabBION=..GetRefLaboratoryBION()
-		set orderBion=$extract($piece($get(^TEPI(epis,8)),"\",17),1,10)  // EPVIS_Extra15
-		set refLab=$piece($get(^TEPI(epis,1,testset,tscnt)),"\",37) // код внешней лаборатории
-		set result=..IsTestSetBindEMC0(pTestSetId,orderBion,refLab,refLabBION)
+		//set refLabBION=..GetRefLaboratoryBION()
+		
+		set orderBion=$extract($piece($get(^TEPI(epis,8)),"\",17),1,10)  if orderBion="" quit  // EPVIS_Extra15
+		if orderBion="" quit
+		
+		set rects=$get(^TEPI(epis,1,testset,tscnt))
+		set refLab=$piece(rects,"\",37) if refLab="" quit  // код внешней лаборатории
+		set usersite=$piece(rects,"\",26) if usersite="" quit  // VISTS_UserSite_DR 
+		
+		set result=..IsTestSetBindEMC0(pTestSetId,orderBion,refLab,usersite)
+		
 	} catch(e) {
 		set result=0
 		do ##class(TCLEx.Function.General).WriteError($CLASSNAME()_".IsTestSetBindEMC",$ze)
@@ -1887,12 +1894,12 @@ pAuthDateTime - дата-времени авторизации набора (в 
 
 <Method name="IsTestSetBindEMC0">
 <ClassMethod>1</ClassMethod>
-<FormalSpec>pTestSetId:%String="",pOrderBion:%String="",pRefLab:%String="",pRefLabBion:%String=""</FormalSpec>
+<FormalSpec>pTestSetId:%String="",pOrderBion:%String="",pRefLab:%String="",pUserSite:%String=""</FormalSpec>
 <ReturnType>%Boolean</ReturnType>
 <Implementation><![CDATA[
 	set result=0
 	try {
-		if (pOrderBion'="")&&(pRefLabBion'="")&&(pRefLab=pRefLabBion)&&(##class(Mapping.data.testSet).IsPdfFormatTestSet("bion",$piece(pTestSetId,"||",2))) {
+		if (pOrderBion'="")&&(pRefLab'="")&&(pUserSite'="")&&(##class(Mapping.data.testSet).IsPdfFormatTestSet(pUserSite_"_"_pRefLab,$piece(pTestSetId,"||",2))) {
 			set result=1
 		}
 	} catch(e) {
