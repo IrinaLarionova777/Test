@@ -149,6 +149,13 @@ pBuf - формируемый буфер</Description>
 						If user="" Set user=" "
 						// if testset - word type
 						set key="H"
+						
+						// не печатаем результаты по набору тестов, который должен приехать из Биона в виде pdf файла
+						if ##class(TCLEx.Function.EMC).IsTestSetBindEMC(testsetid) {
+							kill @glb@(pReportType,pCourier,"H",hosp,epis,testset,testcnt)
+							continue
+						}
+						
 						//if $$seldata^LVBCTTS(testset,54)="Y",+$get(^Settings("WordToPdf","stop"))=0 {
 						if ##class(TCLEx.Function.TestSet).IsTestSetWordToPDF(testset) {	
 							set key="Hword"
@@ -207,6 +214,13 @@ pBuf - формируемый буфер</Description>
 						}
 						If user="" Set user=" "
 						set key="D"
+						
+						// не печатаем результаты по набору тестов, который должен приехать из Биона в виде pdf файла
+						if ##class(TCLEx.Function.EMC).IsTestSetBindEMC(testsetid) {
+							kill @glb@(pReportType,pCourier,"D",doctor,epis,testset,testcnt)
+							continue
+						}
+						
 						;if $$seldata^LVBCTTS(testset,54)="Y",+$get(^Settings("WordToPdf","stop"))=0 {
 						if ##class(TCLEx.Function.TestSet).IsTestSetWordToPDF(testset) {	
 							set key="Dword"
@@ -1039,7 +1053,7 @@ pPDFFileName - по ссылке возвращается имя созданн�
 	Kill ^||ResultForm.OrderTable
 	
 	set dirForFileEMC=""
-	set spisForEMC=","_$ClassMethod(reportclassname,"SpisHospitalsForEMC")_","
+	set spisForEMC=","_##class(TCLEx.Function.Bion).SpisHospitalsForEMC()_","
 	
 	set rootPathForFilesWeber=##class(TCLEx.Function.LabOrder).PathFilesForWeber()
 	Set epis="",files=""
@@ -1060,24 +1074,46 @@ pPDFFileName - по ссылке возвращается имя созданн�
 			set files=files_$select(files'="":$char(0),1:"")_filenamevsp
 			//если по этому эпизоду должен оправляться Pdf-файл с результатами в ЕМC, то копируем промежуточный файл в нужное место
 			if (spisForEMC[","_hospital_",")&&(flagResultForEMS=2) {
-				if dirForFileEMC="" set dirForFileEMC=$ClassMethod(reportclassname,"PathToFilesForEMC")
-				set nameFileEMC=$ClassMethod(reportclassname,"FileNameForEMC",epis,language)
+				if dirForFileEMC="" set dirForFileEMC=##class(TCLEx.Function.Bion).PathToFilesForEMC()
+				set nameFileEMC=##class(TCLEx.Function.Bion).FileNameForEMC(epis,language)
 				if (dirForFileEMC'="")&&(nameFileEMC'="") {
 					set pdfFileNameForEMC=dirForFileEMC_"/"_nameFileEMC
-				    if ##class(%File).Exists(pdfFileNameForEMC) {
-					   set ok1=##class(%File).Delete(pdfFileNameForEMC)
-					   if 'ok1 {
-						   set ok=$$$ERROR($$$errCreatingResultFile,"Не удалось удалить существующий файл "_pdfFileNameForEMC_" !")
-					   	   quit
-					   }
-				    }
-				    set ok1=##class(%File).CopyFile(filenamevsp,pdfFileNameForEMC)
-		            if ok1=0 {
-			            set ok=$$$ERROR($$$GeneralError,"Не удалось скопировать файл "_filenamevsp_" --> "_pdfFileNameForEMC_".")
-		                quit
-		            } else {
-			            if rootPathForFilesWeber'="" Do LogMessage^KSUTIL1(rootPathForFilesWeber_"LIS\",$select(ok1=0:"Не удалось скопировать файл "_filenamevsp_" --> "_pdfFileNameForEMC_".",1:"Успешно создан файл "_pdfFileNameForEMC),1,1)
-		            }
+					
+					try {
+						lock +^TCLEx("OutboundPDF",hospital,pLabOrder,epis,language):10
+					    if $test=0 {
+						    lock -^TCLEx("OutboundPDF",hospital,pLabOrder,epis,language)
+						    set ok=$$$ERROR($$$errCreatingResultFile,"Не удалось сформировать файл "_pdfFileNameForEMC_" (Lock занят) !")
+						    quit
+					    }
+					
+				        if ##class(%File).Exists(pdfFileNameForEMC) {
+					       set ok1=##class(%File).Delete(pdfFileNameForEMC)
+					       if 'ok1 {
+						      lock -^TCLEx("OutboundPDF",hospital,pLabOrder,epis,language)
+						      set ok=$$$ERROR($$$errCreatingResultFile,"Не удалось удалить существующий файл "_pdfFileNameForEMC_" !")
+						      quit
+					       }
+				         }
+				          
+				          set ok1=##class(%File).CopyFile(filenamevsp,pdfFileNameForEMC)
+		                  if ok1=0 {
+			                  lock -^TCLEx("OutboundPDF",hospital,pLabOrder,epis,language)
+			                  set ok=$$$ERROR($$$GeneralError,"Не удалось скопировать файл "_filenamevsp_" --> "_pdfFileNameForEMC_".")
+		                      quit
+		                  } else {
+			                  set ^TCLEx("OutboundPDF",hospital,pLabOrder,epis,language)=pdfFileNameForEMC
+			                  if rootPathForFilesWeber'="" Do LogMessage^KSUTIL1(rootPathForFilesWeber_"LIS\",$select(ok1=0:"Не удалось скопировать файл "_filenamevsp_" --> "_pdfFileNameForEMC_".",1:"Успешно создан файл "_pdfFileNameForEMC),1,1)
+		                  }
+		                  
+		                  lock -^TCLEx("OutboundPDF",hospital,pLabOrder,epis,language)
+		                  
+					} catch(e) {
+						if ($get(hospital)'="")&&($get(pLabOrder)'="")&&($get(epis)'="")&&($get(language)'="") {
+							lock -^TCLEx("OutboundPDF",hospital,pLabOrder,epis,language)
+						}
+						set ok=e.AsStatus()
+					}
 				}
 			}
 		}
