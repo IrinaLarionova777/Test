@@ -167,6 +167,8 @@ if $$seldata^LVBCTPR(priority,4)="Y" quit 1</Description>
 </Method>
 
 <Method name="PCLResult">
+<Description>
+аналог теперь ##class(TCLEx.Report.ResultForm).PCLEpisodeResult</Description>
 <ClassMethod>1</ClassMethod>
 <FormalSpec><![CDATA[pEpis:%String,&pTestSets:%String]]></FormalSpec>
 <Implementation><![CDATA[
@@ -817,6 +819,68 @@ get string with all Accession Numbers of episode</Description>
 	  set pAccNumbers=""
   }
   quit sc
+]]></Implementation>
+</Method>
+
+<Method name="ResendResult">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisode)
+	If '$IsObject(episobj) Quit $$$ERROR($$$GeneralError,"Не удалось открыть объект эпизода "_pEpisode_" !")
+	Set epispiority=episobj.EPVISPriorityCodeDRGetObjectId()
+	// Составляем список наборов тестов для которых нужен результат
+	Set key="",err="",mindatetime=""
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		//
+		If '##class(TCLEx.Function.TestSet).IsPrintable(testsetobj) Continue // Пропускаем непечатаемые, т.к. для них не нужен результат
+		Set testsetid=testsetobj.%Id()
+		If testsetid="" Continue
+		//
+		Set superset=testsetobj.VISTSSuperSetDRGetObjectId()
+		If (superset'="") {
+			If '##class(TCLEx.Function.SuperSet).IsSuperSetSummaryTestSet(superset,testsetid) // Смотрим только на заключительный набор тестов
+			If '##class(TCLEx.Function.SuperSet).IsComplete(pEpisode,superset) Continue
+			Set testsetid=superset
+		}
+		//
+		Set datetime=""
+		If ##class(TCLEx.Function.TestSet).IsAuthorised(testsetobj) {
+			Set datetime=testsetobj.VISTSDateOfAuthorisation_","_(testsetobj.VISTSTimeOfAuthorisation*60)
+		} ElseIf ##class(TCLEx.Function.TestSet).IsCanceled(testsetobj){
+			Set datetime=testsetobj.VISTSDateOfReason_","_testsetobj.VISTSTimeOfReason
+		}
+		If datetime="" Continue
+		If (mindatetime="")||(mindatetime]datetime) {			// Находим минимальное время авторизации в эпизоде
+			Set mindatetime=datetime
+		}
+		Set priority=testsetobj.VISTSPriorityDRGetObjectId()
+		If ##class(TCLEx.Function.Laboratory).IsCitoPriority(epispiority) {
+			Set priority=epispiority
+		}
+		Set testset=testsetobj.VISTSTestSetDRGetObjectId()
+		Set TestSets(testsetid)=$ListBuild(testset,priority,datetime)
+	}
+	If mindatetime="" Quit $$$OK
+	// Определяем какие типы результата нужны по данному эпизоду
+	Do ##class(TCLEx.Function.LabOrder).NeededResultModes(pEpisode,.needweber,.needhospitalemail,.needpatientemail,.needpatientsms)
+	// Регистрируем необходимость формирования нужных результатов по наборам тестов
+	Set testsetid=""
+	For  {
+		Set testsetid=$Order(TestSets(testsetid),1,vals)
+		If testsetid="" Quit
+		Set testset=$ListGet(vals,1)
+		Set priority=$ListGet(vals,2)
+		Set datetime=$ListGet(vals,3)
+		If ##class(TCLEx.Function.TestSet).IsTime4Result2(testset,priority,mindatetime,datetime) {			// Проверка можно ли уже формировать результат
+			Do ##class(TCLEx.Function.TestSet).SetAuthorisationStatus(pEpisode,testsetid,mindatetime,datetime,needweber,needhospitalemail,needpatientemail,needpatientsms)
+		}	
+	}	
+	Quit $$$OK
 ]]></Implementation>
 </Method>
 </Class>
