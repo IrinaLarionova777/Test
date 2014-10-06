@@ -1,0 +1,402 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Routine name="PRTDR1rusgkb12" type="INT" languagemode="0"><![CDATA[
+PRTDR1rusgkb12   ;SPARM; Doctors Reports printing (single test set - normal) ;MEDLAB Int;@gol;
+ ;
+ ; supported calls :
+ ;
+ ; $$print^PRTDR101(vtsRID,type,DH)
+ ;
+ ; type  : P - print
+ ;         V - view from Enquiry
+ ;           - view from Entry
+ ; DH    : D - Doctor
+ ;         H - Hospital
+print(vtsRID,type,DH,lan) n (vtsRID,type,DH,lan,tsLM,tsWD,dh1,dh2,mismpl,PAR1) s vtsRID=$g(vtsRID),type=$g(type),DH=$g(DH),dh1=$g(dh1),dh2=$g(dh2),mismpl=$g(mismpl)
+ s epis=$p(vtsRID,"||",1),test=$p(vtsRID,"||",2),tsLM=$g(tsLM),tsWD=$g(tsWD) k Coag
+ ; check for margin changes
+ s margin="",%routine=$p($g(^TTAB("REPORT-GENERIC","DREP0")),"\",1)
+ i $l(%routine) s LineRoutine="Margin^"_%routine i $l($t(@LineRoutine)) x "s margin=$$Margin^"_%routine_"()"
+ s dft="" d %0Ao
+ i $l($p(dft,$c(1))) d  q "Y"
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP7")),"\",1)
+ .i $l(%routine) x "d print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+ s range1="",range2="",(flaglow,flaghigh,Alternate)=""
+ i '$$select^LVBCTTS(test,"Y") d
+ .f j=1:1:PLIST s PLIST(j)=$p(PLIST(j),$c(1))
+ .k TEST m TEST=PLIST s tsLM=TEST(41),dep=PLIST(26)
+ i 'tsLM,'$$select^LVBCTDEP(dep,"Y"),PLIST(13) s tsLM=PLIST(13)
+ i '$$select^MVBCFLAB(1) d
+ .i $l(PLIST(18)) s flaglow=PLIST(18)
+ .i $l(PLIST(19)) s flaghigh=PLIST(19)
+ .i $l(PLIST(20)) s range1=PLIST(20)
+ .i $l(PLIST(21)) s range2=PLIST(21)
+ .i 'tsLM,PLIST(43) s tsLM=PLIST(43)
+ .i 'tsWD,PLIST(42) s tsWD=PLIST(42)
+ .i $l(PLIST(69)) s Alternate=PLIST(69)
+ 
+ ; process normal test set
+ ; Иногда флаги выше и ниже референснах значений пропадают
+ If flaglow="" Set flaglow="<"
+ If flaghigh="" Set flaghigh=">"
+ ;
+ Set flaglow=$c(27)_"(3R"_$c(27)_"(s1p12v0s0b4101T"_$c(25)_$c(27)_"(9R"_$c(27)_"(s0p10v0s0b4099T"
+ Set flaghigh=$c(27)_"(3R"_$c(27)_"(s1p12v0s0b4101T"_$c(24)_$c(27)_"(9R"_$c(27)_"(s0p10v0s0b4099T" 
+
+ s rowid=test_"||"_dh1_"||"_dh2,layout=""
+ d %0Bo
+ //!!! - добавляем определение языка
+ s layout=$p(layout,$c(1))
+ Set lan=$Get(lan)
+ If lan="" {
+ 	s lan=$P($G(^CF("SM",1)),"^",10)
+ 	s lan=$p($g(lan),$c(1),1)	
+ } 
+ /*
+ s rowid=test_"||"_dh1_"||"_dh2,layout=""
+ d %0Bo
+ s layout=$p(layout,$c(1)),lan=""
+ ;------------ определение языка для печати отчета -------------
+ i dh1="D",$l(dh2) s lan=$p($g(^TTAB("DR",$P(dh2,$C(1)))),"\",25)    ;язык для врача
+ i dh1="H",$l(dh2) s lan=$p($g(^TTAB("RH",$P(dh2,$C(1)))),"\",31)    ;язык для местоположения
+ i $g(lan)="",$g(epis)'="" s lan=$p($g(^TEPI(epis)),"\",61)  ;язык для пациента
+ i $g(lan)="" s lan=$P($G(^CF("SM",1)),"^",10)               ;язык по умолч. для системы
+ s lan=$p($g(lan),$c(1))
+ ;-------------------------------------
+ ; для типа отчета "PIT" - достаем язык для передачи e-mail из формы
+ i $G(^TMP("PRTDR00",$j,"TYPE"))="PIT",$G(^TMP("PRTDR00",$j,"LAN"))'="" s lan=^TMP("PRTDR00",$j,"LAN")   ;1-русский ;2-английский
+ */
+ 
+ ;
+ k FORMAT i '$$getit^LVBCTTSF(,vtsRID,"Y",,,layout,,lan) m FORMAT=PLIST
+ k RESULT i '$$results^LVBVISTS(vtsRID,mismpl,$s($l(mismpl):"Y",1:"N")) d
+ .f j=1:1:PLIST s x1=$p(PLIST(j),$c(1),2),x2=$p(PLIST(j),$c(1),3) i $l(x1),$l(x2) s RESULT(x1)=x2_$c(1)_$p(PLIST(j),$c(1),5)_$c(1)_$p(PLIST(j),$c(1),22)
+ ; ------------------------------------------------------------
+ ; for printing TS layout (печать пустого шаблона набора тестов)
+ i '$l(epis) s cnt="" f  s cnt=$o(FORMAT(cnt)) q:cnt=""  d  
+ .s tc=$p(FORMAT(cnt),$c(2),10) i $l(tc) d
+ ..i $e($p(FORMAT(cnt),$c(2),18))="S" s RESULT(tc)="Станд.комментарий"
+ ..i $e($p(FORMAT(cnt),$c(2),18),1,2)="B1" s RESULT(tc)="Реакции"
+ ..i $e($p(FORMAT(cnt),$c(2),18),1,2)="B2" s RESULT(tc)=$o(^TTAB("BB-BG",""))
+ ..i $e($p(FORMAT(cnt),$c(2),18))="X" s RESULT(tc)="Произвольный текст"
+ ..i $e($p(FORMAT(cnt),$c(2),18))="N" s RESULT(tc)="",$p(RESULT(tc),9,$p(FORMAT(cnt),$c(2),19)+1)=""
+ ..i $e($p(FORMAT(cnt),$c(2),18))="V" s RESULT(tc)=$o(^TTAB("BUG",""))
+ ..i $e($p(FORMAT(cnt),$c(2),18))="M" s RESULT(tc)="",$p(RESULT(tc),9,$p(FORMAT(cnt),$c(2),19)+1)=""
+ ..i $e($p(FORMAT(cnt),$c(2),18))="D" s RESULT(tc)=+$h
+ ..i $e($p(FORMAT(cnt),$c(2),18))="Y" s RESULT(tc)="Y"
+ ;-----------------------------------------------------
+ ;статус набора тестов
+ s status=$$status^LVBVIS1(vtsRID)  i status="C" q 0  ;Create - создано
+ ;-----------------------------------------------------  
+ ;выборка данных 
+ k PLIST i '$$select^LVBVISTS(vtsRID,"Y") k VISTS m VISTS=PLIST
+ ;-----------------------------------------------------          
+ ; partial print (предварительный отчет)
+ i status="E" d    ;Enter  - введено, но не разрешено
+ . d ADD^PRTDR00(,"~BOLD"),LN^PRTDR00()
+ . d ADD^PRTDR00(tsLM,"Предварительный отчет")
+ . d LN^PRTDR00(),ADD^PRTDR00(,"~NORMAL")
+ ;---------------------------------------
+ ; select Reason  (причина невыполнения!) 
+ ; Если установлена причина для данного набора тестов и для этой причины в CT установлен флаг "Подлежит регистрации"="N" - то рез-ты не печатаем !!!
+ k Reason 
+ s FlagReason=""   ;флаг "Подлежит регистрации"  Y/N
+ i $g(VISTS(58))'="" d
+ . i '$$select^LVBCTR($P(VISTS(58),$c(1)),"Y") d 
+ .. s FlagReason=$G(PLIST(4))  ;Plist(4)-флаг "Подлежит регистрации"
+ .. k Reason m Reason=PLIST
+ i FlagReason="N" q 0
+ ;-------------------------------------------
+ ; print Authorised by
+ i status="A",type'="P" i $l(VISTS(9)) d
+ . d ADD^PRTDR00(,"~RES-AUTHORISEDBY")
+ . d LN^PRTDR00(),ADD^PRTDR00(tsLM+margin,"Разрешено"_" [ "_$$extdate2^SSUTIL4(VISTS(7))_" в "_$$exttime^SSUTIL4(VISTS(8))_"  "_VISTS(9)_" ]"),LN^PRTDR00()
+ . d ADD^PRTDR00(,"~NORMAL")
+ ;----------------------------------------
+ ; print test set header (заголовок набора тестов)
+ s tsName=""
+ i $l(TEST(17)) d
+ .i '$l(tsName),$l(lan) d
+ ..s rowid=TEST(2)_"||"_lan
+ .. d %0Fo
+ ..s tsName=$p(tsName,$c(1))
+ .i '$l(tsName) s tsName=$s(TEST(17)="*":TEST(3),1:TEST(17))
+ .; !!!
+ .set tsName=TEST(3)
+ .; !!!
+ i $g(PAR1)="D" d
+ . d %0Go
+ .s tsName=tsName_$s($l(tsName):"  -  ",1:"")
+ i $l(tsName) d
+ .If $d(Reason),$g(FlagReason)="Y" Quit
+ .d ADD^PRTDR00(,"~RES-TSHEADER")
+ .d LN^PRTDR00(),ADD^PRTDR00(tsLM+margin,tsName),LN^PRTDR00()
+ .d ADD^PRTDR00(,"~NORMAL")
+ ;---------------------------------------
+ ; print Reason  (причина невыполнения!)
+ . ; Plist(3)-Описание причины
+ . ; Plist(6)-Сообщение, полежащее регистрации
+ i $d(Reason),$g(FlagReason)="Y" d
+ . If tsName'="" Set tsnamevals=tsName
+ . If tsName="" Do
+ . . Set tsnamevals=""
+ . . Set testsetobj=##class(User.CTTestSet).%OpenId(test)
+ . . If $IsObject(testsetobj) Set tsnamevals=testsetobj.CTTSName
+ . Set tsnamevals=$$Split2SeveralStrings^KSUTIL1("Отменено исследование: "_tsnamevals,80,,$Char(1))
+ . Do ADD^PRTDR00(,"~RES-AUTHORISEDBY"),LN^PRTDR00()
+ . For i=1:1:$Length(tsnamevals,$Char(1)) Do ADD^PRTDR00(tsLM+margin,$Piece(tsnamevals,$Char(1),i)),LN^PRTDR00()
+ . d ADD^PRTDR00(,"~NORMAL")
+ . If $l(Reason(6)) f j=1:1:$l(Reason(6),"|") d ADD^PRTDR00(tsLM+margin,$p(Reason(6),"|",j)),LN^PRTDR00()
+ ;----------------------------------------
+ ; print test set format
+ s cnt="",(Start,StartPrinted)="" f  s cnt=$o(FORMAT(cnt)) q:cnt=""  d
+ .s tc=$p(FORMAT(cnt),$c(2),10)
+ . ; Alternate result entered
+ .i type="P",$l(tc),$l(Alternate),$p($g(RESULT(tc)),$c(1))=$p(Alternate,"-") s Start=$p(FORMAT(cnt),$c(2),6)+$s($e($p(FORMAT(cnt),$c(2),18))="A":5,1:"") q
+ . ; no result entered
+ .i $l(tc),'$d(RESULT(tc)) s Start=$p(FORMAT(cnt),$c(2),6)+$s($e($p(FORMAT(cnt),$c(2),18))="A":5,1:"") q
+ . ; non reportable test item
+ .i (type="P")!(type="V"),$p(FORMAT(cnt),$c(2),15)'="Y" s Start=$p(FORMAT(cnt),$c(2),6)+$s($e($p(FORMAT(cnt),$c(2),18))="A":5,1:"") q
+ .i $l(tc),(type="P")!(type="V"),$p(RESULT(tc),$c(1),3)="Y" s Start=$p(FORMAT(cnt),$c(2),6)+$s($e($p(FORMAT(cnt),$c(2),18))="A":5,1:"") q
+ .i type="" d
+ ..i $p(FORMAT(cnt),$c(2),15)'="Y" d ADD^PRTDR00(,"~INVISIBLE") q
+ ..i $l(tc),$p(RESULT(tc),$c(1),3)="Y" d ADD^PRTDR00(,"~INVISIBLE") q
+ . ; -------------------------------------------------------------
+ . ; print text line (наименование теста или текст метки в шаблоне)
+ .i $p(FORMAT(cnt),$c(2),6)>Start f Start=Start+1:1:$p(FORMAT(cnt),$c(2),6) d LN^PRTDR00() s StartPrinted=Start
+ .i StartPrinted<Start d LN^PRTDR00() s StartPrinted=Start
+ .i $p(FORMAT(cnt),$c(2),5)+margin,$l($p(FORMAT(cnt),$c(2),3)) d
+ ..d ADD^PRTDR00($p(FORMAT(cnt),$c(2),5)+margin,)
+ ..i $l($p(FORMAT(cnt),$c(2),11)) f j=1:1:$l($p(FORMAT(cnt),$c(2),11)) s x=$e($p(FORMAT(cnt),$c(2),11),j) i $l(x) d
+ ...i x="B" d ADD^PRTDR00(,"~BOLD",,"N")
+ ...i x="I" d ADD^PRTDR00(,"~ITALIC",,"N")
+ ...i x="U" d ADD^PRTDR00(,"~UNDERLINE",,"N")
+ ..d ADD^PRTDR00(,$p(FORMAT(cnt),$c(2),3))
+ ..i $l($p(FORMAT(cnt),$c(2),11)) d
+ ...i type="" s x99=0 d  q:x99
+ ....i $p(FORMAT(cnt),$c(2),15)'="Y" d ADD^PRTDR00(,"~INVISIBLE") s x99=1 q
+ ....i $l(tc),$p(RESULT(tc),$c(1),3)="Y" d ADD^PRTDR00(,"~INVISIBLE") s x99=1 q
+ ...d ADD^PRTDR00(,"~NORMAL")
+ . ; ---------------
+ . ; print test item
+ .i $l(tc) d
+ ..k result s result=$$DeleteLeftSpaces^KSUTIL1($p(RESULT(tc),$c(1),1)),flag=$p(RESULT(tc),$c(1),2) i $l(result) d  i $e($p(FORMAT(cnt),$c(2),18))="C" q
+ ...i $e($p(FORMAT(cnt),$c(2),18))="A" d IA^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="S" d IS^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18),1,2)="B1" d IS^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18),1,2)="B2" d IB2^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="X" d IX^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="N" d IN^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="V" d IV^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="M" d IM^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="D" d ID^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="Y" d IY^PRTDR00
+ ...i $e($p(FORMAT(cnt),$c(2),18))="C" s Coag(tc)=FORMAT(cnt)
+ ...i $e($p(FORMAT(cnt),$c(2),18))="Z" d IZ^PRTDR00
+ .. ; 
+ .. ; если результат "" - печатается вместо "TF" -> "-"
+ ..i "MN"[$e($p(FORMAT(cnt),$c(2),18)) i $d(result)\10=0,result="" s result="-"
+ .. ;
+ .. ; print result
+ ..i $p(FORMAT(cnt),$c(2),7) d
+ ... ; check for 'A'bnormal standard comments - формат теста "Стандартный комментарий"
+ ... i "S"[$e($p(FORMAT(cnt),$c(2),18)) d    ;@gol
+ .... s stdres=$p(RESULT(tc),$c(1),1) s stdres=$tr(stdres,"{}[]")
+ .... i $l(stdres),$l(stdres)<30,$d(^TTAB("TC",tc,2,stdres)) d
+ ..... q:$p($g(^TTAB("TC",tc,2,stdres)),"\",1)'="A"  
+ ..... s flag="A" d ADD^PRTDR00(,"~BOLD"),ADD^PRTDR00(,$c(13))
+ ... ; 
+ ... ; single result
+ ...i $l(result) d  q
+ ....; флаг "Результат ниже нормы"
+ ....i flag="L" d
+ .....i "MN"[$e($p(FORMAT(cnt),$c(2),18)),$l(flaglow) D
+ ...... s resultmargin=$p(FORMAT(cnt),$c(2),7)-1
+ ...... d ADD^PRTDR00(,$c(13)),ADDLINE^PRTDR00(resultmargin+margin-1,"","RESULT"),ADD^PRTDR00(resultmargin+margin-1,"~FLAG-LOW")
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....d ADD^PRTDR00(,"~BOLD")
+ .....d ADD^PRTDR00(,"~RES-ABNORMAL")
+ ....; флаг "Результат выше нормы"
+ ....i flag="H" d
+ .....i "MN"[$e($p(FORMAT(cnt),$c(2),18)),$l(flaghigh) D
+ ...... s resultmargin=$p(FORMAT(cnt),$c(2),7)-1
+ ...... d ADD^PRTDR00(,$c(13)),ADDLINE^PRTDR00(resultmargin+margin-1,"","RESULT"),ADD^PRTDR00(resultmargin+margin-1,"~FLAG-HIGH")
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....d ADD^PRTDR00(,"~BOLD")
+ .....d ADD^PRTDR00(,"~RES-ABNORMAL")
+ ....; 
+ ....; Печатаем Значение Теста
+ ....i type="V" d ADD^PRTDR00(,"~BOLD")  ;для просмотра на экране выводим значение жирным!
+ ....d ADD^PRTDR00(,$c(13)),ADD^PRTDR00($p(FORMAT(cnt),$c(2),7)+margin,result)
+ ....i type="V" d ADD^PRTDR00(,"~NORMAL")
+ ....;
+ ....i (flag="L")!(flag="H") d
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....d ADD^PRTDR00(,"~NORMAL")
+ ....; !!!! (X - тип теста Произвольный текст) для того чтобы для типа X печатались единицы измерения и референсные границы
+ ....;i "MN"[$e($p(FORMAT(cnt),$c(2),18)) d
+ ....i "MNX"[$e($p(FORMAT(cnt),$c(2),18)) d  
+ ..... ; 
+ ..... ; print units - Единицы измерения
+ .....i $p(FORMAT(cnt),$c(2),12) d
+ ......d
+ .......i type="" s x99=0 d  q:x99
+ ........i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ........i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .......d ADD^PRTDR00(,"~RES-UNITS")
+ ......d ADD^PRTDR00($p(FORMAT(cnt),$c(2),12)+margin,$p(FORMAT(cnt),$c(2),17))
+ ......d
+ .......i type="" s x99=0 d  q:x99
+ ........i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ........i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .......d ADD^PRTDR00(,"~NORMAL")
+ ..... ; 
+ ..... ; print ranges - Нормы
+ .....i $p(FORMAT(cnt),$c(2),14) d
+ ......;*** форматирование норм *** ведущий ноль (leading zero)  @gol ***
+ ......s $p(FORMAT(cnt),$c(2),22)=$$FormNum($p(FORMAT(cnt),$c(2),22))
+ ......s $p(FORMAT(cnt),$c(2),23)=$$FormNum($p(FORMAT(cnt),$c(2),23))
+ ......d
+ .......i type="" s x99=0 d  q:x99
+ ........i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ........i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .......i $l($p(FORMAT(cnt),$c(2),22)) d ADD^PRTDR00(,"~RES-RR")
+ ......i $l($p(FORMAT(cnt),$c(2),22)),$l($p(FORMAT(cnt),$c(2),23)) d
+ .......i $e($p(FORMAT(cnt),$c(2),22))?1N s $p(FORMAT(cnt),$c(2),22)=$j($p(FORMAT(cnt),$c(2),22),0,$e($p(FORMAT(cnt),$c(2),18),2,4))
+ .......i $e($p(FORMAT(cnt),$c(2),23))?1N s $p(FORMAT(cnt),$c(2),23)=$j($p(FORMAT(cnt),$c(2),23),0,$e($p(FORMAT(cnt),$c(2),18),2,4))
+ .......;выравниваем нормы по левому краю!  @gol
+ .......;d ADD^PRTDR00($p(FORMAT(cnt),$c(2),14)+margin,$j(range1_$p(FORMAT(cnt),$c(2),22),$p(FORMAT(cnt),$c(2),19)+$l(range1))_"-"_$p(FORMAT(cnt),$c(2),23)_range2)
+ .......d ADD^PRTDR00($p(FORMAT(cnt),$c(2),14)+margin,$j(range1_$p(FORMAT(cnt),$c(2),22),$l($p(FORMAT(cnt),$c(2),22))+$l(range1))_"-"_$p(FORMAT(cnt),$c(2),23)_range2)
+ ......i $l($p(FORMAT(cnt),$c(2),22)),'$l($p(FORMAT(cnt),$c(2),23)) d
+ .......i $e($p(FORMAT(cnt),$c(2),22))?1N s $p(FORMAT(cnt),$c(2),22)=$j($j($p(FORMAT(cnt),$c(2),22),0,$e($p(FORMAT(cnt),$c(2),18),2,4)),$p(FORMAT(cnt),$c(2),19)+$l(range1))
+ .......;выравниваем нормы по левому краю!  @gol
+ .......;d ADD^PRTDR00($p(FORMAT(cnt),$c(2),14)+margin,range1_$p(FORMAT(cnt),$c(2),22)_range2)
+ .......d ADD^PRTDR00($p(FORMAT(cnt),$c(2),14)+margin,$j(range1_$p(FORMAT(cnt),$c(2),22),$l($p(FORMAT(cnt),$c(2),22))+$l(range1))_range2)
+ ......i $l($p(FORMAT(cnt),$c(2),22)) d
+ .......i type="" s x99=0 d  q:x99
+ ........i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ........i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .......d ADD^PRTDR00(,"~NORMAL")
+ ... ;
+ ... ; multiline result
+ ...i $d(result)\10 d
+ ....d
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....i (flag="L")!(flag="H") d ADD^PRTDR00(,"~BOLD"),ADD^PRTDR00(,"~RES-ABNORMAL")
+ ....s x="" f xx=0:1 s x=$o(result(x)) q:x=""  d:xx LN^PRTDR00() d ADD^PRTDR00($p(FORMAT(cnt),$c(2),7)+margin,result(x))
+ ....d
+ .....i type="" s x99=0 d  q:x99
+ ......i $p(FORMAT(cnt),$c(2),15)'="Y" s x99=1 q
+ ......i $p(RESULT(tc),$c(1),3)="Y" s x99=1 q
+ .....i (flag="L")!(flag="H") d ADD^PRTDR00(,"~NORMAL")
+ ...; 
+ ...; check for 'A'bnormal standard comments - формат теста "Стандартный комментарий"
+ ... i "S"[$e($p(FORMAT(cnt),$c(2),18)) d ADD^PRTDR00(,"~NORMAL")
+ .i type="" d
+ ..i $p(FORMAT(cnt),$c(2),15)'="Y" d ADD^PRTDR00(,"~VISIBLE")  ;"~NORMAL")
+ ..i $l(tc),$p(RESULT(tc),$c(1),3)="Y" d ADD^PRTDR00(,"~VISIBLE")  ;"~NORMAL")
+ ;       
+ ; process BB x-match part
+ i TEST(6)="Y" d
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP4")),"\",1)
+ .i $l(%routine) x "d print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+ ; process coag calender
+ i $d(Coag) d  k Coag
+ .s %routine=$p($g(^TTAB("REPORT-GENERIC","DREP6")),"\",1)
+ .i $l(%routine) x "d print^"_%routine_"("""_vtsRID_""","""_type_""","""_DH_""")"
+prend q 0
+ q
+FormNum(Num) n (Num) s Num=$G(Num) q:Num="" ""
+ s Flag="" i "<>+-"[$e(Num) s Flag=$e(Num),Num=$e(Num,2,$l(Num))
+ i $e(Num,1)="." s Num="0"_Num
+ q Flag_Num
+ ;-------------------    
+%0Ao n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Aerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(vtsRID,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$e(vtsRID,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p($g(%mmmsqld(3)),"||",1,1),%mmmsqld(7)=$p($g(%mmmsqld(3)),"||",2,2),%mmmsqld(8)=$p($g(%mmmsqld(3)),"||",3,3)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",$d(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8)))
+ e  g %0ABdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(6),1,%mmmsqld(7),%mmmsqld(8)))
+ s dft=$p(%mmmsqln,"\",20)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Ac
+%0ABdun 
+%0AAdun 
+%0Ac q
+%0Aerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0AAdun
+%0Bo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Berr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(rowid,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$e(rowid,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p($g(%mmmsqld(3)),"||",1,1),%mmmsqld(7)=$p($g(%mmmsqld(3)),"||",2,2),%mmmsqld(8)=$p($g(%mmmsqld(3)),"||",3,3)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",%mmmsqld(8)'="",$d(^TTAB("TS",%mmmsqld(6),8,%mmmsqld(7),%mmmsqld(8)))
+ e  g %0BBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6),8,%mmmsqld(7),%mmmsqld(8)))
+ s layout=$p(%mmmsqln,"\",1)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Bc
+%0BBdun 
+%0BAdun 
+%0Bc q
+%0Berr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0BAdun
+%0Fo n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Ferr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(4)=$P(rowid,$C(1))
+ s:%mmmsqld(4)="" %mmmsqld(4)=$e(rowid,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(3)=%mmmsqld(4)
+ s %mmmsqld(6)=$p($g(%mmmsqld(3)),"||",1,1),%mmmsqld(7)=$p($g(%mmmsqld(3)),"||",2,2)
+ i %mmmsqld(6)'="",%mmmsqld(7)'="",$d(^TTAB("TS",%mmmsqld(6),"LAN",%mmmsqld(7)))
+ e  g %0FBdun
+ s %mmmsqln=$g(^TTAB("TS",%mmmsqld(6),"LAN",%mmmsqld(7)))
+ s tsName=$p(%mmmsqln,"\",1)
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Fc
+%0FBdun 
+%0FAdun 
+%0Fc q
+%0Ferr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0FAdun
+%0GBs1 s %val=+$g(%val) s:%val<1 %val="" q:%val=""  s %val=$ZDATE(%val,4,-1,4) q
+%0Go n %mmmsqlc,%mmmsqld,%mmmsqle,%mmmsqlE,%mmmsqlf,%mmmsqll,%mmmsqlL,%mmmsqlm,%mmmsqln,%mmmsqlp,%mmmsqlr,%mmmsqlR,%mmmsqls,%mmmsqlt,%val
+ s %mmmsqlE=$zt,$zt="%0Gerr^"_$zn,%mmmsqlf=0 s $ze=""
+ s %mmmsqld(6)=$P(epis,$C(1))
+ s:%mmmsqld(6)="" %mmmsqld(6)=$e(epis,2,99999)
+ s SQLCODE=100
+   ;  init
+ ; asl MOD# 2
+ s %mmmsqld(5)=%mmmsqld(6)
+ s %mmmsqld(8)=$p($g(%mmmsqld(5)),"||",1,1)
+ i %mmmsqld(8)'="",$d(^TEPI(%mmmsqld(8)))
+ e  g %0GBdun
+ s %mmmsqln=$g(^TEPI(%mmmsqld(8)))
+ s x1=$p(%mmmsqln,"\",10) s x2=$p(%mmmsqln,"\",11)
+ 
+ s %val=$P(x1,$C(1)) d %0GBs1:%val'="" s $P(x1,$C(1),2)=%val
+ s SQLCODE=0 s:SQLCODE=0 %mmmsqlf=%mmmsqlf+1 g %0Gc
+%0GBdun 
+%0GAdun 
+%0Gc q
+%0Gerr ; Non Cursor-Based Error Trap Module...
+ s $zt=$g(%mmmsqlE),SQLCODE=-20603,%msg=$ze s $ze="" g %0GAdun
+]]></Routine>
+</Export>
