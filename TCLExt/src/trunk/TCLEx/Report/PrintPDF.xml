@@ -6,11 +6,67 @@
 
 <Parameter name="TIMEOUTPROCESSPRINT">
 <Description>
-timeout, по истечении которого процесс печати считается зависшим и убивается</Description>
-<Default>60</Default>
+timeout, по истечении которого процесс печати считается зависшим и убивается (в секундах)</Description>
+<Default>30</Default>
+</Parameter>
+
+<Parameter name="TIMEOUTPROCESSPRINTMS">
+<Description>
+timeout, по истечении которого процесс печати считается зависшим и убивается (в миллисекундах)</Description>
+<Default>120000</Default>
 </Parameter>
 
 <Method name="PrintPDFsumatra">
+<Description>
+Печать указанного файла pdf на указанный принтер (через SumatraPDF.exe)
+вызов через внешнюю callout_exec.dll (она должна лежать в $SYSTEM.Util.BinaryDirectory())</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pFileReport:%String,pPrinterName:%String</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+  set ok=$$$OK,error=""
+  try
+  {	
+     if ##class(%File).Exists($get(pFileReport))&&(pPrinterName'="") {
+	     set sumatraPDF=##class(TCLEx.Function.Printer).getPathToSumatraPDF()
+	     if sumatraPDF'="" set sumatraPDF=sumatraPDF_"\SumatraPDF.exe"
+	     if (sumatraPDF="")||('##class(%File).Exists(sumatraPDF)) {
+		     set ok=$$$ERROR($$$GeneralError,"Путь к SumatraPDF не найден.")
+		     quit
+	     } 
+	     //set command=""""_##class(TCLEx.Function.Printer).getPathToSumatraPDF()_"\SumatraPDF.exe"_""" -print-to """_pPrinterName_""" """_pFileReport_""""
+	     //set command=##class(%File).NormalizeFilenameWithSpaces(sumatraPDF)_" -silent -print-to """_pPrinterName_""" "_##class(%File).NormalizeFilenameWithSpaces(pFileReport)
+	     set command=##class(%File).NormalizeFilenameWithSpaces(sumatraPDF)_" -print-to """_pPrinterName_""" "_##class(%File).NormalizeFilenameWithSpaces(pFileReport)
+	     set ^test("command")=command
+	     // запуск команды ос
+	     S lib=$ZF(-4,1,$SYSTEM.Util.BinaryDirectory()_"callout_exec.dll") 
+	     S ok1=$zf(-5,lib,1,command,..#TIMEOUTPROCESSPRINTMS,30000,"C:\") // второй Timeout для ожидания terminate process 
+	     set error=$piece(ok1,",",2) // error
+	     // step=1- ошибка при создании процесса с command
+	     // step=2 - все хорошо
+	     // step=3 - процесс висел время, равное первому Timeout (попытка terminate process)
+	     set step=$piece(ok1,",",1)  // шаг, до которого дошла программа 
+	     set pid=$piece(ok1,",",3)
+	     
+         if (error=0)&&(step=2) {
+		     set ok=1
+	     } else {
+		     set texterror=$select(step=1:"Ошибка при создании процесса для запуска SumatraPDF.",step=3:"Попытка terminate process "_pid_".",1:"")_" step="_step_", error="_error_", pid="_pid
+		     set ok=$$$ERROR($$$GeneralError,"Не удалось напечатать файл "_pFileReport_" : "_texterror)
+		     set texterror=texterror_", command="_command
+		     do ##class(TCLEx.Function.General).WriteError(texterror,$CLASSNAME()_":PrintPDFsumatra:callout_exec.dll")	
+
+	     }
+     }
+   } catch(exception)
+  {
+	  set ok=exception.AsStatus()
+  }	
+  quit ok
+]]></Implementation>
+</Method>
+
+<Method name="PrintPDFsumatraOld">
 <Description>
 Печать указанного файла pdf на указанный принтер (через SumatraPDF.exe)</Description>
 <ClassMethod>1</ClassMethod>
