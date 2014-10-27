@@ -1,0 +1,665 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="24">
+<Class name="TCLEx.Function.EMC2Bion">
+<IncludeCode>%occErrors,TCLEx</IncludeCode>
+<Super>%RegisteredObject</Super>
+<TimeCreated>63109,62105.405428</TimeCreated>
+
+<Method name="IsValidExternalEpisodeNumber">
+<Description>
+Определяем корректный ли номер внешнего эпизода
+Для Биона - это 10 значный номер заказа или 12 значный номер образца (если по ошибке его отсканируют)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String</FormalSpec>
+<ReturnType>%Boolean</ReturnType>
+<Implementation><![CDATA[
+	Set pEpisode=$Get(pEpisode)
+	Quit (pEpisode?12N)||(pEpisode?10N)
+]]></Implementation>
+</Method>
+
+<Method name="GetExternalTestSetSpecimen">
+<Description>
+Возвращаем описанную в мэппинге пару КодНаборТестов||КодБиоматериала</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pExtLaboratory:%String,pTestSet:%String,pSpecimen:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	If ($Get(pExtLaboratory)="")||($Get(pTestSet)="") Quit ""
+	Set intcode=pTestSet_"||"_pSpecimen
+	Set exttestset=""
+	&sql(
+		Select ExternalCode 
+		Into :extcode
+		from TCLEx_Data.Encoding
+		Where ExternalSystem=:pExtLaboratory and CodeTable='CTTestSet' and InternalCode=:intcode
+	)
+	If SQLCODE=0 Quit extcode
+	Quit ""
+]]></Implementation>
+</Method>
+
+<Method name="GetExternalLabs4UserSite">
+<Description>
+Получить код внешней лаборатории, настроенный в Mapping для UserSite эпизода
+Код внешней лаборатории в Mapping должен быть в формате UserSite_ExtLab (например, LEMC_BION)</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pUserSite:%String,pGlb:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	If pUserSite="" Quit ""
+	//
+	&sql(
+		SELECT %ID
+		INTO :id
+		FROM Mapping_Data.Nast
+		Where %ID = :pUserSite||'_BION'
+	)
+	If SQLCODE=0 Quit id
+	Quit ""
+]]></Implementation>
+</Method>
+
+<Method name="GetExternalTestSets">
+<Description>
+Begin</Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pGlb:%String</FormalSpec>
+<Implementation><![CDATA[
+	If ($Get(pEpisode)="") Quit
+	Kill @pGlb
+	//
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisode,0)
+	If '$IsObject(episobj) Quit
+	Set extlab=..ExternalLabs4Episode(pEpisode)
+	If extlab="" Quit
+	//	
+	Set key="",cnt=0
+	For  {
+		Set testsetobj=episobj.ChildEPVisitTestSet.GetNext(.key)
+		If key="" Quit
+		If '$IsObject(testsetobj) Continue
+		Set testsetid=testsetobj.%Id()
+		Set testset=testsetobj.VISTSTestSetDRGetObjectId()
+		Set specimen=testsetobj.VISTSSpecimenTypeDRGetObjectId()
+		Set extcodes=..GetExternalTestSetSpecimen(extlab,testset,specimen)
+		If extcodes'="" {
+			Set @pGlb@(extlab,testsetid)=$ListBuild(testset_"||"_specimen,extcodes)
+		}
+	}
+]]></Implementation>
+</Method>
+
+<Method name="ExternalLabs4Episode">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set usersite=""
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisode,0)
+	If $IsObject(episobj) {
+		Set usersite=episobj.EPVISUserSiteDRGetObjectId()
+	}
+	If usersite="" Quit
+	Quit ..GetExternalLabs4UserSite(usersite)
+]]></Implementation>
+</Method>
+
+<Method name="SpecimenNames">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pCode</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	Set specobj=##class(User.CTSpecimen).%OpenId(pCode)
+	If '$IsObject(specobj) Quit ""
+	set delim="~"
+	// Значение на английском 
+	Set result=$Translate(specobj.CTSPEDesc,delim)		// Из описания справочника
+	Set transobj=##class(User.CTSpecimenTranslation).%OpenId(pCode_"||2") // или из перевода	
+	If $IsObject(transobj) {
+		Set result=$Translate(transobj.CTSPFDescription,delim)
+	}
+	Set transobj=##class(User.CTSpecimenTranslation).%OpenId(pCode_"||1")
+	If $IsObject(transobj) {
+		Set result=result_delim_$Translate(transobj.CTSPFDescription,delim)
+	} Else {
+		Set result=result_delim_result	// Повторяем для русского английское значение
+	}		
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="CreateOrderObject">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pExtLab:%String,pEpisode:%String,pOrderNumber:%String,pExtAppointments:%String,pIntAppointments:%String</FormalSpec>
+<ReturnType>WebER.Object.LabOrder</ReturnType>
+<Implementation><![CDATA[
+	Set episobj=##class(User.EPVisitNumber).%OpenId(pEpisode)
+	If '$IsObject(episobj) Quit ""
+	Set result=##class(WebER.Object.LabOrder).%New()
+	Set orderdata=##class(WebER.Object.OrderData).%New()
+	Set orderdata.OrderNumber=pOrderNumber
+	Set orderdata.ExternalOrderNumber=pEpisode
+	Set orderdata.SurnameExt=episobj.EPVISSurname
+	Set orderdata.Surname=episobj.EPVISExtra1
+	Set orderdata.NameExt=episobj.EPVISGivenName
+	Set orderdata.Name=episobj.EPVISExtra2
+	Set orderdata.FatherNameExt=episobj.EPVISName1
+	Set orderdata.FatherName=episobj.EPVISExtra3
+	Set orderdata.DOB=episobj.EPVISDateOfBirth
+	Set orderdata.ReffDoctorExt=episobj.EPVISExtra4
+	//Set PLIST(26)=pOrder.Age 					;EPVIS_Age
+	Set orderdata.SexCode=##class(TCLEx.Data.Encoding).GetExternalCode("CTSpecies",pExtLab,episobj.EPVISSpeciesDRGetObjectId())
+
+	Set orderdata.IsPregnant=(episobj.EPVISPregnant="Y")
+	Set orderdata.WeeksOfPregnancy=episobj.EPVISPregnantNumberOfWeeks
+	Set orderdata.ClinicalConditionsCode=##class(TCLEx.Data.Encoding).GetExternalCode("CTClinicalConditions",pExtLab,episobj.EPVISClinicalConditionsDRGetObjectId())
+
+	Set orderdata.OrderDate=episobj.EPVISDateOfRequest
+
+	Set orderdata.CollectionDate=episobj.EPVISDateOfCollection
+	Set orderdata.CollectionTime=episobj.EPVISTimeOfCollection*60
+	Set orderdata.PriorityCode=##class(TCLEx.Data.Encoding).GetExternalCode("CTPriority",pExtLab,episobj.EPVISPriorityCodeDRGetObjectId())
+	Set orderdata.HospitalCode=5261
+	Set orderdata.DoctorCode=526100
+	
+	/* Лишние поля для EMC
+	Set orderdata.HospitalDepartment=episobj.EPVISExtra8
+
+	Set orderdata.City=episobj.EPVISPatientAddress1
+	//Set orderdata.ZipCode = ???
+	Set orderdata.Address=episobj.EPVISPatientAddress2
+
+	Set orderdata.InsuranceCompany=episobj.EPVISExtra9
+	Set orderdata.PolicySeries=episobj.EPVISExtra10
+	Set orderdata.PolicyNumber=episobj.EPVISExtra11
+	Set orderdata.Pasport=episobj.EPVISExtra12
+
+	Set orderdata.Height=episobj.EPVISExtra5
+	Set orderdata.Weight=episobj.EPVISExtra6
+	Set orderdata.Diuresis=episobj.EPVISExtra7
+	Set orderdata.MedicalComment=episobj.EPVISExtra13
+
+	Set orderdata.MobilePhone=episobj.EPVISPhoneHome
+	Set orderdata.EMail=episobj.EPVISPhoneWork
+	*/
+
+	Set result.OrderData=orderdata
+
+	Set appcnt=$ListLength(pExtAppointments)
+	For i=1:1:appcnt {
+		Set appobj=##class(WebER.Object.Appointment).%New()
+		Set appvals=$ListGet(pExtAppointments,i)
+		Set appcode=$Piece(appvals,"||",1)
+		If appcode="" Continue
+		Set extspecimen=$Piece(appvals,"||",2)
+		Set appobj.AppointmentCode=appcode
+		Set appobj.SpecimenCodes="" //$Piece(appvals,"||",2)
+		Set intappvals=$ListGet(pIntAppointments,i)
+		Set specimen=$Piece(intappvals,"||",2)
+		Set specimennames=##class(TCLEx.Function.EMC2Bion).SpecimenNames(specimen)
+		Set appobj.SpecimenNames=extspecimen_"~"_$Piece(specimennames,"~",2)_"~"_$Piece(specimennames,"~",1)
+		Set value=$Piece(##class(TCLEx.Data.Encoding).GetValueByExternalCode("CTTestSet",pExtLab,appvals),"||",3)
+		Set appobj.ResultType=$Select(value="PDF":2,1:1)
+		Do result.Appointments.Insert(appobj)
+		Set ^XXX($I(^XXX))=$LB("CreateOrderObject",appobj.AppointmentCode,appobj.SpecimenNames,appobj.ResultType)
+	}
+	
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="SendOrders2Bion">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	Set client=##class(WebER.Client.WebERLabOrderSoap).%New()
+	Set extlab=""
+	For  {
+	
+		Set extlab=$Order(^TCLEx("ExternalEpisodes",extlab))
+		If extlab="" Quit
+		
+		Set episode="",waserror=0
+		For  {
+			Set episode=$Order(^TCLEx("ExternalEpisodes",extlab,episode),1,vals)
+			If episode="" Quit
+			Set extorder=$Extract($ListGet(vals,1),1,10)
+			Set testsetids=$ListGet(vals,2)
+			Set inttestsets=$ListGet(vals,3)
+			Set exttestsets=$ListGet(vals,4)
+			Do ##class(TCLEx.Function.EpisodeMovements).CreateTestSets(episode,testsetids,extlab)
+			Set orderobj=..CreateOrderObject(extlab,episode,extorder,exttestsets,inttestsets)		
+			Set user=$$WebServiceUser4LIS^Settings.Integration()
+			Set ok=1,coserror=0
+			Try {
+				Set result=client.CreateReadyForTransferOrder(orderobj) 
+				If ($IsObject(result)) {
+					If 'result.Success {
+						Do ..LogError(result,extlab,episode)
+						Do ..LogHistory(extlab,episode,"ErrorSent2Bion")
+						Do ##class(TCLEx.Function.EpisodeHistory).InsertItem(episode,"Ошибка при передаче заказа !","BIONERR",extorder,..StatusError2Str(result),user)
+						Do ##class(TCLEx.Function.EpisodeMovements).UpdateTestSetsMovementStatus(testsetids,"S","BIONERR",user) 
+					}Else {
+						Do ..LogHistory(extlab,episode,"Sent2Bion")
+						Do ##class(TCLEx.Function.EpisodeHistory).InsertItem(episode,"Успешная передача заказа","BION",extorder,"",user)
+						Do ##class(TCLEx.Function.EpisodeMovements).UpdateTestSetsMovementStatus(testsetids,"S","BION",user) 
+					}		
+				}			
+			} Catch {
+				Set coserror=1
+			}	
+			If 'coserror {
+			Lock +^TCLEx("ExternalEpisodes",extlab,episode)
+			Kill ^TCLEx("ExternalEpisodes",extlab,episode)
+			Lock -^TCLEx("ExternalEpisodes",extlab,episode)
+			} Else {			
+				Set errstr="Ошибка при передаче заказа во внешнюю лабораторию BION ( эпизод "_episode_",$ZError="_$ZError_" ) !"
+				Do LogMessage^KSUTIL1($ZUtil(12)_"\Logs\ExternalLIS\",errstr,1,3)
+				Quit
+			}
+		}
+	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="LogHistory">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pExtLaboratoryCode:%String,pEpisode:%String,pMessage:%String</FormalSpec>
+<Implementation><![CDATA[
+	
+	Set pExtLaboratoryCode=$Get(pExtLaboratoryCode)
+	Set pEpisode=$Get(pEpisode)
+	If (pExtLaboratoryCode="")||(pEpisode="") Quit
+	Set n=$Order(^EMC.Episode("ExternalEpisodes",pEpisode,pExtLaboratoryCode,"History",""),-1)+1
+	Set ^EMC.Episode("ExternalEpisodes",pEpisode,pExtLaboratoryCode,"History",n)=$ListBuild($Horolog,pMessage)
+]]></Implementation>
+</Method>
+
+<Method name="LogError">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pStatus:TCLEx.Object.Response.Status,pExtLaboratoryCode:%String,pEpisode:%String,pMessage:%String</FormalSpec>
+<Implementation><![CDATA[
+	If '$IsObject(pStatus)||(pStatus.Success=1)||'$IsObject(pStatus.Errors) Quit
+	Set pExtLaboratoryCode=$Get(pExtLaboratoryCode)
+	Set pEpisode=$Get(pEpisode)
+	Set cnt=pStatus.Errors.Count()
+	Set n=""
+	If (pExtLaboratoryCode'="")&&(pEpisode'="") {
+		Set n=$Increment(^EMC.Episode("ExternalErrors",pEpisode,pExtLaboratoryCode))
+		Set ^EMC.Episode("ExternalErrors",pEpisode,pExtLaboratoryCode,n)=$Horolog
+	}	
+	For i=1:1:cnt {
+		Set errobj=pStatus.Errors.GetAt(i)
+		If '$IsObject(errobj) Continue
+		Set errstr="("_errobj.Code_")"_errobj.Description
+		Do LogMessage^KSUTIL1($ZUtil(12)_"\Logs\ExternalLIS\",errstr,1,3)
+		If n'="" {
+			Set ^EMC.Episode("ExternalErrors",pEpisode,pExtLaboratoryCode,n)=$ListBuild(errobj.Code,errobj.Description)
+		}	
+	
+	}
+]]></Implementation>
+</Method>
+
+<Method name="StatusError2Str">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pStatus:TCLEx.Object.Response.Status</FormalSpec>
+<ReturnType>%String</ReturnType>
+<Implementation><![CDATA[
+	If '$IsObject(pStatus)||(pStatus.Success=1)||'$IsObject(pStatus.Errors) Quit ""
+	Set result=""
+	Set cnt=pStatus.Errors.Count()
+	For i=1:1:cnt {
+		Set errobj=pStatus.Errors.GetAt(i)
+		If '$IsObject(errobj) Continue
+		Set errstr="("_errobj.Code_")"_errobj.Description
+		If result'="" Set result=result_" "
+		Set result=result_errstr
+	}	
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="GetBionResults">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	Set client=##class(TCLExClient.ExternalLISResultSoap).%New()
+	Try {
+		Do ..GetResults(client)
+		Do ..GetBinaryResults(client)
+		Do client.LogOut()
+	} Catch {
+		Set errstr="Ошибка при вызове Web-сервиса по получению результатов из внешней лаборатории BION ($ZError="_$ZError_" ) !"
+		Do LogMessage^KSUTIL1($ZUtil(12)_"\Logs\ExternalLIS\",errstr,1,3)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="GetResults">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClientObj</FormalSpec>
+<Implementation><![CDATA[
+	Set newtestsetsresult=pClientObj.GetListOfNewResults(5261,100)
+  	If ($IsObject(newtestsetsresult))&&(newtestsetsresult.Success) {
+		Kill ^||EMC.TestSets
+		Set user=$$WebServiceUser4LIS^Settings.Integration()
+		Set cnt=newtestsetsresult.Values.Count()
+		For i=1:1:cnt {
+			Set testsetobj=newtestsetsresult.Values.GetAt(i)
+			If '$IsObject(testsetobj) Continue
+			Set episode=testsetobj.Code
+			Set episobj=##class(User.EPVisitNumber).%OpenId(episode)
+			If '$IsObject(episobj) Continue
+			Set usersite=episobj.EPVISUserSiteDRGetObjectId()
+			Set exttestsetid=testsetobj.Value
+			Set exttestset=$Piece(exttestsetid,"||",2)
+			Set extspecimen=testsetobj.Type
+			Set extlab=..ExternalLabs4Episode(episode)
+
+			Set (testsetid,testset,cancelreason)=""
+			Set pdfresult=0
+			If (episode'="")&&(exttestset'="") {
+				Set testsetid=$Get(^EMC.Episode("ExternalEpisodes",episode,extlab,"TestSets",exttestset_"||"_extspecimen))
+				Set testset=$Piece(testsetid,"||",2)
+				Set testsetvalues=##class(TCLEx.Data.Encoding).GetValueByExternalCode("CTTestSet",extlab,exttestset_"||"_extspecimen)
+				Set pdfresult=($Piece(testsetvalues,"||",3)="PDF")
+			}
+			Set testsetresult=pClientObj.GetTestSetResult(exttestsetid)
+			If ($IsObject(testsetresult))&&(testsetresult.Success) {
+				If pdfresult=0 {
+					Set saveresult=..SaveTestSetResult(extlab,episode,exttestset,extspecimen,testsetresult.TestSetResult)
+					If ($IsObject(saveresult))&&(saveresult.Success) {
+						Set canceled=$IsObject(testsetresult.TestSetResult.CancellationReason)
+						If canceled {
+							Do ..LogHistory(extlab,episode,"CancelResult"_testset)
+							Do ##class(TCLEx.Function.EpisodeHistory).InsertItem(episode,"Отмена результата внешней лабораторией",extlab,testset,"",user)
+						} Else {
+							Do ..LogHistory(extlab,episode,"GetResult"_testset)
+							Do ##class(TCLEx.Function.EpisodeHistory).InsertItem(episode,"Успешная передача результата из внешней лаборатории",extlab,testset,"",user)
+						}	
+						Do ##class(TCLEx.Function.EpisodeMovements).UpdateStatus4Recieved(testsetid,usersite,user) 
+					} Else {
+						Do ..LogHistory(extlab,episode,"SaveResultError"_$Select(testset'="":testset,1:exttestsetid))
+						Do ##class(TCLEx.Function.EpisodeHistory).InsertItem(episode,"Ошибка при сохранении результата !",extlab,$Select(testset'="":testset,1:exttestset),..StatusError2Str(saveresult),user)
+						Do ..LogError(saveresult)
+					}
+				} Else {
+					Set saveresult=##class(TCLEx.Object.Response.Status).%New()
+					Set saveresult.Success=1
+				}	
+				Set deleteresult=pClientObj.RemoveTestSetFromResultBuffer(5261,exttestsetid,saveresult)
+			} Else {
+				Do ..LogHistory(extlab,episode,"GetResultError"_$Select(testset'="":testset,1:exttestsetid))
+				Do ##class(TCLEx.Function.EpisodeHistory).InsertItem(episode,"Ошибка при получении результата",extlab,$Select(testset'="":testset,1:exttestset),..StatusError2Str(testsetresult),user)
+				Do ..LogError(testsetresult)
+			}		
+		}	
+	} Else {
+			Do ..LogError(newtestsetsresult)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="GetBinaryResults">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClientObj</FormalSpec>
+<Implementation><![CDATA[
+	Set newepisodesresult=pClientObj.GetListOfNewBinaryResults(5261,100)
+  	If ($IsObject(newepisodesresult))&&(newepisodesresult.Success) {
+		Kill ^||EMC.Episodes
+		Set user=$$WebServiceUser4LIS^Settings.Integration()
+		Set episcnt=newepisodesresult.Values.Count()
+		For i=1:1:episcnt {
+			Set episresobj=newepisodesresult.Values.GetAt(i)
+			If '$IsObject(episresobj) Continue
+			Set episode=episresobj.Code
+			Set episobj=##class(User.EPVisitNumber).%OpenId(episode)
+			If '$IsObject(episobj) Continue
+			Set usersite=episobj.EPVISUserSiteDRGetObjectId()
+			Set extepisode=episresobj.Value
+			Set extlab=..ExternalLabs4Episode(episode)
+			//
+			For lang=1:1:2 {
+				Set sc=1
+				Lock +^TCLEx("InboundPDF",episode,extepisode,lang):10
+				If '$Test Continue
+				Set fileresult=pClientObj.GetEpisodeBinaryResult(5261,extepisode,lang)
+				Do {
+					Set errorlb="",statusobj=""
+					If (('$IsObject(fileresult)))||('(fileresult.Success))||('($IsObject(fileresult.EpisodeResult)))||('($IsObject(fileresult.EpisodeResult.BinaryResult))) {
+						Set errorlb=$ListBuild("GetBinaryResultError "_extepisode,"Ошибка при получении файла результата",..StatusError2Str(fileresult))
+						Set statusobj=fileresult
+						Quit
+					}
+					If fileresult.EpisodeResult.Size'=fileresult.EpisodeResult.BinaryResult.Size {
+						Set errorlb=$ListBuild("GetBinaryResultError "_extepisode,"Ошибка при получении файла результата","Неверный размер файла. Пришло байт "_fileresult.EpisodeResult.BinaryResult.Size_", должно быть "_fileresult.EpisodeResult.Size_" байт!")
+						Quit
+					}
+					Set fullname=##class(TCLEx.Function.EMC).GetPathForPDFResultsFromBion()_"\"_fileresult.EpisodeResult.FileName
+					Set stream=##class(%FileBinaryStream).%New()
+					Set stream.Filename=fullname
+					Set sc=stream.CopyFrom(fileresult.EpisodeResult.BinaryResult)
+					If 'sc {
+						Set errorlb=$ListBuild("GetBinaryResultError "_extepisode,"Ошибка при копировании файла результата",$$Status2Str^KSUTIL1(sc))
+						Quit
+					}	
+					Set sc=stream.%Save()
+					If 'sc {
+						Set errorlb=$ListBuild("GetBinaryResultError "_extepisode,"Ошибка при сохранении файла результата",$$Status2Str^KSUTIL1(sc))
+						Quit
+					}
+					Set testsetcnt=fileresult.EpisodeResult.TestSets.Count()
+					For j=1:1:testsetcnt {
+						Set exttestset=fileresult.EpisodeResult.TestSets.GetAt(j)
+						Set testsetid=$Get(^EMC.Episode("ExternalEpisodes",episode,extlab,"TestSets",exttestset))
+						Do ..AuthorisePDFTestSet(episode,testsetid,"bion")
+						Do ##class(TCLEx.Function.EpisodeMovements).UpdateStatus4Recieved(testsetid,usersite,user) 
+					}	
+					Set deleteresult=pClientObj.RemoveBinaryResultFromBuffer(5261,extepisode,lang)
+					If ('$IsObject(deleteresult))||('deleteresult.Success) {
+						Set errorlb=$ListBuild("GetBinaryResultError "_extepisode,"Ошибка при удалении файла результата во внешней лаборатории",..StatusError2Str(deleteresult))
+						Set statusobj=deleteresult
+						Quit
+					}	
+					Do ##class(TCLEx.Function.EpisodeHistory).InsertItem(episode,"Успешная передача файла результата из внешней лаборатории",extlab,fileresult.EpisodeResult.FileName,"",user)
+					Do ..LogHistory(extlab,episode,"GetResultFile ("_fullname_")")
+					// Если не было никаких ошибок проставляем признак получения результата
+					Set ^TCLEx("InboundPDF",episode,extepisode,lang)=fullname
+					//
+				} While 0	
+				If errorlb'="" {
+					Do ..LogHistory(extlab,episode,"GetBinaryResultError "_extepisode)
+					Do ##class(TCLEx.Function.EpisodeHistory).InsertItem(episode,$ListGet(errorlb,1),extlab,extepisode,$ListGet(errorlb,2),user)
+					If '$IsObject(statusobj) {
+						Set statusobj=##class(TCLEx.Object.Response.Status).%New()
+						Set errobj=##class(TCLEx.Object.Response.ErrorItem).%New()
+						Set errobj.Code=$ListGet(errorlb,1)
+						Set errobj.Description=$ListGet(errorlb,2)
+						Do statusobj.Errors.Insert(errobj)
+					}	
+					Do ..LogError(statusobj)
+				}	
+				Lock -^TCLEx("InboundPDF",episode,extepisode,lang)
+			}
+  		}	
+	} Else {
+			Do ..LogError(newepisodesresult)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="AuthorisePDFTestSet">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pEpisode:%String,pTestSetId:%String,pUser:%String</FormalSpec>
+<Implementation><![CDATA[
+	Set resobj=##class(TCLEx.Object.Result.TestSet).%New()
+	Set resobj.Code=$Piece(pTestSetId,"||",2)
+	Set itemobj=##class(TCLEx.Object.Result.TestCode).%New()
+	Set itemobj.Code="M000X"
+	Set itemobj.Value="ATT"
+	Do resobj.Items.Insert(itemobj)
+	//
+	Do ##class(TCLEx.Function.TestSet).SaveTestSetResult(pEpisode,pTestSetId,resobj,"Lab Results Entry : WebService",.errors)
+	//
+	Set testsetobj=##class(User.EPVisitTestSet).%OpenId(pTestSetId)
+	If '$IsObject(testsetobj) Quit
+	Set horolog=$Horolog
+	Set testsetobj.VISTSDateOfAuthorisation=+horolog
+	Set testsetobj.VISTSTimeOfAuthorisation=($Piece(horolog,",",2)\60)
+	Do testsetobj.VISTSUserAuthorisedDRSetObjectId(pUser)
+	Set testsetobj.VISTSStatusResult="A"
+	Set testsetobj.VISTSRule3ExemptMax=2 
+	Set ok=testsetobj.%Save()
+]]></Implementation>
+</Method>
+
+<Method name="SaveTestSetResult">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pExtLab:%String,pEpisode:%String,pExternalTestSet:%String,pExternalSpecimen:%String,pResult:TCLEx.Object.Result.TestSet</FormalSpec>
+<ReturnType>TCLEx.Object.Response.Status</ReturnType>
+<Implementation><![CDATA[
+	
+	Set pExtLab=$Get(pExtLab)
+	Set pEpisode=$Get(pEpisode)
+	Set pExternalTestSet=$Get(pExternalTestSet)
+	Set pResult=$Get(pResult)
+	//
+	Kill errors
+	If (pExtLab="") {
+		Set errors($Increment(errors))=$ListBuild($$$errMissingParameter,"Не задан код внешней лаборатории !")
+	}
+	If (pEpisode="") {
+		Set errors($Increment(errors))=$ListBuild($$$errMissingParameter,"Не задан номер эпизода !")
+	}
+	If (pExternalTestSet="") {
+		Set errors($Increment(errors))=$ListBuild($$$errMissingParameter,"Не задан код набора исследований !")
+	}
+	If '$IsObject(pResult) {
+		Set errors($Increment(errors))=$ListBuild($$$errInvalidParameter,"Не задан результат исследований !")
+	}
+	//
+	Do {
+		If $Data(errors) Quit
+		Set (testset,testsetid,testsetresult)=""
+		If '$Data(^EMC.Episode("ExternalEpisodes",pEpisode,pExtLab)) {
+			Set errors($Increment(errors))=$ListBuild($$$errInvalidParameter,"Неверный номер эпизода "_pEpisode_"!")
+		} Else {
+			Set testsetid=$Get(^EMC.Episode("ExternalEpisodes",pEpisode,pExtLab,"TestSets",pExternalTestSet_"||"_pExternalSpecimen))
+			If ##class(TCLEx.Function.TestSet).CanUpdateValues(testsetid,.errors) {
+				Set testsetresult=..ConvertTestSetResult(pExtLab,pEpisode,pExternalTestSet,pExternalSpecimen,pResult,.errors)
+			}
+		}
+		If $Data(errors) Quit
+		Do ##class(TCLEx.Function.TestSet).SaveTestSetResult(pEpisode,testsetid,testsetresult,"Lab Results Entry : WebService",.errors)
+	} While 0
+	//
+	Set result=..ConvertErrorArray2Status(.errors)
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="ConvertTestSetResult">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[pExtLab:%String,pEpisode:%String,pExternalTestSet:%String,pExternalSpecimen:%String,pExtResult:TCLEx.Object.Result.TestSet,&pErrors:%String]]></FormalSpec>
+<ReturnType>TCLEx.Object.Result.TestSet</ReturnType>
+<Implementation><![CDATA[
+	Kill pErrors
+	Set result=##class(TCLEx.Object.Result.TestSet).%New()
+	Do {
+		Set testsetid=$Get(^EMC.Episode("ExternalEpisodes",pEpisode,pExtLab,"TestSets",pExternalTestSet_"||"_pExternalSpecimen))
+		Set testset=$Piece(testsetid,"||",2)
+		If (testsetid="")||(testset="") {
+			Set pErrors($Increment(pErrors))=$ListBuild($$$errInvalidParameter,"Неверный код исследования "_pExternalTestSet_"!")
+			Quit
+		}
+		// Если стоит причина отмены
+		If ($IsObject(pExtResult.CancellationReason)&&(pExtResult.CancellationReason.Code'="")) {
+			Set intcode=##class(TCLEx.Data.Encoding).GetInternalCode("CTReason",pExtLab,pExtResult.CancellationReason.Code)
+			If (intcode="") {
+				Set pErrors($Increment(pErrors))=$ListBuild($$$errInvalidParameter,"Неверное значение причины отмены "_pCancellationReason_"!")
+				Quit
+			}
+			Set result.CancellationReason=##class(TCLEx.Object.Result.CancellationReason).%New()
+			Set result.CancellationReason.Code=intcode
+			Set result.CancellationReason.Doctor=$$WebServiceUser4LIS^Settings.Integration()
+			Set result.CancellationReason.DateTime=pExtResult.CancellationReason.DateTime
+			Quit
+		}
+		// Если передали результаты
+		Set result.Authorization=##class(TCLEx.Object.Result.Authorization).%New()
+		Set result.Authorization.DoctorCode=$$WebServiceUser4LIS^Settings.Integration()
+		If $IsObject(pExtResult.Authorization) {
+			Set result.Authorization.DateTime=pExtResult.Authorization.DateTime
+		}
+		
+		Kill ^||EMC.Template
+		Do ##class(TCLEx.Function.TestSet).TemplateTestOrder(testset,$Name(^||EMC.Template))
+		If '$Data(^||EMC.Template) 	{
+			Set pErrors($Increment(pErrors))=$ListBuild($$$errInvalidParameter,"Нет описания шаблона набора тестов "_testset_"!")
+			Quit
+		}	
+		//
+		Kill ^||EMC.Calculated
+		Do ##class(TCLEx.Function.TestSet).CreateCalculatedTestBuffer(testset,$Name(^||EMC.Calculated))
+		//
+		Kill ^||EMC.Mand
+		Do ##class(TCLEx.Function.TestSet).CreateMandatoryTestBuffer(testset,$Name(^||EMC.Mand))
+		//
+		Set cnt=pExtResult.Items.Count()
+		For i=1:1:cnt {
+			Set extitem=pExtResult.Items.GetAt(i)
+			If '$IsObject(extitem) Continue
+			Set extcode=extitem.Code
+			Set intvals=##class(TCLEx.Data.Encoding).GetInternalCode("CTTestCode",pExtLab,pExternalTestSet_"||"_extcode)
+			Set intcode=$Piece(intvals,"||",2)
+			If intcode="" {
+				Set pErrors($Increment(pErrors))=$ListBuild($$$errInvalidTestCode,"Нет внутреннего кода для теста "_extcode_" !")
+				Continue
+			}
+			If $Data(^||EMC.Calculated(intcode)) Continue
+			Set item=##class(TCLEx.Object.Result.TestCode).%New()
+			Set item.Code=intcode
+			Set item.Value=extitem.Value
+			Set item.RawValue=extitem.RawValue
+			If $IsObject(extitem.Antibiogram)&&(extitem.Antibiogram.Count()>0) {
+				Set item.Antibiogram=extitem.Antibiogram.%ConstructClone(1)
+			}
+			Do result.Items.Insert(item)	
+			//
+			Kill ^||EMC.Mand(intcode)
+		}
+		If $Data(^||EMC.Mand)>10 {
+			Set pErrors($Increment(pErrors))=$ListBuild($$$errInvalidValue,"Заполнены не все обязательные тесты !")
+			Quit
+		}		
+	} While(0)
+	If $Data(pErrors) Quit ""
+	Quit result
+]]></Implementation>
+</Method>
+
+<Method name="ConvertErrorArray2Status">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&pErrors]]></FormalSpec>
+<ReturnType>TCLEx.Object.Response.Status</ReturnType>
+<Implementation><![CDATA[
+	Set result=##class(TCLEx.Object.Response.Status).%New()
+	Set result.Success=1
+	If $Data(pErrors) {
+		Set result.Success=0
+		Set i=""
+		For  {
+			Set i=$Order(pErrors(i),1,error)
+			If i="" Quit
+			Set errobj=##class(TCLEx.Object.Response.ErrorItem).%New()
+			Set errobj.Code=$ListGet(error,1)
+			Set errobj.Description=$ListGet(error,2)
+			Do result.Errors.Insert(errobj)
+		}
+	}
+	Quit result
+]]></Implementation>
+</Method>
+</Class>
+</Export>
